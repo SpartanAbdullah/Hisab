@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { db } from '../db';
+import { goalsDb } from '../lib/supabaseDb';
 import type { Goal, Currency } from '../db';
 import { useActivityStore } from './activityStore';
 
@@ -26,7 +26,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
 
   loadGoals: async () => {
     set({ loading: true });
-    const goals = await db.goals.toArray();
+    const goals = await goalsDb.getAll();
     set({ goals, loading: false });
   },
 
@@ -40,7 +40,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       storedInAccountId: input.storedInAccountId,
       createdAt: new Date().toISOString(),
     };
-    await db.goals.add(goal);
+    await goalsDb.add(goal);
     set((s) => ({ goals: [...s.goals, goal] }));
     await useActivityStore.getState().logActivity(
       'goal_created',
@@ -55,7 +55,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     const goal = get().goals.find((g) => g.id === goalId);
     if (!goal) throw new Error(`Goal ${goalId} not found`);
     const newSaved = Math.round((goal.savedAmount + amount) * 100) / 100;
-    await db.goals.update(goalId, { savedAmount: newSaved });
+    await goalsDb.update(goalId, { savedAmount: newSaved });
     set((s) => ({
       goals: s.goals.map((g) => (g.id === goalId ? { ...g, savedAmount: newSaved } : g)),
     }));

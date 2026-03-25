@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { db } from '../db';
+import { splitGroupsDb, groupExpensesDb, groupSettlementsDb } from '../lib/supabaseDb';
 import type { SplitGroup, GroupExpense, GroupSettlement, SplitType, SplitDetail, GroupMember, Currency } from '../db';
 
 interface SimplifiedDebt {
@@ -50,7 +50,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
 
   loadGroups: async () => {
     set({ loading: true });
-    const groups = await db.splitGroups.orderBy('createdAt').reverse().toArray();
+    const groups = await splitGroupsDb.getAll();
     set({ groups, loading: false });
   },
 
@@ -69,20 +69,20 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       settled: false,
       createdAt: new Date().toISOString(),
     };
-    await db.splitGroups.add(group);
+    await splitGroupsDb.add(group);
     await get().loadGroups();
     return group;
   },
 
   deleteGroup: async (id) => {
-    await db.splitGroups.delete(id);
-    await db.groupExpenses.where('groupId').equals(id).delete();
-    await db.groupSettlements.where('groupId').equals(id).delete();
+    await groupExpensesDb.deleteByGroup(id);
+    await groupSettlementsDb.deleteByGroup(id);
+    await splitGroupsDb.delete(id);
     await get().loadGroups();
   },
 
   getGroupExpenses: async (groupId) => {
-    return db.groupExpenses.where('groupId').equals(groupId).reverse().sortBy('createdAt');
+    return groupExpensesDb.getByGroup(groupId);
   },
 
   addGroupExpense: async (input) => {
@@ -99,12 +99,12 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       notes: input.notes || '',
       createdAt: new Date().toISOString(),
     };
-    await db.groupExpenses.add(expense);
+    await groupExpensesDb.add(expense);
     return expense;
   },
 
   getSettlements: async (groupId) => {
-    return db.groupSettlements.where('groupId').equals(groupId).reverse().sortBy('createdAt');
+    return groupSettlementsDb.getByGroup(groupId);
   },
 
   addSettlement: async (input) => {
@@ -118,16 +118,16 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       note: input.note || '',
       createdAt: new Date().toISOString(),
     };
-    await db.groupSettlements.add(settlement);
+    await groupSettlementsDb.add(settlement);
     return settlement;
   },
 
   getSimplifiedDebts: async (groupId) => {
-    const group = await db.splitGroups.get(groupId);
+    const group = await splitGroupsDb.get(groupId);
     if (!group) return [];
 
-    const expenses = await db.groupExpenses.where('groupId').equals(groupId).toArray();
-    const settlements = await db.groupSettlements.where('groupId').equals(groupId).toArray();
+    const expenses = await groupExpensesDb.getByGroup(groupId);
+    const settlements = await groupSettlementsDb.getByGroup(groupId);
 
     // Calculate net balance for each member
     const balances = new Map<string, number>();
@@ -186,7 +186,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   },
 
   getMyBalance: async (groupId) => {
-    const group = await db.splitGroups.get(groupId);
+    const group = await splitGroupsDb.get(groupId);
     if (!group) return 0;
     const owner = group.members.find(m => m.isOwner);
     if (!owner) return 0;

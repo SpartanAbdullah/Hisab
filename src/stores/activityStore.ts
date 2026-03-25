@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { db } from '../db';
+import { activitiesDb } from '../lib/supabaseDb';
 import type { ActivityLog, ActivityType } from '../db';
 
 interface ActivityState {
@@ -17,7 +17,7 @@ export const useActivityStore = create<ActivityState>((set) => ({
 
   loadActivities: async () => {
     set({ loading: true });
-    const activities = await db.activityLog.orderBy('timestamp').reverse().limit(100).toArray();
+    const activities = await activitiesDb.getAll();
     set({ activities, loading: false });
   },
 
@@ -30,11 +30,11 @@ export const useActivityStore = create<ActivityState>((set) => ({
       relatedEntityType,
       timestamp: new Date().toISOString(),
     };
-    await db.activityLog.add(entry);
+    await activitiesDb.add(entry);
     set((s) => ({ activities: [entry, ...s.activities].slice(0, 100) }));
   },
 
   getByEntity: async (entityId) => {
-    return db.activityLog.where('relatedEntityId').equals(entityId).reverse().sortBy('timestamp');
+    return activitiesDb.getByEntity(entityId);
   },
 }));

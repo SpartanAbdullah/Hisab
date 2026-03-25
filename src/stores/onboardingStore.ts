@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { db } from '../db';
+import { accountsDb } from '../lib/supabaseDb';
 import type { Currency } from '../db';
 import { useAccountStore } from './accountStore';
 import { useTransactionStore } from './transactionStore';
@@ -20,9 +20,15 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
 
   checkOnboarding: async () => {
     set({ loading: true });
-    const count = await db.accounts.count();
-    const done = localStorage.getItem('hisaab_onboarded') === '1';
-    set({ completed: done || count > 0, loading: false });
+    try {
+      const count = await accountsDb.count();
+      const done = localStorage.getItem('hisaab_onboarded') === '1';
+      set({ completed: done || count > 0, loading: false });
+    } catch {
+      // If not authenticated yet, just check localStorage
+      const done = localStorage.getItem('hisaab_onboarded') === '1';
+      set({ completed: done, loading: false });
+    }
   },
 
   completeOnboarding: async (name, currency) => {
@@ -111,7 +117,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
       notes: 'Emergency help',
     });
 
-    // Demo goal
+    // Demo goals
     await goalStore.createGoal({
       title: 'Emergency Fund',
       targetAmount: currency === 'AED' ? 10000 : 300000,

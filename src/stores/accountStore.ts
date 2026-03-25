@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { db } from '../db';
+import { accountsDb, transactionsDb } from '../lib/supabaseDb';
 import type { Account, AccountType, Currency, Transaction } from '../db';
 import { useActivityStore } from './activityStore';
 
@@ -27,7 +27,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
   loadAccounts: async () => {
     set({ loading: true });
-    const accounts = await db.accounts.toArray();
+    const accounts = await accountsDb.getAll();
     set({ accounts, loading: false });
   },
 
@@ -41,7 +41,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       metadata: input.metadata ?? {},
       createdAt: new Date().toISOString(),
     };
-    await db.accounts.add(account);
+    await accountsDb.add(account);
     set((s) => ({ accounts: [...s.accounts, account] }));
 
     const activityStore = useActivityStore.getState();
@@ -52,11 +52,10 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       'account'
     );
 
-    // FIX 7: Log opening balance as a transaction if balance > 0
+    // Log opening balance as a transaction if balance > 0
     if (input.balance > 0) {
-      const txId = uuid();
       const tx: Transaction = {
-        id: txId,
+        id: uuid(),
         type: 'opening_balance',
         amount: input.balance,
         currency: input.currency,
@@ -70,7 +69,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         notes: 'Opening Balance',
         createdAt: account.createdAt,
       };
-      await db.transactions.add(tx);
+      await transactionsDb.add(tx);
       await activityStore.logActivity(
         'opening_balance',
         `Opening Balance — ${input.currency} ${input.balance} in "${input.name}"`,
@@ -88,7 +87,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     const account = get().accounts.find((a) => a.id === id);
     if (!account) throw new Error(`Account ${id} not found`);
     const newBalance = Math.round((account.balance + delta) * 100) / 100;
-    await db.accounts.update(id, { balance: newBalance });
+    await accountsDb.update(id, { balance: newBalance });
     set((s) => ({
       accounts: s.accounts.map((a) => (a.id === id ? { ...a, balance: newBalance } : a)),
     }));

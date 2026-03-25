@@ -5,7 +5,8 @@ import { GlobalFAB } from './components/GlobalFAB';
 import { ToastContainer } from './components/Toast';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { useAppModeStore } from './stores/appModeStore';
-import { useAuthStore } from './stores/authStore';
+import { useSupabaseAuthStore } from './stores/supabaseAuthStore';
+import { AuthPage } from './pages/AuthPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { HomePage } from './pages/HomePage';
 import { TransactionsPage } from './pages/TransactionsPage';
@@ -18,27 +19,35 @@ import { SplitsPage } from './pages/SplitsPage';
 import { GroupDetailPage } from './pages/GroupDetailPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { PinLockScreen } from './pages/PinLockScreen';
 import { QuickEntry } from './pages/QuickEntry';
 import { AddGoalModal } from './pages/AddGoalModal';
 import { AddUpcomingExpenseModal } from './pages/AddUpcomingExpenseModal';
 import { AddLoanModal } from './pages/AddLoanModal';
 
 function AppContent() {
-  const { completed, loading, checkOnboarding } = useOnboardingStore();
+  const { completed, loading: onboardingLoading, checkOnboarding } = useOnboardingStore();
   const mode = useAppModeStore(s => s.mode);
-  const { hasPin, isLocked, checkAuth } = useAuthStore();
+  const { user, loading: authLoading, initialize } = useSupabaseAuthStore();
   const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showAddLoan, setShowAddLoan] = useState(false);
 
   useEffect(() => {
+    initialize();
     checkOnboarding();
-    checkAuth();
-  }, [checkOnboarding, checkAuth]);
+  }, [initialize, checkOnboarding]);
 
-  if (loading) {
+  // Store user ID for supabaseDb helper
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem('hisaab_supabase_uid', user.id);
+    } else {
+      localStorage.removeItem('hisaab_supabase_uid');
+    }
+  }, [user]);
+
+  if (authLoading || onboardingLoading) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-indigo-600">
         <div className="text-center text-white animate-pulse-once">
@@ -49,13 +58,14 @@ function AppContent() {
     );
   }
 
-  if (!completed) {
-    return <OnboardingPage />;
+  // Auth gate — must be logged in
+  if (!user) {
+    return <AuthPage />;
   }
 
-  // PIN lock gate
-  if (hasPin && isLocked) {
-    return <PinLockScreen />;
+  // Onboarding gate
+  if (!completed) {
+    return <OnboardingPage />;
   }
 
   return (

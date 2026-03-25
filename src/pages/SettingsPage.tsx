@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { Shield, Download, Upload, Globe, Smartphone, Info, ChevronRight, Lock, Unlock, User, Mail, Phone, KeyRound } from 'lucide-react';
+import { Shield, Download, Upload, Globe, Smartphone, Info, ChevronRight, Lock, Unlock, User, Mail, Phone, KeyRound, LogOut } from 'lucide-react';
+import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { useAppModeStore } from '../stores/appModeStore';
@@ -14,6 +15,7 @@ export function SettingsPage() {
   const { mode, setMode } = useAppModeStore();
   const { lang, setLang } = useI18nStore();
   const { hasPin, setPin, removePin } = useAuthStore();
+  const { signOut, user } = useSupabaseAuthStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [showPinSetup, setShowPinSetup] = useState(false);
@@ -220,6 +222,24 @@ export function SettingsPage() {
               <p className="text-[11px] text-slate-400">{t('settings_about_desc')}</p>
             </div>
           </div>
+        </div>
+
+        {/* Sign Out */}
+        {user && (
+          <div className={sectionClass}>
+            <button onClick={async () => { await signOut(); window.location.reload(); }} className={rowClass + ' w-full text-left'}>
+              <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center"><LogOut size={16} className="text-red-500" /></div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold text-red-600">Logout</p>
+                <p className="text-[11px] text-slate-400">{user.email}</p>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="text-center pt-4 pb-2">
+          <p className="text-[11px] text-slate-400">Made with ❤️ by GM-300</p>
         </div>
       </div>
     </div>

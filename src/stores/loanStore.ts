@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { db } from '../db';
+import { loansDb } from '../lib/supabaseDb';
 import type { Loan, LoanType, Currency } from '../db';
 import { useActivityStore } from './activityStore';
 
@@ -27,7 +27,7 @@ export const useLoanStore = create<LoanState>((set, get) => ({
 
   loadLoans: async () => {
     set({ loading: true });
-    const loans = await db.loans.toArray();
+    const loans = await loansDb.getAll();
     set({ loans, loading: false });
   },
 
@@ -43,7 +43,7 @@ export const useLoanStore = create<LoanState>((set, get) => ({
       notes: input.notes ?? '',
       createdAt: new Date().toISOString(),
     };
-    await db.loans.add(loan);
+    await loansDb.add(loan);
     set((s) => ({ loans: [...s.loans, loan] }));
     await useActivityStore.getState().logActivity(
       'loan_created',
@@ -59,10 +59,10 @@ export const useLoanStore = create<LoanState>((set, get) => ({
     if (!loan) throw new Error(`Loan ${loanId} not found`);
     const newRemaining = Math.max(0, loan.remainingAmount - amount);
     const newStatus = newRemaining === 0 ? 'settled' : 'active';
-    await db.loans.update(loanId, { remainingAmount: newRemaining, status: newStatus });
+    await loansDb.update(loanId, { remainingAmount: newRemaining, status: newStatus as Loan['status'] });
     set((s) => ({
       loans: s.loans.map((l) =>
-        l.id === loanId ? { ...l, remainingAmount: newRemaining, status: newStatus } : l
+        l.id === loanId ? { ...l, remainingAmount: newRemaining, status: newStatus as Loan['status'] } : l
       ),
     }));
     if (newStatus === 'settled') {

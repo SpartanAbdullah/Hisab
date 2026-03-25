@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { db } from '../db';
+import { upcomingExpensesDb } from '../lib/supabaseDb';
 import type { UpcomingExpense, UpcomingExpenseStatus, Currency } from '../db';
 
 interface CreateExpenseInput {
@@ -32,7 +32,7 @@ export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) =
 
   loadExpenses: async () => {
     set({ loading: true });
-    const expenses = await db.upcomingExpenses.toArray();
+    const expenses = await upcomingExpensesDb.getAll();
     set({ expenses, loading: false });
   },
 
@@ -51,13 +51,13 @@ export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) =
       reminderDaysBefore: input.reminderDaysBefore,
       createdAt: new Date().toISOString(),
     };
-    await db.upcomingExpenses.add(expense);
+    await upcomingExpensesDb.add(expense);
     set((s) => ({ expenses: [...s.expenses, expense] }));
     return expense;
   },
 
   markPaid: async (id) => {
-    await db.upcomingExpenses.update(id, { isPaid: true, status: 'done' as UpcomingExpenseStatus });
+    await upcomingExpensesDb.update(id, { isPaid: true, status: 'done' as UpcomingExpenseStatus });
     set((s) => ({
       expenses: s.expenses.map((e) => (e.id === id ? { ...e, isPaid: true, status: 'done' as UpcomingExpenseStatus } : e)),
     }));
@@ -65,14 +65,14 @@ export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) =
 
   updateStatus: async (id, status) => {
     const isPaid = status === 'done';
-    await db.upcomingExpenses.update(id, { status, isPaid });
+    await upcomingExpensesDb.update(id, { status, isPaid });
     set((s) => ({
       expenses: s.expenses.map((e) => (e.id === id ? { ...e, status, isPaid } : e)),
     }));
   },
 
   deleteExpense: async (id) => {
-    await db.upcomingExpenses.delete(id);
+    await upcomingExpensesDb.delete(id);
     set((s) => ({ expenses: s.expenses.filter((e) => e.id !== id) }));
   },
 

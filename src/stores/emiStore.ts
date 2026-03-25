@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { db } from '../db';
+import { emiSchedulesDb } from '../lib/supabaseDb';
 import type { EmiSchedule, EmiStatus } from '../db';
 import { addMonths, format } from 'date-fns';
 import { useActivityStore } from './activityStore';
@@ -27,7 +27,7 @@ export const useEmiStore = create<EmiState>((set, get) => ({
 
   loadSchedules: async () => {
     set({ loading: true });
-    const schedules = await db.emiSchedules.toArray();
+    const schedules = await emiSchedulesDb.getAll();
     set({ schedules, loading: false });
   },
 
@@ -48,12 +48,12 @@ export const useEmiStore = create<EmiState>((set, get) => ({
         status: 'upcoming' as EmiStatus,
       });
     }
-    await db.emiSchedules.bulkAdd(entries);
+    await emiSchedulesDb.bulkAdd(entries);
     set((s) => ({ schedules: [...s.schedules, ...entries] }));
   },
 
   markPaid: async (emiId) => {
-    await db.emiSchedules.update(emiId, { status: 'paid' });
+    await emiSchedulesDb.update(emiId, { status: 'paid' as EmiStatus });
     set((s) => ({
       schedules: s.schedules.map((e) => (e.id === emiId ? { ...e, status: 'paid' as EmiStatus } : e)),
     }));
