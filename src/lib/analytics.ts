@@ -1,4 +1,4 @@
-import type { Transaction, GroupExpense } from '../db';
+import type { Transaction } from '../db';
 
 export interface CategoryData {
   category: string;

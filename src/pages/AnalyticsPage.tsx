@@ -1,8 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
-import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useSplitStore } from '../stores/splitStore';
-import { useAppModeStore } from '../stores/appModeStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { useT } from '../lib/i18n';
@@ -23,9 +22,8 @@ function getDateRange(period: Period): [Date, Date] {
 
 export function AnalyticsPage() {
   const t = useT();
-  const mode = useAppModeStore(s => s.mode);
   const { transactions, loadTransactions } = useTransactionStore();
-  const { groups, loadGroups, getGroupExpenses } = useSplitStore();
+  const { loadGroups } = useSplitStore();
   const [period, setPeriod] = useState<Period>('this_month');
 
   useEffect(() => { loadTransactions(); loadGroups(); }, [loadTransactions, loadGroups]);
@@ -117,7 +115,7 @@ export function AnalyticsPage() {
                   <BarChart data={trend}>
                     <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 10 }} width={40} />
-                    <Tooltip formatter={(value: number) => formatMoney(value, currency)} />
+                    <Tooltip formatter={(value: unknown) => formatMoney(Number(value), currency)} />
                     <Bar dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} name="Income" />
                     <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} name="Expense" />
                   </BarChart>
@@ -134,7 +132,7 @@ export function AnalyticsPage() {
                 <ResponsiveContainer width="100%" height={120}>
                   <BarChart data={daily}>
                     <XAxis dataKey="day" tick={{ fontSize: 9 }} />
-                    <Tooltip formatter={(value: number) => formatMoney(value, currency)} />
+                    <Tooltip formatter={(value: unknown) => formatMoney(Number(value), currency)} />
                     <Bar dataKey="amount" fill="#6366f1" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>

@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { X, Plus, UserPlus } from 'lucide-react';
+import { X, UserPlus } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
-import { useT, useI18nStore } from '../lib/i18n';
+import { useT } from '../lib/i18n';
 import type { Currency } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
 

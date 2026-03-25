@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, ArrowLeftRight, Users, Target, BarChart3, Settings, Clock } from 'lucide-react';
+import { Home, ArrowLeftRight, Users, Target, Settings, Clock } from 'lucide-react';
 import { useUIStore } from '../stores/uiStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useT } from '../lib/i18n';

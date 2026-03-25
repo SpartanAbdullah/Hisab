@@ -113,9 +113,8 @@ export function TransactionsPage() {
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(tx =>
-        (tx.description?.toLowerCase().includes(q)) ||
+        (tx.notes?.toLowerCase().includes(q)) ||
         (tx.category?.toLowerCase().includes(q)) ||
-        (tx.note?.toLowerCase().includes(q)) ||
         (tx.amount?.toString().includes(q))
       );
     }

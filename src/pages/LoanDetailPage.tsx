@@ -17,7 +17,7 @@ import { RepaymentModal } from './RepaymentModal';
 export function LoanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { loans, loadLoans } = useLoanStore();
-  const { schedules, loadSchedules, markPaid } = useEmiStore();
+  const { schedules, loadSchedules } = useEmiStore();
   const { transactions, loadTransactions, getByLoan, processTransaction } = useTransactionStore();
   const { accounts, loadAccounts } = useAccountStore();
   const toast = useToast();

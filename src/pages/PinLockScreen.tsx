@@ -5,7 +5,7 @@ import { useT } from '../lib/i18n';
 
 export function PinLockScreen() {
   const t = useT();
-  const { verifyPin, failedAttempts, lockedUntil } = useAuthStore();
+  const { verifyPin, lockedUntil } = useAuthStore();
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
