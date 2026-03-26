@@ -297,6 +297,22 @@ export const groupExpensesDb = {
     });
     if (error) throw error;
   },
+  async update(id: string, changes: Partial<GroupExpense>) {
+    const row: Record<string, unknown> = {};
+    if (changes.description !== undefined) row.description = changes.description;
+    if (changes.amount !== undefined) row.amount = changes.amount;
+    if (changes.paidBy !== undefined) row.paid_by = changes.paidBy;
+    if (changes.splitType !== undefined) row.split_type = changes.splitType;
+    if (changes.splits !== undefined) row.splits = changes.splits;
+    if (changes.category !== undefined) row.category = changes.category;
+    if (changes.notes !== undefined) row.notes = changes.notes;
+    const { error } = await supabase.from('group_expenses').update(row).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    const { error } = await supabase.from('group_expenses').delete().eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
   async deleteByGroup(groupId: string) {
     const { error } = await supabase.from('group_expenses').delete().eq('group_id', groupId).eq('user_id', getUserId());
     if (error) throw error;

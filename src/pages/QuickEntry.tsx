@@ -7,6 +7,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore, type TransactionInput } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useGoalStore } from '../stores/goalStore';
+import { useEmiStore } from '../stores/emiStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { Modal } from '../components/Modal';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
@@ -28,6 +29,7 @@ export function QuickEntry({ open, onClose }: Props) {
   const { processTransaction } = useTransactionStore();
   const { loans } = useLoanStore();
   const { goals } = useGoalStore();
+  const { generateSchedule } = useEmiStore();
   const { expenses: upcomingExpenses } = useUpcomingExpenseStore();
   const toast = useToast();
   const t = useT();
@@ -43,6 +45,9 @@ export function QuickEntry({ open, onClose }: Props) {
   const [loanId, setLoanId] = useState('');
   const [goalId, setGoalId] = useState('');
   const [conversionRate, setConversionRate] = useState('');
+  const [hasEmi, setHasEmi] = useState(false);
+  const [emiInstallments, setEmiInstallments] = useState('');
+  const [emiStartDate, setEmiStartDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [confirmData, setConfirmData] = useState<{ title: string; description: string; changes: Array<{ accountName: string; currency: string; before: number; after: number }> }>({ title: '', description: '', changes: [] });
@@ -70,6 +75,7 @@ export function QuickEntry({ open, onClose }: Props) {
     setSourceId(''); setDestId(''); setCategory('');
     setNotes(''); setPersonName(''); setLoanId('');
     setGoalId(''); setConversionRate('');
+    setHasEmi(false); setEmiInstallments(''); setEmiStartDate('');
   };
   const handleClose = () => { reset(); onClose(); };
 
@@ -208,7 +214,16 @@ export function QuickEntry({ open, onClose }: Props) {
         default: throw new Error('Unknown type');
       }
 
-      await processTransaction(input);
+      const resultTx = await processTransaction(input);
+      // Generate EMI schedule if enabled for loans
+      if (hasEmi && resultTx.relatedLoanId && emiInstallments && emiStartDate) {
+        await generateSchedule({
+          loanId: resultTx.relatedLoanId,
+          totalAmount: amt,
+          installments: parseInt(emiInstallments),
+          startDate: emiStartDate,
+        });
+      }
       const typeLabel = TX_TYPES.find(tx => tx.value === type)?.label ?? type;
       setConfirmData({ title: `${typeLabel} — Done!`, description: `${formatMoney(amt, changes[0]?.currency ?? 'AED')} processed`, changes });
       setShowConfirmation(true);
@@ -410,6 +425,28 @@ export function QuickEntry({ open, onClose }: Props) {
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_who')}</label>
                 <input value={personName} onChange={e => setPersonName(e.target.value)} placeholder={t('quick_who_placeholder')} className={inputClass} />
+              </div>
+            )}
+
+            {/* EMI Setup for Loans */}
+            {needsPerson && (
+              <div className="space-y-3">
+                <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-slate-50/80 border border-slate-100/60">
+                  <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-indigo-600 accent-indigo-600" />
+                  <span className="text-[13px] text-slate-600 font-medium">{t('loan_set_emi')}</span>
+                </label>
+                {hasEmi && (
+                  <div className="grid grid-cols-2 gap-3 animate-fade-in">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('loan_installments')}</label>
+                      <input type="number" value={emiInstallments} onChange={e => setEmiInstallments(e.target.value)} placeholder="12" className={inputClass} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Start Date</label>
+                      <input type="date" value={emiStartDate} onChange={e => setEmiStartDate(e.target.value)} className={inputClass} />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownLeft, Globe, Plus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownLeft, Globe, Plus, BarChart3 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
@@ -252,6 +252,23 @@ export function HomePage() {
               </div>
             </button>
           )}
+        </div>
+      )}
+
+      {/* Analytics Banner */}
+      {accounts.length > 0 && transactions.length > 0 && (
+        <div className="px-5 pt-4">
+          <button onClick={() => navigate('/analytics')}
+            className="w-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 rounded-2xl p-4 flex items-center gap-3 text-white active:scale-[0.98] transition-all shadow-md shadow-indigo-500/20">
+            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center backdrop-blur-sm">
+              <BarChart3 size={20} strokeWidth={2} />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-[13px] font-bold tracking-tight">{t('analytics_title')}</p>
+              <p className="text-[10px] text-white/70">{t('analytics_banner_desc')}</p>
+            </div>
+            <span className="text-white/60 text-lg">→</span>
+          </button>
         </div>
       )}
 

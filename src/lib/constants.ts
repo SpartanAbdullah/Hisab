@@ -27,7 +27,7 @@ export const INCOME_CATEGORIES = [
 ] as const;
 
 export const CURRENCY_SYMBOLS: Record<string, string> = {
-  AED: 'د.إ',
+  AED: 'AED',
   PKR: '₨',
 };
 

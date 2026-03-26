@@ -70,6 +70,10 @@ const S = {
   acct_creating: { ur: 'Bana Rahe Hain...', en: 'Creating...' },
   acct_create: { ur: 'Account Banao', en: 'Create Account' },
   acct_created: { ur: 'Account Ban Gaya!', en: 'Account Created!' },
+  acct_deleted: { ur: 'Account Delete Ho Gaya!', en: 'Account Deleted!' },
+  acct_delete_confirm: { ur: 'Kya aap ye account delete karna chahte hain?', en: 'Are you sure you want to delete this account?' },
+  acct_delete_nonzero: { ur: 'Delete Nahi Ho Sakta', en: 'Cannot Delete' },
+  acct_delete_nonzero_desc: { ur: 'Pehle balance zero karo, phir delete hoga', en: 'Account must have zero balance before deletion' },
   acct_new: { ur: 'Naya Account', en: 'New Account' },
 
   // Account types
@@ -286,6 +290,9 @@ const S = {
   mode_full_2: { ur: 'Qarz aur EMI tracking', en: 'Loan & EMI tracking' },
   mode_full_3: { ur: 'Savings goals + group splits', en: 'Savings goals + group splits' },
 
+  mode_switch_blocked: { ur: 'Switch Nahi Ho Sakta', en: 'Cannot Switch Mode' },
+  mode_switch_blocked_desc: { ur: 'Pehle sab accounts ka balance zero karo', en: 'All accounts must have zero balance first' },
+
   // ── Groups / Splits ──
   nav_groups: { ur: 'Groups', en: 'Groups' },
   groups_title: { ur: 'Groups', en: 'Groups' },
@@ -338,6 +345,7 @@ const S = {
   // ── Analytics ──
   nav_analytics: { ur: 'Report', en: 'Analytics' },
   analytics_title: { ur: 'Analytics', en: 'Analytics' },
+  analytics_banner_desc: { ur: 'Kharche aur aamdani ka mukammal jaiza', en: 'View your spending & income insights' },
   analytics_spending: { ur: 'Kharche Ka Hisaab', en: 'Spending Overview' },
   analytics_categories: { ur: 'Category Wise', en: 'By Category' },
   analytics_trend: { ur: 'Monthly Trend', en: 'Monthly Trend' },

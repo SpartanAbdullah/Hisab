@@ -137,6 +137,6 @@ export const currencyFlags: Record<string, string> = {
 };
 
 export const currencyMeta: Record<string, { flag: string; symbol: string; name: string }> = {
-  AED: { flag: '\u{1F1E6}\u{1F1EA}', symbol: '\u062F.\u0625', name: 'UAE Dirham' },
+  AED: { flag: '\u{1F1E6}\u{1F1EA}', symbol: 'AED', name: 'UAE Dirham' },
   PKR: { flag: '\u{1F1F5}\u{1F1F0}', symbol: '\u20A8', name: 'Pakistani Rupee' },
 };

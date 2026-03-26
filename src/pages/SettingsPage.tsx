@@ -4,6 +4,7 @@ import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { useAppModeStore } from '../stores/appModeStore';
+import { useAccountStore } from '../stores/accountStore';
 import { useAuthStore } from '../stores/authStore';
 import { useToast } from '../components/Toast';
 import { useT, useI18nStore } from '../lib/i18n';
@@ -13,6 +14,7 @@ export function SettingsPage() {
   const t = useT();
   const toast = useToast();
   const { mode, setMode } = useAppModeStore();
+  const { accounts } = useAccountStore();
   const { lang, setLang } = useI18nStore();
   const { hasPin, setPin, removePin } = useAuthStore();
   const { signOut, user } = useSupabaseAuthStore();
@@ -23,9 +25,11 @@ export function SettingsPage() {
   const [pin2, setPin2] = useState('');
   const [exporting, setExporting] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [email, setEmail] = useState(() => localStorage.getItem('hisaab_email') ?? '');
+  const [email] = useState(() => user?.email ?? localStorage.getItem('hisaab_email') ?? '');
   const [mobile, setMobile] = useState(() => localStorage.getItem('hisaab_mobile') ?? '');
-  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const userName = localStorage.getItem('hisaab_user_name') ?? '';
 
   const handleExport = async () => {
@@ -70,9 +74,27 @@ export function SettingsPage() {
   };
 
   const handleSaveProfile = () => {
-    if (email) localStorage.setItem('hisaab_email', email);
     if (mobile) localStorage.setItem('hisaab_mobile', mobile);
     toast.show({ type: 'success', title: t('settings_profile_saved') });
+  };
+
+  const handlePasswordReset = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      toast.show({ type: 'error', title: 'Password must be at least 6 characters' });
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      const { changePassword } = useSupabaseAuthStore.getState();
+      await changePassword(newPassword);
+      toast.show({ type: 'success', title: 'Password updated successfully!' });
+      setNewPassword('');
+      setShowPasswordChange(false);
+    } catch {
+      toast.show({ type: 'error', title: 'Failed to update password' });
+    } finally {
+      setPasswordSaving(false);
+    }
   };
 
   const sectionClass = "card-premium overflow-hidden divide-y divide-slate-100/60";
@@ -97,8 +119,8 @@ export function SettingsPage() {
             <div className="p-4 space-y-3 animate-fade-in">
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5"><Mail size={10} /> {t('settings_email')}</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com"
-                  className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+                <input type="email" value={email} readOnly
+                  className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] bg-slate-50 text-slate-600 cursor-not-allowed" />
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5"><Phone size={10} /> {t('settings_mobile')}</label>
@@ -107,10 +129,20 @@ export function SettingsPage() {
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5"><KeyRound size={10} /> {t('settings_password')}</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-                  className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
-                <button className="text-[11px] text-indigo-500 font-semibold mt-1.5">{t('settings_reset_password')}</button>
+                <input type="password" value="••••••••" readOnly
+                  className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] bg-slate-50 text-slate-600 cursor-not-allowed" />
+                <button onClick={() => setShowPasswordChange(!showPasswordChange)} className="text-[11px] text-indigo-500 font-semibold mt-1.5">{t('settings_reset_password')}</button>
               </div>
+              {showPasswordChange && (
+                <div className="space-y-2 animate-fade-in bg-indigo-50/50 rounded-xl p-3 border border-indigo-100/60">
+                  <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="New password (min 6 chars)"
+                    className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all bg-white" />
+                  <button onClick={handlePasswordReset} disabled={passwordSaving || newPassword.length < 6}
+                    className="w-full py-2.5 rounded-xl btn-gradient text-[12px] font-bold disabled:opacity-30">
+                    {passwordSaving ? 'Updating...' : 'Update Password'}
+                  </button>
+                </div>
+              )}
               <button onClick={handleSaveProfile} className="w-full py-2.5 rounded-xl btn-gradient text-[12px] font-bold">
                 {t('settings_save_profile')}
               </button>
@@ -140,7 +172,14 @@ export function SettingsPage() {
             </div>
           </div>
           <div className="p-4 flex gap-2">
-            <button onClick={() => setMode('splits_only')}
+            <button onClick={() => {
+              const unsettled = accounts.filter(a => a.balance !== 0);
+              if (unsettled.length > 0) {
+                toast.show({ type: 'error', title: t('mode_switch_blocked'), subtitle: t('mode_switch_blocked_desc') });
+                return;
+              }
+              setMode('splits_only');
+            }}
               className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${mode === 'splits_only' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
               {t('mode_splits_title')}
             </button>

@@ -13,6 +13,7 @@ interface SupabaseAuthState {
   signIn: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
   updateProfile: (data: { name?: string; primary_currency?: string; app_mode?: string; lang?: string }) => Promise<void>;
+  changePassword: (newPassword: string) => Promise<void>;
   getProfile: () => Promise<Record<string, unknown> | null>;
 }
 
@@ -76,6 +77,11 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     const user = get().user;
     if (!user) return;
     await supabase.from('profiles').update(data).eq('id', user.id);
+  },
+
+  changePassword: async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
   },
 
   getProfile: async () => {

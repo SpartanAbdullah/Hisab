@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
@@ -10,8 +10,9 @@ import { EmptyState } from '../components/EmptyState';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
-import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, Plus, ArrowLeftRight, AlertTriangle } from 'lucide-react';
+import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, Plus, ArrowLeftRight, AlertTriangle, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { QuickEntry } from './QuickEntry';
+import { useToast } from '../components/Toast';
 import { startOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subWeeks, subMonths, subYears, isWithinInterval, differenceInDays } from 'date-fns';
 import type { Transaction } from '../db';
 
@@ -56,12 +57,17 @@ const typeLabelMap: Record<string, string> = {
 
 export function AccountDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { accounts, loadAccounts } = useAccountStore();
+  const { accounts, loadAccounts, renameAccount, deleteAccount } = useAccountStore();
   const { transactions, loadTransactions, getByAccount } = useTransactionStore();
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
   const t = useT();
+  const toast = useToast();
+  const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [showMenu, setShowMenu] = useState(false);
+  const [showRename, setShowRename] = useState(false);
+  const [newName, setNewName] = useState('');
 
   useEffect(() => { loadAccounts(); loadTransactions(); loadExpenses(); }, [loadAccounts, loadTransactions, loadExpenses]);
 
@@ -110,9 +116,65 @@ export function AccountDetailPage() {
             <button onClick={() => setShowAdd(true)} className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5">
               <Plus size={13} strokeWidth={2.5} /> Transaction
             </button>
+            <div className="relative">
+              <button onClick={() => setShowMenu(!showMenu)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-slate-100/80 active:bg-slate-200 transition-colors">
+                <MoreVertical size={16} className="text-slate-500" />
+              </button>
+              {showMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                  <div className="absolute right-0 top-10 z-50 bg-white rounded-2xl shadow-xl shadow-slate-900/10 border border-slate-100/60 py-1.5 w-44 animate-fade-in">
+                    <button onClick={() => { setShowMenu(false); setNewName(account.name); setShowRename(true); }}
+                      className="w-full px-4 py-2.5 flex items-center gap-2.5 text-[13px] font-medium text-slate-700 active:bg-slate-50">
+                      <Pencil size={14} className="text-slate-400" /> Rename
+                    </button>
+                    <button onClick={async () => {
+                      setShowMenu(false);
+                      if (account.balance !== 0) {
+                        toast.show({ type: 'error', title: t('acct_delete_nonzero'), subtitle: t('acct_delete_nonzero_desc') });
+                        return;
+                      }
+                      if (confirm(t('acct_delete_confirm'))) {
+                        try {
+                          await deleteAccount(account.id);
+                          toast.show({ type: 'success', title: t('acct_deleted') });
+                          navigate('/');
+                        } catch (err) {
+                          toast.show({ type: 'error', title: err instanceof Error ? err.message : 'Failed' });
+                        }
+                      }
+                    }}
+                      className="w-full px-4 py-2.5 flex items-center gap-2.5 text-[13px] font-medium text-red-500 active:bg-red-50">
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         }
       />
+
+      {/* Rename Modal */}
+      {showRename && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-fade-in" onClick={() => setShowRename(false)}>
+          <div className="bg-white rounded-2xl p-5 w-[90%] max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-[15px] font-bold text-slate-800 mb-3">Rename Account</h3>
+            <input value={newName} onChange={e => setNewName(e.target.value)} autoFocus
+              className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all mb-3" />
+            <div className="flex gap-2">
+              <button onClick={() => setShowRename(false)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-500 text-[12px] font-bold">Cancel</button>
+              <button onClick={async () => {
+                if (newName.trim() && newName.trim() !== account.name) {
+                  await renameAccount(account.id, newName.trim());
+                  toast.show({ type: 'success', title: 'Account renamed!' });
+                }
+                setShowRename(false);
+              }} className="flex-1 py-2.5 rounded-xl btn-gradient text-[12px] font-bold">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="px-5 pt-5">
         <div className="relative overflow-hidden rounded-3xl p-6 text-white text-center animate-scale-in">

@@ -31,6 +31,8 @@ interface SplitState {
     notes?: string;
   }) => Promise<GroupExpense>;
 
+  updateGroupExpense: (id: string, changes: Partial<GroupExpense>) => Promise<void>;
+  deleteGroupExpense: (id: string) => Promise<void>;
   getSettlements: (groupId: string) => Promise<GroupSettlement[]>;
   addSettlement: (input: {
     groupId: string;
@@ -101,6 +103,14 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     };
     await groupExpensesDb.add(expense);
     return expense;
+  },
+
+  updateGroupExpense: async (id, changes) => {
+    await groupExpensesDb.update(id, changes);
+  },
+
+  deleteGroupExpense: async (id) => {
+    await groupExpensesDb.delete(id);
   },
 
   getSettlements: async (groupId) => {

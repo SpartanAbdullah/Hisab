@@ -4,6 +4,7 @@ import { ArrowLeft, Plus, Handshake, Trash2 } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { AddGroupExpenseModal } from './AddGroupExpenseModal';
+import { EditGroupExpenseModal } from './EditGroupExpenseModal';
 import { SettleUpModal } from './SettleUpModal';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
@@ -21,6 +22,7 @@ export function GroupDetailPage() {
   const [tab, setTab] = useState<'expenses' | 'balances'>('expenses');
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showSettle, setShowSettle] = useState(false);
+  const [editExpense, setEditExpense] = useState<GroupExpense | null>(null);
 
   useEffect(() => {
     const g = groups.find(g => g.id === id);
@@ -116,7 +118,8 @@ export function GroupDetailPage() {
             </div>
           ) : (
             expenses.map((exp, i) => (
-              <div key={exp.id} className="card-premium p-4 animate-fade-in" style={{ animationDelay: `${i * 30}ms` }}>
+              <button key={exp.id} onClick={() => setEditExpense(exp)}
+                className="w-full text-left card-premium p-4 animate-fade-in active:scale-[0.98] transition-all" style={{ animationDelay: `${i * 30}ms` }}>
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-semibold text-slate-800 truncate">{exp.description}</p>
@@ -129,7 +132,7 @@ export function GroupDetailPage() {
                     <p className="text-[9px] text-slate-400">{new Date(exp.date).toLocaleDateString()}</p>
                   </div>
                 </div>
-              </div>
+              </button>
             ))
           )}
         </div>
@@ -177,6 +180,7 @@ export function GroupDetailPage() {
       </div>
 
       <AddGroupExpenseModal open={showAddExpense} group={group} onClose={() => { setShowAddExpense(false); reload(); }} />
+      <EditGroupExpenseModal open={!!editExpense} group={group} expense={editExpense} onClose={() => { setEditExpense(null); reload(); }} />
       <SettleUpModal open={showSettle} group={group} debts={debts} onClose={() => { setShowSettle(false); reload(); }} />
     </div>
   );

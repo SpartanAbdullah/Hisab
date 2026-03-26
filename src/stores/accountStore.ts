@@ -19,6 +19,8 @@ interface AccountState {
   createAccount: (input: CreateAccountInput) => Promise<Account>;
   getAccount: (id: string) => Account | undefined;
   updateBalance: (id: string, delta: number) => Promise<void>;
+  renameAccount: (id: string, newName: string) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
 }
 
 export const useAccountStore = create<AccountState>((set, get) => ({
@@ -91,5 +93,28 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     set((s) => ({
       accounts: s.accounts.map((a) => (a.id === id ? { ...a, balance: newBalance } : a)),
     }));
+  },
+
+  renameAccount: async (id, newName) => {
+    await accountsDb.update(id, { name: newName });
+    set((s) => ({
+      accounts: s.accounts.map((a) => (a.id === id ? { ...a, name: newName } : a)),
+    }));
+  },
+
+  deleteAccount: async (id) => {
+    const account = get().accounts.find((a) => a.id === id);
+    if (!account) throw new Error(`Account ${id} not found`);
+    if (account.balance !== 0) throw new Error('Account must have zero balance to delete');
+    await accountsDb.delete(id);
+    set((s) => ({
+      accounts: s.accounts.filter((a) => a.id !== id),
+    }));
+    await useActivityStore.getState().logActivity(
+      'account_created',
+      `Deleted account "${account.name}"`,
+      id,
+      'account'
+    );
   },
 }));
