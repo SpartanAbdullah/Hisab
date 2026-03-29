@@ -18,6 +18,8 @@ interface LoanState {
   loadLoans: () => Promise<void>;
   createLoan: (input: CreateLoanInput) => Promise<Loan>;
   applyRepayment: (loanId: string, amount: number) => Promise<void>;
+  updateLoan: (loanId: string, changes: Partial<Loan>) => Promise<void>;
+  deleteLoan: (loanId: string) => Promise<void>;
   getLoan: (id: string) => Loan | undefined;
 }
 
@@ -73,6 +75,28 @@ export const useLoanStore = create<LoanState>((set, get) => ({
         'loan'
       );
     }
+  },
+
+  updateLoan: async (loanId, changes) => {
+    const loan = get().loans.find((l) => l.id === loanId);
+    if (!loan) throw new Error(`Loan ${loanId} not found`);
+
+    const nextLoan: Loan = {
+      ...loan,
+      ...changes,
+    };
+
+    await loansDb.update(loanId, changes);
+    set((s) => ({
+      loans: s.loans.map((l) => (l.id === loanId ? nextLoan : l)),
+    }));
+  },
+
+  deleteLoan: async (loanId) => {
+    await loansDb.delete(loanId);
+    set((s) => ({
+      loans: s.loans.filter((l) => l.id !== loanId),
+    }));
   },
 
   getLoan: (id) => get().loans.find((l) => l.id === id),

@@ -98,6 +98,12 @@ export function QuickEntry({ open, onClose }: Props) {
   const srcAccount = accounts.find(a => a.id === sourceId);
   const dstAccount = accounts.find(a => a.id === destId);
   const selectedGoal = goals.find(g => g.id === goalId);
+  const availableCashAdvanceCards = accounts.filter(a =>
+    a.type === 'credit_card' &&
+    a.id !== destId &&
+    (!dstAccount || a.currency === dstAccount.currency)
+  );
+  const selectedCashAdvanceCard = availableCashAdvanceCards.find(a => a.id === sourceId);
 
   // Determine if cross-currency conversion is needed
   const isCrossCurrency = (() => {
@@ -187,7 +193,15 @@ export function QuickEntry({ open, onClose }: Props) {
           break;
         }
         case 'loan_given': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'loan_given', amount: amt, sourceAccountId: sourceId, personName: personName.trim(), notes }; break; }
-        case 'loan_taken': { const d = accounts.find(a => a.id === destId)!; changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt }); input = { type: 'loan_taken', amount: amt, destinationAccountId: destId, personName: personName.trim(), notes }; break; }
+        case 'loan_taken': {
+          const d = accounts.find(a => a.id === destId)!;
+          if (selectedCashAdvanceCard) {
+            changes.push({ accountName: selectedCashAdvanceCard.name, currency: selectedCashAdvanceCard.currency, before: selectedCashAdvanceCard.balance, after: selectedCashAdvanceCard.balance - amt });
+          }
+          changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt });
+          input = { type: 'loan_taken', amount: amt, destinationAccountId: destId, sourceAccountId: selectedCashAdvanceCard?.id, personName: personName.trim(), notes };
+          break;
+        }
         case 'repayment': {
           if (!selectedLoan) throw new Error('Loan not found');
           const rate = parseFloat(conversionRate) || undefined;
@@ -425,6 +439,36 @@ export function QuickEntry({ open, onClose }: Props) {
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_who')}</label>
                 <input value={personName} onChange={e => setPersonName(e.target.value)} placeholder={t('quick_who_placeholder')} className={inputClass} />
+              </div>
+            )}
+
+            {type === 'loan_taken' && availableCashAdvanceCards.length > 0 && (
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Cash Advance Source</label>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setSourceId('')}
+                    className={`w-full p-3 rounded-2xl border text-left text-[12px] font-semibold transition-all ${
+                      !selectedCashAdvanceCard ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700' : 'border-slate-200/60 bg-white text-slate-500'
+                    }`}
+                  >
+                    No credit card
+                  </button>
+                  {availableCashAdvanceCards.map(a => (
+                    <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
+                      className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                        selectedCashAdvanceCard?.id === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                      }`}
+                    >
+                      <div>
+                        <p className="text-[13px] font-semibold text-slate-700">{a.name}</p>
+                        <p className="text-[10px] text-slate-400">Credit card</p>
+                      </div>
+                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatMoney(a.balance, a.currency)}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

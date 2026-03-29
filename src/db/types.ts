@@ -93,13 +93,19 @@ export interface UpcomingExpense {
 
 export type ActivityType =
   | 'account_created'
+  | 'account_deleted'
   | 'transaction_created'
+  | 'transaction_modified'
+  | 'transaction_deleted'
   | 'loan_created'
   | 'loan_settled'
   | 'emi_paid'
   | 'goal_created'
   | 'goal_contribution'
-  | 'opening_balance';
+  | 'opening_balance'
+  | 'group_created'
+  | 'group_expense'
+  | 'group_settlement';
 
 export interface ActivityLog {
   id: string;

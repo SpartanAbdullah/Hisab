@@ -111,7 +111,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       accounts: s.accounts.filter((a) => a.id !== id),
     }));
     await useActivityStore.getState().logActivity(
-      'account_created',
+      'account_deleted',
       `Deleted account "${account.name}"`,
       id,
       'account'

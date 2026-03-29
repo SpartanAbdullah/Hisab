@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -11,7 +11,7 @@ import type { LoanType } from '../db';
 interface Props { open: boolean; onClose: () => void; }
 
 export function AddLoanModal({ open, onClose }: Props) {
-  const { accounts } = useAccountStore();
+  const { accounts, loadAccounts } = useAccountStore();
   const { processTransaction } = useTransactionStore();
   const { generateSchedule } = useEmiStore();
   const { loans } = useLoanStore();
@@ -21,6 +21,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   const [personName, setPersonName] = useState('');
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
+  const [cashAdvanceSourceId, setCashAdvanceSourceId] = useState('');
   const [notes, setNotes] = useState('');
   const [hasEmi, setHasEmi] = useState(false);
   const [installments, setInstallments] = useState('');
@@ -30,8 +31,21 @@ export function AddLoanModal({ open, onClose }: Props) {
 
   void loans;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (open) {
+      void loadAccounts();
+    }
+  }, [open, loadAccounts]);
+
+  const destinationAccount = accounts.find((account) => account.id === accountId);
+  const availableCashAdvanceCards = accounts.filter((account) => (
+    account.type === 'credit_card' &&
+    account.id !== accountId &&
+    (!destinationAccount || account.currency === destinationAccount.currency)
+  ));
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
     const amt = parseFloat(amount);
     if (!amt || !personName.trim() || !accountId) { setError(t('fill_all')); return; }
@@ -40,19 +54,26 @@ export function AddLoanModal({ open, onClose }: Props) {
       const tx = await processTransaction(
         loanType === 'given'
           ? { type: 'loan_given', amount: amt, sourceAccountId: accountId, personName: personName.trim(), notes }
-          : { type: 'loan_taken', amount: amt, destinationAccountId: accountId, personName: personName.trim(), notes }
+          : {
+              type: 'loan_taken',
+              amount: amt,
+              destinationAccountId: accountId,
+              sourceAccountId: cashAdvanceSourceId || undefined,
+              personName: personName.trim(),
+              notes,
+            }
       );
       if (hasEmi && tx.relatedLoanId && installments && startDate) {
         await generateSchedule({ loanId: tx.relatedLoanId, totalAmount: amt, installments: parseInt(installments), startDate });
       }
-      setPersonName(''); setAmount(''); setAccountId(''); setNotes('');
+      setPersonName(''); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
       setHasEmi(false); setInstallments(''); setStartDate('');
       onClose();
     } catch (err) { setError(err instanceof Error ? err.message : 'Failed'); }
     finally { setSaving(false); }
   };
 
-  const inputClass = "w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all";
+  const inputClass = 'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
 
   return (
     <Modal open={open} onClose={onClose} title={t('loan_new')}
@@ -103,6 +124,33 @@ export function AddLoanModal({ open, onClose }: Props) {
             })}
           </div>
         </div>
+
+        {loanType === 'taken' && availableCashAdvanceCards.length > 0 && (
+          <div>
+            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Cash Advance Source</label>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setCashAdvanceSourceId('')}
+                className={`w-full p-3 rounded-2xl border text-left text-[12px] font-semibold transition-all ${
+                  !cashAdvanceSourceId ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700' : 'border-slate-200/60 bg-white text-slate-500'
+                }`}
+              >
+                No credit card
+              </button>
+              {availableCashAdvanceCards.map(a => (
+                <button key={a.id} type="button" onClick={() => setCashAdvanceSourceId(a.id)}
+                  className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                    cashAdvanceSourceId === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                  }`}
+                >
+                  <span className="text-[13px] font-semibold text-slate-700">{a.name}</span>
+                  <span className="text-[12px] text-slate-400 tabular-nums">{a.currency}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_note')}</label>

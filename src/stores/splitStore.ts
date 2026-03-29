@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { splitGroupsDb, groupExpensesDb, groupSettlementsDb } from '../lib/supabaseDb';
 import type { SplitGroup, GroupExpense, GroupSettlement, SplitType, SplitDetail, GroupMember, Currency } from '../db';
+import { useActivityStore } from './activityStore';
+import { useTransactionStore } from './transactionStore';
+import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 
 interface SimplifiedDebt {
   from: string;   // member id
@@ -29,9 +32,10 @@ interface SplitState {
     splits: SplitDetail[];
     category: string;
     notes?: string;
+    paidFromAccountId?: string;
   }) => Promise<GroupExpense>;
 
-  updateGroupExpense: (id: string, changes: Partial<GroupExpense>) => Promise<void>;
+  updateGroupExpense: (id: string, changes: Partial<GroupExpense> & { paidFromAccountId?: string | null }) => Promise<void>;
   deleteGroupExpense: (id: string) => Promise<void>;
   getSettlements: (groupId: string) => Promise<GroupSettlement[]>;
   addSettlement: (input: {
@@ -73,6 +77,12 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     };
     await splitGroupsDb.add(group);
     await get().loadGroups();
+    await useActivityStore.getState().logActivity(
+      'group_created',
+      `Created group "${name}"`,
+      group.id,
+      'group'
+    );
     return group;
   },
 
@@ -88,6 +98,14 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   },
 
   addGroupExpense: async (input) => {
+    const group = get().groups.find((item) => item.id === input.groupId) ?? await splitGroupsDb.get(input.groupId);
+    if (!group) throw new Error('Group not found');
+
+    const owner = group.members.find((member) => member.isOwner);
+    if (input.paidFromAccountId && input.paidBy !== owner?.id) {
+      throw new Error('Only your own payments can be linked to a personal account');
+    }
+
     const expense: GroupExpense = {
       id: uuid(),
       groupId: input.groupId,
@@ -101,15 +119,136 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       notes: input.notes || '',
       createdAt: new Date().toISOString(),
     };
+
+    let linkedTransactionId: string | undefined;
+    if (input.paidFromAccountId) {
+      const tx = await useTransactionStore.getState().processTransaction({
+        type: 'expense',
+        amount: input.amount,
+        sourceAccountId: input.paidFromAccountId,
+        category: input.category || 'General',
+        notes: buildInternalNote(input.notes || '', {
+          expenseDescription: input.description,
+          groupExpenseId: expense.id,
+          groupId: group.id,
+          groupName: group.name,
+        }),
+      });
+      linkedTransactionId = tx.id;
+    }
+
+    expense.notes = buildInternalNote(input.notes || '', {
+      linkedTransactionId,
+      paidFromAccountId: input.paidFromAccountId,
+    });
+
     await groupExpensesDb.add(expense);
+
+    if (!linkedTransactionId) {
+      await useActivityStore.getState().logActivity(
+        'group_expense',
+        `Added "${expense.description}" in ${group.name}`,
+        expense.id,
+        'group_expense'
+      );
+    }
+
     return expense;
   },
 
   updateGroupExpense: async (id, changes) => {
-    await groupExpensesDb.update(id, changes);
+    const existing = await groupExpensesDb.get(id);
+    if (!existing) throw new Error('Group expense not found');
+
+    const group = get().groups.find((item) => item.id === existing.groupId) ?? await splitGroupsDb.get(existing.groupId);
+    if (!group) throw new Error('Group not found');
+
+    const owner = group.members.find((member) => member.isOwner);
+    const existingMeta = parseInternalNote(existing.notes).meta;
+    const nextPaidFromAccountId = changes.paidFromAccountId === undefined
+      ? existingMeta.paidFromAccountId
+      : changes.paidFromAccountId ?? undefined;
+
+    const nextExpense: GroupExpense = {
+      ...existing,
+      ...changes,
+      notes: existing.notes,
+    };
+
+    if (nextPaidFromAccountId && nextExpense.paidBy !== owner?.id) {
+      throw new Error('Only your own payments can be linked to a personal account');
+    }
+
+    let linkedTransactionId = existingMeta.linkedTransactionId;
+
+    if (linkedTransactionId && nextPaidFromAccountId) {
+      await useTransactionStore.getState().updateTransaction(
+        linkedTransactionId,
+        {
+          type: 'expense',
+          amount: nextExpense.amount,
+          sourceAccountId: nextPaidFromAccountId,
+          category: nextExpense.category,
+          notes: buildInternalNote('', {
+            expenseDescription: nextExpense.description,
+            groupExpenseId: nextExpense.id,
+            groupId: group.id,
+            groupName: group.name,
+          }),
+        },
+        { allowLinkedGroupExpense: true }
+      );
+    } else if (linkedTransactionId && !nextPaidFromAccountId) {
+      await useTransactionStore.getState().deleteTransaction(linkedTransactionId, { allowLinkedGroupExpense: true });
+      linkedTransactionId = undefined;
+    } else if (!linkedTransactionId && nextPaidFromAccountId) {
+      const tx = await useTransactionStore.getState().processTransaction({
+        type: 'expense',
+        amount: nextExpense.amount,
+        sourceAccountId: nextPaidFromAccountId,
+        category: nextExpense.category,
+        notes: buildInternalNote('', {
+          expenseDescription: nextExpense.description,
+          groupExpenseId: nextExpense.id,
+          groupId: group.id,
+          groupName: group.name,
+        }),
+      });
+      linkedTransactionId = tx.id;
+    }
+
+    await groupExpensesDb.update(id, {
+      description: nextExpense.description,
+      amount: nextExpense.amount,
+      paidBy: nextExpense.paidBy,
+      splitType: nextExpense.splitType,
+      splits: nextExpense.splits,
+      category: nextExpense.category,
+      notes: buildInternalNote('', {
+        linkedTransactionId,
+        paidFromAccountId: nextPaidFromAccountId,
+      }),
+    });
+
+    if (!linkedTransactionId) {
+      await useActivityStore.getState().logActivity(
+        'group_expense',
+        `Updated "${nextExpense.description}" in ${group.name}`,
+        nextExpense.id,
+        'group_expense'
+      );
+    }
   },
 
   deleteGroupExpense: async (id) => {
+    const expense = await groupExpensesDb.get(id);
+    if (!expense) return;
+
+    const meta = parseInternalNote(expense.notes).meta;
+    if (meta.linkedTransactionId) {
+      await useTransactionStore.getState().deleteTransaction(meta.linkedTransactionId, { allowLinkedGroupExpense: true });
+    }
+
     await groupExpensesDb.delete(id);
   },
 
@@ -118,6 +257,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   },
 
   addSettlement: async (input) => {
+    const group = get().groups.find((item) => item.id === input.groupId) ?? await splitGroupsDb.get(input.groupId);
     const settlement: GroupSettlement = {
       id: uuid(),
       groupId: input.groupId,
@@ -129,6 +269,16 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       createdAt: new Date().toISOString(),
     };
     await groupSettlementsDb.add(settlement);
+    if (group) {
+      const fromName = group.members.find((member) => member.id === input.fromMember)?.name ?? 'Someone';
+      const toName = group.members.find((member) => member.id === input.toMember)?.name ?? 'someone';
+      await useActivityStore.getState().logActivity(
+        'group_settlement',
+        `${fromName} settled with ${toName} in ${group.name}`,
+        settlement.id,
+        'group_settlement'
+      );
+    }
     return settlement;
   },
 

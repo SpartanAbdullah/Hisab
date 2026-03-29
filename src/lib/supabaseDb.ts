@@ -55,6 +55,13 @@ export const accountsDb = {
 // TRANSACTIONS
 // ══════════════════════════════════════
 export const transactionsDb = {
+  async get(id: string): Promise<Transaction | null> {
+    const { data, error } = await supabase
+      .from('transactions').select('*')
+      .eq('id', id).eq('user_id', getUserId()).single();
+    if (error) return null;
+    return data ? mapTransaction(data) : null;
+  },
   async getAll(): Promise<Transaction[]> {
     const { data, error } = await supabase
       .from('transactions').select('*')
@@ -71,6 +78,22 @@ export const transactionsDb = {
       related_goal_id: t.relatedGoalId, conversion_rate: t.conversionRate,
       category: t.category, notes: t.notes, created_at: t.createdAt,
     });
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<Transaction>) {
+    const row: Record<string, unknown> = {};
+    if (changes.type !== undefined) row.type = changes.type;
+    if (changes.amount !== undefined) row.amount = changes.amount;
+    if (changes.currency !== undefined) row.currency = changes.currency;
+    if (changes.sourceAccountId !== undefined) row.source_account_id = changes.sourceAccountId;
+    if (changes.destinationAccountId !== undefined) row.destination_account_id = changes.destinationAccountId;
+    if (changes.relatedPerson !== undefined) row.related_person = changes.relatedPerson;
+    if (changes.relatedLoanId !== undefined) row.related_loan_id = changes.relatedLoanId;
+    if (changes.relatedGoalId !== undefined) row.related_goal_id = changes.relatedGoalId;
+    if (changes.conversionRate !== undefined) row.conversion_rate = changes.conversionRate;
+    if (changes.category !== undefined) row.category = changes.category;
+    if (changes.notes !== undefined) row.notes = changes.notes;
+    const { error } = await supabase.from('transactions').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
   async delete(id: string) {
@@ -101,7 +124,10 @@ export const loansDb = {
   },
   async update(id: string, changes: Partial<Loan>) {
     const row: Record<string, unknown> = {};
+    if (changes.personName !== undefined) row.person_name = changes.personName;
+    if (changes.totalAmount !== undefined) row.total_amount = changes.totalAmount;
     if (changes.remainingAmount !== undefined) row.remaining_amount = changes.remainingAmount;
+    if (changes.currency !== undefined) row.currency = changes.currency;
     if (changes.status !== undefined) row.status = changes.status;
     if (changes.notes !== undefined) row.notes = changes.notes;
     const { error } = await supabase.from('loans').update(row).eq('id', id).eq('user_id', getUserId());
@@ -138,6 +164,10 @@ export const emiSchedulesDb = {
     const row: Record<string, unknown> = {};
     if (changes.status !== undefined) row.status = changes.status;
     const { error } = await supabase.from('emi_schedules').update(row).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async deleteByLoan(loanId: string) {
+    const { error } = await supabase.from('emi_schedules').delete().eq('loan_id', loanId).eq('user_id', getUserId());
     if (error) throw error;
   },
 };
@@ -280,6 +310,13 @@ export const splitGroupsDb = {
 // GROUP EXPENSES
 // ══════════════════════════════════════
 export const groupExpensesDb = {
+  async get(id: string): Promise<GroupExpense | null> {
+    const { data, error } = await supabase
+      .from('group_expenses').select('*')
+      .eq('id', id).eq('user_id', getUserId()).single();
+    if (error) return null;
+    return data ? mapGroupExpense(data) : null;
+  },
   async getByGroup(groupId: string): Promise<GroupExpense[]> {
     const { data, error } = await supabase
       .from('group_expenses').select('*')

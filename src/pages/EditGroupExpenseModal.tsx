@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
+import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
+import { parseInternalNote } from '../lib/internalNotes';
 import type { SplitGroup, GroupExpense, SplitType, SplitDetail } from '../db';
-import { Trash2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -20,6 +22,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const t = useT();
   const toast = useToast();
   const { updateGroupExpense, deleteGroupExpense } = useSplitStore();
+  const { accounts, loadAccounts } = useAccountStore();
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -28,23 +31,46 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [exactAmounts, setExactAmounts] = useState<Record<string, string>>({});
   const [category, setCategory] = useState('General');
+  const [paidFromAccountId, setPaidFromAccountId] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const ownerId = group.members.find(member => member.isOwner)?.id ?? '';
+  const shouldTrackExpense = paidBy === ownerId && accounts.length > 0;
+
+  useEffect(() => {
+    if (open) {
+      void loadAccounts();
+    }
+  }, [open, loadAccounts]);
 
   useEffect(() => {
     if (expense && open) {
+      const meta = parseInternalNote(expense.notes).meta;
       setDescription(expense.description);
       setAmount(String(expense.amount));
       setPaidBy(expense.paidBy);
       setSplitType(expense.splitType);
-      setSelectedMembers(expense.splits.map(s => s.memberId));
+      setSelectedMembers(expense.splits.map(split => split.memberId));
       setCategory(expense.category || 'General');
+      setPaidFromAccountId(meta.paidFromAccountId ?? '');
       if (expense.splitType === 'exact') {
-        const ea: Record<string, string> = {};
-        expense.splits.forEach(s => { ea[s.memberId] = String(s.amount); });
-        setExactAmounts(ea);
+        const values: Record<string, string> = {};
+        expense.splits.forEach(split => { values[split.memberId] = String(split.amount); });
+        setExactAmounts(values);
       }
     }
   }, [expense, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!shouldTrackExpense) {
+      setPaidFromAccountId('');
+      return;
+    }
+    if (!paidFromAccountId || !accounts.some(account => account.id === paidFromAccountId)) {
+      setPaidFromAccountId(accounts[0]?.id ?? '');
+    }
+  }, [open, shouldTrackExpense, paidFromAccountId, accounts]);
 
   const amt = parseFloat(amount) || 0;
 
@@ -59,15 +85,15 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       const remainder = Math.round((amt - base * selectedMembers.length) * 100) / 100;
       return {
         valid: true,
-        splits: selectedMembers.map((id, i) => ({
+        splits: selectedMembers.map((id, index) => ({
           memberId: id,
-          amount: i === selectedMembers.length - 1 ? base + remainder : base,
+          amount: index === selectedMembers.length - 1 ? base + remainder : base,
         })),
       };
     }
     if (splitType === 'exact') {
       const splits = selectedMembers.map(id => ({ memberId: id, amount: parseFloat(exactAmounts[id] || '0') }));
-      const total = splits.reduce((s, x) => s + x.amount, 0);
+      const total = splits.reduce((sum, split) => sum + split.amount, 0);
       if (Math.abs(total - amt) > 0.01) return { valid: false, splits, error: t('group_total_mismatch') };
       return { valid: true, splits };
     }
@@ -78,6 +104,10 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
     if (!expense) return;
     if (!description.trim() || amt <= 0 || !paidBy) {
       toast.show({ type: 'error', title: t('fill_all') });
+      return;
+    }
+    if (shouldTrackExpense && !paidFromAccountId) {
+      toast.show({ type: 'error', title: 'Select the account you paid from' });
       return;
     }
     const { valid, splits, error } = computeSplits();
@@ -94,11 +124,15 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         splitType,
         splits,
         category,
+        paidFromAccountId: shouldTrackExpense ? paidFromAccountId : null,
       });
       toast.show({ type: 'success', title: 'Expense updated!' });
       onClose();
-    } catch { toast.show({ type: 'error', title: t('error') }); }
-    finally { setSaving(false); }
+    } catch {
+      toast.show({ type: 'error', title: t('error') });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -110,7 +144,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
     }
   };
 
-  const inputClass = "w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all";
+  const inputClass = 'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
 
   return (
     <Modal open={open} onClose={onClose} title="Edit Expense" footer={
@@ -127,33 +161,53 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       <div className="space-y-5 p-5">
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_desc')}</label>
-          <input className={inputClass + ' mt-1.5'} value={description} onChange={e => setDescription(e.target.value)} />
+          <input className={`${inputClass} mt-1.5`} value={description} onChange={e => setDescription(e.target.value)} />
         </div>
 
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_amount')}</label>
-          <input className={inputClass + ' mt-1.5 text-lg font-bold'} type="number" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} />
+          <input className={`${inputClass} mt-1.5 text-lg font-bold`} type="number" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} />
         </div>
 
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_paid_by')}</label>
           <div className="flex flex-wrap gap-2 mt-1.5">
-            {group.members.map(m => (
-              <button key={m.id} onClick={() => setPaidBy(m.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === m.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                {m.name}
+            {group.members.map(member => (
+              <button key={member.id} onClick={() => setPaidBy(member.id)}
+                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {member.name}
               </button>
             ))}
           </div>
         </div>
 
+        {shouldTrackExpense && (
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Paid From</label>
+            <div className="space-y-2 mt-1.5">
+              {accounts.map(account => (
+                <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
+                  className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
+                    paidFromAccountId === account.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                  }`}>
+                  <div>
+                    <p className="text-[13px] font-semibold text-slate-700">{account.name}</p>
+                    <p className="text-[10px] text-slate-400 capitalize">{account.type.replace('_', ' ')}</p>
+                  </div>
+                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatMoney(account.balance, account.currency)}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_split_between')}</label>
           <div className="flex flex-wrap gap-2 mt-1.5">
-            {group.members.map(m => (
-              <button key={m.id} onClick={() => toggleMember(m.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${selectedMembers.includes(m.id) ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                {m.name}
+            {group.members.map(member => (
+              <button key={member.id} onClick={() => toggleMember(member.id)}
+                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${selectedMembers.includes(member.id) ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                {member.name}
               </button>
             ))}
           </div>
@@ -162,10 +216,10 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_split_type')}</label>
           <div className="grid grid-cols-4 gap-1.5 mt-1.5">
-            {(['equal', 'exact'] as SplitType[]).map(st => (
-              <button key={st} onClick={() => setSplitType(st)}
-                className={`py-2 rounded-xl text-[11px] font-bold transition-all ${splitType === st ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                {st === 'equal' ? t('group_split_equal') : t('group_split_exact')}
+            {(['equal', 'exact'] as SplitType[]).map(split => (
+              <button key={split} onClick={() => setSplitType(split)}
+                className={`py-2 rounded-xl text-[11px] font-bold transition-all ${splitType === split ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                {split === 'equal' ? t('group_split_equal') : t('group_split_exact')}
               </button>
             ))}
           </div>
@@ -179,7 +233,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
 
         {amt > 0 && splitType === 'exact' && selectedMembers.map(id => (
           <div key={id} className="flex items-center gap-2">
-            <span className="text-[12px] text-slate-600 font-medium w-20 truncate">{group.members.find(m => m.id === id)?.name}</span>
+            <span className="text-[12px] text-slate-600 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
             <input className="flex-1 border border-slate-200/60 rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
               value={exactAmounts[id] || ''} onChange={e => setExactAmounts({ ...exactAmounts, [id]: e.target.value })} placeholder="0" />
           </div>
@@ -188,10 +242,10 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('category')}</label>
           <div className="flex flex-wrap gap-1.5 mt-1.5">
-            {CATEGORIES.map(c => (
-              <button key={c} onClick={() => setCategory(c)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${category === c ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                {c}
+            {CATEGORIES.map(item => (
+              <button key={item} onClick={() => setCategory(item)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${category === item ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                {item}
               </button>
             ))}
           </div>

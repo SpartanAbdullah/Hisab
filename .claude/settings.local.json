@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx vite:*)",
+      "Bash(timeout 5)",
+      "Bash(ping -n 4 127.0.0.1)",
+      "Bash(npx kill-port:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(where npm:*)",
+      "Bash(where node:*)",
+      "Bash(grep -E \"\\\\.\\(tsx?|js\\)$\")",
+      "Bash(grep -r \"confetti\\\\|Confetti\\\\|react-confetti\\\\|celebrate\" /c/Users/MuhammadAbdullah/Desktop/Hisaab-2.0/src --include=*.tsx --include=*.ts)",
+      "Bash(find /c/Users/MuhammadAbdullah/Desktop/Hisaab-2.0/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.css \\\\\\))",
+      "Bash(gh auth:*)",
+      "Bash(rm public/icon-192.png)",
+      "Bash(node -e \":*)"
+    ]
+  }
+}

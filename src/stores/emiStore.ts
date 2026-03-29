@@ -18,6 +18,7 @@ interface EmiState {
   loadSchedules: () => Promise<void>;
   generateSchedule: (input: GenerateEmiInput) => Promise<void>;
   markPaid: (emiId: string) => Promise<void>;
+  deleteByLoan: (loanId: string) => Promise<void>;
   getByLoan: (loanId: string) => EmiSchedule[];
 }
 
@@ -66,6 +67,13 @@ export const useEmiStore = create<EmiState>((set, get) => ({
         'loan'
       );
     }
+  },
+
+  deleteByLoan: async (loanId) => {
+    await emiSchedulesDb.deleteByLoan(loanId);
+    set((s) => ({
+      schedules: s.schedules.filter((schedule) => schedule.loanId !== loanId),
+    }));
   },
 
   getByLoan: (loanId) => get().schedules.filter((e) => e.loanId === loanId).sort((a, b) => a.installmentNumber - b.installmentNumber),

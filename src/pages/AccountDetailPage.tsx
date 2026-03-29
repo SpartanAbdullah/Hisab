@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -6,6 +6,7 @@ import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { TransactionItem } from '../components/TransactionItem';
+import { EditTransactionModal } from '../components/EditTransactionModal';
 import { EmptyState } from '../components/EmptyState';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
@@ -15,6 +16,7 @@ import { QuickEntry } from './QuickEntry';
 import { useToast } from '../components/Toast';
 import { startOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subWeeks, subMonths, subYears, isWithinInterval, differenceInDays } from 'date-fns';
 import type { Transaction } from '../db';
+import { isGroupLinkedNote } from '../lib/internalNotes';
 
 type TimeFilter = 'all' | 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_year' | 'last_year';
 
@@ -68,6 +70,7 @@ export function AccountDetailPage() {
   const [showMenu, setShowMenu] = useState(false);
   const [showRename, setShowRename] = useState(false);
   const [newName, setNewName] = useState('');
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   useEffect(() => { loadAccounts(); loadTransactions(); loadExpenses(); }, [loadAccounts, loadTransactions, loadExpenses]);
 
@@ -105,7 +108,7 @@ export function AccountDetailPage() {
     { label: t('time_last_year'), value: 'last_year' },
   ];
 
-  const filteredTxns = useMemo(() => filterByTime(accountTxns, timeFilter), [accountTxns, timeFilter]);
+  const filteredTxns = filterByTime(accountTxns, timeFilter);
 
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
@@ -299,7 +302,13 @@ export function AccountDetailPage() {
           <div className="card-premium px-4 divide-y divide-slate-100/60">
             {filteredTxns.map((txn, i) => (
               <div key={txn.id} className="animate-fade-in" style={{ animationDelay: `${i * 40}ms` }}>
-                <TransactionItem transaction={txn} />
+                {['expense', 'loan_given', 'loan_taken'].includes(txn.type) && !isGroupLinkedNote(txn.notes) ? (
+                  <button type="button" onClick={() => setSelectedTransaction(txn)} className="w-full text-left active:opacity-80 transition-opacity">
+                    <TransactionItem transaction={txn} />
+                  </button>
+                ) : (
+                  <TransactionItem transaction={txn} />
+                )}
               </div>
             ))}
           </div>
@@ -307,6 +316,7 @@ export function AccountDetailPage() {
       </div>
 
       <QuickEntry open={showAdd} onClose={() => setShowAdd(false)} />
+      <EditTransactionModal open={!!selectedTransaction} transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} />
     </div>
   );
 }

@@ -1,16 +1,18 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, ArrowLeftRight, Search, X } from 'lucide-react';
+import { startOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subWeeks, subMonths, subYears, isWithinInterval } from 'date-fns';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useGoalStore } from '../stores/goalStore';
 import { TransactionItem } from '../components/TransactionItem';
+import { EditTransactionModal } from '../components/EditTransactionModal';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
 import { QuickEntry } from './QuickEntry';
 import { useT } from '../lib/i18n';
-import { startOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subWeeks, subMonths, subYears, isWithinInterval } from 'date-fns';
+import { isGroupLinkedNote, parseInternalNote } from '../lib/internalNotes';
 import type { TransactionType, Transaction } from '../db';
 
 type TimeFilter = 'all' | 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_year' | 'last_year';
@@ -27,8 +29,8 @@ function filterByTime(txns: Transaction[], timeFilter: TimeFilter): Transaction[
       end = now;
       break;
     case 'yesterday': {
-      const yd = subDays(now, 1);
-      start = startOfDay(yd);
+      const yesterday = subDays(now, 1);
+      start = startOfDay(yesterday);
       end = startOfDay(now);
       break;
     }
@@ -37,9 +39,9 @@ function filterByTime(txns: Transaction[], timeFilter: TimeFilter): Transaction[
       end = endOfWeek(now, { weekStartsOn: 1 });
       break;
     case 'last_week': {
-      const lw = subWeeks(now, 1);
-      start = startOfWeek(lw, { weekStartsOn: 1 });
-      end = endOfWeek(lw, { weekStartsOn: 1 });
+      const lastWeek = subWeeks(now, 1);
+      start = startOfWeek(lastWeek, { weekStartsOn: 1 });
+      end = endOfWeek(lastWeek, { weekStartsOn: 1 });
       break;
     }
     case 'this_month':
@@ -47,9 +49,9 @@ function filterByTime(txns: Transaction[], timeFilter: TimeFilter): Transaction[
       end = endOfMonth(now);
       break;
     case 'last_month': {
-      const lm = subMonths(now, 1);
-      start = startOfMonth(lm);
-      end = endOfMonth(lm);
+      const lastMonth = subMonths(now, 1);
+      start = startOfMonth(lastMonth);
+      end = endOfMonth(lastMonth);
       break;
     }
     case 'this_year':
@@ -57,18 +59,16 @@ function filterByTime(txns: Transaction[], timeFilter: TimeFilter): Transaction[
       end = endOfYear(now);
       break;
     case 'last_year': {
-      const ly = subYears(now, 1);
-      start = startOfYear(ly);
-      end = endOfYear(ly);
+      const lastYear = subYears(now, 1);
+      start = startOfYear(lastYear);
+      end = endOfYear(lastYear);
       break;
     }
-    default: return txns;
+    default:
+      return txns;
   }
 
-  return txns.filter(tx => {
-    const d = new Date(tx.createdAt);
-    return isWithinInterval(d, { start, end });
-  });
+  return txns.filter(txn => isWithinInterval(new Date(txn.createdAt), { start, end }));
 }
 
 export function TransactionsPage() {
@@ -77,15 +77,22 @@ export function TransactionsPage() {
   const { loadLoans } = useLoanStore();
   const { loadGoals } = useGoalStore();
   const t = useT();
+
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState<TransactionType | 'all'>('all');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [search, setSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
-  useEffect(() => { loadTransactions(); loadAccounts(); loadLoans(); loadGoals(); }, [loadTransactions, loadAccounts, loadLoans, loadGoals]);
+  useEffect(() => {
+    loadTransactions();
+    loadAccounts();
+    loadLoans();
+    loadGoals();
+  }, [loadTransactions, loadAccounts, loadLoans, loadGoals]);
 
-  const TYPE_FILTERS: { label: string; value: TransactionType | 'all' }[] = [
+  const typeFilters: { label: string; value: TransactionType | 'all' }[] = [
     { label: t('txpage_all'), value: 'all' },
     { label: t('tx_income'), value: 'income' },
     { label: t('tx_expense'), value: 'expense' },
@@ -93,7 +100,7 @@ export function TransactionsPage() {
     { label: t('nav_loans'), value: 'loan_given' },
   ];
 
-  const TIME_FILTERS: { label: string; value: TimeFilter }[] = [
+  const timeFilters: { label: string; value: TimeFilter }[] = [
     { label: t('time_all'), value: 'all' },
     { label: t('time_today'), value: 'today' },
     { label: t('time_yesterday'), value: 'yesterday' },
@@ -106,24 +113,31 @@ export function TransactionsPage() {
   ];
 
   const filtered = useMemo(() => {
-    let result = filter === 'all' ? transactions
-      : filter === 'loan_given' ? transactions.filter(tx => tx.type === 'loan_given' || tx.type === 'loan_taken' || tx.type === 'repayment')
-      : transactions.filter(tx => tx.type === filter);
+    let result = filter === 'all'
+      ? transactions
+      : filter === 'loan_given'
+        ? transactions.filter(txn => txn.type === 'loan_given' || txn.type === 'loan_taken' || txn.type === 'repayment')
+        : transactions.filter(txn => txn.type === filter);
+
     result = filterByTime(result, timeFilter);
+
     if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(tx =>
-        (tx.notes?.toLowerCase().includes(q)) ||
-        (tx.category?.toLowerCase().includes(q)) ||
-        (tx.amount?.toString().includes(q))
-      );
+      const query = search.toLowerCase();
+      result = result.filter(txn => (
+        parseInternalNote(txn.notes).visibleNote.toLowerCase().includes(query) ||
+        (txn.category?.toLowerCase().includes(query)) ||
+        ((txn.relatedPerson ?? '').toLowerCase().includes(query)) ||
+        (txn.amount?.toString().includes(query))
+      ));
     }
+
     return result;
   }, [transactions, filter, timeFilter, search]);
 
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
-      <PageHeader title={t('txpage_title')}
+      <PageHeader
+        title={t('txpage_title')}
         action={
           <div className="flex items-center gap-2">
             <LanguageToggle />
@@ -137,14 +151,17 @@ export function TransactionsPage() {
         }
       />
 
-      {/* Search bar */}
       {showSearch && (
         <div className="px-5 pt-4 animate-fade-in">
           <div className="relative">
             <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search_placeholder')}
+            <input
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              placeholder={t('search_placeholder')}
               className="w-full bg-white border border-slate-200/60 rounded-2xl pl-10 pr-10 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-              autoFocus />
+              autoFocus
+            />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-300 active:scale-90">
                 <X size={14} />
@@ -154,29 +171,26 @@ export function TransactionsPage() {
         </div>
       )}
 
-      {/* Type filters */}
       <div className="px-5 pt-4 flex gap-2 overflow-x-auto no-scrollbar">
-        {TYPE_FILTERS.map(f => (
-          <button key={f.value} onClick={() => setFilter(f.value)}
+        {typeFilters.map(item => (
+          <button key={item.value} onClick={() => setFilter(item.value)}
             className={`px-4 py-2 rounded-xl text-[11px] font-bold whitespace-nowrap border-2 transition-all active:scale-95 ${
-              filter === f.value ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20' : 'bg-white text-slate-500 border-slate-200/60'
+              filter === item.value ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20' : 'bg-white text-slate-500 border-slate-200/60'
             }`}
-          >{f.label}</button>
+          >{item.label}</button>
         ))}
       </div>
 
-      {/* Time filters */}
       <div className="px-5 pt-2.5 flex gap-2 overflow-x-auto no-scrollbar">
-        {TIME_FILTERS.map(f => (
-          <button key={f.value} onClick={() => setTimeFilter(f.value)}
+        {timeFilters.map(item => (
+          <button key={item.value} onClick={() => setTimeFilter(item.value)}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap border transition-all active:scale-95 ${
-              timeFilter === f.value ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-slate-50 text-slate-400 border-slate-100/60'
+              timeFilter === item.value ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-slate-50 text-slate-400 border-slate-100/60'
             }`}
-          >{f.label}</button>
+          >{item.label}</button>
         ))}
       </div>
 
-      {/* Result count */}
       {(filter !== 'all' || timeFilter !== 'all' || search.trim()) && (
         <div className="px-5 pt-2">
           <p className="text-[10px] text-slate-400 font-semibold">{filtered.length} {t('time_results')}</p>
@@ -188,9 +202,15 @@ export function TransactionsPage() {
           <EmptyState icon={ArrowLeftRight} title={t('empty_tx_title')} description={t('empty_tx_desc')} actionLabel={t('empty_tx_cta')} onAction={() => setShowAdd(true)} />
         ) : (
           <div className="card-premium px-4 divide-y divide-slate-100/60">
-            {filtered.map((txn, i) => (
-              <div key={txn.id} className="animate-fade-in" style={{ animationDelay: `${i * 25}ms` }}>
-                <TransactionItem transaction={txn} />
+            {filtered.map((txn, index) => (
+              <div key={txn.id} className="animate-fade-in" style={{ animationDelay: `${index * 25}ms` }}>
+                {['expense', 'loan_given', 'loan_taken'].includes(txn.type) && !isGroupLinkedNote(txn.notes) ? (
+                  <button type="button" onClick={() => setSelectedTransaction(txn)} className="w-full text-left active:opacity-80 transition-opacity">
+                    <TransactionItem transaction={txn} />
+                  </button>
+                ) : (
+                  <TransactionItem transaction={txn} />
+                )}
               </div>
             ))}
           </div>
@@ -198,6 +218,7 @@ export function TransactionsPage() {
       </div>
 
       <QuickEntry open={showAdd} onClose={() => setShowAdd(false)} />
+      <EditTransactionModal open={!!selectedTransaction} transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} />
     </div>
   );
 }

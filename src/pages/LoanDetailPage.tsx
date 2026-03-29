@@ -7,12 +7,15 @@ import { useAccountStore } from '../stores/accountStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { TransactionItem } from '../components/TransactionItem';
+import { EditTransactionModal } from '../components/EditTransactionModal';
 import { useToast } from '../components/Toast';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { format, isPast } from 'date-fns';
 import { CheckCircle, Clock, AlertCircle, RotateCcw } from 'lucide-react';
 import { RepaymentModal } from './RepaymentModal';
+import { isGroupLinkedNote } from '../lib/internalNotes';
+import type { Transaction } from '../db';
 
 export function LoanDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +26,7 @@ export function LoanDetailPage() {
   const toast = useToast();
   const t = useT();
   const [showRepayment, setShowRepayment] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   useEffect(() => { loadLoans(); loadSchedules(); loadTransactions(); loadAccounts(); }, [loadLoans, loadSchedules, loadTransactions, loadAccounts]);
 
@@ -163,7 +167,15 @@ export function LoanDetailPage() {
           <p className="text-[13px] text-slate-400 text-center py-8">{t('loan_no_tx')}</p>
         ) : (
           <div className="card-premium px-4 divide-y divide-slate-100/60">
-            {loanTxns.map(txn => <TransactionItem key={txn.id} transaction={txn} />)}
+            {loanTxns.map(txn => (
+              ['expense', 'loan_given', 'loan_taken'].includes(txn.type) && !isGroupLinkedNote(txn.notes)
+                ? (
+                  <button key={txn.id} type="button" onClick={() => setSelectedTransaction(txn)} className="w-full text-left active:opacity-80 transition-opacity">
+                    <TransactionItem transaction={txn} />
+                  </button>
+                )
+                : <TransactionItem key={txn.id} transaction={txn} />
+            ))}
           </div>
         )}
       </div>
@@ -176,6 +188,7 @@ export function LoanDetailPage() {
           loan={loan}
         />
       )}
+      <EditTransactionModal open={!!selectedTransaction} transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} />
     </div>
   );
 }
