@@ -1,7 +1,12 @@
-const CACHE_NAME = 'hisaab-v1';
+const CACHE_NAME = 'hisaab-v2';
 const STATIC_ASSETS = [
   '/',
   '/favicon.svg',
+  '/apple-touch-icon.png',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-192-maskable.png',
+  '/icon-512-maskable.png',
   '/manifest.json',
 ];
 

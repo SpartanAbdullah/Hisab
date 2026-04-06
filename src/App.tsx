@@ -1,5 +1,5 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
 import { GlobalFAB } from './components/GlobalFAB';
 import { ToastContainer } from './components/Toast';
@@ -20,6 +20,7 @@ const ActivityPage = lazy(() => import('./pages/ActivityPage').then(m => ({ defa
 const AccountDetailPage = lazy(() => import('./pages/AccountDetailPage').then(m => ({ default: m.AccountDetailPage })));
 const SplitsPage = lazy(() => import('./pages/SplitsPage').then(m => ({ default: m.SplitsPage })));
 const GroupDetailPage = lazy(() => import('./pages/GroupDetailPage').then(m => ({ default: m.GroupDetailPage })));
+const JoinGroupPage = lazy(() => import('./pages/JoinGroupPage').then(m => ({ default: m.JoinGroupPage })));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 
@@ -44,6 +45,8 @@ function AppContent() {
   const { completed, loading: onboardingLoading, checkOnboarding } = useOnboardingStore();
   const mode = useAppModeStore(s => s.mode);
   const { user, loading: authLoading, initialize } = useSupabaseAuthStore();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -62,6 +65,36 @@ function AppContent() {
       localStorage.removeItem('hisaab_supabase_uid');
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user && location.pathname.startsWith('/join/')) {
+      localStorage.setItem('hisaab_pending_invite', location.pathname.replace('/join/', ''));
+    }
+  }, [location.pathname, user]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    void useSupabaseAuthStore.getState().getProfile().then((profile) => {
+      if (cancelled || !profile) return;
+      const name = typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : localStorage.getItem('hisaab_user_name');
+      const currency = typeof profile.primary_currency === 'string' ? profile.primary_currency : localStorage.getItem('hisaab_primary_currency');
+      if (name) localStorage.setItem('hisaab_user_name', name);
+      if (currency) localStorage.setItem('hisaab_primary_currency', currency);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || !completed) return;
+    const pendingInvite = localStorage.getItem('hisaab_pending_invite');
+    if (!pendingInvite) return;
+    if (location.pathname !== `/join/${pendingInvite}`) {
+      navigate(`/join/${pendingInvite}`, { replace: true });
+    }
+  }, [completed, location.pathname, navigate, user]);
 
   if (authLoading || onboardingLoading) {
     return (
@@ -100,6 +133,7 @@ function AppContent() {
           <Route path="/" element={<HomePage />} />
           <Route path="/groups" element={<SplitsPage />} />
           <Route path="/group/:id" element={<GroupDetailPage />} />
+          <Route path="/join/:token" element={<JoinGroupPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/activity" element={<ActivityPage />} />

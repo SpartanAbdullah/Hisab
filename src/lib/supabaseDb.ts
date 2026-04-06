@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import type {
   Account, Transaction, Loan, EmiSchedule, Goal,
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
+  GroupMember, GroupInvite, GroupEvent, AppNotification,
 } from '../db';
 
 // Helper to get current user ID (cached in localStorage by App.tsx)
@@ -278,9 +279,27 @@ export const upcomingExpensesDb = {
 // ══════════════════════════════════════
 export const splitGroupsDb = {
   async getAll(): Promise<SplitGroup[]> {
+    const userId = getUserId();
+    const [{ data: owned, error: ownedError }, { data: memberships, error: membersError }] = await Promise.all([
+      supabase
+        .from('split_groups').select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('group_members').select('group_id')
+        .eq('profile_id', userId)
+        .eq('status', 'connected'),
+    ]);
+
+    if (ownedError) throw ownedError;
+    if (membersError && membersError.code !== 'PGRST116') throw membersError;
+
+    const ids = Array.from(new Set([...(owned ?? []).map(row => String(row.id)), ...((memberships ?? []).map(row => String(row.group_id)))]));
+    if (ids.length === 0) return [];
+
     const { data, error } = await supabase
       .from('split_groups').select('*')
-      .eq('user_id', getUserId())
+      .in('id', ids)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(mapGroup);
@@ -289,14 +308,14 @@ export const splitGroupsDb = {
     const { error } = await supabase.from('split_groups').insert({
       id: g.id, user_id: getUserId(), name: g.name, emoji: g.emoji,
       members: g.members, currency: g.currency, settled: g.settled,
-      created_at: g.createdAt,
+      created_at: g.createdAt, created_by: g.createdBy ?? getUserId(),
     });
     if (error) throw error;
   },
   async get(id: string): Promise<SplitGroup | null> {
     const { data, error } = await supabase
       .from('split_groups').select('*')
-      .eq('id', id).eq('user_id', getUserId()).single();
+      .eq('id', id).single();
     if (error) return null;
     return data ? mapGroup(data) : null;
   },
@@ -313,14 +332,17 @@ export const groupExpensesDb = {
   async get(id: string): Promise<GroupExpense | null> {
     const { data, error } = await supabase
       .from('group_expenses').select('*')
-      .eq('id', id).eq('user_id', getUserId()).single();
+      .eq('id', id)
+      .is('deleted_at', null)
+      .single();
     if (error) return null;
     return data ? mapGroupExpense(data) : null;
   },
   async getByGroup(groupId: string): Promise<GroupExpense[]> {
     const { data, error } = await supabase
       .from('group_expenses').select('*')
-      .eq('group_id', groupId).eq('user_id', getUserId())
+      .eq('group_id', groupId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(mapGroupExpense);
@@ -331,6 +353,9 @@ export const groupExpensesDb = {
       description: e.description, amount: e.amount, paid_by: e.paidBy,
       split_type: e.splitType, splits: e.splits, category: e.category,
       date: e.date, notes: e.notes, created_at: e.createdAt,
+      created_by: e.createdBy ?? getUserId(),
+      updated_by: e.updatedBy ?? getUserId(),
+      version: e.version ?? 1,
     });
     if (error) throw error;
   },
@@ -343,15 +368,22 @@ export const groupExpensesDb = {
     if (changes.splits !== undefined) row.splits = changes.splits;
     if (changes.category !== undefined) row.category = changes.category;
     if (changes.notes !== undefined) row.notes = changes.notes;
-    const { error } = await supabase.from('group_expenses').update(row).eq('id', id).eq('user_id', getUserId());
+    if (changes.updatedBy !== undefined) row.updated_by = changes.updatedBy;
+    if (changes.deletedAt !== undefined) row.deleted_at = changes.deletedAt;
+    if (changes.deletedBy !== undefined) row.deleted_by = changes.deletedBy;
+    if (changes.version !== undefined) row.version = changes.version;
+    const { error } = await supabase.from('group_expenses').update(row).eq('id', id);
     if (error) throw error;
   },
   async delete(id: string) {
-    const { error } = await supabase.from('group_expenses').delete().eq('id', id).eq('user_id', getUserId());
+    const { error } = await supabase
+      .from('group_expenses')
+      .update({ deleted_at: new Date().toISOString(), deleted_by: getUserId() })
+      .eq('id', id);
     if (error) throw error;
   },
   async deleteByGroup(groupId: string) {
-    const { error } = await supabase.from('group_expenses').delete().eq('group_id', groupId).eq('user_id', getUserId());
+    const { error } = await supabase.from('group_expenses').delete().eq('group_id', groupId);
     if (error) throw error;
   },
 };
@@ -363,7 +395,8 @@ export const groupSettlementsDb = {
   async getByGroup(groupId: string): Promise<GroupSettlement[]> {
     const { data, error } = await supabase
       .from('group_settlements').select('*')
-      .eq('group_id', groupId).eq('user_id', getUserId())
+      .eq('group_id', groupId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(mapGroupSettlement);
@@ -374,12 +407,211 @@ export const groupSettlementsDb = {
       from_member: s.fromMember, to_member: s.toMember,
       amount: s.amount, date: s.date, note: s.note,
       created_at: s.createdAt,
+      created_by: s.createdBy ?? getUserId(),
+      updated_by: s.updatedBy ?? getUserId(),
     });
     if (error) throw error;
   },
   async deleteByGroup(groupId: string) {
-    const { error } = await supabase.from('group_settlements').delete().eq('group_id', groupId).eq('user_id', getUserId());
+    const { error } = await supabase.from('group_settlements').delete().eq('group_id', groupId);
     if (error) throw error;
+  },
+};
+
+export const groupMembersDb = {
+  async getByGroup(groupId: string): Promise<GroupMember[]> {
+    const { data, error } = await supabase
+      .from('group_members').select('*')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapGroupMember);
+  },
+  async add(member: GroupMember & { groupId: string; invitedBy?: string | null }) {
+    const { error } = await supabase.from('group_members').insert({
+      id: member.id,
+      group_id: member.groupId,
+      profile_id: member.profileId ?? null,
+      display_name: member.name,
+      role: member.role ?? (member.isOwner ? 'owner' : 'member'),
+      status: member.status ?? (member.profileId ? 'connected' : 'guest'),
+      invited_by: member.invitedBy ?? getUserId(),
+      joined_at: member.joinedAt ?? null,
+      created_at: new Date().toISOString(),
+    });
+    if (error) throw error;
+  },
+  async addMany(groupId: string, members: GroupMember[]) {
+    if (members.length === 0) return;
+    const rows = members.map(member => ({
+      id: member.id,
+      group_id: groupId,
+      profile_id: member.profileId ?? null,
+      display_name: member.name,
+      role: member.role ?? (member.isOwner ? 'owner' : 'member'),
+      status: member.status ?? (member.profileId ? 'connected' : 'guest'),
+      invited_by: getUserId(),
+      joined_at: member.joinedAt ?? null,
+      created_at: new Date().toISOString(),
+    }));
+    const { error } = await supabase.from('group_members').insert(rows);
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<GroupMember>) {
+    const row: Record<string, unknown> = {};
+    if (changes.name !== undefined) row.display_name = changes.name;
+    if (changes.profileId !== undefined) row.profile_id = changes.profileId;
+    if (changes.role !== undefined) row.role = changes.role;
+    if (changes.status !== undefined) row.status = changes.status;
+    if (changes.joinedAt !== undefined) row.joined_at = changes.joinedAt;
+    const { error } = await supabase.from('group_members').update(row).eq('id', id);
+    if (error) throw error;
+  },
+  async getMine(): Promise<Array<{ groupId: string; memberId: string }>> {
+    const { data, error } = await supabase
+      .from('group_members').select('id, group_id')
+      .eq('profile_id', getUserId())
+      .eq('status', 'connected');
+    if (error) throw error;
+    return (data ?? []).map(row => ({ groupId: String(row.group_id), memberId: String(row.id) }));
+  },
+};
+
+export const groupInvitesDb = {
+  async add(invite: GroupInvite) {
+    const { error } = await supabase.from('group_invites').insert({
+      id: invite.id,
+      group_id: invite.groupId,
+      token_hash: invite.tokenHash,
+      created_by: invite.createdBy,
+      linked_member_id: invite.linkedMemberId,
+      expires_at: invite.expiresAt,
+      revoked_at: invite.revokedAt,
+      accepted_by: invite.acceptedBy,
+      accepted_at: invite.acceptedAt,
+      created_at: invite.createdAt,
+    });
+    if (error) throw error;
+  },
+  async getByTokenHash(tokenHash: string): Promise<GroupInvite | null> {
+    const { data, error } = await supabase
+      .from('group_invites').select('*')
+      .eq('token_hash', tokenHash)
+      .is('revoked_at', null)
+      .single();
+    if (error) return null;
+    return data ? mapGroupInvite(data) : null;
+  },
+  async getActiveByGroup(groupId: string): Promise<GroupInvite[]> {
+    const { data, error } = await supabase
+      .from('group_invites').select('*')
+      .eq('group_id', groupId)
+      .is('revoked_at', null)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapGroupInvite);
+  },
+  async update(id: string, changes: Partial<GroupInvite>) {
+    const row: Record<string, unknown> = {};
+    if (changes.revokedAt !== undefined) row.revoked_at = changes.revokedAt;
+    if (changes.acceptedBy !== undefined) row.accepted_by = changes.acceptedBy;
+    if (changes.acceptedAt !== undefined) row.accepted_at = changes.acceptedAt;
+    if (changes.linkedMemberId !== undefined) row.linked_member_id = changes.linkedMemberId;
+    const { error } = await supabase.from('group_invites').update(row).eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const groupEventsDb = {
+  async getByGroup(groupId: string): Promise<GroupEvent[]> {
+    const { data, error } = await supabase
+      .from('group_events').select('*')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapGroupEvent);
+  },
+  async add(event: GroupEvent) {
+    const { error } = await supabase.from('group_events').insert({
+      id: event.id,
+      group_id: event.groupId,
+      actor_profile_id: event.actorProfileId,
+      event_type: event.eventType,
+      entity_type: event.entityType,
+      entity_id: event.entityId,
+      summary: event.summary,
+      payload: event.payload,
+      created_at: event.createdAt,
+    });
+    if (error) throw error;
+  },
+};
+
+export const notificationsDb = {
+  async getAll(): Promise<AppNotification[]> {
+    const { data, error } = await supabase
+      .from('notifications').select('*')
+      .eq('user_id', getUserId())
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    return (data ?? []).map(mapNotification);
+  },
+  async addMany(notifications: AppNotification[]) {
+    if (notifications.length === 0) return;
+    const { error } = await supabase.from('notifications').insert(
+      notifications.map(notification => ({
+        id: notification.id,
+        user_id: notification.userId,
+        group_id: notification.groupId,
+        event_id: notification.eventId,
+        type: notification.type,
+        title: notification.title,
+        body: notification.body,
+        read_at: notification.readAt,
+        created_at: notification.createdAt,
+      })),
+    );
+    if (error) throw error;
+  },
+  async markRead(id: string) {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async markAllRead() {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('user_id', getUserId())
+      .is('read_at', null);
+    if (error) throw error;
+  },
+};
+
+export const profilesDb = {
+  async getCurrent(): Promise<Record<string, unknown> | null> {
+    const { data, error } = await supabase
+      .from('profiles').select('*')
+      .eq('id', getUserId())
+      .single();
+    if (error) return null;
+    return data ?? null;
+  },
+  async updateCurrent(changes: Record<string, unknown>) {
+    const { error } = await supabase.from('profiles').update(changes).eq('id', getUserId());
+    if (error) throw error;
+  },
+  async findByPublicCode(normalizedCode: string): Promise<Record<string, unknown> | null> {
+    const { data, error } = await supabase
+      .from('profiles').select('*')
+      .eq('public_code_normalized', normalizedCode)
+      .single();
+    if (error) return null;
+    return data ?? null;
   },
 };
 
@@ -466,6 +698,7 @@ function mapGroup(r: Record<string, unknown>): SplitGroup {
     id: r.id as string, name: r.name as string, emoji: (r.emoji as string) ?? '',
     members: r.members as SplitGroup['members'], currency: r.currency as SplitGroup['currency'],
     settled: Boolean(r.settled), createdAt: r.created_at as string,
+    createdBy: (r.created_by as string) ?? (r.user_id as string) ?? null,
   };
 }
 
@@ -477,6 +710,11 @@ function mapGroupExpense(r: Record<string, unknown>): GroupExpense {
     splits: r.splits as GroupExpense['splits'], category: (r.category as string) ?? '',
     date: (r.date as string) ?? '', notes: (r.notes as string) ?? '',
     createdAt: r.created_at as string,
+    createdBy: (r.created_by as string) ?? null,
+    updatedBy: (r.updated_by as string) ?? null,
+    deletedAt: (r.deleted_at as string) ?? null,
+    deletedBy: (r.deleted_by as string) ?? null,
+    version: Number(r.version ?? 1),
   };
 }
 
@@ -486,5 +724,65 @@ function mapGroupSettlement(r: Record<string, unknown>): GroupSettlement {
     fromMember: r.from_member as string, toMember: r.to_member as string,
     amount: Number(r.amount), date: (r.date as string) ?? '',
     note: (r.note as string) ?? '', createdAt: r.created_at as string,
+    createdBy: (r.created_by as string) ?? null,
+    updatedBy: (r.updated_by as string) ?? null,
+    deletedAt: (r.deleted_at as string) ?? null,
+    deletedBy: (r.deleted_by as string) ?? null,
+  };
+}
+
+function mapGroupMember(r: Record<string, unknown>): GroupMember {
+  const role = (r.role as GroupMember['role']) ?? 'member';
+  return {
+    id: r.id as string,
+    name: (r.display_name as string) ?? '',
+    isOwner: role === 'owner',
+    profileId: (r.profile_id as string) ?? null,
+    role,
+    status: (r.status as GroupMember['status']) ?? 'guest',
+    joinedAt: (r.joined_at as string) ?? null,
+  };
+}
+
+function mapGroupInvite(r: Record<string, unknown>): GroupInvite {
+  return {
+    id: r.id as string,
+    groupId: r.group_id as string,
+    tokenHash: r.token_hash as string,
+    createdBy: r.created_by as string,
+    linkedMemberId: (r.linked_member_id as string) ?? null,
+    expiresAt: (r.expires_at as string) ?? null,
+    revokedAt: (r.revoked_at as string) ?? null,
+    acceptedBy: (r.accepted_by as string) ?? null,
+    acceptedAt: (r.accepted_at as string) ?? null,
+    createdAt: r.created_at as string,
+  };
+}
+
+function mapGroupEvent(r: Record<string, unknown>): GroupEvent {
+  return {
+    id: r.id as string,
+    groupId: r.group_id as string,
+    actorProfileId: (r.actor_profile_id as string) ?? null,
+    eventType: r.event_type as GroupEvent['eventType'],
+    entityType: r.entity_type as GroupEvent['entityType'],
+    entityId: r.entity_id as string,
+    summary: (r.summary as string) ?? '',
+    payload: (r.payload as Record<string, unknown>) ?? {},
+    createdAt: r.created_at as string,
+  };
+}
+
+function mapNotification(r: Record<string, unknown>): AppNotification {
+  return {
+    id: r.id as string,
+    userId: r.user_id as string,
+    groupId: (r.group_id as string) ?? null,
+    eventId: (r.event_id as string) ?? null,
+    type: r.type as AppNotification['type'],
+    title: (r.title as string) ?? '',
+    body: (r.body as string) ?? '',
+    readAt: (r.read_at as string) ?? null,
+    createdAt: r.created_at as string,
   };
 }

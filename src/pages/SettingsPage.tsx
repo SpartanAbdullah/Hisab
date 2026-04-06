@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Shield, Download, Upload, Globe, Smartphone, Info, ChevronRight, Lock, Unlock, User, Mail, Phone, KeyRound, LogOut } from 'lucide-react';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { PageHeader } from '../components/PageHeader';
@@ -9,6 +9,8 @@ import { useAuthStore } from '../stores/authStore';
 import { useToast } from '../components/Toast';
 import { useT, useI18nStore } from '../lib/i18n';
 import { exportAllData, importData, downloadJSON } from '../lib/dataExport';
+import { profilesDb } from '../lib/supabaseDb';
+import { generatePublicCodeCandidate, normalizePublicCode } from '../lib/collaboration';
 
 export function SettingsPage() {
   const t = useT();
@@ -30,7 +32,40 @@ export function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [publicCode, setPublicCode] = useState('');
   const userName = localStorage.getItem('hisaab_user_name') ?? '';
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const ensurePublicCode = async () => {
+      const profile = await profilesDb.getCurrent();
+      if (!profile || cancelled) return;
+
+      const existing = typeof profile.public_code === 'string' ? profile.public_code : '';
+      if (existing) {
+        setPublicCode(existing);
+        return;
+      }
+
+      const nextCode = generatePublicCodeCandidate();
+      await profilesDb.updateCurrent({
+        public_code: nextCode,
+        public_code_normalized: normalizePublicCode(nextCode),
+      });
+
+      if (!cancelled) setPublicCode(nextCode);
+    };
+
+    void ensurePublicCode().catch(() => {
+      if (!cancelled) setPublicCode('');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -126,6 +161,30 @@ export function SettingsPage() {
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5"><Phone size={10} /> {t('settings_mobile')}</label>
                 <input type="tel" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="+971 50 123 4567"
                   className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5"><User size={10} /> User Code</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={publicCode ? `@${publicCode}` : ''}
+                    readOnly
+                    placeholder="Generating..."
+                    className="flex-1 border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] bg-slate-50 text-slate-700"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!publicCode) return;
+                      await navigator.clipboard.writeText(`@${publicCode}`);
+                      toast.show({ type: 'success', title: 'User code copied' });
+                    }}
+                    disabled={!publicCode}
+                    className="px-4 rounded-xl bg-indigo-50 text-indigo-600 text-[12px] font-bold disabled:opacity-40"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1.5">People can use this code to connect with you in shared groups.</p>
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5"><KeyRound size={10} /> {t('settings_password')}</label>

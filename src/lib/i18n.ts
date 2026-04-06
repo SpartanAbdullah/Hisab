@@ -111,6 +111,7 @@ const S = {
   loan_completed: { ur: 'Mukammal', en: 'Completed' },
   loan_repay: { ur: 'Wapsi', en: 'Repay' },
   loan_mark_paid: { ur: 'Paid Mark Karo', en: 'Mark as Paid' },
+  loan_installment_amount: { ur: 'Qist Amount', en: 'Installment Amount' },
   loan_no_tx: { ur: 'Abhi koi transaction nahi', en: 'No transactions yet' },
   loan_receivable: { ur: 'Wapsi Aani Hai', en: 'To Receive' },
   loan_payable: { ur: 'Dena Hai', en: 'To Pay' },
@@ -462,6 +463,21 @@ const S = {
   activity_deleted: { ur: 'Hataya Gaya', en: 'Deleted' },
   activity_settled: { ur: 'Settle Hua', en: 'Settled' },
   activity_transfer: { ur: 'Transfer', en: 'Transfer' },
+
+  // PWA install
+  pwa_install_title: { ur: 'Hisaab Install Karo', en: 'Install Hisaab' },
+  pwa_install_cta: { ur: 'Install', en: 'Install' },
+  pwa_install_native_sub: { ur: 'App ko home screen par add karo', en: 'Add the app to your home screen' },
+  pwa_install_ios_sub: { ur: 'Safari se home screen par add karo', en: 'Add this app from Safari' },
+  pwa_install_android_sub: { ur: 'Browser menu se app install karo', en: 'Install the app from your browser menu' },
+  pwa_install_ios_steps: {
+    ur: 'Safari mein Share dabao, phir Add to Home Screen select karo.',
+    en: 'In Safari, tap Share, then choose Add to Home Screen.',
+  },
+  pwa_install_android_steps: {
+    ur: 'Browser menu kholo, phir Install app ya Add to Home screen chuno.',
+    en: 'Open the browser menu, then tap Install app or Add to Home screen.',
+  },
 } as const;
 
 type Key = keyof typeof S;

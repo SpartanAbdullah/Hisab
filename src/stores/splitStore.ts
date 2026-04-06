@@ -1,15 +1,35 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { splitGroupsDb, groupExpensesDb, groupSettlementsDb } from '../lib/supabaseDb';
-import type { SplitGroup, GroupExpense, GroupSettlement, SplitType, SplitDetail, GroupMember, Currency } from '../db';
+import {
+  splitGroupsDb,
+  groupExpensesDb,
+  groupSettlementsDb,
+  groupMembersDb,
+  groupInvitesDb,
+  groupEventsDb,
+  notificationsDb,
+} from '../lib/supabaseDb';
+import { buildInviteUrl, generateInviteToken, sha256Hex } from '../lib/collaboration';
+import type {
+  SplitGroup,
+  GroupExpense,
+  GroupSettlement,
+  SplitType,
+  SplitDetail,
+  GroupMember,
+  Currency,
+  GroupEvent,
+  GroupInvite,
+  AppNotification,
+} from '../db';
 import { useActivityStore } from './activityStore';
 import { useTransactionStore } from './transactionStore';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 
 interface SimplifiedDebt {
-  from: string;   // member id
+  from: string;
   fromName: string;
-  to: string;     // member id
+  to: string;
   toName: string;
   amount: number;
 }
@@ -21,6 +41,10 @@ interface SplitState {
   loadGroups: () => Promise<void>;
   createGroup: (name: string, emoji: string, members: string[], currency: Currency) => Promise<SplitGroup>;
   deleteGroup: (id: string) => Promise<void>;
+  createInvite: (groupId: string, linkedMemberId?: string | null) => Promise<{ url: string; invite: GroupInvite }>;
+  acceptInvite: (token: string) => Promise<{ groupId: string }>;
+  getGroupInvites: (groupId: string) => Promise<GroupInvite[]>;
+  getGroupEvents: (groupId: string) => Promise<GroupEvent[]>;
 
   getGroupExpenses: (groupId: string) => Promise<GroupExpense[]>;
   addGroupExpense: (input: {
@@ -50,6 +74,61 @@ interface SplitState {
   getMyBalance: (groupId: string) => Promise<number>;
 }
 
+function getCurrentUserId(): string {
+  const userId = localStorage.getItem('hisaab_supabase_uid');
+  if (!userId) throw new Error('Not authenticated');
+  return userId;
+}
+
+function getCurrentUserName(): string {
+  return localStorage.getItem('hisaab_user_name') ?? 'You';
+}
+
+async function hydrateGroup(group: SplitGroup | null): Promise<SplitGroup | null> {
+  if (!group) return null;
+  const members = await groupMembersDb.getByGroup(group.id).catch(() => []);
+  if (members.length === 0) return group;
+  return { ...group, members };
+}
+
+function findCurrentMember(group: SplitGroup): GroupMember | undefined {
+  const userId = localStorage.getItem('hisaab_supabase_uid');
+  return group.members.find(member => member.profileId === userId) ?? group.members.find(member => member.isOwner);
+}
+
+function getNotificationRecipients(group: SplitGroup, actorProfileId: string): string[] {
+  return Array.from(new Set(
+    group.members
+      .filter(member => member.profileId && member.profileId !== actorProfileId && member.status === 'connected')
+      .map(member => member.profileId as string),
+  ));
+}
+
+async function fanOutGroupUpdate(
+  group: SplitGroup,
+  event: GroupEvent,
+  notificationTitle: string,
+  notificationBody: string,
+) {
+  await groupEventsDb.add(event);
+
+  const recipients = getNotificationRecipients(group, event.actorProfileId ?? '');
+  if (recipients.length === 0) return;
+
+  const notifications: AppNotification[] = recipients.map((userId) => ({
+    id: uuid(),
+    userId,
+    groupId: group.id,
+    eventId: event.id,
+    type: 'group_update',
+    title: notificationTitle,
+    body: notificationBody,
+    readAt: null,
+    createdAt: event.createdAt,
+  }));
+  await notificationsDb.addMany(notifications);
+}
+
 export const useSplitStore = create<SplitState>((set, get) => ({
   groups: [],
   loading: false,
@@ -57,15 +136,35 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   loadGroups: async () => {
     set({ loading: true });
     const groups = await splitGroupsDb.getAll();
-    set({ groups, loading: false });
+    const hydrated = await Promise.all(groups.map((group) => hydrateGroup(group)));
+    set({ groups: hydrated.filter(Boolean) as SplitGroup[], loading: false });
   },
 
   createGroup: async (name, emoji, memberNames, currency) => {
-    const ownerName = localStorage.getItem('hisaab_user_name') ?? 'You';
+    const now = new Date().toISOString();
+    const currentUserId = getCurrentUserId();
+    const ownerName = getCurrentUserName();
     const members: GroupMember[] = [
-      { id: uuid(), name: ownerName, isOwner: true },
-      ...memberNames.map(n => ({ id: uuid(), name: n, isOwner: false })),
+      {
+        id: uuid(),
+        name: ownerName,
+        isOwner: true,
+        profileId: currentUserId,
+        role: 'owner',
+        status: 'connected',
+        joinedAt: now,
+      },
+      ...memberNames.map(memberName => ({
+        id: uuid(),
+        name: memberName,
+        isOwner: false,
+        role: 'member' as const,
+        status: 'guest' as const,
+        profileId: null,
+        joinedAt: null,
+      })),
     ];
+
     const group: SplitGroup = {
       id: uuid(),
       name,
@@ -73,16 +172,31 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       members,
       currency,
       settled: false,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      createdBy: currentUserId,
     };
+
     await splitGroupsDb.add(group);
-    await get().loadGroups();
-    await useActivityStore.getState().logActivity(
-      'group_created',
-      `Created group "${name}"`,
-      group.id,
-      'group'
+    await groupMembersDb.addMany(group.id, members);
+    await fanOutGroupUpdate(
+      group,
+      {
+        id: uuid(),
+        groupId: group.id,
+        actorProfileId: currentUserId,
+        eventType: 'group_created',
+        entityType: 'group',
+        entityId: group.id,
+        summary: `${ownerName} created ${group.name}`,
+        payload: { groupName: group.name },
+        createdAt: now,
+      },
+      `${group.name} created`,
+      `${ownerName} created a new shared group.`,
     );
+
+    await get().loadGroups();
+    await useActivityStore.getState().logActivity('group_created', `Created group "${name}"`, group.id, 'group');
     return group;
   },
 
@@ -93,16 +207,123 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     await get().loadGroups();
   },
 
+  createInvite: async (groupId, linkedMemberId = null) => {
+    const group = await hydrateGroup(get().groups.find(item => item.id === groupId) ?? await splitGroupsDb.get(groupId));
+    if (!group) throw new Error('Group not found');
+
+    const token = generateInviteToken();
+    const now = new Date().toISOString();
+    const invite: GroupInvite = {
+      id: uuid(),
+      groupId,
+      tokenHash: await sha256Hex(token),
+      createdBy: getCurrentUserId(),
+      linkedMemberId,
+      expiresAt: null,
+      revokedAt: null,
+      acceptedBy: null,
+      acceptedAt: null,
+      createdAt: now,
+    };
+
+    await groupInvitesDb.add(invite);
+
+    if (linkedMemberId) {
+      await groupMembersDb.update(linkedMemberId, { status: 'invited' });
+      await get().loadGroups();
+    }
+
+    return { url: buildInviteUrl(token), invite };
+  },
+
+  acceptInvite: async (token) => {
+    const currentUserId = getCurrentUserId();
+    const tokenHash = await sha256Hex(token);
+    const invite = await groupInvitesDb.getByTokenHash(tokenHash);
+    if (!invite) throw new Error('Invite not found');
+    if (invite.acceptedAt) {
+      return { groupId: invite.groupId };
+    }
+    if (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) {
+      throw new Error('Invite expired');
+    }
+
+    const group = await hydrateGroup(await splitGroupsDb.get(invite.groupId));
+    if (!group) throw new Error('Group not found');
+
+    const now = new Date().toISOString();
+    const existingMember = group.members.find(member => member.profileId === currentUserId);
+    let joinedMemberId = existingMember?.id ?? invite.linkedMemberId ?? null;
+
+    if (invite.linkedMemberId) {
+      await groupMembersDb.update(invite.linkedMemberId, {
+        profileId: currentUserId,
+        status: 'connected',
+        joinedAt: now,
+      });
+      joinedMemberId = invite.linkedMemberId;
+    } else if (!existingMember) {
+      const newMember: GroupMember = {
+        id: uuid(),
+        name: getCurrentUserName(),
+        isOwner: false,
+        profileId: currentUserId,
+        role: 'member',
+        status: 'connected',
+        joinedAt: now,
+      };
+      await groupMembersDb.add({ ...newMember, groupId: group.id });
+      joinedMemberId = newMember.id;
+    }
+
+    await groupInvitesDb.update(invite.id, {
+      acceptedBy: currentUserId,
+      acceptedAt: now,
+    });
+
+    const nextGroup = await hydrateGroup(await splitGroupsDb.get(group.id));
+    if (nextGroup) {
+      await fanOutGroupUpdate(
+        nextGroup,
+        {
+          id: uuid(),
+          groupId: nextGroup.id,
+          actorProfileId: currentUserId,
+          eventType: 'member_joined',
+          entityType: 'member',
+          entityId: joinedMemberId ?? currentUserId,
+          summary: `${getCurrentUserName()} joined ${nextGroup.name}`,
+          payload: { memberId: joinedMemberId, groupName: nextGroup.name },
+          createdAt: now,
+        },
+        `${getCurrentUserName()} joined ${nextGroup.name}`,
+        `${getCurrentUserName()} is now connected to the group.`,
+      );
+    }
+
+    await get().loadGroups();
+    return { groupId: invite.groupId };
+  },
+
+  getGroupInvites: async (groupId) => {
+    return groupInvitesDb.getActiveByGroup(groupId);
+  },
+
+  getGroupEvents: async (groupId) => {
+    return groupEventsDb.getByGroup(groupId);
+  },
+
   getGroupExpenses: async (groupId) => {
     return groupExpensesDb.getByGroup(groupId);
   },
 
   addGroupExpense: async (input) => {
-    const group = get().groups.find((item) => item.id === input.groupId) ?? await splitGroupsDb.get(input.groupId);
+    const group = await hydrateGroup(get().groups.find((item) => item.id === input.groupId) ?? await splitGroupsDb.get(input.groupId));
     if (!group) throw new Error('Group not found');
 
-    const owner = group.members.find((member) => member.isOwner);
-    if (input.paidFromAccountId && input.paidBy !== owner?.id) {
+    const currentUserId = getCurrentUserId();
+    const currentMember = findCurrentMember(group);
+    if (input.paidFromAccountId && input.paidBy !== currentMember?.id) {
       throw new Error('Only your own payments can be linked to a personal account');
     }
 
@@ -118,6 +339,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       date: new Date().toISOString(),
       notes: input.notes || '',
       createdAt: new Date().toISOString(),
+      createdBy: currentUserId,
+      updatedBy: currentUserId,
+      version: 1,
     };
 
     let linkedTransactionId: string | undefined;
@@ -144,14 +368,34 @@ export const useSplitStore = create<SplitState>((set, get) => ({
 
     await groupExpensesDb.add(expense);
 
-    if (!linkedTransactionId) {
-      await useActivityStore.getState().logActivity(
-        'group_expense',
-        `Added "${expense.description}" in ${group.name}`,
-        expense.id,
-        'group_expense'
-      );
-    }
+    const actorName = currentMember?.name ?? getCurrentUserName();
+    await fanOutGroupUpdate(
+      group,
+      {
+        id: uuid(),
+        groupId: group.id,
+        actorProfileId: currentUserId,
+        eventType: 'expense_added',
+        entityType: 'group_expense',
+        entityId: expense.id,
+        summary: `${actorName} added ${expense.description} (${expense.amount})`,
+        payload: {
+          description: expense.description,
+          amount: expense.amount,
+          paidBy: expense.paidBy,
+        },
+        createdAt: expense.createdAt,
+      },
+      `${actorName} added an expense`,
+      `${expense.description} for ${expense.amount} was added in ${group.name}.`,
+    );
+
+    await useActivityStore.getState().logActivity(
+      'group_expense',
+      `Added "${expense.description}" in ${group.name}`,
+      expense.id,
+      'group_expense',
+    );
 
     return expense;
   },
@@ -160,10 +404,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     const existing = await groupExpensesDb.get(id);
     if (!existing) throw new Error('Group expense not found');
 
-    const group = get().groups.find((item) => item.id === existing.groupId) ?? await splitGroupsDb.get(existing.groupId);
+    const group = await hydrateGroup(get().groups.find((item) => item.id === existing.groupId) ?? await splitGroupsDb.get(existing.groupId));
     if (!group) throw new Error('Group not found');
 
-    const owner = group.members.find((member) => member.isOwner);
+    const currentUserId = getCurrentUserId();
+    const currentMember = findCurrentMember(group);
     const existingMeta = parseInternalNote(existing.notes).meta;
     const nextPaidFromAccountId = changes.paidFromAccountId === undefined
       ? existingMeta.paidFromAccountId
@@ -175,7 +420,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       notes: existing.notes,
     };
 
-    if (nextPaidFromAccountId && nextExpense.paidBy !== owner?.id) {
+    if (nextPaidFromAccountId && nextExpense.paidBy !== currentMember?.id) {
       throw new Error('Only your own payments can be linked to a personal account');
     }
 
@@ -196,7 +441,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
             groupName: group.name,
           }),
         },
-        { allowLinkedGroupExpense: true }
+        { allowLinkedGroupExpense: true },
       );
     } else if (linkedTransactionId && !nextPaidFromAccountId) {
       await useTransactionStore.getState().deleteTransaction(linkedTransactionId, { allowLinkedGroupExpense: true });
@@ -228,21 +473,48 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         linkedTransactionId,
         paidFromAccountId: nextPaidFromAccountId,
       }),
+      updatedBy: currentUserId,
+      version: (existing.version ?? 1) + 1,
     });
 
-    if (!linkedTransactionId) {
-      await useActivityStore.getState().logActivity(
-        'group_expense',
-        `Updated "${nextExpense.description}" in ${group.name}`,
-        nextExpense.id,
-        'group_expense'
-      );
-    }
+    const actorName = currentMember?.name ?? getCurrentUserName();
+    await fanOutGroupUpdate(
+      group,
+      {
+        id: uuid(),
+        groupId: group.id,
+        actorProfileId: currentUserId,
+        eventType: 'expense_updated',
+        entityType: 'group_expense',
+        entityId: existing.id,
+        summary: `${actorName} updated ${existing.description}`,
+        payload: {
+          before: { description: existing.description, amount: existing.amount, paidBy: existing.paidBy },
+          after: { description: nextExpense.description, amount: nextExpense.amount, paidBy: nextExpense.paidBy },
+        },
+        createdAt: new Date().toISOString(),
+      },
+      `${actorName} updated an expense`,
+      `${existing.description} was changed in ${group.name}.`,
+    );
+
+    await useActivityStore.getState().logActivity(
+      'group_expense',
+      `Updated "${nextExpense.description}" in ${group.name}`,
+      nextExpense.id,
+      'group_expense',
+    );
   },
 
   deleteGroupExpense: async (id) => {
     const expense = await groupExpensesDb.get(id);
     if (!expense) return;
+
+    const group = await hydrateGroup(get().groups.find((item) => item.id === expense.groupId) ?? await splitGroupsDb.get(expense.groupId));
+    if (!group) throw new Error('Group not found');
+
+    const currentUserId = getCurrentUserId();
+    const currentMember = findCurrentMember(group);
 
     const meta = parseInternalNote(expense.notes).meta;
     if (meta.linkedTransactionId) {
@@ -250,6 +522,35 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     }
 
     await groupExpensesDb.delete(id);
+
+    const actorName = currentMember?.name ?? getCurrentUserName();
+    await fanOutGroupUpdate(
+      group,
+      {
+        id: uuid(),
+        groupId: group.id,
+        actorProfileId: currentUserId,
+        eventType: 'expense_deleted',
+        entityType: 'group_expense',
+        entityId: expense.id,
+        summary: `${actorName} deleted ${expense.description}`,
+        payload: {
+          description: expense.description,
+          amount: expense.amount,
+          paidBy: expense.paidBy,
+        },
+        createdAt: new Date().toISOString(),
+      },
+      `${actorName} deleted an expense`,
+      `${expense.description} was removed from ${group.name}.`,
+    );
+
+    await useActivityStore.getState().logActivity(
+      'group_expense',
+      `Deleted "${expense.description}" in ${group.name}`,
+      expense.id,
+      'group_expense',
+    );
   },
 
   getSettlements: async (groupId) => {
@@ -257,7 +558,10 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   },
 
   addSettlement: async (input) => {
-    const group = get().groups.find((item) => item.id === input.groupId) ?? await splitGroupsDb.get(input.groupId);
+    const group = await hydrateGroup(get().groups.find((item) => item.id === input.groupId) ?? await splitGroupsDb.get(input.groupId));
+    if (!group) throw new Error('Group not found');
+
+    const currentUserId = getCurrentUserId();
     const settlement: GroupSettlement = {
       id: uuid(),
       groupId: input.groupId,
@@ -267,53 +571,71 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       date: new Date().toISOString(),
       note: input.note || '',
       createdAt: new Date().toISOString(),
+      createdBy: currentUserId,
+      updatedBy: currentUserId,
     };
     await groupSettlementsDb.add(settlement);
-    if (group) {
-      const fromName = group.members.find((member) => member.id === input.fromMember)?.name ?? 'Someone';
-      const toName = group.members.find((member) => member.id === input.toMember)?.name ?? 'someone';
-      await useActivityStore.getState().logActivity(
-        'group_settlement',
-        `${fromName} settled with ${toName} in ${group.name}`,
-        settlement.id,
-        'group_settlement'
-      );
-    }
+
+    const fromName = group.members.find((member) => member.id === input.fromMember)?.name ?? 'Someone';
+    const toName = group.members.find((member) => member.id === input.toMember)?.name ?? 'someone';
+
+    await fanOutGroupUpdate(
+      group,
+      {
+        id: uuid(),
+        groupId: group.id,
+        actorProfileId: currentUserId,
+        eventType: 'settlement_added',
+        entityType: 'group_settlement',
+        entityId: settlement.id,
+        summary: `${fromName} settled with ${toName}`,
+        payload: {
+          fromMember: input.fromMember,
+          toMember: input.toMember,
+          amount: input.amount,
+        },
+        createdAt: settlement.createdAt,
+      },
+      `${fromName} settled up`,
+      `${fromName} settled ${input.amount} with ${toName} in ${group.name}.`,
+    );
+
+    await useActivityStore.getState().logActivity(
+      'group_settlement',
+      `${fromName} settled with ${toName} in ${group.name}`,
+      settlement.id,
+      'group_settlement',
+    );
     return settlement;
   },
 
   getSimplifiedDebts: async (groupId) => {
-    const group = await splitGroupsDb.get(groupId);
+    const group = await hydrateGroup(await splitGroupsDb.get(groupId));
     if (!group) return [];
 
     const expenses = await groupExpensesDb.getByGroup(groupId);
     const settlements = await groupSettlementsDb.getByGroup(groupId);
 
-    // Calculate net balance for each member
     const balances = new Map<string, number>();
-    group.members.forEach(m => balances.set(m.id, 0));
+    group.members.forEach(member => balances.set(member.id, 0));
 
-    for (const exp of expenses) {
-      // Payer's balance goes up (they are owed money)
-      balances.set(exp.paidBy, (balances.get(exp.paidBy) ?? 0) + exp.amount);
-      // Each split member's balance goes down (they owe money)
-      for (const split of exp.splits) {
+    for (const expense of expenses) {
+      balances.set(expense.paidBy, (balances.get(expense.paidBy) ?? 0) + expense.amount);
+      for (const split of expense.splits) {
         balances.set(split.memberId, (balances.get(split.memberId) ?? 0) - split.amount);
       }
     }
 
-    // Apply settlements
-    for (const s of settlements) {
-      balances.set(s.fromMember, (balances.get(s.fromMember) ?? 0) + s.amount);
-      balances.set(s.toMember, (balances.get(s.toMember) ?? 0) - s.amount);
+    for (const settlement of settlements) {
+      balances.set(settlement.fromMember, (balances.get(settlement.fromMember) ?? 0) + settlement.amount);
+      balances.set(settlement.toMember, (balances.get(settlement.toMember) ?? 0) - settlement.amount);
     }
 
-    // Simplify debts: separate creditors (positive) and debtors (negative)
     const creditors: { id: string; amount: number }[] = [];
     const debtors: { id: string; amount: number }[] = [];
 
-    balances.forEach((bal, id) => {
-      const rounded = Math.round(bal * 100) / 100;
+    balances.forEach((balance, id) => {
+      const rounded = Math.round(balance * 100) / 100;
       if (rounded > 0.01) creditors.push({ id, amount: rounded });
       else if (rounded < -0.01) debtors.push({ id, amount: Math.abs(rounded) });
     });
@@ -322,40 +644,42 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     debtors.sort((a, b) => b.amount - a.amount);
 
     const debts: SimplifiedDebt[] = [];
-    let ci = 0, di = 0;
-    while (ci < creditors.length && di < debtors.length) {
-      const amount = Math.min(creditors[ci].amount, debtors[di].amount);
+    let creditorIndex = 0;
+    let debtorIndex = 0;
+    while (creditorIndex < creditors.length && debtorIndex < debtors.length) {
+      const amount = Math.min(creditors[creditorIndex].amount, debtors[debtorIndex].amount);
       if (amount > 0.01) {
-        const fromMember = group.members.find(m => m.id === debtors[di].id);
-        const toMember = group.members.find(m => m.id === creditors[ci].id);
+        const fromMember = group.members.find(member => member.id === debtors[debtorIndex].id);
+        const toMember = group.members.find(member => member.id === creditors[creditorIndex].id);
         debts.push({
-          from: debtors[di].id,
+          from: debtors[debtorIndex].id,
           fromName: fromMember?.name ?? '?',
-          to: creditors[ci].id,
+          to: creditors[creditorIndex].id,
           toName: toMember?.name ?? '?',
           amount: Math.round(amount * 100) / 100,
         });
       }
-      creditors[ci].amount -= amount;
-      debtors[di].amount -= amount;
-      if (creditors[ci].amount < 0.01) ci++;
-      if (debtors[di].amount < 0.01) di++;
+      creditors[creditorIndex].amount -= amount;
+      debtors[debtorIndex].amount -= amount;
+      if (creditors[creditorIndex].amount < 0.01) creditorIndex += 1;
+      if (debtors[debtorIndex].amount < 0.01) debtorIndex += 1;
     }
 
     return debts;
   },
 
   getMyBalance: async (groupId) => {
-    const group = await splitGroupsDb.get(groupId);
+    const group = await hydrateGroup(await splitGroupsDb.get(groupId));
     if (!group) return 0;
-    const owner = group.members.find(m => m.isOwner);
-    if (!owner) return 0;
+
+    const currentMember = findCurrentMember(group);
+    if (!currentMember) return 0;
 
     const debts = await get().getSimplifiedDebts(groupId);
     let balance = 0;
-    for (const d of debts) {
-      if (d.to === owner.id) balance += d.amount;     // someone owes me
-      if (d.from === owner.id) balance -= d.amount;    // I owe someone
+    for (const debt of debts) {
+      if (debt.to === currentMember.id) balance += debt.amount;
+      if (debt.from === currentMember.id) balance -= debt.amount;
     }
     return Math.round(balance * 100) / 100;
   },

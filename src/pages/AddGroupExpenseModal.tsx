@@ -16,10 +16,13 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
   const toast = useToast();
   const { addGroupExpense } = useSplitStore();
   const { accounts, loadAccounts } = useAccountStore();
+  const defaultPayerId = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id
+    ?? group.members.find(member => member.isOwner)?.id
+    ?? '';
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState(group.members.find(m => m.isOwner)?.id ?? '');
+  const [paidBy, setPaidBy] = useState(defaultPayerId);
   const [splitType, setSplitType] = useState<SplitType>('equal');
   const [selectedMembers, setSelectedMembers] = useState<string[]>(group.members.map(m => m.id));
   const [exactAmounts, setExactAmounts] = useState<Record<string, string>>({});
@@ -30,8 +33,8 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
   const [saving, setSaving] = useState(false);
 
   const amt = parseFloat(amount) || 0;
-  const ownerId = group.members.find(m => m.isOwner)?.id ?? '';
-  const shouldTrackExpense = paidBy === ownerId && accounts.length > 0;
+  const currentMemberId = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id ?? '';
+  const shouldTrackExpense = paidBy === currentMemberId && accounts.length > 0;
 
   useEffect(() => {
     if (open) {

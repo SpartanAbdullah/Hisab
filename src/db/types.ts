@@ -123,6 +123,10 @@ export interface GroupMember {
   id: string;
   name: string;
   isOwner: boolean;
+  profileId?: string | null;
+  role?: 'owner' | 'member';
+  status?: 'guest' | 'invited' | 'connected';
+  joinedAt?: string | null;
 }
 
 export interface SplitGroup {
@@ -133,6 +137,7 @@ export interface SplitGroup {
   currency: Currency;
   settled: boolean;
   createdAt: string;
+  createdBy?: string | null;
 }
 
 export interface SplitDetail {
@@ -152,6 +157,11 @@ export interface GroupExpense {
   date: string;
   notes: string;
   createdAt: string;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  version?: number;
 }
 
 export interface GroupSettlement {
@@ -162,6 +172,56 @@ export interface GroupSettlement {
   amount: number;
   date: string;
   note: string;
+  createdAt: string;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+}
+
+export type GroupEventType =
+  | 'group_created'
+  | 'member_invited'
+  | 'member_joined'
+  | 'expense_added'
+  | 'expense_updated'
+  | 'expense_deleted'
+  | 'settlement_added';
+
+export interface GroupInvite {
+  id: string;
+  groupId: string;
+  tokenHash: string;
+  createdBy: string;
+  linkedMemberId: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  acceptedBy: string | null;
+  acceptedAt: string | null;
+  createdAt: string;
+}
+
+export interface GroupEvent {
+  id: string;
+  groupId: string;
+  actorProfileId: string | null;
+  eventType: GroupEventType;
+  entityType: 'group' | 'member' | 'group_expense' | 'group_settlement' | 'invite';
+  entityId: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  groupId: string | null;
+  eventId: string | null;
+  type: 'group_update' | 'invite' | 'system';
+  title: string;
+  body: string;
+  readAt: string | null;
   createdAt: string;
 }
 

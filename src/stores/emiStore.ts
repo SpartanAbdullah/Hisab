@@ -18,6 +18,7 @@ interface EmiState {
   loadSchedules: () => Promise<void>;
   generateSchedule: (input: GenerateEmiInput) => Promise<void>;
   markPaid: (emiId: string) => Promise<void>;
+  markAllPaidForLoan: (loanId: string) => Promise<void>;
   deleteByLoan: (loanId: string) => Promise<void>;
   getByLoan: (loanId: string) => EmiSchedule[];
 }
@@ -67,6 +68,37 @@ export const useEmiStore = create<EmiState>((set, get) => ({
         'loan'
       );
     }
+  },
+
+  markAllPaidForLoan: async (loanId) => {
+    const pendingSchedules = get().schedules.filter(
+      (schedule) => schedule.loanId === loanId && schedule.status !== 'paid'
+    );
+
+    if (pendingSchedules.length === 0) return;
+
+    await Promise.all(
+      pendingSchedules.map((schedule) =>
+        emiSchedulesDb.update(schedule.id, { status: 'paid' as EmiStatus })
+      )
+    );
+
+    set((s) => ({
+      schedules: s.schedules.map((schedule) =>
+        schedule.loanId === loanId && schedule.status !== 'paid'
+          ? { ...schedule, status: 'paid' as EmiStatus }
+          : schedule
+      ),
+    }));
+
+    await useActivityStore.getState().logActivity(
+      'emi_paid',
+      pendingSchedules.length === 1
+        ? `EMI #${pendingSchedules[0].installmentNumber} paid`
+        : `${pendingSchedules.length} EMIs marked paid after full repayment`,
+      loanId,
+      'loan'
+    );
   },
 
   deleteByLoan: async (loanId) => {

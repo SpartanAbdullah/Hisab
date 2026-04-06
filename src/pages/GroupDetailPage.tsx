@@ -1,47 +1,71 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Handshake, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3 } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { AddGroupExpenseModal } from './AddGroupExpenseModal';
 import { EditGroupExpenseModal } from './EditGroupExpenseModal';
 import { SettleUpModal } from './SettleUpModal';
+import { GroupInviteModal } from '../components/GroupInviteModal';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
-import type { SplitGroup, GroupExpense } from '../db';
+import type { SplitGroup, GroupExpense, GroupEvent } from '../db';
+
+function memberStatusClass(status?: string, isOwner?: boolean) {
+  if (isOwner) return 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200';
+  if (status === 'connected') return 'bg-emerald-100 text-emerald-700';
+  if (status === 'invited') return 'bg-amber-100 text-amber-700';
+  return 'bg-slate-100 text-slate-600';
+}
 
 export function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const t = useT();
-  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup } = useSplitStore();
+  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents } = useSplitStore();
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
   const [expenses, setExpenses] = useState<GroupExpense[]>([]);
+  const [events, setEvents] = useState<GroupEvent[]>([]);
   const [debts, setDebts] = useState<{ from: string; fromName: string; to: string; toName: string; amount: number }[]>([]);
-  const [tab, setTab] = useState<'expenses' | 'balances'>('expenses');
+  const [tab, setTab] = useState<'expenses' | 'balances' | 'activity'>('expenses');
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showSettle, setShowSettle] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
   const [editExpense, setEditExpense] = useState<GroupExpense | null>(null);
 
   useEffect(() => {
-    const g = groups.find(g => g.id === id);
-    if (g) setGroup(g);
+    const nextGroup = groups.find(item => item.id === id);
+    if (nextGroup) setGroup(nextGroup);
   }, [groups, id]);
 
   const reload = async () => {
     if (!id) return;
-    const [exps, debts] = await Promise.all([getGroupExpenses(id), getSimplifiedDebts(id)]);
-    setExpenses(exps);
-    setDebts(debts);
+    const [nextExpenses, nextDebts, nextEvents] = await Promise.all([
+      getGroupExpenses(id),
+      getSimplifiedDebts(id),
+      getGroupEvents(id),
+    ]);
+    setExpenses(nextExpenses);
+    setDebts(nextDebts);
+    setEvents(nextEvents);
   };
 
-  useEffect(() => { reload(); }, [id]);
+  useEffect(() => {
+    void reload();
+  }, [id]);
 
-  if (!group) return <div className="min-h-dvh flex items-center justify-center bg-mesh"><p className="text-slate-400">Loading...</p></div>;
+  if (!group) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-mesh">
+        <p className="text-slate-400">Loading...</p>
+      </div>
+    );
+  }
 
-  const getMemberName = (memberId: string) => group.members.find(m => m.id === memberId)?.name ?? '?';
-  const owner = group.members.find(m => m.isOwner);
+  const getMemberName = (memberId: string) => group.members.find(member => member.id === memberId)?.name ?? '?';
+  const currentMember = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))
+    ?? group.members.find(member => member.isOwner);
 
   const handleDelete = async () => {
     if (confirm(t('group_delete_confirm'))) {
@@ -52,7 +76,6 @@ export function GroupDetailPage() {
 
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
-      {/* Header */}
       <header className="sticky top-0 glass border-b border-slate-100/60 px-5 py-3.5 z-40">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -60,56 +83,68 @@ export function GroupDetailPage() {
               <ArrowLeft size={16} className="text-slate-500" />
             </button>
             <span className="text-xl">{group.emoji}</span>
-            <h1 className="text-[17px] font-bold tracking-tight text-slate-800">{group.name}</h1>
+            <div className="min-w-0">
+              <h1 className="text-[17px] font-bold tracking-tight text-slate-800 truncate">{group.name}</h1>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {group.members.filter(member => member.status === 'connected').length} connected
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <LanguageToggle />
+            <button onClick={() => setShowInvite(true)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-indigo-50 active:bg-indigo-100 transition-colors">
+              <Share2 size={14} className="text-indigo-500" />
+            </button>
             <button onClick={handleDelete} className="w-8 h-8 rounded-xl flex items-center justify-center bg-red-50 active:bg-red-100 transition-colors">
               <Trash2 size={14} className="text-red-400" />
             </button>
           </div>
         </div>
 
-        {/* Member avatars */}
         <div className="flex items-center gap-1 mt-3 overflow-x-auto no-scrollbar">
-          {group.members.map(m => (
-            <div key={m.id} className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${m.isOwner ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
-              {m.name.charAt(0).toUpperCase()}
+          {group.members.map(member => (
+            <div key={member.id} className="flex flex-col items-center gap-1 shrink-0">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${memberStatusClass(member.status, member.isOwner)}`}>
+                {member.name.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-[9px] text-slate-400">
+                {member.isOwner ? 'owner' : member.status ?? 'guest'}
+              </span>
             </div>
           ))}
           <span className="text-[10px] text-slate-400 ml-1.5">{group.members.length} {t('group_members_count')}</span>
         </div>
       </header>
 
-      {/* Simplified Debts Card */}
-      {debts.length > 0 && (
+      {debts.length > 0 && tab !== 'activity' && (
         <div className="px-5 pt-4">
           <div className="card-premium p-4 space-y-2.5">
-            {debts.map((d, i) => (
-              <div key={i} className="flex items-center justify-between">
+            {debts.map((debt, index) => (
+              <div key={`${debt.from}-${debt.to}-${index}`} className="flex items-center justify-between">
                 <p className="text-[12px] text-slate-600">
-                  <span className="font-bold text-red-500">{d.fromName}</span>
+                  <span className="font-bold text-red-500">{debt.fromName}</span>
                   {' '}{t('group_owes')}{' '}
-                  <span className="font-bold text-emerald-600">{d.toName}</span>
+                  <span className="font-bold text-emerald-600">{debt.toName}</span>
                 </p>
-                <p className="text-[13px] font-bold text-slate-800 tabular-nums">{formatMoney(d.amount, group.currency)}</p>
+                <p className="text-[13px] font-bold text-slate-800 tabular-nums">{formatMoney(debt.amount, group.currency)}</p>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Tabs */}
       <div className="flex gap-2 px-5 pt-5">
-        {(['expenses', 'balances'] as const).map(tb => (
-          <button key={tb} onClick={() => setTab(tb)}
-            className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${tab === tb ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
-            {tb === 'expenses' ? t('group_expenses') : t('group_balances')}
+        {(['expenses', 'balances', 'activity'] as const).map(nextTab => (
+          <button
+            key={nextTab}
+            onClick={() => setTab(nextTab)}
+            className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${tab === nextTab ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+          >
+            {nextTab === 'expenses' ? t('group_expenses') : nextTab === 'balances' ? t('group_balances') : 'Activity'}
           </button>
         ))}
       </div>
 
-      {/* Content */}
       {tab === 'expenses' ? (
         <div className="px-5 pt-4 space-y-2">
           {expenses.length === 0 ? (
@@ -117,38 +152,45 @@ export function GroupDetailPage() {
               <p className="text-sm">{t('group_no_expenses')}</p>
             </div>
           ) : (
-            expenses.map((exp, i) => (
-              <button key={exp.id} onClick={() => setEditExpense(exp)}
-                className="w-full text-left card-premium p-4 animate-fade-in active:scale-[0.98] transition-all" style={{ animationDelay: `${i * 30}ms` }}>
+            expenses.map((expense, index) => (
+              <button
+                key={expense.id}
+                onClick={() => setEditExpense(expense)}
+                className="w-full text-left card-premium p-4 animate-fade-in active:scale-[0.98] transition-all"
+                style={{ animationDelay: `${index * 30}ms` }}
+              >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-slate-800 truncate">{exp.description}</p>
+                    <p className="text-[13px] font-semibold text-slate-800 truncate">{expense.description}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      {getMemberName(exp.paidBy)} {t('group_paid_by').toLowerCase()} &middot; {exp.splitType}
+                      {getMemberName(expense.paidBy)} {t('group_paid_by').toLowerCase()} &middot; {expense.splitType}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-[14px] font-bold text-slate-800 tabular-nums">{formatMoney(exp.amount, group.currency)}</p>
-                    <p className="text-[9px] text-slate-400">{new Date(exp.date).toLocaleDateString()}</p>
+                    <p className="text-[14px] font-bold text-slate-800 tabular-nums">{formatMoney(expense.amount, group.currency)}</p>
+                    <p className="text-[9px] text-slate-400">{new Date(expense.date).toLocaleDateString()}</p>
                   </div>
                 </div>
               </button>
             ))
           )}
         </div>
-      ) : (
+      ) : tab === 'balances' ? (
         <div className="px-5 pt-4 space-y-2">
-          {group.members.map(m => {
-            const owedToMe = debts.filter(d => d.from === m.id && d.to === owner?.id).reduce((s, d) => s + d.amount, 0);
-            const iOwe = debts.filter(d => d.to === m.id && d.from === owner?.id).reduce((s, d) => s + d.amount, 0);
-            if (m.isOwner) return null;
+          {group.members.map(member => {
+            if (member.id === currentMember?.id) return null;
+            const owedToMe = debts.filter(debt => debt.from === member.id && debt.to === currentMember?.id).reduce((sum, debt) => sum + debt.amount, 0);
+            const iOwe = debts.filter(debt => debt.to === member.id && debt.from === currentMember?.id).reduce((sum, debt) => sum + debt.amount, 0);
             return (
-              <div key={m.id} className="card-premium p-4 flex items-center justify-between">
+              <div key={member.id} className="card-premium p-4 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-[12px] font-bold text-slate-600">
-                    {m.name.charAt(0).toUpperCase()}
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold ${memberStatusClass(member.status, member.isOwner)}`}>
+                    {member.name.charAt(0).toUpperCase()}
                   </div>
-                  <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
+                  <div>
+                    <p className="text-[13px] font-semibold text-slate-700">{member.name}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{member.status ?? 'guest'}</p>
+                  </div>
                 </div>
                 <div className="text-right">
                   {owedToMe > 0 ? (
@@ -163,25 +205,55 @@ export function GroupDetailPage() {
             );
           })}
         </div>
+      ) : (
+        <div className="px-5 pt-4 space-y-2">
+          {events.length === 0 ? (
+            <div className="card-premium p-6 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+                <Clock3 size={22} />
+              </div>
+              <p className="text-sm font-semibold text-slate-700 mt-3">No shared activity yet</p>
+              <p className="text-[12px] text-slate-400 mt-1">Adds, edits, deletes, joins, and settlements will appear here for everyone.</p>
+            </div>
+          ) : (
+            events.map((event, index) => (
+              <div key={event.id} className="card-premium p-4 animate-fade-in" style={{ animationDelay: `${index * 30}ms` }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                    <Clock3 size={16} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[13px] font-semibold text-slate-700 leading-snug">{event.summary}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">{new Date(event.createdAt).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       )}
 
-      {/* Action buttons */}
       <div className="fixed bottom-24 left-0 right-0 px-5 z-30">
         <div className="flex gap-2.5 max-w-[480px] mx-auto">
-          <button onClick={() => setShowAddExpense(true)}
-            className="flex-1 btn-gradient rounded-2xl py-3 text-sm font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2">
+          <button
+            onClick={() => setShowAddExpense(true)}
+            className="flex-1 btn-gradient rounded-2xl py-3 text-sm font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+          >
             <Plus size={16} /> {t('group_expense_add')}
           </button>
-          <button onClick={() => setShowSettle(true)}
-            className="px-5 rounded-2xl py-3 text-sm font-bold bg-emerald-500 text-white shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all">
+          <button
+            onClick={() => setShowSettle(true)}
+            className="px-5 rounded-2xl py-3 text-sm font-bold bg-emerald-500 text-white shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all"
+          >
             <Handshake size={16} /> {t('group_settle')}
           </button>
         </div>
       </div>
 
-      <AddGroupExpenseModal open={showAddExpense} group={group} onClose={() => { setShowAddExpense(false); reload(); }} />
-      <EditGroupExpenseModal open={!!editExpense} group={group} expense={editExpense} onClose={() => { setEditExpense(null); reload(); }} />
-      <SettleUpModal open={showSettle} group={group} debts={debts} onClose={() => { setShowSettle(false); reload(); }} />
+      <AddGroupExpenseModal open={showAddExpense} group={group} onClose={() => { setShowAddExpense(false); void reload(); }} />
+      <EditGroupExpenseModal open={!!editExpense} group={group} expense={editExpense} onClose={() => { setEditExpense(null); void reload(); }} />
+      <SettleUpModal open={showSettle} group={group} debts={debts} onClose={() => { setShowSettle(false); void reload(); }} />
+      <GroupInviteModal open={showInvite} group={group} onClose={() => { setShowInvite(false); void reload(); }} />
     </div>
   );
 }

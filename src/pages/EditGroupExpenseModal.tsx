@@ -34,8 +34,8 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const [paidFromAccountId, setPaidFromAccountId] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const ownerId = group.members.find(member => member.isOwner)?.id ?? '';
-  const shouldTrackExpense = paidBy === ownerId && accounts.length > 0;
+  const currentMemberId = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id ?? '';
+  const shouldTrackExpense = paidBy === currentMemberId && accounts.length > 0;
 
   useEffect(() => {
     if (open) {

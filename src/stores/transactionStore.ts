@@ -261,6 +261,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         relatedLoanId = input.loanId;
         relatedPerson = loan.personName;
         currency = loan.currency;
+        const shouldSettleRemainingEmis = !input.emiId && loan.remainingAmount - input.amount <= 0.00001;
 
         if (loan.type === 'given') {
           if (!input.destinationAccountId) throw new Error('Destination account required');
@@ -302,6 +303,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         await loanStore.applyRepayment(input.loanId, input.amount);
         if (input.emiId) {
           await emiStore.markPaid(input.emiId);
+        } else if (shouldSettleRemainingEmis) {
+          await emiStore.markAllPaidForLoan(input.loanId);
         }
         break;
       }

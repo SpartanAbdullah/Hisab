@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
+import { generatePublicCodeCandidate, normalizePublicCode } from '../lib/collaboration';
 
 interface SupabaseAuthState {
   user: User | null;
@@ -48,7 +49,13 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
 
     if (data.user) {
       // Update profile with name
-      await supabase.from('profiles').update({ name, onboarding_completed: false }).eq('id', data.user.id);
+      const publicCode = generatePublicCodeCandidate();
+      await supabase.from('profiles').update({
+        name,
+        onboarding_completed: false,
+        public_code: publicCode,
+        public_code_normalized: normalizePublicCode(publicCode),
+      }).eq('id', data.user.id);
       set({ user: data.user, session: data.session });
     }
 
