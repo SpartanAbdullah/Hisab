@@ -7,10 +7,12 @@ import { useAccountStore } from '../stores/accountStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { ProgressRing } from '../components/ProgressRing';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { AddLoanModal } from './AddLoanModal';
 import { useNavigate } from 'react-router-dom';
+import type { Currency } from '../db';
 
 export function LoansPage() {
   const { loans, loadLoans } = useLoanStore();
@@ -27,15 +29,28 @@ export function LoansPage() {
   const filtered = loans.filter(l => l.status === tab);
   const receivables = filtered.filter(l => l.type === 'given');
   const payables = filtered.filter(l => l.type === 'taken');
-  // Group totals per currency — mixing AED and PKR in one sum is meaningless.
-  const sumByCurrency = (items: typeof loans) => items.reduce((acc, l) => {
-    acc[l.currency] = (acc[l.currency] ?? 0) + l.remainingAmount;
-    return acc;
-  }, {} as Record<string, number>);
-  const receivablesByCurrency = sumByCurrency(receivables);
-  const payablesByCurrency = sumByCurrency(payables);
-  const hasReceivables = Object.values(receivablesByCurrency).some(v => v > 0);
-  const hasPayables = Object.values(payablesByCurrency).some(v => v > 0);
+
+  // Aggregate per currency so AED and PKR totals never merge. For each
+  // currency we track both `remaining` (what's still open) and `total` (the
+  // original amount) — the ring visualises collection progress:
+  // collected = (total − remaining) / total.
+  type Aggregate = { remaining: number; total: number; count: number };
+  const aggregateByCurrency = (items: typeof loans): Record<string, Aggregate> =>
+    items.reduce((acc, l) => {
+      const bucket = acc[l.currency] ?? { remaining: 0, total: 0, count: 0 };
+      bucket.remaining += l.remainingAmount;
+      bucket.total += l.totalAmount;
+      bucket.count += 1;
+      acc[l.currency] = bucket;
+      return acc;
+    }, {} as Record<string, Aggregate>);
+
+  const receivableAgg = aggregateByCurrency(receivables);
+  const payableAgg = aggregateByCurrency(payables);
+  const receivableEntries = Object.entries(receivableAgg).filter(([, a]) => a.remaining > 0);
+  const payableEntries = Object.entries(payableAgg).filter(([, a]) => a.remaining > 0);
+  const hasReceivables = receivableEntries.length > 0;
+  const hasPayables = payableEntries.length > 0;
 
   const renderLoanCard = (l: typeof loans[0], i: number) => {
     const isGiven = l.type === 'given';
@@ -71,45 +86,62 @@ export function LoansPage() {
         action={<div className="flex items-center gap-2"><LanguageToggle /><button onClick={() => setShowAdd(true)} className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5"><Plus size={13} strokeWidth={2.5} /> {t('naya')}</button></div>}
       />
 
-      {/* Summary — one card per currency per side, so AED and PKR stay separate. */}
+      {/* Summary — one clean card per currency per side. Ring shows collection
+          progress (for receivables) or repayment progress (for payables). */}
       {tab === 'active' && (hasReceivables || hasPayables) && (
-        <div className="px-5 pt-5 grid grid-cols-2 gap-3">
-          {hasReceivables && (
-            <div className="relative overflow-hidden rounded-2xl p-4 text-white animate-scale-in">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600" />
-              <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 80% 20%, rgba(255,255,255,0.3), transparent 60%)' }} />
-              <div className="relative">
-                <HandCoins size={16} className="opacity-70 mb-2" strokeWidth={1.8} />
-                <p className="text-[10px] uppercase tracking-widest opacity-70">{t('loan_receivable')}</p>
-                <div className="mt-1 space-y-0.5">
-                  {Object.entries(receivablesByCurrency).filter(([, v]) => v > 0).map(([cur, amt]) => (
-                    <p key={cur} className="text-lg font-bold tabular-nums tracking-tight leading-tight">
-                      {formatMoney(amt, cur as typeof loans[0]['currency'])}
-                    </p>
-                  ))}
+        <div className="px-5 pt-5 space-y-2.5">
+          {receivableEntries.map(([cur, agg]) => {
+            const progress = agg.total > 0 ? (agg.total - agg.remaining) / agg.total : 0;
+            const pct = Math.round(progress * 100);
+            return (
+              <div key={`recv-${cur}`} className="card-premium p-4 flex items-center gap-4 animate-scale-in">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                  <HandCoins size={16} className="text-emerald-600" strokeWidth={2} />
                 </div>
-                <p className="text-[10px] opacity-60 mt-1">{receivables.length} log</p>
-              </div>
-            </div>
-          )}
-          {hasPayables && (
-            <div className="relative overflow-hidden rounded-2xl p-4 text-white animate-scale-in">
-              <div className="absolute inset-0 bg-gradient-to-br from-red-500 via-red-600 to-rose-600" />
-              <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 80% 20%, rgba(255,255,255,0.3), transparent 60%)' }} />
-              <div className="relative">
-                <Handshake size={16} className="opacity-70 mb-2" strokeWidth={1.8} />
-                <p className="text-[10px] uppercase tracking-widest opacity-70">{t('loan_payable')}</p>
-                <div className="mt-1 space-y-0.5">
-                  {Object.entries(payablesByCurrency).filter(([, v]) => v > 0).map(([cur, amt]) => (
-                    <p key={cur} className="text-lg font-bold tabular-nums tracking-tight leading-tight">
-                      {formatMoney(amt, cur as typeof loans[0]['currency'])}
-                    </p>
-                  ))}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
+                    {t('loan_receivable')} · {cur}
+                  </p>
+                  <p className="text-[22px] font-extrabold text-slate-800 tabular-nums tracking-tight mt-0.5 leading-tight">
+                    {formatMoney(agg.remaining, cur as Currency)}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {formatMoney(agg.total - agg.remaining, cur as Currency)} of {formatMoney(agg.total, cur as Currency)} received
+                    <span className="mx-1.5">·</span>{agg.count} {agg.count === 1 ? 'loan' : 'loans'}
+                  </p>
                 </div>
-                <p className="text-[10px] opacity-60 mt-1">{payables.length} log</p>
+                <ProgressRing size={52} strokeWidth={5} progress={progress} color="#10b981" trackColor="#ecfdf5">
+                  <span className="text-[10px] font-extrabold tabular-nums text-emerald-600">{pct}%</span>
+                </ProgressRing>
               </div>
-            </div>
-          )}
+            );
+          })}
+          {payableEntries.map(([cur, agg]) => {
+            const progress = agg.total > 0 ? (agg.total - agg.remaining) / agg.total : 0;
+            const pct = Math.round(progress * 100);
+            return (
+              <div key={`pay-${cur}`} className="card-premium p-4 flex items-center gap-4 animate-scale-in">
+                <div className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
+                  <Handshake size={16} className="text-rose-500" strokeWidth={2} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">
+                    {t('loan_payable')} · {cur}
+                  </p>
+                  <p className="text-[22px] font-extrabold text-slate-800 tabular-nums tracking-tight mt-0.5 leading-tight">
+                    {formatMoney(agg.remaining, cur as Currency)}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {formatMoney(agg.total - agg.remaining, cur as Currency)} of {formatMoney(agg.total, cur as Currency)} paid
+                    <span className="mx-1.5">·</span>{agg.count} {agg.count === 1 ? 'loan' : 'loans'}
+                  </p>
+                </div>
+                <ProgressRing size={52} strokeWidth={5} progress={progress} color="#f43f5e" trackColor="#fff1f2">
+                  <span className="text-[10px] font-extrabold tabular-nums text-rose-500">{pct}%</span>
+                </ProgressRing>
+              </div>
+            );
+          })}
         </div>
       )}
 

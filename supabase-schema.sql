@@ -460,7 +460,31 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC);
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own notifications" ON notifications FOR ALL USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can view own notifications"
+  ON notifications FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own notifications"
+  ON notifications FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own notifications"
+  ON notifications FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- INSERT must allow fan-out — a member notifying other connected members of
+-- the same group. Without this, any write that triggers notifications rejects.
+CREATE POLICY "Users can insert notifications for self or fellow members"
+  ON notifications FOR INSERT
+  WITH CHECK (
+    auth.uid() = user_id
+    OR (
+      group_id IS NOT NULL
+      AND public.is_group_member(group_id, auth.uid())
+      AND public.is_group_member(group_id, user_id)
+    )
+  );
 
 CREATE POLICY "Members can view shared groups"
   ON split_groups FOR SELECT

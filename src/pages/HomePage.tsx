@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownLeft, Globe, Plus, BarChart3 } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Wallet, Plus, BarChart3 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
@@ -11,10 +11,12 @@ import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { AccountCard } from '../components/AccountCard';
 import { TransactionItem } from '../components/TransactionItem';
 import { EmptyState } from '../components/EmptyState';
+import { ProgressRing } from '../components/ProgressRing';
+import { UserAvatar } from '../components/UserAvatar';
 import { AddAccountStepper } from './AddAccountStepper';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
-import { useT, useI18nStore } from '../lib/i18n';
+import { useT } from '../lib/i18n';
 
 export function HomePage() {
   const { accounts, loadAccounts } = useAccountStore();
@@ -26,7 +28,6 @@ export function HomePage() {
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
   const navigate = useNavigate();
   const t = useT();
-  const { lang, setLang } = useI18nStore();
   const [showAddAccount, setShowAddAccount] = useState(false);
 
   const userName = localStorage.getItem('hisaab_user_name') ?? 'User';
@@ -91,29 +92,17 @@ export function HomePage() {
 
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
-      {/* Header */}
+      {/* Header — calm greeting + avatar anchor on the right. Actions moved
+          into their own section headers to keep this row quiet. */}
       <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-4 z-40">
         <div className="flex items-center justify-between">
-          <div>
+          <div className="min-w-0">
             <p className="text-[11px] text-slate-400 font-medium tracking-wide">{greeting}</p>
-            <h1 className="text-lg font-bold tracking-tight text-slate-800">{userName} <span className="inline-block animate-float">{greetingEmoji}</span></h1>
+            <h1 className="text-[18px] font-extrabold tracking-tight text-slate-800 truncate">
+              {userName} <span className="inline-block animate-float">{greetingEmoji}</span>
+            </h1>
           </div>
-          <div className="flex items-center gap-2">
-            {/* LANGUAGE SWITCHER */}
-            <button
-              onClick={() => setLang(lang === 'ur' ? 'en' : 'ur')}
-              className="bg-slate-100 text-slate-500 rounded-xl px-3 py-2 text-[10px] font-bold flex items-center gap-1.5 active:scale-95 transition-all"
-            >
-              <Globe size={12} strokeWidth={2} />
-              {lang === 'ur' ? 'EN' : 'UR'}
-            </button>
-            <button
-              onClick={() => setShowAddAccount(true)}
-              className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5"
-            >
-              <Plus size={13} strokeWidth={2.5} /> Account
-            </button>
-          </div>
+          <UserAvatar name={userName} size={40} onClick={() => navigate('/settings')} />
         </div>
       </header>
 
@@ -181,26 +170,69 @@ export function HomePage() {
         </div>
       )}
 
-      {/* Net Worth Cards */}
+      {/* Net Worth — one clean white card per currency. The ring on the right
+          visualises this month's savings rate: (income − expense) / income.
+          Green when saving, rose when net-negative, grey when no activity. */}
       <div className="px-5 pt-5">
         {Object.keys(totals).length > 0 ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             {Object.entries(totals).map(([currency, total]) => {
               const meta = currencyMeta[currency];
+              const now = new Date();
+              const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+              const monthTxns = transactions.filter(tx =>
+                new Date(tx.createdAt) >= startOfMonth && tx.currency === currency,
+              );
+              const monthIncome = monthTxns.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0);
+              const monthExpense = monthTxns.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
+              const hasActivity = monthIncome > 0 || monthExpense > 0;
+              const savingsRate = monthIncome > 0 ? (monthIncome - monthExpense) / monthIncome : 0;
+              const ringProgress = hasActivity ? Math.max(0, Math.min(1, savingsRate)) : 0;
+              const ringColor = !hasActivity ? '#cbd5e1' : savingsRate >= 0 ? '#10b981' : '#f43f5e';
+              const ringLabel = !hasActivity
+                ? '—'
+                : savingsRate >= 0
+                  ? `${Math.round(savingsRate * 100)}%`
+                  : '!';
+              const accountCount = accounts.filter(a => a.currency === currency).length;
+
               return (
-                <div key={currency} className="relative overflow-hidden rounded-2xl p-4 text-white animate-scale-in">
-                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 via-indigo-600 to-indigo-700" />
-                  <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 80% 20%, rgba(255,255,255,0.3), transparent 60%)' }} />
-                  <div className="relative">
-                    <p className="text-[10px] uppercase tracking-widest opacity-70 flex items-center gap-1">
-                      <span>{meta?.flag}</span> Total {currency}
-                    </p>
-                    <p className="text-xl font-bold mt-1.5 tabular-nums tracking-tight animate-count-up">{formatMoney(total, currency)}</p>
-                    <div className="flex items-center gap-1 mt-2">
-                      {total >= 0 ? <TrendingUp size={11} className="opacity-60" /> : <TrendingDown size={11} className="opacity-60" />}
-                      <span className="text-[10px] opacity-60">{accounts.filter(a => a.currency === currency).length} accounts</span>
+                <div
+                  key={currency}
+                  className="card-premium p-4 flex items-center gap-4 animate-scale-in"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[14px]">{meta?.flag}</span>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Total {currency}
+                      </p>
                     </div>
+                    <p className="text-[26px] font-extrabold tracking-tight text-slate-800 mt-1 tabular-nums animate-count-up">
+                      {formatMoney(total, currency)}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      {accountCount} {accountCount === 1 ? 'account' : 'accounts'}
+                      {hasActivity && (
+                        <span className={`ml-2 font-semibold ${savingsRate >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                          · {savingsRate >= 0 ? 'Saving' : 'Overspending'} this month
+                        </span>
+                      )}
+                    </p>
                   </div>
+                  <ProgressRing
+                    size={56}
+                    strokeWidth={5}
+                    progress={ringProgress}
+                    color={ringColor}
+                    trackColor="#f1f5f9"
+                  >
+                    <span className={`text-[11px] font-extrabold tabular-nums ${
+                      !hasActivity ? 'text-slate-400' : savingsRate >= 0 ? 'text-emerald-600' : 'text-rose-500'
+                    }`}>
+                      {ringLabel}
+                    </span>
+                  </ProgressRing>
                 </div>
               );
             })}
@@ -286,7 +318,16 @@ export function HomePage() {
       {/* Accounts */}
       {accounts.length > 0 && (
         <div className="px-5 pt-6">
-          <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t('home_accounts')}</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('home_accounts')}</h2>
+            <button
+              onClick={() => setShowAddAccount(true)}
+              className="text-[11px] text-indigo-600 font-bold active:opacity-70 tracking-tight flex items-center gap-1"
+              aria-label="Add account"
+            >
+              <Plus size={12} strokeWidth={2.5} /> Add
+            </button>
+          </div>
           <div className="space-y-2.5">
             {accounts.map((a, i) => {
               // Find nearest upcoming expense for this account (within 30 days)

@@ -118,13 +118,21 @@ function getNotificationRecipients(group: SplitGroup, actorProfileId: string): s
   ));
 }
 
+// Side-effect fan-out for group writes. Logs failures but never throws —
+// notifications and activity events must not bring down the caller's write.
+// The DB rows that matter (the group, members, expense, settlement) have
+// already committed by the time we reach here.
 async function fanOutGroupUpdate(
   group: SplitGroup,
   event: GroupEvent,
   notificationTitle: string,
   notificationBody: string,
 ) {
-  await groupEventsDb.add(event);
+  try {
+    await groupEventsDb.add(event);
+  } catch (err) {
+    console.error('fanOut: group event insert failed (non-fatal)', err);
+  }
 
   const recipients = getNotificationRecipients(group, event.actorProfileId ?? '');
   if (recipients.length === 0) return;
@@ -140,7 +148,11 @@ async function fanOutGroupUpdate(
     readAt: null,
     createdAt: event.createdAt,
   }));
-  await notificationsDb.addMany(notifications);
+  try {
+    await notificationsDb.addMany(notifications);
+  } catch (err) {
+    console.error('fanOut: notifications insert failed (non-fatal)', err);
+  }
 }
 
 export const useSplitStore = create<SplitState>((set, get) => ({
@@ -206,8 +218,19 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       joinCodeNormalized,
     };
 
-    await splitGroupsDb.add(group);
-    await groupMembersDb.addMany(group.id, members);
+    // Critical writes — if either fails, we must roll back so the user
+    // doesn't end up with a phantom group. Previously an exception here
+    // (or in the downstream side-effects) bubbled to the UI as "error"
+    // even though rows had committed, tempting the user to retry and
+    // accumulate duplicates.
+    try {
+      await splitGroupsDb.add(group);
+      await groupMembersDb.addMany(group.id, members);
+    } catch (err) {
+      await splitGroupsDb.delete(group.id).catch(() => {});
+      throw err;
+    }
+
     await fanOutGroupUpdate(
       group,
       {
@@ -226,7 +249,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     );
 
     await get().loadGroups();
-    await useActivityStore.getState().logActivity('group_created', `Created group "${name}"`, group.id, 'group');
+    try {
+      await useActivityStore.getState().logActivity('group_created', `Created group "${name}"`, group.id, 'group');
+    } catch (err) {
+      console.error('activity log failed (non-fatal)', err);
+    }
     return group;
   },
 

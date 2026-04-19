@@ -7,6 +7,7 @@ import { useOnboardingStore } from './stores/onboardingStore';
 import { useAppModeStore } from './stores/appModeStore';
 import { useSupabaseAuthStore } from './stores/supabaseAuthStore';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
 
 // Lazy-loaded pages for code splitting
 const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })));
@@ -69,6 +70,19 @@ function AppContent() {
       localStorage.setItem('hisaab_pending_invite', location.pathname.replace('/join/', ''));
     }
   }, [location.pathname, user]);
+
+  // Realtime: subscribe when we know who the user is, tear down on signout.
+  // Fires loadGroups / loadNotifications on relevant row changes so the user
+  // doesn't need to refresh to see a new group they were added to or new
+  // in-app notifications.
+  useEffect(() => {
+    if (!user?.id) {
+      stopGlobalRealtime();
+      return;
+    }
+    startGlobalRealtime(user.id);
+    return () => stopGlobalRealtime();
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;

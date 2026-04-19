@@ -7,10 +7,12 @@ import { AddGroupExpenseModal } from './AddGroupExpenseModal';
 import { EditGroupExpenseModal } from './EditGroupExpenseModal';
 import { SettleUpModal } from './SettleUpModal';
 import { GroupInviteModal } from '../components/GroupInviteModal';
+import { ProgressRing } from '../components/ProgressRing';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
-import type { SplitGroup, GroupExpense, GroupEvent } from '../db';
+import { subscribeToGroupMembers } from '../lib/realtime';
+import type { SplitGroup, GroupExpense, GroupEvent, GroupSettlement } from '../db';
 
 function memberStatusClass(status?: string, isOwner?: boolean) {
   if (isOwner) return 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200';
@@ -24,11 +26,12 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const t = useT();
   const toast = useToast();
-  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents } = useSplitStore();
+  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents, getSettlements } = useSplitStore();
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
   const [expenses, setExpenses] = useState<GroupExpense[]>([]);
   const [events, setEvents] = useState<GroupEvent[]>([]);
+  const [settlements, setSettlements] = useState<GroupSettlement[]>([]);
   const [debts, setDebts] = useState<{ from: string; fromName: string; to: string; toName: string; amount: number }[]>([]);
   const [tab, setTab] = useState<'expenses' | 'balances' | 'activity'>('expenses');
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -43,18 +46,31 @@ export function GroupDetailPage() {
 
   const reload = async () => {
     if (!id) return;
-    const [nextExpenses, nextDebts, nextEvents] = await Promise.all([
+    const [nextExpenses, nextDebts, nextEvents, nextSettlements] = await Promise.all([
       getGroupExpenses(id),
       getSimplifiedDebts(id),
       getGroupEvents(id),
+      getSettlements(id),
     ]);
     setExpenses(nextExpenses);
     setDebts(nextDebts);
     setEvents(nextEvents);
+    setSettlements(nextSettlements);
   };
 
   useEffect(() => {
     void reload();
+  }, [id]);
+
+  // While this page is open, subscribe to member changes on this group so
+  // the header avatars and member count reflect joins/leaves instantly.
+  useEffect(() => {
+    if (!id) return;
+    const unsubscribe = subscribeToGroupMembers(id, () => {
+      void useSplitStore.getState().loadGroups();
+      void reload();
+    });
+    return unsubscribe;
   }, [id]);
 
   if (!group) {
@@ -68,6 +84,29 @@ export function GroupDetailPage() {
   const getMemberName = (memberId: string) => group.members.find(member => member.id === memberId)?.name ?? '?';
   const currentMember = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))
     ?? group.members.find(member => member.isOwner);
+
+  // Group-level health: total spend, settlements, and how far toward "zero
+  // imbalance" the group is. Used both by the summary card and by the
+  // per-member rings on the Balances tab.
+  const totalSpend = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalSettled = settlements.reduce((s, x) => s + x.amount, 0);
+  const totalOutstanding = debts.reduce((s, d) => s + d.amount, 0);
+  const settledRatio = totalOutstanding === 0
+    ? 1
+    : totalSettled / (totalSettled + totalOutstanding);
+  const settledPct = Math.round(Math.max(0, Math.min(1, settledRatio)) * 100);
+
+  // Per-member net balance — positive = owed money, negative = owes money.
+  const memberNet = new Map<string, number>();
+  for (const member of group.members) memberNet.set(member.id, 0);
+  for (const d of debts) {
+    memberNet.set(d.to, (memberNet.get(d.to) ?? 0) + d.amount);
+    memberNet.set(d.from, (memberNet.get(d.from) ?? 0) - d.amount);
+  }
+  const maxAbs = Math.max(
+    1,
+    ...Array.from(memberNet.values()).map(v => Math.abs(v)),
+  );
 
   const handleDelete = async () => {
     if (confirm(t('group_delete_confirm'))) {
@@ -142,8 +181,48 @@ export function GroupDetailPage() {
         </div>
       )}
 
-      {debts.length > 0 && tab !== 'activity' && (
+      {/* Group health — total spend on the left, settled-% ring on the right.
+          Always present once there's any activity so users have an at-a-glance
+          sense of how far from "fully settled" the group is. */}
+      {tab !== 'activity' && totalSpend > 0 && (
         <div className="px-5 pt-4">
+          <div className="card-premium p-4 flex items-center gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Group spend</p>
+              <p className="text-[22px] font-extrabold text-slate-800 tabular-nums tracking-tight mt-0.5 leading-tight">
+                {formatMoney(totalSpend, group.currency)}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {totalOutstanding === 0 ? (
+                  <span className="text-emerald-600 font-semibold">All settled</span>
+                ) : (
+                  <>
+                    <span className="text-rose-500 font-semibold">{formatMoney(totalOutstanding, group.currency)}</span>
+                    <span> outstanding</span>
+                  </>
+                )}
+                <span className="mx-1.5">·</span>{expenses.length} {expenses.length === 1 ? 'expense' : 'expenses'}
+              </p>
+            </div>
+            <ProgressRing
+              size={56}
+              strokeWidth={5}
+              progress={settledRatio}
+              color={totalOutstanding === 0 ? '#10b981' : '#6366f1'}
+              trackColor="#f1f5f9"
+            >
+              <span className={`text-[11px] font-extrabold tabular-nums ${
+                totalOutstanding === 0 ? 'text-emerald-600' : 'text-indigo-600'
+              }`}>
+                {settledPct}%
+              </span>
+            </ProgressRing>
+          </div>
+        </div>
+      )}
+
+      {debts.length > 0 && tab !== 'activity' && (
+        <div className="px-5 pt-3">
           <div className="card-premium p-4 space-y-2.5">
             {debts.map((debt, index) => (
               <div key={`${debt.from}-${debt.to}-${index}`} className="flex items-center justify-between">
@@ -207,25 +286,41 @@ export function GroupDetailPage() {
             if (member.id === currentMember?.id) return null;
             const owedToMe = debts.filter(debt => debt.from === member.id && debt.to === currentMember?.id).reduce((sum, debt) => sum + debt.amount, 0);
             const iOwe = debts.filter(debt => debt.to === member.id && debt.from === currentMember?.id).reduce((sum, debt) => sum + debt.amount, 0);
+            // Ring visualises this member's weight in the group's outstanding
+            // imbalance: larger ring = bigger net position either way.
+            const net = memberNet.get(member.id) ?? 0;
+            const ringProgress = Math.abs(net) / maxAbs;
+            const isPositive = net > 0.01;
+            const isNegative = net < -0.01;
+            const ringColor = isPositive ? '#10b981' : isNegative ? '#f43f5e' : '#cbd5e1';
             return (
-              <div key={member.id} className="card-premium p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold ${memberStatusClass(member.status, member.isOwner)}`}>
+              <div key={member.id} className="card-premium p-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 ${memberStatusClass(member.status, member.isOwner)}`}>
                     {member.name.charAt(0).toUpperCase()}
                   </div>
-                  <div>
-                    <p className="text-[13px] font-semibold text-slate-700">{member.name}</p>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-slate-700 truncate">{member.name}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">{member.status ?? 'guest'}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  {owedToMe > 0 ? (
-                    <p className="text-[12px] font-bold text-emerald-600">+{formatMoney(owedToMe, group.currency)}</p>
-                  ) : iOwe > 0 ? (
-                    <p className="text-[12px] font-bold text-red-500">-{formatMoney(iOwe, group.currency)}</p>
-                  ) : (
-                    <p className="text-[11px] text-slate-400">{t('group_settled')}</p>
-                  )}
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-right">
+                    {owedToMe > 0 ? (
+                      <p className="text-[12px] font-bold text-emerald-600 tabular-nums">+{formatMoney(owedToMe, group.currency)}</p>
+                    ) : iOwe > 0 ? (
+                      <p className="text-[12px] font-bold text-red-500 tabular-nums">-{formatMoney(iOwe, group.currency)}</p>
+                    ) : (
+                      <p className="text-[11px] text-slate-400">{t('group_settled')}</p>
+                    )}
+                  </div>
+                  <ProgressRing
+                    size={36}
+                    strokeWidth={3}
+                    progress={ringProgress}
+                    color={ringColor}
+                    trackColor="#f1f5f9"
+                  />
                 </div>
               </div>
             );
