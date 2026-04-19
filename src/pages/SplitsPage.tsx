@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Plus } from 'lucide-react';
+import { Users, Plus, LogIn } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
-import { EmptyState } from '../components/EmptyState';
 import { CreateGroupModal } from './CreateGroupModal';
+import { JoinGroupModal } from './JoinGroupModal';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 
 export function SplitsPage() {
   const { groups, loadGroups } = useSplitStore();
   const [showCreate, setShowCreate] = useState(false);
+  const [showJoin, setShowJoin] = useState(false);
   const [balances, setBalances] = useState<Record<string, number>>({});
   const navigate = useNavigate();
   const t = useT();
@@ -37,6 +38,9 @@ export function SplitsPage() {
         action={
           <div className="flex items-center gap-2">
             <LanguageToggle />
+            <button onClick={() => setShowJoin(true)} className="bg-slate-100 text-slate-600 rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all">
+              <LogIn size={13} strokeWidth={2.5} /> Join
+            </button>
             <button onClick={() => setShowCreate(true)} className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5">
               <Plus size={13} strokeWidth={2.5} /> {t('naya')}
             </button>
@@ -46,13 +50,29 @@ export function SplitsPage() {
 
       <div className="px-5 pt-5 space-y-2.5">
         {groups.length === 0 ? (
-          <EmptyState
-            icon={Users}
-            title={t('group_empty')}
-            description={t('group_empty_desc')}
-            actionLabel={t('group_new')}
-            onAction={() => setShowCreate(true)}
-          />
+          <div className="card-premium p-8 text-center animate-fade-in">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
+              <Users size={24} className="text-indigo-500" />
+            </div>
+            <p className="text-[15px] font-bold text-slate-800 mt-4 tracking-tight">{t('group_empty')}</p>
+            <p className="text-[12px] text-slate-400 mt-1.5 leading-relaxed max-w-[260px] mx-auto">
+              {t('group_empty_desc')}
+            </p>
+            <div className="mt-5 flex gap-2.5">
+              <button
+                onClick={() => setShowJoin(true)}
+                className="flex-1 rounded-2xl py-3 text-[13px] font-bold bg-slate-100 text-slate-700 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+              >
+                <LogIn size={14} /> Join Group
+              </button>
+              <button
+                onClick={() => setShowCreate(true)}
+                className="flex-1 rounded-2xl py-3 text-[13px] font-bold btn-gradient active:scale-95 transition-all flex items-center justify-center gap-1.5"
+              >
+                <Plus size={14} /> Create Group
+              </button>
+            </div>
+          </div>
         ) : (
           groups.map((g, i) => {
             const bal = balances[g.id] ?? 0;
@@ -86,6 +106,7 @@ export function SplitsPage() {
       </div>
 
       <CreateGroupModal open={showCreate} onClose={() => { setShowCreate(false); loadGroups(); }} />
+      <JoinGroupModal open={showJoin} onClose={() => { setShowJoin(false); loadGroups(); }} />
     </div>
   );
 }

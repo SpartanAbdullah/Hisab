@@ -10,7 +10,7 @@ interface Props {
 export function PageHeader({ title, back, action }: Props) {
   const navigate = useNavigate();
   return (
-    <header className="sticky top-0 glass border-b border-slate-100/60 px-5 py-3.5 flex items-center justify-between z-40">
+    <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-3.5 flex items-center justify-between z-40">
       <div className="flex items-center gap-2.5">
         {back && (
           <button

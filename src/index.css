@@ -74,6 +74,21 @@
   80% { transform: translateX(6px); }
 }
 
+/* ========== SAFE AREA (iOS PWA) ==========
+   iOS with apple-mobile-web-app-status-bar-style=black-translucent overlays
+   the status bar on top of the viewport. viewport-fit=cover lets us reach the
+   edges; these utilities put back the padding so the header and floating nav
+   stay clickable on notched phones. */
+.pt-safe {
+  padding-top: max(0.875rem, env(safe-area-inset-top));
+}
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.bottom-safe {
+  bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
 /* ========== BASE ========== */
 * {
   -webkit-tap-highlight-color: transparent;

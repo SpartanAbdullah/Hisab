@@ -138,6 +138,8 @@ export interface SplitGroup {
   settled: boolean;
   createdAt: string;
   createdBy?: string | null;
+  joinCode?: string | null;
+  joinCodeNormalized?: string | null;
 }
 
 export interface SplitDetail {

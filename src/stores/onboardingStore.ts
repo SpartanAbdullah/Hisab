@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { accountsDb } from '../lib/supabaseDb';
+import { accountsDb, profilesDb } from '../lib/supabaseDb';
 import type { Currency } from '../db';
 import { useAccountStore } from './accountStore';
 import { useTransactionStore } from './transactionStore';
@@ -20,36 +20,55 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
 
   checkOnboarding: async () => {
     set({ loading: true });
+    // DB is the source of truth. A returning user on a fresh device has no
+    // localStorage flag but will have accounts / a flagged profile in Supabase.
     try {
-      const count = await accountsDb.count();
-      const done = localStorage.getItem('hisaab_onboarded') === '1';
-      set({ completed: done || count > 0, loading: false });
+      const [count, profile] = await Promise.all([
+        accountsDb.count().catch(() => 0),
+        profilesDb.getCurrent().catch(() => null),
+      ]);
+      const profileDone = profile?.onboarding_completed === true;
+      const localDone = localStorage.getItem('hisaab_onboarded') === '1';
+      const completed = profileDone || count > 0 || localDone;
+      if (completed) localStorage.setItem('hisaab_onboarded', '1');
+      set({ completed, loading: false });
     } catch {
-      // If not authenticated yet, just check localStorage
-      const done = localStorage.getItem('hisaab_onboarded') === '1';
-      set({ completed: done, loading: false });
+      const localDone = localStorage.getItem('hisaab_onboarded') === '1';
+      set({ completed: localDone, loading: false });
     }
   },
 
   completeOnboarding: async (name, currency) => {
-    localStorage.setItem('hisaab_onboarded', '1');
     localStorage.setItem('hisaab_user_name', name);
     localStorage.setItem('hisaab_primary_currency', currency);
     localStorage.setItem('hisaab_data_version', '3');
 
-    // Create default cash account
-    await useAccountStore.getState().createAccount({
-      name: currency === 'AED' ? 'Cash Wallet' : 'Naqdee',
-      type: 'cash',
-      currency,
-      balance: 0,
-    });
+    // Idempotent: only seed the default wallet if the user has zero accounts.
+    // Protects against duplicate Cash Wallets if onboarding is re-entered.
+    const existingCount = await accountsDb.count().catch(() => 0);
+    if (existingCount === 0) {
+      await useAccountStore.getState().createAccount({
+        name: currency === 'AED' ? 'Cash Wallet' : 'Naqdee',
+        type: 'cash',
+        currency,
+        balance: 0,
+      });
+    }
 
+    // Persist flag on the profile so it survives cleared localStorage on any device.
+    await profilesDb.updateCurrent({
+      name,
+      primary_currency: currency,
+      onboarding_completed: true,
+    }).catch(() => {});
+
+    // Set localStorage flag AFTER the account exists so a mid-flow failure
+    // doesn't leave the user flagged-onboarded with zero accounts.
+    localStorage.setItem('hisaab_onboarded', '1');
     set({ completed: true });
   },
 
   seedDemoData: async (name, currency) => {
-    localStorage.setItem('hisaab_onboarded', '1');
     localStorage.setItem('hisaab_user_name', name);
     localStorage.setItem('hisaab_primary_currency', currency);
     localStorage.setItem('hisaab_data_version', '3');
@@ -140,6 +159,13 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     await accountStore.loadAccounts();
     await txStore.loadTransactions();
 
+    await profilesDb.updateCurrent({
+      name,
+      primary_currency: currency,
+      onboarding_completed: true,
+    }).catch(() => {});
+
+    localStorage.setItem('hisaab_onboarded', '1');
     set({ completed: true });
   },
 }));

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wallet, Mail, Lock, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Wallet, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { useT, useI18nStore } from '../lib/i18n';
 import { Globe } from 'lucide-react';
@@ -11,7 +11,6 @@ export function AuthPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -22,8 +21,7 @@ export function AuthPage() {
     setMessage('');
 
     if (mode === 'signup') {
-      if (!name.trim()) { setLoading(false); return; }
-      const result = await signUp(email, password, name.trim());
+      const result = await signUp(email, password);
       setMessage(result.message);
     } else {
       const result = await signIn(email, password);
@@ -71,18 +69,10 @@ export function AuthPage() {
 
         {/* Form */}
         <div className="space-y-4">
-          {mode === 'signup' && (
-            <div className="relative animate-fade-in">
-              <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
-              <input value={name} onChange={e => setName(e.target.value)} placeholder={t('onboard_name_label')}
-                className={inputClass} autoFocus />
-            </div>
-          )}
-
           <div className="relative">
             <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('settings_email')}
-              className={inputClass} autoFocus={mode === 'login'} />
+              className={inputClass} autoFocus />
           </div>
 
           <div className="relative">

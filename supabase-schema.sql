@@ -255,7 +255,44 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_public_code_normalized
   WHERE public_code_normalized IS NOT NULL;
 
 ALTER TABLE split_groups
-  ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS join_code TEXT,
+  ADD COLUMN IF NOT EXISTS join_code_normalized TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_split_groups_join_code_normalized
+  ON split_groups(join_code_normalized)
+  WHERE join_code_normalized IS NOT NULL;
+
+-- SECURITY DEFINER lookups for "join by code" and "add by user code" flows.
+-- These bypass RLS to return minimal public fields that should be visible to
+-- any authenticated user when they supply a valid code.
+CREATE OR REPLACE FUNCTION public.lookup_profile_by_public_code(code_normalized TEXT)
+RETURNS TABLE (id UUID, name TEXT, public_code TEXT)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT p.id, p.name, p.public_code
+  FROM public.profiles p
+  WHERE p.public_code_normalized = code_normalized
+  LIMIT 1;
+$$;
+GRANT EXECUTE ON FUNCTION public.lookup_profile_by_public_code(TEXT) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.lookup_group_by_join_code(code_normalized TEXT)
+RETURNS TABLE (id TEXT, name TEXT, emoji TEXT, currency TEXT)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT g.id, g.name, g.emoji, g.currency
+  FROM public.split_groups g
+  WHERE g.join_code_normalized = code_normalized
+  LIMIT 1;
+$$;
+GRANT EXECUTE ON FUNCTION public.lookup_group_by_join_code(TEXT) TO authenticated;
 
 ALTER TABLE group_expenses
   ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -286,15 +323,36 @@ CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_profile ON group_members(profile_id);
 ALTER TABLE group_members ENABLE ROW LEVEL SECURITY;
 
+-- SECURITY DEFINER helper: lets RLS policies check "is this user a connected
+-- member of this group?" without re-triggering RLS on group_members, which
+-- would otherwise recurse (PostgreSQL aborts with error code 42P17).
+CREATE OR REPLACE FUNCTION public.is_group_member(gid TEXT, uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.group_members
+    WHERE group_id = gid
+      AND profile_id = uid
+      AND status = 'connected'
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_group_member(TEXT, UUID) TO authenticated;
+
 CREATE POLICY "Users can view members of shared groups"
   ON group_members FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM group_members gm
-      WHERE gm.group_id = group_members.group_id
-        AND gm.profile_id = auth.uid()
-        AND gm.status = 'connected'
+    profile_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM split_groups g
+      WHERE g.id = group_members.group_id
+        AND g.user_id = auth.uid()
     )
+    OR public.is_group_member(group_members.group_id, auth.uid())
   );
 
 CREATE POLICY "Users can add members to own or shared groups"
@@ -339,15 +397,13 @@ ALTER TABLE group_invites ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Members can view invites in their groups"
   ON group_invites FOR SELECT
   USING (
-    EXISTS (
+    created_by = auth.uid()
+    OR accepted_by = auth.uid()
+    OR EXISTS (
       SELECT 1 FROM split_groups g
-      LEFT JOIN group_members gm ON gm.group_id = g.id
-      WHERE g.id = group_invites.group_id
-        AND (
-          g.user_id = auth.uid() OR
-          (gm.profile_id = auth.uid() AND gm.status = 'connected')
-        )
+      WHERE g.id = group_invites.group_id AND g.user_id = auth.uid()
     )
+    OR public.is_group_member(group_invites.group_id, auth.uid())
   );
 
 CREATE POLICY "Group owners can create invites"
@@ -381,25 +437,13 @@ ALTER TABLE group_events ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Connected members can view group events"
   ON group_events FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM group_members gm
-      WHERE gm.group_id = group_events.group_id
-        AND gm.profile_id = auth.uid()
-        AND gm.status = 'connected'
-    )
-  );
+  USING (public.is_group_member(group_events.group_id, auth.uid()));
 
 CREATE POLICY "Connected members can create group events"
   ON group_events FOR INSERT
   WITH CHECK (
-    auth.uid() = actor_profile_id AND
-    EXISTS (
-      SELECT 1 FROM group_members gm
-      WHERE gm.group_id = group_events.group_id
-        AND gm.profile_id = auth.uid()
-        AND gm.status = 'connected'
-    )
+    auth.uid() = actor_profile_id
+    AND public.is_group_member(group_events.group_id, auth.uid())
   );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -421,36 +465,22 @@ CREATE POLICY "Users can manage own notifications" ON notifications FOR ALL USIN
 CREATE POLICY "Members can view shared groups"
   ON split_groups FOR SELECT
   USING (
-    auth.uid() = user_id OR
-    EXISTS (
-      SELECT 1 FROM group_members gm
-      WHERE gm.group_id = split_groups.id
-        AND gm.profile_id = auth.uid()
-        AND gm.status = 'connected'
-    )
+    auth.uid() = user_id
+    OR public.is_group_member(split_groups.id, auth.uid())
   );
 
 CREATE POLICY "Members can view shared group expenses"
   ON group_expenses FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM group_members gm
-      WHERE gm.group_id = group_expenses.group_id
-        AND gm.profile_id = auth.uid()
-        AND gm.status = 'connected'
-    )
+    auth.uid() = user_id
+    OR public.is_group_member(group_expenses.group_id, auth.uid())
   );
 
 CREATE POLICY "Connected members can create shared group expenses"
   ON group_expenses FOR INSERT
   WITH CHECK (
-    auth.uid() = user_id AND
-    EXISTS (
-      SELECT 1 FROM group_members gm
-      WHERE gm.group_id = group_expenses.group_id
-        AND gm.profile_id = auth.uid()
-        AND gm.status = 'connected'
-    )
+    auth.uid() = user_id
+    AND public.is_group_member(group_expenses.group_id, auth.uid())
   );
 
 CREATE POLICY "Expense creators can update their shared group expenses"
@@ -464,22 +494,13 @@ CREATE POLICY "Expense creators can delete their shared group expenses"
 CREATE POLICY "Members can view shared group settlements"
   ON group_settlements FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM group_members gm
-      WHERE gm.group_id = group_settlements.group_id
-        AND gm.profile_id = auth.uid()
-        AND gm.status = 'connected'
-    )
+    auth.uid() = user_id
+    OR public.is_group_member(group_settlements.group_id, auth.uid())
   );
 
 CREATE POLICY "Connected members can create shared group settlements"
   ON group_settlements FOR INSERT
   WITH CHECK (
-    auth.uid() = user_id AND
-    EXISTS (
-      SELECT 1 FROM group_members gm
-      WHERE gm.group_id = group_settlements.group_id
-        AND gm.profile_id = auth.uid()
-        AND gm.status = 'connected'
-    )
+    auth.uid() = user_id
+    AND public.is_group_member(group_settlements.group_id, auth.uid())
   );

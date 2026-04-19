@@ -309,6 +309,8 @@ export const splitGroupsDb = {
       id: g.id, user_id: getUserId(), name: g.name, emoji: g.emoji,
       members: g.members, currency: g.currency, settled: g.settled,
       created_at: g.createdAt, created_by: g.createdBy ?? getUserId(),
+      join_code: g.joinCode ?? null,
+      join_code_normalized: g.joinCodeNormalized ?? null,
     });
     if (error) throw error;
   },
@@ -605,13 +607,26 @@ export const profilesDb = {
     const { error } = await supabase.from('profiles').update(changes).eq('id', getUserId());
     if (error) throw error;
   },
-  async findByPublicCode(normalizedCode: string): Promise<Record<string, unknown> | null> {
-    const { data, error } = await supabase
-      .from('profiles').select('*')
-      .eq('public_code_normalized', normalizedCode)
-      .single();
-    if (error) return null;
-    return data ?? null;
+  async findByPublicCode(normalizedCode: string): Promise<{ id: string; name: string; publicCode: string } | null> {
+    // Uses SECURITY DEFINER RPC so we can resolve strangers by their public
+    // code without opening up a read policy on profiles.
+    const { data, error } = await supabase.rpc('lookup_profile_by_public_code', {
+      code_normalized: normalizedCode,
+    });
+    if (error || !data || data.length === 0) return null;
+    const row = data[0] as { id: string; name: string; public_code: string };
+    return { id: row.id, name: row.name ?? '', publicCode: row.public_code ?? '' };
+  },
+};
+
+export const groupsLookupDb = {
+  async findByJoinCode(normalizedCode: string): Promise<{ id: string; name: string; emoji: string; currency: string } | null> {
+    const { data, error } = await supabase.rpc('lookup_group_by_join_code', {
+      code_normalized: normalizedCode,
+    });
+    if (error || !data || data.length === 0) return null;
+    const row = data[0] as { id: string; name: string; emoji: string; currency: string };
+    return { id: row.id, name: row.name ?? '', emoji: row.emoji ?? '', currency: row.currency ?? 'PKR' };
   },
 };
 
@@ -699,6 +714,8 @@ function mapGroup(r: Record<string, unknown>): SplitGroup {
     members: r.members as SplitGroup['members'], currency: r.currency as SplitGroup['currency'],
     settled: Boolean(r.settled), createdAt: r.created_at as string,
     createdBy: (r.created_by as string) ?? (r.user_id as string) ?? null,
+    joinCode: (r.join_code as string) ?? null,
+    joinCodeNormalized: (r.join_code_normalized as string) ?? null,
   };
 }
 

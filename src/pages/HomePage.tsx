@@ -62,8 +62,17 @@ export function HomePage() {
     return (income > 0 || expense > 0) ? { income, expense } : null;
   };
   const activeLoans = loans.filter(l => l.status === 'active');
-  const totalReceivable = activeLoans.filter(l => l.type === 'given').reduce((s, l) => s + l.remainingAmount, 0);
-  const totalPayable = activeLoans.filter(l => l.type === 'taken').reduce((s, l) => s + l.remainingAmount, 0);
+  // Keep receivables/payables grouped by currency so AED and PKR don't merge.
+  const sumLoansByCurrency = (items: typeof loans) => items.reduce((acc, l) => {
+    acc[l.currency] = (acc[l.currency] ?? 0) + l.remainingAmount;
+    return acc;
+  }, {} as Record<string, number>);
+  const receivablesByCurrency = sumLoansByCurrency(activeLoans.filter(l => l.type === 'given'));
+  const payablesByCurrency = sumLoansByCurrency(activeLoans.filter(l => l.type === 'taken'));
+  const receivableEntries = Object.entries(receivablesByCurrency).filter(([, v]) => v > 0);
+  const payableEntries = Object.entries(payablesByCurrency).filter(([, v]) => v > 0);
+  const hasReceivables = receivableEntries.length > 0;
+  const hasPayables = payableEntries.length > 0;
 
   const hour = new Date().getHours();
   const greeting = hour < 5 ? 'Good Night' : hour < 12 ? 'Subah Bakhair' : hour < 17 ? 'Assalam o Alaikum' : hour < 21 ? 'Shaam Bakhair' : 'Good Night';
@@ -83,7 +92,7 @@ export function HomePage() {
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
       {/* Header */}
-      <header className="sticky top-0 glass border-b border-slate-100/60 px-5 py-4 z-40">
+      <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-4 z-40">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[11px] text-slate-400 font-medium tracking-wide">{greeting}</p>
@@ -207,11 +216,12 @@ export function HomePage() {
         )}
       </div>
 
-      {/* Quick Stats Row */}
-      {(totalReceivable > 0 || totalPayable > 0 || goals.length > 0) && (
+      {/* Quick Stats Row — one chip per currency, so AED vs PKR stays clear. */}
+      {(hasReceivables || hasPayables || goals.length > 0) && (
         <div className="px-5 pt-4 flex gap-2.5 overflow-x-auto no-scrollbar">
-          {totalReceivable > 0 && (
+          {receivableEntries.map(([cur, amt]) => (
             <button
+              key={`recv-${cur}`}
               onClick={() => navigate('/loans')}
               className="shrink-0 card-premium !rounded-2xl px-4 py-3 flex items-center gap-2.5 !border-emerald-100/60"
             >
@@ -220,12 +230,13 @@ export function HomePage() {
               </div>
               <div className="text-left">
                 <p className="text-[10px] text-emerald-600 font-semibold tracking-wide">{t('loan_receivable')}</p>
-                <p className="text-[13px] font-bold text-emerald-700 tabular-nums">{totalReceivable.toLocaleString()}</p>
+                <p className="text-[13px] font-bold text-emerald-700 tabular-nums">{formatMoney(amt, cur as typeof loans[0]['currency'])}</p>
               </div>
             </button>
-          )}
-          {totalPayable > 0 && (
+          ))}
+          {payableEntries.map(([cur, amt]) => (
             <button
+              key={`pay-${cur}`}
               onClick={() => navigate('/loans')}
               className="shrink-0 card-premium !rounded-2xl px-4 py-3 flex items-center gap-2.5 !border-red-100/60"
             >
@@ -234,10 +245,10 @@ export function HomePage() {
               </div>
               <div className="text-left">
                 <p className="text-[10px] text-red-500 font-semibold tracking-wide">{t('loan_payable')}</p>
-                <p className="text-[13px] font-bold text-red-600 tabular-nums">{totalPayable.toLocaleString()}</p>
+                <p className="text-[13px] font-bold text-red-600 tabular-nums">{formatMoney(amt, cur as typeof loans[0]['currency'])}</p>
               </div>
             </button>
-          )}
+          ))}
           {goals.length > 0 && (
             <button
               onClick={() => navigate('/goals')}

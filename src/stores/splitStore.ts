@@ -8,8 +8,15 @@ import {
   groupInvitesDb,
   groupEventsDb,
   notificationsDb,
+  groupsLookupDb,
 } from '../lib/supabaseDb';
-import { buildInviteUrl, generateInviteToken, sha256Hex } from '../lib/collaboration';
+import {
+  buildInviteUrl,
+  generateInviteToken,
+  sha256Hex,
+  generateGroupCodeCandidate,
+  normalizeGroupCode,
+} from '../lib/collaboration';
 import type {
   SplitGroup,
   GroupExpense,
@@ -34,15 +41,22 @@ interface SimplifiedDebt {
   amount: number;
 }
 
+export interface ResolvedMemberInput {
+  profileId: string;
+  name: string;
+  publicCode: string;
+}
+
 interface SplitState {
   groups: SplitGroup[];
   loading: boolean;
 
   loadGroups: () => Promise<void>;
-  createGroup: (name: string, emoji: string, members: string[], currency: Currency) => Promise<SplitGroup>;
+  createGroup: (name: string, emoji: string, members: ResolvedMemberInput[], currency: Currency) => Promise<SplitGroup>;
   deleteGroup: (id: string) => Promise<void>;
   createInvite: (groupId: string, linkedMemberId?: string | null) => Promise<{ url: string; invite: GroupInvite }>;
   acceptInvite: (token: string) => Promise<{ groupId: string }>;
+  joinGroupByCode: (rawCode: string) => Promise<{ groupId: string }>;
   getGroupInvites: (groupId: string) => Promise<GroupInvite[]>;
   getGroupEvents: (groupId: string) => Promise<GroupEvent[]>;
 
@@ -140,10 +154,29 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     set({ groups: hydrated.filter(Boolean) as SplitGroup[], loading: false });
   },
 
-  createGroup: async (name, emoji, memberNames, currency) => {
+  createGroup: async (name, emoji, resolvedMembers, currency) => {
     const now = new Date().toISOString();
     const currentUserId = getCurrentUserId();
     const ownerName = getCurrentUserName();
+
+    // Dedupe: ignore the owner if they accidentally added their own code, and
+    // collapse duplicate profileIds to a single member row.
+    const seenProfileIds = new Set<string>([currentUserId]);
+    const extraMembers: GroupMember[] = [];
+    for (const r of resolvedMembers) {
+      if (seenProfileIds.has(r.profileId)) continue;
+      seenProfileIds.add(r.profileId);
+      extraMembers.push({
+        id: uuid(),
+        name: r.name || r.publicCode,
+        isOwner: false,
+        role: 'member',
+        status: 'connected',
+        profileId: r.profileId,
+        joinedAt: now,
+      });
+    }
+
     const members: GroupMember[] = [
       {
         id: uuid(),
@@ -154,16 +187,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         status: 'connected',
         joinedAt: now,
       },
-      ...memberNames.map(memberName => ({
-        id: uuid(),
-        name: memberName,
-        isOwner: false,
-        role: 'member' as const,
-        status: 'guest' as const,
-        profileId: null,
-        joinedAt: null,
-      })),
+      ...extraMembers,
     ];
+
+    const joinCode = generateGroupCodeCandidate();
+    const joinCodeNormalized = normalizeGroupCode(joinCode);
 
     const group: SplitGroup = {
       id: uuid(),
@@ -174,6 +202,8 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       settled: false,
       createdAt: now,
       createdBy: currentUserId,
+      joinCode,
+      joinCodeNormalized,
     };
 
     await splitGroupsDb.add(group);
@@ -187,17 +217,78 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         eventType: 'group_created',
         entityType: 'group',
         entityId: group.id,
-        summary: `${ownerName} created ${group.name}`,
-        payload: { groupName: group.name },
+        summary: `${ownerName} added you to ${group.name}`,
+        payload: { groupName: group.name, joinCode },
         createdAt: now,
       },
-      `${group.name} created`,
-      `${ownerName} created a new shared group.`,
+      `Added to ${group.name}`,
+      `${ownerName} added you to a shared group.`,
     );
 
     await get().loadGroups();
     await useActivityStore.getState().logActivity('group_created', `Created group "${name}"`, group.id, 'group');
     return group;
+  },
+
+  joinGroupByCode: async (rawCode) => {
+    const normalized = normalizeGroupCode(rawCode);
+    if (!normalized) throw new Error('Enter a group code');
+    const match = await groupsLookupDb.findByJoinCode(normalized);
+    if (!match) throw new Error('Group code not found');
+
+    const currentUserId = getCurrentUserId();
+    const now = new Date().toISOString();
+
+    const hydrated = await hydrateGroup(await splitGroupsDb.get(match.id));
+    if (!hydrated) throw new Error('Group not found');
+
+    const existing = hydrated.members.find(m => m.profileId === currentUserId);
+    let joinedMemberId = existing?.id ?? null;
+
+    if (existing) {
+      if (existing.status !== 'connected') {
+        await groupMembersDb.update(existing.id, {
+          status: 'connected',
+          joinedAt: now,
+          profileId: currentUserId,
+        });
+      }
+    } else {
+      const newMember: GroupMember = {
+        id: uuid(),
+        name: getCurrentUserName(),
+        isOwner: false,
+        profileId: currentUserId,
+        role: 'member',
+        status: 'connected',
+        joinedAt: now,
+      };
+      await groupMembersDb.add({ ...newMember, groupId: hydrated.id });
+      joinedMemberId = newMember.id;
+    }
+
+    const nextGroup = await hydrateGroup(await splitGroupsDb.get(hydrated.id));
+    if (nextGroup) {
+      await fanOutGroupUpdate(
+        nextGroup,
+        {
+          id: uuid(),
+          groupId: nextGroup.id,
+          actorProfileId: currentUserId,
+          eventType: 'member_joined',
+          entityType: 'member',
+          entityId: joinedMemberId ?? currentUserId,
+          summary: `${getCurrentUserName()} joined ${nextGroup.name}`,
+          payload: { memberId: joinedMemberId, via: 'join_code' },
+          createdAt: now,
+        },
+        `${getCurrentUserName()} joined ${nextGroup.name}`,
+        `${getCurrentUserName()} is now connected to the group.`,
+      );
+    }
+
+    await get().loadGroups();
+    return { groupId: hydrated.id };
   },
 
   deleteGroup: async (id) => {

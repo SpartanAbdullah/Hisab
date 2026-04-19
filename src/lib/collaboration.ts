@@ -14,8 +14,19 @@ export function generatePublicCodeCandidate(): string {
   return `HSB-${randomString(6, PUBLIC_CODE_ALPHABET)}`;
 }
 
+export function generateGroupCodeCandidate(): string {
+  return `GRP-${randomString(6, PUBLIC_CODE_ALPHABET)}`;
+}
+
+// Strips prefix (HSB-/GRP-), @ sigil, hyphens, and whitespace. Uppercases.
+// Normalized form is what's stored in *_normalized columns and what lookup
+// functions match against, so "hsb-xyz" and "XYZ" both resolve.
 export function normalizePublicCode(code: string): string {
-  return code.trim().replace(/^@/, '').replace(/\s+/g, '').toUpperCase();
+  return code.trim().replace(/^@/, '').replace(/[-\s]/g, '').toUpperCase().replace(/^HSB/, '');
+}
+
+export function normalizeGroupCode(code: string): string {
+  return code.trim().replace(/^@/, '').replace(/[-\s]/g, '').toUpperCase().replace(/^GRP/, '');
 }
 
 export function generateInviteToken(): string {

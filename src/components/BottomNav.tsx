@@ -29,7 +29,7 @@ export function BottomNav() {
   const links = mode === 'splits_only' ? splitsLinks : fullLinks;
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-32px)] max-w-[448px] z-50">
+    <div className="fixed bottom-safe left-1/2 -translate-x-1/2 w-[calc(100%-32px)] max-w-[448px] z-50">
       <nav className="glass border border-white/60 rounded-2xl flex justify-around py-2 px-1 shadow-lg shadow-slate-900/[0.06]">
         {links.map(({ to, icon: Icon, label }) => (
           <NavLink

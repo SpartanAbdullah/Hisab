@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3 } from 'lucide-react';
+import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3, Copy } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { AddGroupExpenseModal } from './AddGroupExpenseModal';
@@ -9,6 +9,7 @@ import { SettleUpModal } from './SettleUpModal';
 import { GroupInviteModal } from '../components/GroupInviteModal';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
+import { useToast } from '../components/Toast';
 import type { SplitGroup, GroupExpense, GroupEvent } from '../db';
 
 function memberStatusClass(status?: string, isOwner?: boolean) {
@@ -22,6 +23,7 @@ export function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const t = useT();
+  const toast = useToast();
   const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents } = useSplitStore();
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
@@ -76,7 +78,7 @@ export function GroupDetailPage() {
 
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
-      <header className="sticky top-0 glass border-b border-slate-100/60 px-5 py-3.5 z-40">
+      <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-3.5 z-40">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-slate-100/80 active:bg-slate-200 transition-colors">
@@ -115,6 +117,30 @@ export function GroupDetailPage() {
           <span className="text-[10px] text-slate-400 ml-1.5">{group.members.length} {t('group_members_count')}</span>
         </div>
       </header>
+
+      {group.joinCode && (
+        <div className="px-5 pt-4">
+          <div className="card-premium p-3.5 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <Share2 size={16} className="text-indigo-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Group Code</p>
+              <p className="text-[15px] font-bold text-slate-800 font-mono tracking-tight">{group.joinCode}</p>
+            </div>
+            <button
+              onClick={async () => {
+                if (!group.joinCode) return;
+                await navigator.clipboard.writeText(group.joinCode);
+                toast.show({ type: 'success', title: 'Code copied', subtitle: 'Share it so others can join.' });
+              }}
+              className="shrink-0 rounded-xl bg-slate-100 text-slate-600 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-all"
+            >
+              <Copy size={12} /> Copy
+            </button>
+          </div>
+        </div>
+      )}
 
       {debts.length > 0 && tab !== 'activity' && (
         <div className="px-5 pt-4">

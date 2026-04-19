@@ -54,17 +54,15 @@ function AppContent() {
 
   useEffect(() => {
     initialize();
-    checkOnboarding();
-  }, [initialize, checkOnboarding]);
+  }, [initialize]);
 
-  // Store user ID for supabaseDb helper
+  // Onboarding is gated on a known user — the DB check requires the uid
+  // written by `initialize()`. Running it on mount caused a race where the
+  // check would fall back to an unset localStorage flag and briefly show
+  // OnboardingPage to a returning user.
   useEffect(() => {
-    if (user?.id) {
-      localStorage.setItem('hisaab_supabase_uid', user.id);
-    } else {
-      localStorage.removeItem('hisaab_supabase_uid');
-    }
-  }, [user]);
+    if (!authLoading) checkOnboarding();
+  }, [authLoading, user?.id, checkOnboarding]);
 
   useEffect(() => {
     if (!user && location.pathname.startsWith('/join/')) {

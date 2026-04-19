@@ -10,7 +10,7 @@ interface SupabaseAuthState {
   error: string | null;
 
   initialize: () => Promise<void>;
-  signUp: (email: string, password: string, name: string) => Promise<{ success: boolean; message: string }>;
+  signUp: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signIn: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
   updateProfile: (data: { name?: string; primary_currency?: string; app_mode?: string; lang?: string }) => Promise<void>;
@@ -27,10 +27,22 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
   initialize: async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      // Write uid synchronously BEFORE resolving so any DB call that depends on
+      // localStorage.hisaab_supabase_uid sees the right value on the first paint.
+      if (session?.user?.id) {
+        localStorage.setItem('hisaab_supabase_uid', session.user.id);
+      } else {
+        localStorage.removeItem('hisaab_supabase_uid');
+      }
       set({ session, user: session?.user ?? null, loading: false });
 
       // Listen for auth changes
       supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user?.id) {
+          localStorage.setItem('hisaab_supabase_uid', session.user.id);
+        } else {
+          localStorage.removeItem('hisaab_supabase_uid');
+        }
         set({ session, user: session?.user ?? null });
       });
     } catch {
@@ -38,7 +50,7 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     }
   },
 
-  signUp: async (email, password, name) => {
+  signUp: async (email, password) => {
     set({ error: null });
     const { data, error } = await supabase.auth.signUp({ email, password });
 
@@ -48,10 +60,10 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     }
 
     if (data.user) {
-      // Update profile with name
+      // Name is collected during onboarding, not signup. Seed the public_code
+      // here so it's ready when the user wants to share group invites.
       const publicCode = generatePublicCodeCandidate();
       await supabase.from('profiles').update({
-        name,
         onboarding_completed: false,
         public_code: publicCode,
         public_code_normalized: normalizePublicCode(publicCode),
