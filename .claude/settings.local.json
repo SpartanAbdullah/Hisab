@@ -15,7 +15,15 @@
       "Bash(find /c/Users/MuhammadAbdullah/Desktop/Hisaab-2.0/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.css \\\\\\))",
       "Bash(gh auth:*)",
       "Bash(rm public/icon-192.png)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(awk '{print $NF}')",
+      "Bash(npm outdated *)",
+      "Bash(xargs wc *)",
+      "Bash(grep -E \"\\\\.tsx$\")",
+      "Bash(find /c/Users/MuhammadAbdullah/Desktop/Hisaab-2.0/src -type f \\\\\\( -name \"*.tsx\" -o -name \"*.ts\" \\\\\\) -exec grep -l \"console\\\\.\\\\\\(log\\\\|debug\\\\\\)\" {} \\\\;)",
+      "Bash(find /c/Users/MuhammadAbdullah/Desktop/Hisaab-2.0/src/components -name \"*.tsx\" -exec basename {} \\\\;)",
+      "Bash(npx eslint *)",
+      "Bash(grep -E \"\\\\.\\(sql|ts\\)$\")"
     ]
   }
 }

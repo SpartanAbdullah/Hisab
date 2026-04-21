@@ -24,11 +24,18 @@ interface UpcomingExpenseState {
   deleteExpense: (id: string) => Promise<void>;
   getByAccount: (accountId: string) => UpcomingExpense[];
   getUpcoming: () => UpcomingExpense[];
+  reset: () => void;
 }
 
-export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) => ({
-  expenses: [],
+const INITIAL_UPCOMING_EXPENSE_STATE = {
+  expenses: [] as UpcomingExpense[],
   loading: false,
+};
+
+export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) => ({
+  ...INITIAL_UPCOMING_EXPENSE_STATE,
+
+  reset: () => set(INITIAL_UPCOMING_EXPENSE_STATE),
 
   loadExpenses: async () => {
     set({ loading: true });

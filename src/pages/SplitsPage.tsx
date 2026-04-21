@@ -10,26 +10,24 @@ import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 
 export function SplitsPage() {
-  const { groups, loadGroups } = useSplitStore();
+  const { groups, loadGroups, balances, balancesLoaded, loadBalances } = useSplitStore();
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
-  const [balances, setBalances] = useState<Record<string, number>>({});
   const navigate = useNavigate();
   const t = useT();
 
-  useEffect(() => { loadGroups(); }, [loadGroups]);
+  // Kick off groups + balances in parallel on mount. Both are independent
+  // queries at the network level, so fetching in parallel ~halves perceived
+  // time to first number. Re-runs when groups change so realtime joins/leaves
+  // refresh balances too.
+  useEffect(() => {
+    void loadGroups();
+    void loadBalances();
+  }, [loadGroups, loadBalances]);
 
   useEffect(() => {
-    const loadBalances = async () => {
-      const store = useSplitStore.getState();
-      const b: Record<string, number> = {};
-      for (const g of groups) {
-        b[g.id] = await store.getMyBalance(g.id);
-      }
-      setBalances(b);
-    };
-    if (groups.length > 0) loadBalances();
-  }, [groups]);
+    if (groups.length > 0) void loadBalances();
+  }, [groups, loadBalances]);
 
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
@@ -76,6 +74,7 @@ export function SplitsPage() {
         ) : (
           groups.map((g, i) => {
             const bal = balances[g.id] ?? 0;
+            const hasBalance = balancesLoaded;
             return (
               <button
                 key={g.id}
@@ -91,7 +90,11 @@ export function SplitsPage() {
                   <p className="text-[11px] text-slate-400 mt-0.5">{g.members.length} {t('group_members_count')}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  {bal > 0 ? (
+                  {!hasBalance ? (
+                    // Skeleton shimmer — prevents the misleading "All settled"
+                    // flash during the brief initial load window.
+                    <div className="h-3.5 w-14 rounded-full bg-slate-100 animate-pulse" />
+                  ) : bal > 0 ? (
                     <p className="text-[12px] font-bold text-emerald-600">+{formatMoney(bal, g.currency)}</p>
                   ) : bal < 0 ? (
                     <p className="text-[12px] font-bold text-red-500">-{formatMoney(Math.abs(bal), g.currency)}</p>

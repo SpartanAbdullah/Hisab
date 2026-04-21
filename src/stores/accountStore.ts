@@ -21,11 +21,18 @@ interface AccountState {
   updateBalance: (id: string, delta: number) => Promise<void>;
   renameAccount: (id: string, newName: string) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
+  reset: () => void;
 }
 
-export const useAccountStore = create<AccountState>((set, get) => ({
-  accounts: [],
+const INITIAL_ACCOUNT_STATE = {
+  accounts: [] as Account[],
   loading: false,
+};
+
+export const useAccountStore = create<AccountState>((set, get) => ({
+  ...INITIAL_ACCOUNT_STATE,
+
+  reset: () => set(INITIAL_ACCOUNT_STATE),
 
   loadAccounts: async () => {
     set({ loading: true });

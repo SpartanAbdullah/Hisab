@@ -12,11 +12,22 @@ interface OnboardingState {
   checkOnboarding: () => Promise<void>;
   completeOnboarding: (name: string, currency: Currency) => Promise<void>;
   seedDemoData: (name: string, currency: Currency) => Promise<void>;
+  reset: () => void;
 }
+
+// Reset uses loading: false (not true) so logout routes instantly to AuthPage
+// instead of flashing the global "Loading..." screen. checkOnboarding itself
+// flips loading back to true when it runs for a new signed-in user.
+const RESET_ONBOARDING_STATE = {
+  completed: false,
+  loading: false,
+};
 
 export const useOnboardingStore = create<OnboardingState>((set) => ({
   completed: false,
   loading: true,
+
+  reset: () => set(RESET_ONBOARDING_STATE),
 
   checkOnboarding: async () => {
     set({ loading: true });

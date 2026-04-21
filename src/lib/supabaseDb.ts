@@ -349,6 +349,18 @@ export const groupExpensesDb = {
     if (error) throw error;
     return (data ?? []).map(mapGroupExpense);
   },
+  // Returns every expense across every group the caller can see. RLS on
+  // group_expenses already limits this to groups the user is a member of,
+  // so this is the batched counterpart to getByGroup — two queries for
+  // the whole Groups tab instead of 2N.
+  async getAllVisible(): Promise<GroupExpense[]> {
+    const { data, error } = await supabase
+      .from('group_expenses').select('*')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapGroupExpense);
+  },
   async add(e: GroupExpense) {
     const { error } = await supabase.from('group_expenses').insert({
       id: e.id, user_id: getUserId(), group_id: e.groupId,
@@ -398,6 +410,15 @@ export const groupSettlementsDb = {
     const { data, error } = await supabase
       .from('group_settlements').select('*')
       .eq('group_id', groupId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapGroupSettlement);
+  },
+  // Batched counterpart — RLS scopes to groups the user can see.
+  async getAllVisible(): Promise<GroupSettlement[]> {
+    const { data, error } = await supabase
+      .from('group_settlements').select('*')
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (error) throw error;

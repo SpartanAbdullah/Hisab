@@ -9,11 +9,18 @@ interface ActivityState {
   loadActivities: () => Promise<void>;
   logActivity: (type: ActivityType, description: string, entityId: string, entityType: string) => Promise<void>;
   getByEntity: (entityId: string) => Promise<ActivityLog[]>;
+  reset: () => void;
 }
 
-export const useActivityStore = create<ActivityState>((set) => ({
-  activities: [],
+const INITIAL_ACTIVITY_STATE = {
+  activities: [] as ActivityLog[],
   loading: false,
+};
+
+export const useActivityStore = create<ActivityState>((set) => ({
+  ...INITIAL_ACTIVITY_STATE,
+
+  reset: () => set(INITIAL_ACTIVITY_STATE),
 
   loadActivities: async () => {
     set({ loading: true });

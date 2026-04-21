@@ -50,8 +50,11 @@ export interface ResolvedMemberInput {
 interface SplitState {
   groups: SplitGroup[];
   loading: boolean;
+  balances: Record<string, number>;
+  balancesLoaded: boolean;
 
   loadGroups: () => Promise<void>;
+  loadBalances: () => Promise<void>;
   createGroup: (name: string, emoji: string, members: ResolvedMemberInput[], currency: Currency) => Promise<SplitGroup>;
   deleteGroup: (id: string) => Promise<void>;
   createInvite: (groupId: string, linkedMemberId?: string | null) => Promise<{ url: string; invite: GroupInvite }>;
@@ -86,7 +89,15 @@ interface SplitState {
 
   getSimplifiedDebts: (groupId: string) => Promise<SimplifiedDebt[]>;
   getMyBalance: (groupId: string) => Promise<number>;
+  reset: () => void;
 }
+
+const INITIAL_SPLIT_STATE = {
+  groups: [] as SplitGroup[],
+  loading: false,
+  balances: {} as Record<string, number>,
+  balancesLoaded: false,
+};
 
 function getCurrentUserId(): string {
   const userId = localStorage.getItem('hisaab_supabase_uid');
@@ -103,6 +114,17 @@ async function hydrateGroup(group: SplitGroup | null): Promise<SplitGroup | null
   const members = await groupMembersDb.getByGroup(group.id).catch(() => []);
   if (members.length === 0) return group;
   return { ...group, members };
+}
+
+// Prefer the already-hydrated group from the in-memory store when the cache
+// is warm. Cuts 2 DB round-trips per group on list pages (was re-fetching the
+// group row + member rows on every getMyBalance call despite loadGroups having
+// just loaded them). Only falls through to the DB when the group isn't in the
+// store yet — e.g. deep-linked into GroupDetailPage.
+async function getGroupOrFetch(id: string, memoGroups: SplitGroup[]): Promise<SplitGroup | null> {
+  const memo = memoGroups.find(g => g.id === id);
+  if (memo && memo.members.length > 0) return memo;
+  return hydrateGroup(await splitGroupsDb.get(id));
 }
 
 function findCurrentMember(group: SplitGroup): GroupMember | undefined {
@@ -156,14 +178,69 @@ async function fanOutGroupUpdate(
 }
 
 export const useSplitStore = create<SplitState>((set, get) => ({
-  groups: [],
-  loading: false,
+  ...INITIAL_SPLIT_STATE,
+
+  reset: () => set(INITIAL_SPLIT_STATE),
 
   loadGroups: async () => {
     set({ loading: true });
     const groups = await splitGroupsDb.getAll();
     const hydrated = await Promise.all(groups.map((group) => hydrateGroup(group)));
     set({ groups: hydrated.filter(Boolean) as SplitGroup[], loading: false });
+  },
+
+  // Compute per-group "my balance" in one shot: two batched queries for
+  // every expense and settlement the user can see (RLS scopes both to groups
+  // they belong to), then a pure in-memory pass. This collapses what used to
+  // be 2N round-trips into 2, eliminating the "All settled → real numbers"
+  // flash users were seeing on the Groups tab.
+  loadBalances: async () => {
+    const currentUserId = localStorage.getItem('hisaab_supabase_uid');
+    if (!currentUserId) {
+      set({ balances: {}, balancesLoaded: true });
+      return;
+    }
+    try {
+      const [allExpenses, allSettlements] = await Promise.all([
+        groupExpensesDb.getAllVisible(),
+        groupSettlementsDb.getAllVisible(),
+      ]);
+
+      // Group the fetches by groupId once so the per-group pass is O(1) lookup.
+      const expensesByGroup = new Map<string, typeof allExpenses>();
+      for (const e of allExpenses) {
+        const bucket = expensesByGroup.get(e.groupId) ?? [];
+        bucket.push(e);
+        expensesByGroup.set(e.groupId, bucket);
+      }
+      const settlementsByGroup = new Map<string, typeof allSettlements>();
+      for (const s of allSettlements) {
+        const bucket = settlementsByGroup.get(s.groupId) ?? [];
+        bucket.push(s);
+        settlementsByGroup.set(s.groupId, bucket);
+      }
+
+      const balances: Record<string, number> = {};
+      for (const group of get().groups) {
+        const me = group.members.find(m => m.profileId === currentUserId);
+        if (!me) { balances[group.id] = 0; continue; }
+        let net = 0;
+        for (const e of expensesByGroup.get(group.id) ?? []) {
+          if (e.paidBy === me.id) net += e.amount;
+          for (const s of e.splits) if (s.memberId === me.id) net -= s.amount;
+        }
+        for (const s of settlementsByGroup.get(group.id) ?? []) {
+          if (s.fromMember === me.id) net += s.amount;
+          if (s.toMember === me.id) net -= s.amount;
+        }
+        balances[group.id] = Math.round(net * 100) / 100;
+      }
+      set({ balances, balancesLoaded: true });
+    } catch (err) {
+      console.error('loadBalances failed', err);
+      // Keep existing balances; mark loaded so UI doesn't spin forever.
+      set({ balancesLoaded: true });
+    }
   },
 
   createGroup: async (name, emoji, resolvedMembers, currency) => {
@@ -728,11 +805,14 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   },
 
   getSimplifiedDebts: async (groupId) => {
-    const group = await hydrateGroup(await splitGroupsDb.get(groupId));
+    const group = await getGroupOrFetch(groupId, get().groups);
     if (!group) return [];
 
-    const expenses = await groupExpensesDb.getByGroup(groupId);
-    const settlements = await groupSettlementsDb.getByGroup(groupId);
+    // Expenses + settlements in parallel — they don't depend on each other.
+    const [expenses, settlements] = await Promise.all([
+      groupExpensesDb.getByGroup(groupId),
+      groupSettlementsDb.getByGroup(groupId),
+    ]);
 
     const balances = new Map<string, number>();
     group.members.forEach(member => balances.set(member.id, 0));
@@ -787,7 +867,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   },
 
   getMyBalance: async (groupId) => {
-    const group = await hydrateGroup(await splitGroupsDb.get(groupId));
+    const group = await getGroupOrFetch(groupId, get().groups);
     if (!group) return 0;
 
     const currentMember = findCurrentMember(group);

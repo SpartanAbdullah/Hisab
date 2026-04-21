@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 import { generatePublicCodeCandidate, normalizePublicCode } from '../lib/collaboration';
+import { resetAllUserStores } from './resetAllStores';
 
 interface SupabaseAuthState {
   user: User | null;
@@ -88,8 +89,15 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
   },
 
   signOut: async () => {
-    await supabase.auth.signOut();
-    set({ user: null, session: null });
+    // Clear local user-owned state unconditionally, even if the network
+    // signOut fails. Intent is explicit; we must not leave the previous
+    // user's accounts/loans/groups visible for a second user on this device.
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      resetAllUserStores();
+      set({ user: null, session: null, error: null });
+    }
   },
 
   updateProfile: async (data) => {

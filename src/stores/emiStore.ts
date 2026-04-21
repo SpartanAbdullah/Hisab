@@ -21,11 +21,18 @@ interface EmiState {
   markAllPaidForLoan: (loanId: string) => Promise<void>;
   deleteByLoan: (loanId: string) => Promise<void>;
   getByLoan: (loanId: string) => EmiSchedule[];
+  reset: () => void;
 }
 
-export const useEmiStore = create<EmiState>((set, get) => ({
-  schedules: [],
+const INITIAL_EMI_STATE = {
+  schedules: [] as EmiSchedule[],
   loading: false,
+};
+
+export const useEmiStore = create<EmiState>((set, get) => ({
+  ...INITIAL_EMI_STATE,
+
+  reset: () => set(INITIAL_EMI_STATE),
 
   loadSchedules: async () => {
     set({ loading: true });

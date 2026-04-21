@@ -21,11 +21,18 @@ interface LoanState {
   updateLoan: (loanId: string, changes: Partial<Loan>) => Promise<void>;
   deleteLoan: (loanId: string) => Promise<void>;
   getLoan: (id: string) => Loan | undefined;
+  reset: () => void;
 }
 
-export const useLoanStore = create<LoanState>((set, get) => ({
-  loans: [],
+const INITIAL_LOAN_STATE = {
+  loans: [] as Loan[],
   loading: false,
+};
+
+export const useLoanStore = create<LoanState>((set, get) => ({
+  ...INITIAL_LOAN_STATE,
+
+  reset: () => set(INITIAL_LOAN_STATE),
 
   loadLoans: async () => {
     set({ loading: true });

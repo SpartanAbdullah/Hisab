@@ -18,11 +18,18 @@ interface GoalState {
   createGoal: (input: CreateGoalInput) => Promise<Goal>;
   addContribution: (goalId: string, amount: number) => Promise<void>;
   getGoal: (id: string) => Goal | undefined;
+  reset: () => void;
 }
 
-export const useGoalStore = create<GoalState>((set, get) => ({
-  goals: [],
+const INITIAL_GOAL_STATE = {
+  goals: [] as Goal[],
   loading: false,
+};
+
+export const useGoalStore = create<GoalState>((set, get) => ({
+  ...INITIAL_GOAL_STATE,
+
+  reset: () => set(INITIAL_GOAL_STATE),
 
   loadGoals: async () => {
     set({ loading: true });

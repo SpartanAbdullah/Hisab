@@ -20,6 +20,7 @@ interface AuthState {
   verifyPin: (pin: string) => Promise<boolean>;
   lock: () => void;
   setIdentifier: (id: string) => void;
+  reset: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -73,4 +74,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.setItem('hisaab_identifier', id);
     set({ identifier: id });
   },
+
+  // Local PIN belongs to the prior identity. resetAllUserStores clears the
+  // backing localStorage keys; this zeroes the in-memory PIN/lockout state.
+  reset: () => set({
+    hasPin: false,
+    isLocked: false,
+    identifier: '',
+    failedAttempts: 0,
+    lockedUntil: null,
+  }),
 }));

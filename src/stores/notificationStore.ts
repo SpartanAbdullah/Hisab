@@ -9,12 +9,19 @@ interface NotificationState {
   loadNotifications: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  reset: () => void;
 }
 
-export const useNotificationStore = create<NotificationState>((set) => ({
-  notifications: [],
+const INITIAL_NOTIFICATION_STATE = {
+  notifications: [] as AppNotification[],
   loading: false,
   unreadCount: 0,
+};
+
+export const useNotificationStore = create<NotificationState>((set) => ({
+  ...INITIAL_NOTIFICATION_STATE,
+
+  reset: () => set(INITIAL_NOTIFICATION_STATE),
 
   loadNotifications: async () => {
     set({ loading: true });

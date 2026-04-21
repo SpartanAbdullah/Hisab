@@ -86,7 +86,13 @@ interface TransactionState {
   getTransaction: (id: string) => Transaction | undefined;
   getByAccount: (accountId: string) => Transaction[];
   getByLoan: (loanId: string) => Transaction[];
+  reset: () => void;
 }
+
+const INITIAL_TRANSACTION_STATE = {
+  transactions: [] as Transaction[],
+  loading: false,
+};
 
 // Insufficient balance check helper
 function checkBalance(account: { name: string; balance: number; type: string; metadata: Record<string, string> }, amount: number) {
@@ -120,8 +126,9 @@ function isEditableTransactionType(type: Transaction['type']): type is 'expense'
 }
 
 export const useTransactionStore = create<TransactionState>((set, get) => ({
-  transactions: [],
-  loading: false,
+  ...INITIAL_TRANSACTION_STATE,
+
+  reset: () => set(INITIAL_TRANSACTION_STATE),
 
   loadTransactions: async () => {
     set({ loading: true });
