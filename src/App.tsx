@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import { BottomNav } from './components/BottomNav';
 import { GlobalFAB } from './components/GlobalFAB';
 import { ToastContainer } from './components/Toast';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { useAppModeStore } from './stores/appModeStore';
 import { useSupabaseAuthStore } from './stores/supabaseAuthStore';
@@ -141,6 +142,7 @@ function AppContent() {
     <div className="min-h-dvh bg-slate-50">
       <PWAInstallPrompt />
       <Suspense fallback={<PageLoader />}>
+        <ErrorBoundary>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/groups" element={<SplitsPage />} />
@@ -167,6 +169,7 @@ function AppContent() {
             </>
           )}
         </Routes>
+        </ErrorBoundary>
       </Suspense>
       <BottomNav />
       <GlobalFAB

@@ -229,17 +229,38 @@ export function QuickEntry({ open, onClose }: Props) {
       }
 
       const resultTx = await processTransaction(input);
-      // Generate EMI schedule if enabled for loans
+
+      // EMI scheduling is a follow-up write, not part of the transaction
+      // itself. If it fails we must NOT show "Transaction Failed" — the money
+      // has already moved and a retry would duplicate the transaction. Surface
+      // a distinct "partial success" toast instead and still confirm the txn.
+      let emiFailed = false;
       if (hasEmi && resultTx.relatedLoanId && emiInstallments && emiStartDate) {
-        await generateSchedule({
-          loanId: resultTx.relatedLoanId,
-          totalAmount: amt,
-          installments: parseInt(emiInstallments),
-          startDate: emiStartDate,
-        });
+        try {
+          await generateSchedule({
+            loanId: resultTx.relatedLoanId,
+            totalAmount: amt,
+            installments: parseInt(emiInstallments),
+            startDate: emiStartDate,
+          });
+        } catch (err) {
+          emiFailed = true;
+          console.error('generateSchedule failed after successful transaction', err);
+          toast.show({
+            type: 'error',
+            title: 'EMI schedule not created',
+            subtitle: 'Your transaction was saved, but setting up the installment plan failed. Open the loan to retry.',
+            duration: 6000,
+          });
+        }
       }
+
       const typeLabel = TX_TYPES.find(tx => tx.value === type)?.label ?? type;
-      setConfirmData({ title: `${typeLabel} — Done!`, description: `${formatMoney(amt, changes[0]?.currency ?? 'AED')} processed`, changes });
+      setConfirmData({
+        title: emiFailed ? `${typeLabel} — Saved (EMI pending)` : `${typeLabel} — Done!`,
+        description: `${formatMoney(amt, changes[0]?.currency ?? 'AED')} processed`,
+        changes,
+      });
       setShowConfirmation(true);
       reset();
     } catch (err) {

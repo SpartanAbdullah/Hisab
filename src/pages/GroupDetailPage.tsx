@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3, Copy } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
@@ -8,10 +8,12 @@ import { EditGroupExpenseModal } from './EditGroupExpenseModal';
 import { SettleUpModal } from './SettleUpModal';
 import { GroupInviteModal } from '../components/GroupInviteModal';
 import { ProgressRing } from '../components/ProgressRing';
+import { PageErrorState } from '../components/PageErrorState';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
 import { subscribeToGroupMembers } from '../lib/realtime';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { SplitGroup, GroupExpense, GroupEvent, GroupSettlement } from '../db';
 
 function memberStatusClass(status?: string, isOwner?: boolean) {
@@ -26,7 +28,7 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const t = useT();
   const toast = useToast();
-  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents, getSettlements } = useSplitStore();
+  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents, getSettlements, loadGroups } = useSplitStore();
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
   const [expenses, setExpenses] = useState<GroupExpense[]>([]);
@@ -44,9 +46,13 @@ export function GroupDetailPage() {
     if (nextGroup) setGroup(nextGroup);
   }, [groups, id]);
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     if (!id) return;
-    const [nextExpenses, nextDebts, nextEvents, nextSettlements] = await Promise.all([
+    // Deep-links to /group/:id may land here before the global groups list
+    // is hydrated. Kick off loadGroups in parallel so the header renders.
+    const needsGroups = useSplitStore.getState().groups.length === 0;
+    const [, nextExpenses, nextDebts, nextEvents, nextSettlements] = await Promise.all([
+      needsGroups ? loadGroups() : Promise.resolve(),
       getGroupExpenses(id),
       getSimplifiedDebts(id),
       getGroupEvents(id),
@@ -56,24 +62,36 @@ export function GroupDetailPage() {
     setDebts(nextDebts);
     setEvents(nextEvents);
     setSettlements(nextSettlements);
-  };
+  }, [id, getGroupExpenses, getSimplifiedDebts, getGroupEvents, getSettlements, loadGroups]);
 
-  useEffect(() => {
-    void reload();
-  }, [id]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(reload);
 
   // While this page is open, subscribe to member changes on this group so
   // the header avatars and member count reflect joins/leaves instantly.
+  // Realtime refreshes use a fire-and-forget reload — any failure surfaces
+  // on the next explicit retry rather than spamming error UI on every poke.
   useEffect(() => {
     if (!id) return;
     const unsubscribe = subscribeToGroupMembers(id, () => {
       void useSplitStore.getState().loadGroups();
-      void reload();
+      void reload().catch(err => console.error('group realtime reload failed', err));
     });
     return unsubscribe;
-  }, [id]);
+  }, [id, reload]);
 
-  if (!group) {
+  // Hard error: the whole page is about this group's data. If it fails,
+  // there's nothing useful to show — give the user a retry affordance.
+  if (loadStatus === 'error') {
+    return (
+      <PageErrorState
+        title="Couldn't load this group"
+        message={loadError ?? 'The group data failed to load.'}
+        onRetry={retryLoad}
+      />
+    );
+  }
+
+  if (!group || loadStatus === 'loading') {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-mesh">
         <p className="text-slate-400">Loading...</p>

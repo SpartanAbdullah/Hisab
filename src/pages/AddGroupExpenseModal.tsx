@@ -31,6 +31,7 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
   const [category, setCategory] = useState('General');
   const [paidFromAccountId, setPaidFromAccountId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const amt = parseFloat(amount) || 0;
   const currentMemberId = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id ?? '';
@@ -103,18 +104,20 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
   };
 
   const handleSubmit = async () => {
+    setSubmitError(null);
+
     if (!description.trim() || amt <= 0 || !paidBy) {
-      toast.show({ type: 'error', title: t('fill_all') });
+      setSubmitError(t('fill_all'));
       return;
     }
     if (shouldTrackExpense && !paidFromAccountId) {
-      toast.show({ type: 'error', title: 'Select the account you paid from' });
+      setSubmitError('Select the account you paid from.');
       return;
     }
 
     const { valid, splits, error } = computeSplits();
     if (!valid) {
-      toast.show({ type: 'error', title: error || t('error') });
+      setSubmitError(error || t('error'));
       return;
     }
 
@@ -133,9 +136,14 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
       toast.show({ type: 'success', title: 'Expense saved', subtitle: description });
       setDescription('');
       setAmount('');
+      setSubmitError(null);
       onClose();
-    } catch {
-      toast.show({ type: 'error', title: t('error') });
+    } catch (err) {
+      // Surface the real message — "error" with no subtitle used to leave
+      // the user guessing whether a retry was safe.
+      const message = err instanceof Error && err.message ? err.message : t('error');
+      setSubmitError(message);
+      toast.show({ type: 'error', title: 'Expense not saved', subtitle: message });
     } finally {
       setSaving(false);
     }
@@ -145,10 +153,20 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title={t('group_expense_add')} footer={
-      <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0}
-        className="w-full btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
-        {saving ? t('quick_processing') : t('group_save_expense')}
-      </button>
+      <div className="space-y-2.5">
+        {submitError && (
+          <p
+            role="alert"
+            className="text-[12px] font-medium text-red-600 bg-red-50 border border-red-200/70 rounded-xl px-3 py-2 leading-snug"
+          >
+            {submitError}
+          </p>
+        )}
+        <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0}
+          className="w-full btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
+          {saving ? t('quick_processing') : t('group_save_expense')}
+        </button>
+      </div>
     }>
       <div className="space-y-5 p-5">
         <div>

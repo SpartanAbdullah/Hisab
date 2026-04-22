@@ -4,7 +4,7 @@ import { loansDb } from '../lib/supabaseDb';
 import type { Loan, LoanType, Currency } from '../db';
 import { useActivityStore } from './activityStore';
 
-interface CreateLoanInput {
+export interface CreateLoanInput {
   personName: string;
   type: LoanType;
   totalAmount: number;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpRight, ArrowDownLeft, Wallet, Plus, BarChart3 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
@@ -11,12 +11,14 @@ import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { AccountCard } from '../components/AccountCard';
 import { TransactionItem } from '../components/TransactionItem';
 import { EmptyState } from '../components/EmptyState';
+import { PageErrorState } from '../components/PageErrorState';
 import { ProgressRing } from '../components/ProgressRing';
 import { UserAvatar } from '../components/UserAvatar';
 import { AddAccountStepper } from './AddAccountStepper';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 
 export function HomePage() {
   const { accounts, loadAccounts } = useAccountStore();
@@ -32,10 +34,22 @@ export function HomePage() {
 
   const userName = localStorage.getItem('hisaab_user_name') ?? 'User';
 
-  useEffect(() => {
-    loadAccounts(); loadTransactions(); loadLoans();
-    loadGoals(); loadActivities(); loadSchedules(); loadExpenses();
+  // Surface load failures as a retry-able banner instead of leaving the user
+  // staring at a half-empty dashboard. Uses Promise.all so any individual
+  // store failure flags the whole batch; retry re-runs everything.
+  const loadEverything = useCallback(async () => {
+    await Promise.all([
+      loadAccounts(),
+      loadTransactions(),
+      loadLoans(),
+      loadGoals(),
+      loadActivities(),
+      loadSchedules(),
+      loadExpenses(),
+    ]);
   }, [loadAccounts, loadTransactions, loadLoans, loadGoals, loadActivities, loadSchedules, loadExpenses]);
+
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(loadEverything);
 
   // FIX 2: Credit cards are liabilities, not assets
   // Net worth = regular account balances + (credit card balance - limit) for each card
@@ -105,6 +119,19 @@ export function HomePage() {
           <UserAvatar name={userName} size={40} onClick={() => navigate('/settings')} />
         </div>
       </header>
+
+      {/* Load-failure banner. Stays visible until retry succeeds so the user
+          never has a silently-empty dashboard masquerading as "no data". */}
+      {loadStatus === 'error' && (
+        <div className="px-5 pt-3">
+          <PageErrorState
+            variant="inline"
+            title="Couldn't refresh your dashboard"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
+          />
+        </div>
+      )}
 
       {/* Smart Insight */}
       {accounts.length > 0 && (() => {
