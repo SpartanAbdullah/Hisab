@@ -5,9 +5,12 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useLoanStore } from '../stores/loanStore';
 import { usePersonStore } from '../stores/personStore';
+import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
+import { useToast } from '../components/Toast';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import type { LoanType } from '../db';
 
 interface Props { open: boolean; onClose: () => void; }
@@ -17,6 +20,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   const { processTransaction } = useTransactionStore();
   const { generateSchedule } = useEmiStore();
   const { loans } = useLoanStore();
+  const toast = useToast();
   const t = useT();
 
   const [loanType, setLoanType] = useState<LoanType>('given');
@@ -45,6 +49,17 @@ export function AddLoanModal({ open, onClose }: Props) {
     account.id !== accountId &&
     (!destinationAccount || account.currency === destinationAccount.currency)
   ));
+  // Phase 2B: detect if the current form state will branch into a linked
+  // request. Used purely to swap the CTA label and show an inline hint.
+  const personInStore = contact.id
+    ? usePersonStore.getState().persons.find((p) => p.id === contact.id) ?? null
+    : null;
+  const selectedAccount = accounts.find((a) => a.id === accountId);
+  const wouldBranchToLinked = !!(
+    personInStore?.linkedProfileId &&
+    selectedAccount &&
+    selectedAccount.currency
+  );
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -55,8 +70,33 @@ export function AddLoanModal({ open, onClose }: Props) {
     setSaving(true);
     try {
       const person = contact.id
-        ? { id: contact.id, name: trimmedName }
+        ? await ensureResolvedPerson(trimmedName, contact.id)
         : await usePersonStore.getState().findOrCreateByName(trimmedName);
+
+      const selectedAccount = accounts.find((a) => a.id === accountId);
+      const txType = loanType === 'given' ? 'loan_given' : 'loan_taken';
+      const branch = decideLinkedBranch({
+        type: txType,
+        person,
+        requestCurrency: selectedAccount?.currency,
+      });
+
+      if (branch.branch === true) {
+        await useLinkedRequestStore.getState().createRequest({
+          toUserId: branch.toUserId,
+          personId: branch.personId,
+          kind: branch.kind,
+          amount: amt,
+          currency: branch.currency,
+          note: notes,
+        });
+        toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
+        setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
+        setHasEmi(false); setInstallments(''); setStartDate('');
+        onClose();
+        return;
+      }
+
       const tx = await processTransaction(
         loanType === 'given'
           ? { type: 'loan_given', amount: amt, sourceAccountId: accountId, personName: person.name, personId: person.id, notes }
@@ -76,9 +116,17 @@ export function AddLoanModal({ open, onClose }: Props) {
       setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
       setHasEmi(false); setInstallments(''); setStartDate('');
       onClose();
-    } catch (err) { setError(err instanceof Error ? err.message : 'Failed'); }
+    } catch (err) { setError(err instanceof Error ? err.message : t('ltr_create_error')); }
     finally { setSaving(false); }
   };
+
+  // Fetch the full Person row (needed for linkedProfileId when the contact
+  // was picked from the ContactPicker dropdown rather than typed fresh).
+  async function ensureResolvedPerson(name: string, id: string) {
+    const existing = usePersonStore.getState().persons.find((p) => p.id === id);
+    if (existing) return existing;
+    return usePersonStore.getState().findOrCreateByName(name);
+  }
 
   const inputClass = 'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
 
@@ -87,7 +135,7 @@ export function AddLoanModal({ open, onClose }: Props) {
       footer={
         <button type="submit" form="loan-form" disabled={saving}
           className="w-full btn-gradient rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
-        >{saving ? t('loan_creating') : t('loan_create')}</button>
+        >{saving ? t('loan_creating') : wouldBranchToLinked ? t('ltr_branch_cta') : t('loan_create')}</button>
       }
     >
       <form id="loan-form" onSubmit={handleSubmit} className="space-y-4">
@@ -106,6 +154,9 @@ export function AddLoanModal({ open, onClose }: Props) {
         <div>
           <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('loan_to_whom')}</label>
           <ContactPicker value={contact} onChange={setContact} placeholder="Naam likho..." required className={inputClass} />
+          {wouldBranchToLinked ? (
+            <p className="text-[11px] text-indigo-600 mt-1.5">{t('ltr_branch_helper')}</p>
+          ) : null}
         </div>
 
         <div>

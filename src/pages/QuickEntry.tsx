@@ -10,8 +10,10 @@ import { useGoalStore } from '../stores/goalStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { usePersonStore } from '../stores/personStore';
+import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { Modal } from '../components/Modal';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
+import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { SpendingWarningModal } from '../components/SpendingWarningModal';
 import { useToast } from '../components/Toast';
@@ -172,6 +174,24 @@ export function QuickEntry({ open, onClose }: Props) {
     handleSubmit();
   };
 
+  // Phase 2B: whether the current form state will branch into a linked
+  // request on submit. Drives the inline helper + CTA label only.
+  const contactInStore = needsPerson && contact.id
+    ? usePersonStore.getState().persons.find((p) => p.id === contact.id) ?? null
+    : null;
+  const branchAccount = type === 'loan_given' ? srcAccount : type === 'loan_taken' ? dstAccount : null;
+  const wouldBranchToLinked = !!(
+    (type === 'loan_given' || type === 'loan_taken') &&
+    contactInStore?.linkedProfileId &&
+    branchAccount?.currency
+  );
+
+  async function ensureResolvedPerson(name: string, id: string) {
+    const existing = usePersonStore.getState().persons.find((p) => p.id === id);
+    if (existing) return existing;
+    return usePersonStore.getState().findOrCreateByName(name);
+  }
+
   const handleSubmit = async () => {
     setShowSpendingWarning(false);
     const amt = parseFloat(amount);
@@ -185,9 +205,34 @@ export function QuickEntry({ open, onClose }: Props) {
       // is the source of truth for whether a contact row must exist.
       const resolvedPerson = needsPerson
         ? (contact.id
-            ? { id: contact.id, name: contact.name.trim() }
+            ? await ensureResolvedPerson(contact.name.trim(), contact.id)
             : await usePersonStore.getState().findOrCreateByName(contact.name.trim()))
         : null;
+
+      // Phase 2B: branch loan_given / loan_taken against a linked contact into
+      // a linked_transaction_request instead of creating loans/txns directly.
+      if (type === 'loan_given' || type === 'loan_taken') {
+        const accountForBranch = type === 'loan_given' ? srcAccount : dstAccount;
+        const branch = decideLinkedBranch({
+          type,
+          person: resolvedPerson,
+          requestCurrency: accountForBranch?.currency,
+        });
+        if (branch.branch === true) {
+          await useLinkedRequestStore.getState().createRequest({
+            toUserId: branch.toUserId,
+            personId: branch.personId,
+            kind: branch.kind,
+            amount: amt,
+            currency: branch.currency,
+            note: notes,
+          });
+          toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
+          reset();
+          onClose();
+          return;
+        }
+      }
 
       switch (type) {
         case 'income': { const d = accounts.find(a => a.id === destId)!; changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt }); input = { type: 'income', amount: amt, destinationAccountId: destId, category, notes }; break; }
@@ -301,7 +346,7 @@ export function QuickEntry({ open, onClose }: Props) {
             </button>
             <button onClick={preSubmit} disabled={saving || !canSubmit()}
               className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 transition-all"
-            >{saving ? t('quick_processing') : `${t('quick_save')} \u2713`}</button>
+            >{saving ? t('quick_processing') : wouldBranchToLinked ? t('ltr_branch_cta') : `${t('quick_save')} \u2713`}</button>
           </div>
         ) : undefined}
       >
@@ -470,6 +515,9 @@ export function QuickEntry({ open, onClose }: Props) {
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_who')}</label>
                 <ContactPicker value={contact} onChange={setContact} placeholder={t('quick_who_placeholder')} className={inputClass} />
+                {wouldBranchToLinked ? (
+                  <p className="text-[11px] text-indigo-600 mt-1.5">{t('ltr_branch_helper')}</p>
+                ) : null}
               </div>
             )}
 

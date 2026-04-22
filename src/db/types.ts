@@ -59,8 +59,32 @@ export interface Person {
   id: string;
   name: string;
   phone?: string | null;
+  linkedProfileId?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// Phase 2B: linked transaction request. Cloud-only; no Dexie mirror.
+export type LinkedRequestKind = 'lent' | 'borrowed';
+export type LinkedRequestStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled';
+
+export interface LinkedRequest {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  personId: string | null;
+  kind: LinkedRequestKind;
+  amount: number;
+  currency: Currency;
+  note: string;
+  status: LinkedRequestStatus;
+  rejectionReason: string | null;
+  requesterLoanId: string | null;
+  responderLoanId: string | null;
+  requesterTxnId: string | null;
+  responderTxnId: string | null;
+  createdAt: string;
+  respondedAt: string | null;
 }
 
 export type EmiStatus = 'upcoming' | 'paid' | 'late';

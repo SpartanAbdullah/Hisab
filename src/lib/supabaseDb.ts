@@ -3,6 +3,7 @@ import type {
   Account, Transaction, Loan, EmiSchedule, Goal,
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
   GroupMember, GroupInvite, GroupEvent, AppNotification, Person,
+  LinkedRequest, LinkedRequestKind,
 } from '../db';
 
 // Helper to get current user ID (cached in localStorage by App.tsx)
@@ -172,11 +173,118 @@ export const personsDb = {
   async add(p: Person) {
     const { error } = await supabase.from('persons').insert({
       id: p.id, user_id: getUserId(), name: p.name, phone: p.phone ?? null,
+      linked_profile_id: p.linkedProfileId ?? null,
       created_at: p.createdAt, updated_at: p.updatedAt,
     });
     if (error) throw error;
   },
+  // Phase 2A: narrow helper — writes ONLY the linked_profile_id column.
+  // Returns the Supabase error object untouched on failure so callers can
+  // detect the unique-index violation (23505) and surface a clean message.
+  async setLinkedProfileId(id: string, linkedProfileId: string | null) {
+    const { error } = await supabase
+      .from('persons').update({ linked_profile_id: linkedProfileId })
+      .eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  // Phase 2A: SECURITY DEFINER RPC. Caller must pass the already-normalised
+  // code (same rules as collaboration.normalizePublicCode). Returns null if
+  // no match, the resolver's own code, or an invalid code.
+  async lookupProfileByCode(normalisedCode: string): Promise<{ profileId: string; displayName: string } | null> {
+    const { data, error } = await supabase.rpc('lookup_profile_by_code', { code: normalisedCode });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+    return {
+      profileId: (row.profile_id as string) ?? '',
+      displayName: (row.display_name as string) ?? 'Hisaab user',
+    };
+  },
 };
+
+// ══════════════════════════════════════
+// LINKED TRANSACTION REQUESTS (Phase 2B)
+// Cloud-only. Writes go through RLS (insert) or SECURITY DEFINER RPCs
+// (accept / reject / cancel). No Dexie mirror.
+// ══════════════════════════════════════
+export const linkedRequestsDb = {
+  async getAll(): Promise<LinkedRequest[]> {
+    const me = getUserId();
+    const { data, error } = await supabase
+      .from('linked_transaction_requests')
+      .select('*')
+      .or(`from_user_id.eq.${me},to_user_id.eq.${me}`)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapLinkedRequest);
+  },
+  async insert(input: {
+    id: string;
+    toUserId: string;
+    personId: string;
+    kind: LinkedRequestKind;
+    amount: number;
+    currency: 'AED' | 'PKR';
+    note: string;
+  }) {
+    const { error } = await supabase.from('linked_transaction_requests').insert({
+      id: input.id,
+      from_user_id: getUserId(),
+      to_user_id: input.toUserId,
+      person_id: input.personId,
+      kind: input.kind,
+      amount: input.amount,
+      currency: input.currency,
+      note: input.note,
+    });
+    if (error) throw error;
+  },
+  async accept(requestId: string): Promise<LinkedRequest> {
+    const { data, error } = await supabase.rpc('accept_linked_request', { request_id: requestId });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error('ltr: accept returned no row');
+    return mapLinkedRequest(row as Record<string, unknown>);
+  },
+  async reject(requestId: string, reason?: string): Promise<LinkedRequest> {
+    const { data, error } = await supabase.rpc('reject_linked_request', {
+      request_id: requestId,
+      reason: reason ?? null,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error('ltr: reject returned no row');
+    return mapLinkedRequest(row as Record<string, unknown>);
+  },
+  async cancel(requestId: string): Promise<LinkedRequest> {
+    const { data, error } = await supabase.rpc('cancel_linked_request', { request_id: requestId });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error('ltr: cancel returned no row');
+    return mapLinkedRequest(row as Record<string, unknown>);
+  },
+};
+
+function mapLinkedRequest(r: Record<string, unknown>): LinkedRequest {
+  return {
+    id: r.id as string,
+    fromUserId: r.from_user_id as string,
+    toUserId: r.to_user_id as string,
+    personId: (r.person_id as string) ?? null,
+    kind: r.kind as LinkedRequest['kind'],
+    amount: Number(r.amount),
+    currency: r.currency as LinkedRequest['currency'],
+    note: (r.note as string) ?? '',
+    status: r.status as LinkedRequest['status'],
+    rejectionReason: (r.rejection_reason as string) ?? null,
+    requesterLoanId: (r.requester_loan_id as string) ?? null,
+    responderLoanId: (r.responder_loan_id as string) ?? null,
+    requesterTxnId: (r.requester_txn_id as string) ?? null,
+    responderTxnId: (r.responder_txn_id as string) ?? null,
+    createdAt: r.created_at as string,
+    respondedAt: (r.responded_at as string) ?? null,
+  };
+}
 
 // ══════════════════════════════════════
 // EMI SCHEDULES
@@ -760,6 +868,7 @@ function mapPerson(r: Record<string, unknown>): Person {
     id: r.id as string,
     name: r.name as string,
     phone: (r.phone as string) ?? null,
+    linkedProfileId: (r.linked_profile_id as string) ?? null,
     createdAt: r.created_at as string,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };

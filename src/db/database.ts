@@ -58,6 +58,19 @@ export class HisaabDatabase extends Dexie {
       groupSettlements: 'id, groupId, fromMember, toMember',
       persons: 'id, name, createdAt',
     });
+    this.version(5).stores({
+      accounts: 'id, type, currency',
+      transactions: 'id, type, sourceAccountId, destinationAccountId, relatedLoanId, relatedGoalId, personId, createdAt',
+      loans: 'id, personName, personId, type, status',
+      emiSchedules: 'id, loanId, status, dueDate',
+      goals: 'id, storedInAccountId',
+      activityLog: 'id, type, relatedEntityId, timestamp',
+      upcomingExpenses: 'id, accountId, dueDate, isPaid',
+      splitGroups: 'id, createdAt',
+      groupExpenses: 'id, groupId, paidBy, createdAt',
+      groupSettlements: 'id, groupId, fromMember, toMember',
+      persons: 'id, name, linkedProfileId, createdAt',
+    });
   }
 }
 

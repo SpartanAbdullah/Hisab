@@ -43,3 +43,17 @@ export function buildInviteUrl(token: string): string {
   if (typeof window === 'undefined') return `/join/${token}`;
   return `${window.location.origin}/join/${token}`;
 }
+
+// Phase 2A: single place that turns a raw user-entered code into a resolved
+// profile (or null). Normalises input, calls the RPC, narrows the shape.
+// Callers must gate invocation behind an explicit user action — do NOT call
+// on every keystroke.
+export async function resolveProfileByCode(
+  rawCode: string,
+): Promise<{ profileId: string; displayName: string } | null> {
+  const normalised = normalizePublicCode(rawCode);
+  if (!normalised) return null;
+  // Import lazily to avoid a cycle with supabaseDb (which imports lib/).
+  const { personsDb } = await import('./supabaseDb');
+  return personsDb.lookupProfileByCode(normalised);
+}

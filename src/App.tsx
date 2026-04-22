@@ -8,6 +8,7 @@ import { useOnboardingStore } from './stores/onboardingStore';
 import { useAppModeStore } from './stores/appModeStore';
 import { useSupabaseAuthStore } from './stores/supabaseAuthStore';
 import { usePersonStore } from './stores/personStore';
+import { useLinkedRequestStore } from './stores/linkedRequestStore';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
@@ -27,6 +28,7 @@ const GroupDetailPage = lazy(() => import('./pages/GroupDetailPage').then(m => (
 const JoinGroupPage = lazy(() => import('./pages/JoinGroupPage').then(m => ({ default: m.JoinGroupPage })));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m.InboxPage })));
 
 // These are modals, not routes — keep eagerly loaded
 import { QuickEntry } from './pages/QuickEntry';
@@ -91,6 +93,9 @@ function AppContent() {
     if (!user?.id) return;
     void usePersonStore.getState().loadPersons().catch((err) => {
       console.error('loadPersons failed (non-fatal)', err);
+    });
+    void useLinkedRequestStore.getState().loadRequests().catch((err) => {
+      console.error('loadRequests failed (non-fatal)', err);
     });
   }, [user?.id]);
 
@@ -173,6 +178,7 @@ function AppContent() {
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/inbox" element={<InboxPage />} />
           <Route path="/account/:id" element={<AccountDetailPage />} />
 
           {/* Full tracker only routes */}

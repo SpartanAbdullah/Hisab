@@ -514,6 +514,73 @@ const S = {
     ur: 'Browser menu kholo, phir Install app ya Add to Home screen chuno.',
     en: 'Open the browser menu, then tap Install app or Add to Home screen.',
   },
+  // ── Phase 2B: Linked Transaction Requests ──────────────────
+  nav_inbox: { ur: 'Inbox', en: 'Inbox' },
+
+  // Entry-form branching
+  ltr_branch_helper: {
+    ur: 'Yeh direct save nahi hoga, pehle request ke taur par bheja jayega.',
+    en: 'This will be sent as a request instead of being recorded immediately.',
+  },
+  ltr_branch_cta: { ur: 'Confirmation ke liye bhejo', en: 'Send for confirmation' },
+
+  // Toasts
+  ltr_sent_title: { ur: 'Confirmation ke liye bhej diya', en: 'Sent for confirmation' },
+  ltr_sent_subtitle: {
+    ur: 'Dusra user accept karega tabhi unke records mein add hoga.',
+    en: 'The other person must accept before it appears in their records.',
+  },
+  ltr_accept_error: { ur: 'Accept nahi ho saka. Dobara koshish karein.', en: 'Could not accept. Try again.' },
+  ltr_reject_error: { ur: 'Reject nahi ho saka. Dobara koshish karein.', en: 'Could not reject. Try again.' },
+  ltr_cancel_error: { ur: 'Cancel nahi ho saka. Dobara koshish karein.', en: 'Could not cancel. Try again.' },
+  ltr_create_error: {
+    ur: 'Request nahi bhej saki. Dobara koshish karein.',
+    en: 'Could not send the request. Try again.',
+  },
+
+  // Inbox page
+  ltr_inbox_title: { ur: 'Inbox', en: 'Inbox' },
+  ltr_tab_incoming: { ur: 'Aayi hui', en: 'Incoming' },
+  ltr_tab_outgoing: { ur: 'Bheji hui', en: 'Outgoing' },
+  ltr_empty_incoming: {
+    ur: 'Abhi koi pending request nahi.',
+    en: 'No pending requests right now.',
+  },
+  ltr_empty_outgoing: {
+    ur: 'Aap ne koi request nahi bheji.',
+    en: "You haven't sent any requests.",
+  },
+  ltr_incoming_hint: {
+    ur: 'Accept karne se dono taraf record banega. Yeh paisa move nahi karega.',
+    en: 'Accepting will record this loan on both sides. It will NOT move money.',
+  },
+  ltr_outgoing_hint: {
+    ur: 'Bhej di gayi hai. Abhi tak koi paisa move nahi hua.',
+    en: 'Sent for confirmation. No money has moved.',
+  },
+
+  // Request card descriptions
+  ltr_card_lent: { ur: '{name} ko diya', en: 'Lent to {name}' },
+  ltr_card_borrowed: { ur: '{name} se liya', en: 'Borrowed from {name}' },
+  ltr_card_incoming_lent: { ur: '{name} kehta hai ke aap ko diya', en: '{name} says they lent you' },
+  ltr_card_incoming_borrowed: { ur: '{name} kehta hai ke aap se liya', en: '{name} says they borrowed' },
+
+  // Action buttons
+  ltr_accept: { ur: 'Accept', en: 'Accept' },
+  ltr_reject: { ur: 'Reject', en: 'Reject' },
+  ltr_cancel: { ur: 'Cancel', en: 'Cancel' },
+  ltr_accepting: { ur: 'Accept ho raha…', en: 'Accepting…' },
+  ltr_rejecting: { ur: 'Reject ho raha…', en: 'Rejecting…' },
+  ltr_cancelling: { ur: 'Cancel ho raha…', en: 'Cancelling…' },
+
+  // Terminal state pills
+  ltr_status_pending:   { ur: 'Pending',   en: 'Pending' },
+  ltr_status_accepted:  { ur: 'Accepted',  en: 'Accepted' },
+  ltr_status_rejected:  { ur: 'Rejected',  en: 'Rejected' },
+  ltr_status_cancelled: { ur: 'Cancelled', en: 'Cancelled' },
+
+  // Fallback person name for requests when contact details are missing
+  ltr_unknown_person: { ur: 'Hisaab user', en: 'Hisaab user' },
 } as const;
 
 type Key = keyof typeof S;
