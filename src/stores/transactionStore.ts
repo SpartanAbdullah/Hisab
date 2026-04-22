@@ -37,6 +37,7 @@ interface LoanGivenInput extends BaseTransactionInput {
   type: 'loan_given';
   sourceAccountId: string;
   personName: string;
+  personId?: string | null;
   loanId?: string;
 }
 
@@ -44,6 +45,7 @@ interface LoanTakenInput extends BaseTransactionInput {
   type: 'loan_taken';
   destinationAccountId: string;
   personName: string;
+  personId?: string | null;
   loanId?: string;
   sourceAccountId?: string;
 }
@@ -146,6 +148,7 @@ async function trackedCreateLoan(scope: MutationScope, input: CreateLoanInput): 
   const loan: Loan = {
     id: uuid(),
     personName: input.personName,
+    personId: input.personId ?? null,
     type: input.type,
     totalAmount: input.totalAmount,
     remainingAmount: input.totalAmount,
@@ -384,8 +387,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
   loadTransactions: async () => {
     set({ loading: true });
-    const transactions = await transactionsDb.getAll();
-    set({ transactions, loading: false });
+    try {
+      const transactions = await transactionsDb.getAll();
+      set({ transactions });
+    } finally {
+      set({ loading: false });
+    }
   },
 
   processTransaction: async (input) => {
@@ -401,6 +408,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         let sourceAccountId: string | null = null;
         let destinationAccountId: string | null = null;
         let relatedPerson: string | null = null;
+        let personId: string | null = null;
         let relatedLoanId: string | null = null;
         let relatedGoalId: string | null = null;
         let conversionRate: number | null = null;
@@ -465,11 +473,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             currency = src.currency;
             sourceAccountId = input.sourceAccountId;
             relatedPerson = input.personName;
+            personId = input.personId ?? null;
             await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
 
             if (!input.loanId) {
               const loan = await trackedCreateLoan(scope, {
                 personName: input.personName,
+                personId: input.personId ?? null,
                 type: 'given',
                 totalAmount: input.amount,
                 currency,
@@ -489,6 +499,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             currency = dest.currency;
             destinationAccountId = input.destinationAccountId;
             relatedPerson = input.personName;
+            personId = input.personId ?? null;
 
             if (input.sourceAccountId) {
               const src = accountStore.getAccount(input.sourceAccountId);
@@ -506,6 +517,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             if (!input.loanId) {
               const loan = await trackedCreateLoan(scope, {
                 personName: input.personName,
+                personId: input.personId ?? null,
                 type: 'taken',
                 totalAmount: input.amount,
                 currency,
@@ -526,6 +538,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             if (!loan) throw new Error('Loan not found');
             relatedLoanId = input.loanId;
             relatedPerson = loan.personName;
+            personId = loan.personId ?? null;
             currency = loan.currency;
             const shouldSettleRemainingEmis = !input.emiId && loan.remainingAmount - input.amount <= 0.00001;
 
@@ -637,6 +650,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           sourceAccountId,
           destinationAccountId,
           relatedPerson,
+          personId,
           relatedLoanId,
           relatedGoalId,
           conversionRate,
@@ -750,6 +764,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
             await trackedUpdateLoan(scope, relatedLoanId, {
               personName: loanGivenInput.personName,
+              ...(loanGivenInput.personId !== undefined ? { personId: loanGivenInput.personId } : {}),
               totalAmount: loanGivenInput.amount,
               remainingAmount: loanGivenInput.amount,
               currency: nextSource.currency,
@@ -763,6 +778,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               currency: nextSource.currency,
               sourceAccountId: loanGivenInput.sourceAccountId,
               relatedPerson: loanGivenInput.personName,
+              ...(loanGivenInput.personId !== undefined ? { personId: loanGivenInput.personId } : {}),
               notes: loanGivenInput.notes ?? '',
             };
             description = `Updated money lent to ${loanGivenInput.personName}: ${nextSource.currency} ${loanGivenInput.amount}`;
@@ -827,6 +843,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
             await trackedUpdateLoan(scope, relatedLoanId, {
               personName: loanTakenInput.personName,
+              ...(loanTakenInput.personId !== undefined ? { personId: loanTakenInput.personId } : {}),
               totalAmount: loanTakenInput.amount,
               remainingAmount: loanTakenInput.amount,
               currency: nextDestination.currency,
@@ -841,6 +858,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               sourceAccountId: nextSourceAccountId,
               destinationAccountId: loanTakenInput.destinationAccountId,
               relatedPerson: loanTakenInput.personName,
+              ...(loanTakenInput.personId !== undefined ? { personId: loanTakenInput.personId } : {}),
               conversionRate: null,
               notes: loanTakenInput.notes ?? '',
             };

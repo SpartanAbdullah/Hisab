@@ -7,6 +7,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { useAppModeStore } from './stores/appModeStore';
 import { useSupabaseAuthStore } from './stores/supabaseAuthStore';
+import { usePersonStore } from './stores/personStore';
+import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
 
@@ -83,6 +85,26 @@ function AppContent() {
     }
     startGlobalRealtime(user.id);
     return () => stopGlobalRealtime();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    void usePersonStore.getState().loadPersons().catch((err) => {
+      console.error('loadPersons failed (non-fatal)', err);
+    });
+  }, [user?.id]);
+
+  // Phase 1B-A: historical backfill of person_id on legacy loans/transactions.
+  // Deferred ~800ms so other boot work (profile fetch, realtime subscribe,
+  // first page render) finishes first. The job itself short-circuits via a
+  // localStorage flag after success, so steady-state boots pay almost nothing.
+  useEffect(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    const timer = setTimeout(() => {
+      void runPersonBackfillIfNeeded(uid);
+    }, 800);
+    return () => clearTimeout(timer);
   }, [user?.id]);
 
   useEffect(() => {

@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { resolvePersonName } from '../lib/resolvePersonName';
 import type { Loan } from '../db';
 
 interface Props {
@@ -125,7 +126,7 @@ export function RepaymentModal({
 
       setConfirmData({
         title: `${isInstallmentPayment ? t('loan_mark_paid') : t('loan_repay')} - Done!`,
-        description: `${formatMoney(parsedAmount, loan.currency)} ${isGiven ? 'received from' : 'repaid to'} ${loan.personName}`,
+        description: `${formatMoney(parsedAmount, loan.currency)} ${isGiven ? 'received from' : 'repaid to'} ${resolvePersonName({ personId: loan.personId, fallback: loan.personName })}`,
         changes,
       });
       setShowConfirmation(true);
@@ -149,7 +150,7 @@ export function RepaymentModal({
       <Modal
         open={open && !showConfirmation}
         onClose={handleClose}
-        title={`${isInstallmentPayment ? t('loan_mark_paid') : t('repay_title')} - ${loan.personName}`}
+        title={`${isInstallmentPayment ? t('loan_mark_paid') : t('repay_title')} - ${resolvePersonName({ personId: loan.personId, fallback: loan.personName })}`}
         footer={
           <button
             onClick={handleSubmit}

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Account, Transaction, Loan, EmiSchedule, Goal, ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement } from './types';
+import type { Account, Transaction, Loan, EmiSchedule, Goal, ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement, Person } from './types';
 
 export class HisaabDatabase extends Dexie {
   accounts!: Table<Account, string>;
@@ -12,6 +12,7 @@ export class HisaabDatabase extends Dexie {
   splitGroups!: Table<SplitGroup, string>;
   groupExpenses!: Table<GroupExpense, string>;
   groupSettlements!: Table<GroupSettlement, string>;
+  persons!: Table<Person, string>;
 
   constructor() {
     super('HisaabDB');
@@ -43,6 +44,19 @@ export class HisaabDatabase extends Dexie {
       splitGroups: 'id, createdAt',
       groupExpenses: 'id, groupId, paidBy, createdAt',
       groupSettlements: 'id, groupId, fromMember, toMember',
+    });
+    this.version(4).stores({
+      accounts: 'id, type, currency',
+      transactions: 'id, type, sourceAccountId, destinationAccountId, relatedLoanId, relatedGoalId, personId, createdAt',
+      loans: 'id, personName, personId, type, status',
+      emiSchedules: 'id, loanId, status, dueDate',
+      goals: 'id, storedInAccountId',
+      activityLog: 'id, type, relatedEntityId, timestamp',
+      upcomingExpenses: 'id, accountId, dueDate, isPaid',
+      splitGroups: 'id, createdAt',
+      groupExpenses: 'id, groupId, paidBy, createdAt',
+      groupSettlements: 'id, groupId, fromMember, toMember',
+      persons: 'id, name, createdAt',
     });
   }
 }

@@ -14,6 +14,7 @@ import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { RepaymentModal } from './RepaymentModal';
 import { isGroupLinkedNote } from '../lib/internalNotes';
+import { resolvePersonName } from '../lib/resolvePersonName';
 import type { EmiSchedule, Transaction } from '../db';
 
 export function LoanDetailPage() {
@@ -37,6 +38,7 @@ export function LoanDetailPage() {
   const loan = loans.find((entry) => entry.id === id);
   if (!loan) return <div className="p-4 text-center text-slate-400">{t('loan_not_found')}</div>;
 
+  const displayName = resolvePersonName({ personId: loan.personId, fallback: loan.personName });
   const loanTransactions = getByLoan(loan.id);
   const emiItems = schedules
     .filter((schedule) => schedule.loanId === loan.id)
@@ -58,7 +60,7 @@ export function LoanDetailPage() {
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
       <PageHeader
-        title={loan.personName}
+        title={displayName || loan.personName}
         back
         action={
           <div className="flex items-center gap-2">
@@ -82,7 +84,7 @@ export function LoanDetailPage() {
           <div className="relative">
             <div className="flex items-center gap-4 mb-5">
               <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center text-xl font-bold backdrop-blur-sm">
-                {loan.personName[0].toUpperCase()}
+                {(displayName || loan.personName || '?')[0].toUpperCase()}
               </div>
               <div>
                 <p className="text-[11px] uppercase tracking-widest opacity-70">{isGiven ? t('loan_gave') : t('loan_took')}</p>

@@ -6,6 +6,7 @@ import { useActivityStore } from './activityStore';
 
 export interface CreateLoanInput {
   personName: string;
+  personId?: string | null;
   type: LoanType;
   totalAmount: number;
   currency: Currency;
@@ -36,14 +37,19 @@ export const useLoanStore = create<LoanState>((set, get) => ({
 
   loadLoans: async () => {
     set({ loading: true });
-    const loans = await loansDb.getAll();
-    set({ loans, loading: false });
+    try {
+      const loans = await loansDb.getAll();
+      set({ loans });
+    } finally {
+      set({ loading: false });
+    }
   },
 
   createLoan: async (input) => {
     const loan: Loan = {
       id: uuid(),
       personName: input.personName,
+      personId: input.personId ?? null,
       type: input.type,
       totalAmount: input.totalAmount,
       remainingAmount: input.totalAmount,

@@ -21,6 +21,7 @@ import { useOnboardingStore } from './onboardingStore';
 import { useAppModeStore } from './appModeStore';
 import { useAuthStore } from './authStore';
 import { useUIStore } from './uiStore';
+import { usePersonStore } from './personStore';
 
 // hisaab_supabase_uid is NOT listed here — it's owned by supabaseAuthStore's
 // onAuthStateChange handler, which clears it when the Supabase session ends.
@@ -33,6 +34,8 @@ const USER_SCOPED_LOCALSTORAGE_KEYS = [
   'hisaab_app_mode',
   'hisaab_pin_hash',
   'hisaab_identifier',
+  'hisaab_backfill_persons_v1',
+  'hisaab_backfill_persons_v1:lock',
 ];
 
 export function resetAllUserStores(): void {
@@ -49,6 +52,7 @@ export function resetAllUserStores(): void {
   useAppModeStore.getState().reset();
   useAuthStore.getState().reset();
   useUIStore.getState().reset();
+  usePersonStore.getState().reset();
 
   for (const key of USER_SCOPED_LOCALSTORAGE_KEYS) {
     localStorage.removeItem(key);

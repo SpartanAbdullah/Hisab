@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import type {
   Account, Transaction, Loan, EmiSchedule, Goal,
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
-  GroupMember, GroupInvite, GroupEvent, AppNotification,
+  GroupMember, GroupInvite, GroupEvent, AppNotification, Person,
 } from '../db';
 
 // Helper to get current user ID (cached in localStorage by App.tsx)
@@ -75,7 +75,7 @@ export const transactionsDb = {
     const { error } = await supabase.from('transactions').insert({
       id: t.id, user_id: getUserId(), type: t.type, amount: t.amount, currency: t.currency,
       source_account_id: t.sourceAccountId, destination_account_id: t.destinationAccountId,
-      related_person: t.relatedPerson, related_loan_id: t.relatedLoanId,
+      related_person: t.relatedPerson, person_id: t.personId ?? null, related_loan_id: t.relatedLoanId,
       related_goal_id: t.relatedGoalId, conversion_rate: t.conversionRate,
       category: t.category, notes: t.notes, created_at: t.createdAt,
     });
@@ -89,6 +89,7 @@ export const transactionsDb = {
     if (changes.sourceAccountId !== undefined) row.source_account_id = changes.sourceAccountId;
     if (changes.destinationAccountId !== undefined) row.destination_account_id = changes.destinationAccountId;
     if (changes.relatedPerson !== undefined) row.related_person = changes.relatedPerson;
+    if (changes.personId !== undefined) row.person_id = changes.personId;
     if (changes.relatedLoanId !== undefined) row.related_loan_id = changes.relatedLoanId;
     if (changes.relatedGoalId !== undefined) row.related_goal_id = changes.relatedGoalId;
     if (changes.conversionRate !== undefined) row.conversion_rate = changes.conversionRate;
@@ -99,6 +100,14 @@ export const transactionsDb = {
   },
   async delete(id: string) {
     const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  // Narrow helper used only by the Phase 1B-A backfill. Deliberately separate
+  // from the general `update` path so the write surface is grep-auditable.
+  async setPersonId(id: string, personId: string) {
+    const { error } = await supabase
+      .from('transactions').update({ person_id: personId })
+      .eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
 };
@@ -117,7 +126,7 @@ export const loansDb = {
   },
   async add(l: Loan) {
     const { error } = await supabase.from('loans').insert({
-      id: l.id, user_id: getUserId(), person_name: l.personName, type: l.type,
+      id: l.id, user_id: getUserId(), person_name: l.personName, person_id: l.personId ?? null, type: l.type,
       total_amount: l.totalAmount, remaining_amount: l.remainingAmount,
       currency: l.currency, status: l.status, notes: l.notes, created_at: l.createdAt,
     });
@@ -126,6 +135,7 @@ export const loansDb = {
   async update(id: string, changes: Partial<Loan>) {
     const row: Record<string, unknown> = {};
     if (changes.personName !== undefined) row.person_name = changes.personName;
+    if (changes.personId !== undefined) row.person_id = changes.personId;
     if (changes.totalAmount !== undefined) row.total_amount = changes.totalAmount;
     if (changes.remainingAmount !== undefined) row.remaining_amount = changes.remainingAmount;
     if (changes.currency !== undefined) row.currency = changes.currency;
@@ -136,6 +146,34 @@ export const loansDb = {
   },
   async delete(id: string) {
     const { error } = await supabase.from('loans').delete().eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  // Narrow helper used only by the Phase 1B-A backfill. See transactionsDb.setPersonId.
+  async setPersonId(id: string, personId: string) {
+    const { error } = await supabase
+      .from('loans').update({ person_id: personId })
+      .eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+// ══════════════════════════════════════
+// PERSONS (contacts)
+// ══════════════════════════════════════
+export const personsDb = {
+  async getAll(): Promise<Person[]> {
+    const { data, error } = await supabase
+      .from('persons').select('*')
+      .eq('user_id', getUserId())
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapPerson);
+  },
+  async add(p: Person) {
+    const { error } = await supabase.from('persons').insert({
+      id: p.id, user_id: getUserId(), name: p.name, phone: p.phone ?? null,
+      created_at: p.createdAt, updated_at: p.updatedAt,
+    });
     if (error) throw error;
   },
 };
@@ -697,6 +735,7 @@ function mapTransaction(r: Record<string, unknown>): Transaction {
     sourceAccountId: (r.source_account_id as string) ?? null,
     destinationAccountId: (r.destination_account_id as string) ?? null,
     relatedPerson: (r.related_person as string) ?? null,
+    personId: (r.person_id as string) ?? null,
     relatedLoanId: (r.related_loan_id as string) ?? null,
     relatedGoalId: (r.related_goal_id as string) ?? null,
     conversionRate: r.conversion_rate != null ? Number(r.conversion_rate) : null,
@@ -708,10 +747,21 @@ function mapTransaction(r: Record<string, unknown>): Transaction {
 function mapLoan(r: Record<string, unknown>): Loan {
   return {
     id: r.id as string, personName: r.person_name as string,
+    personId: (r.person_id as string) ?? null,
     type: r.type as Loan['type'], totalAmount: Number(r.total_amount),
     remainingAmount: Number(r.remaining_amount), currency: r.currency as Loan['currency'],
     status: r.status as Loan['status'], notes: (r.notes as string) ?? '',
     createdAt: r.created_at as string,
+  };
+}
+
+function mapPerson(r: Record<string, unknown>): Person {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    phone: (r.phone as string) ?? null,
+    createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };
 }
 

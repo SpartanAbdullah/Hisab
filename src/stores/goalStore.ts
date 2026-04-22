@@ -33,8 +33,12 @@ export const useGoalStore = create<GoalState>((set, get) => ({
 
   loadGoals: async () => {
     set({ loading: true });
-    const goals = await goalsDb.getAll();
-    set({ goals, loading: false });
+    try {
+      const goals = await goalsDb.getAll();
+      set({ goals });
+    } finally {
+      set({ loading: false });
+    }
   },
 
   createGoal: async (input) => {

@@ -9,7 +9,9 @@ import { useLoanStore } from '../stores/loanStore';
 import { useGoalStore } from '../stores/goalStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
+import { usePersonStore } from '../stores/personStore';
 import { Modal } from '../components/Modal';
+import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { SpendingWarningModal } from '../components/SpendingWarningModal';
 import { useToast } from '../components/Toast';
@@ -41,7 +43,7 @@ export function QuickEntry({ open, onClose }: Props) {
   const [destId, setDestId] = useState('');
   const [category, setCategory] = useState('');
   const [notes, setNotes] = useState('');
-  const [personName, setPersonName] = useState('');
+  const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
   const [loanId, setLoanId] = useState('');
   const [goalId, setGoalId] = useState('');
   const [conversionRate, setConversionRate] = useState('');
@@ -73,7 +75,7 @@ export function QuickEntry({ open, onClose }: Props) {
   const reset = () => {
     setStep(0); setAmount(''); setType('expense');
     setSourceId(''); setDestId(''); setCategory('');
-    setNotes(''); setPersonName(''); setLoanId('');
+    setNotes(''); setContact({ id: null, name: '' }); setLoanId('');
     setGoalId(''); setConversionRate('');
     setHasEmi(false); setEmiInstallments(''); setEmiStartDate('');
   };
@@ -142,8 +144,8 @@ export function QuickEntry({ open, onClose }: Props) {
       case 'income': return !!destId;
       case 'expense': return !!sourceId;
       case 'transfer': return !!sourceId && !!destId;
-      case 'loan_given': return !!sourceId && !!personName.trim();
-      case 'loan_taken': return !!destId && !!personName.trim();
+      case 'loan_given': return !!sourceId && !!contact.name.trim();
+      case 'loan_taken': return !!destId && !!contact.name.trim();
       case 'repayment':
         if (!loanId) return false;
         return selectedLoan?.type === 'given' ? !!destId : !!sourceId;
@@ -179,6 +181,14 @@ export function QuickEntry({ open, onClose }: Props) {
       let input: TransactionInput;
       const changes: Array<{ accountName: string; currency: string; before: number; after: number }> = [];
 
+      // Resolve contact once if this entry type needs a person. `needsPerson`
+      // is the source of truth for whether a contact row must exist.
+      const resolvedPerson = needsPerson
+        ? (contact.id
+            ? { id: contact.id, name: contact.name.trim() }
+            : await usePersonStore.getState().findOrCreateByName(contact.name.trim()))
+        : null;
+
       switch (type) {
         case 'income': { const d = accounts.find(a => a.id === destId)!; changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt }); input = { type: 'income', amount: amt, destinationAccountId: destId, category, notes }; break; }
         case 'expense': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'expense', amount: amt, sourceAccountId: sourceId, category, notes }; break; }
@@ -192,14 +202,14 @@ export function QuickEntry({ open, onClose }: Props) {
           input = { type: 'transfer', amount: amt, sourceAccountId: sourceId, destinationAccountId: destId, conversionRate: s.currency !== d.currency ? rate : undefined, notes };
           break;
         }
-        case 'loan_given': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'loan_given', amount: amt, sourceAccountId: sourceId, personName: personName.trim(), notes }; break; }
+        case 'loan_given': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'loan_given', amount: amt, sourceAccountId: sourceId, personName: resolvedPerson!.name, personId: resolvedPerson!.id, notes }; break; }
         case 'loan_taken': {
           const d = accounts.find(a => a.id === destId)!;
           if (selectedCashAdvanceCard) {
             changes.push({ accountName: selectedCashAdvanceCard.name, currency: selectedCashAdvanceCard.currency, before: selectedCashAdvanceCard.balance, after: selectedCashAdvanceCard.balance - amt });
           }
           changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt });
-          input = { type: 'loan_taken', amount: amt, destinationAccountId: destId, sourceAccountId: selectedCashAdvanceCard?.id, personName: personName.trim(), notes };
+          input = { type: 'loan_taken', amount: amt, destinationAccountId: destId, sourceAccountId: selectedCashAdvanceCard?.id, personName: resolvedPerson!.name, personId: resolvedPerson!.id, notes };
           break;
         }
         case 'repayment': {
@@ -459,7 +469,7 @@ export function QuickEntry({ open, onClose }: Props) {
             {needsPerson && (
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_who')}</label>
-                <input value={personName} onChange={e => setPersonName(e.target.value)} placeholder={t('quick_who_placeholder')} className={inputClass} />
+                <ContactPicker value={contact} onChange={setContact} placeholder={t('quick_who_placeholder')} className={inputClass} />
               </div>
             )}
 

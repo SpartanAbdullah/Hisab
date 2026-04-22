@@ -25,12 +25,15 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 
   loadNotifications: async () => {
     set({ loading: true });
-    const notifications = await notificationsDb.getAll();
-    set({
-      notifications,
-      loading: false,
-      unreadCount: notifications.filter(notification => !notification.readAt).length,
-    });
+    try {
+      const notifications = await notificationsDb.getAll();
+      set({
+        notifications,
+        unreadCount: notifications.filter(notification => !notification.readAt).length,
+      });
+    } finally {
+      set({ loading: false });
+    }
   },
 
   markRead: async (id) => {

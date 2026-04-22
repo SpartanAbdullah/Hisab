@@ -4,6 +4,8 @@ import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useLoanStore } from '../stores/loanStore';
+import { usePersonStore } from '../stores/personStore';
+import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import type { LoanType } from '../db';
@@ -18,7 +20,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   const t = useT();
 
   const [loanType, setLoanType] = useState<LoanType>('given');
-  const [personName, setPersonName] = useState('');
+  const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
   const [cashAdvanceSourceId, setCashAdvanceSourceId] = useState('');
@@ -48,25 +50,30 @@ export function AddLoanModal({ open, onClose }: Props) {
     event.preventDefault();
     setError('');
     const amt = parseFloat(amount);
-    if (!amt || !personName.trim() || !accountId) { setError(t('fill_all')); return; }
+    const trimmedName = contact.name.trim();
+    if (!amt || !trimmedName || !accountId) { setError(t('fill_all')); return; }
     setSaving(true);
     try {
+      const person = contact.id
+        ? { id: contact.id, name: trimmedName }
+        : await usePersonStore.getState().findOrCreateByName(trimmedName);
       const tx = await processTransaction(
         loanType === 'given'
-          ? { type: 'loan_given', amount: amt, sourceAccountId: accountId, personName: personName.trim(), notes }
+          ? { type: 'loan_given', amount: amt, sourceAccountId: accountId, personName: person.name, personId: person.id, notes }
           : {
               type: 'loan_taken',
               amount: amt,
               destinationAccountId: accountId,
               sourceAccountId: cashAdvanceSourceId || undefined,
-              personName: personName.trim(),
+              personName: person.name,
+              personId: person.id,
               notes,
             }
       );
       if (hasEmi && tx.relatedLoanId && installments && startDate) {
         await generateSchedule({ loanId: tx.relatedLoanId, totalAmount: amt, installments: parseInt(installments), startDate });
       }
-      setPersonName(''); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
+      setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
       setHasEmi(false); setInstallments(''); setStartDate('');
       onClose();
     } catch (err) { setError(err instanceof Error ? err.message : 'Failed'); }
@@ -98,7 +105,7 @@ export function AddLoanModal({ open, onClose }: Props) {
 
         <div>
           <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('loan_to_whom')}</label>
-          <input value={personName} onChange={e => setPersonName(e.target.value)} placeholder="Naam likho..." className={inputClass} required />
+          <ContactPicker value={contact} onChange={setContact} placeholder="Naam likho..." required className={inputClass} />
         </div>
 
         <div>

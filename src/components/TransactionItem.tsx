@@ -8,6 +8,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { parseInternalNote } from '../lib/internalNotes';
+import { resolvePersonName } from '../lib/resolvePersonName';
 
 const iconMap: Record<string, React.ElementType> = {
   income: ArrowDownLeft,
@@ -89,7 +90,10 @@ export function TransactionItem({ transaction }: Props) {
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-semibold text-slate-800 truncate tracking-tight">
           {title}
-          {transaction.relatedPerson ? ` - ${transaction.relatedPerson}` : ''}
+          {(() => {
+            const name = resolvePersonName({ personId: transaction.personId, fallback: transaction.relatedPerson });
+            return name ? ` - ${name}` : '';
+          })()}
         </p>
         <p className="text-[10px] text-slate-400 mt-0.5 truncate">
           {detailParts.join(' | ')}

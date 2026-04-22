@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Modal } from './Modal';
+import { ContactPicker, type ContactValue } from './ContactPicker';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
+import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
 import { EXPENSE_CATEGORIES, formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
@@ -25,7 +27,8 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
   const [cashAdvanceCardId, setCashAdvanceCardId] = useState('');
-  const [personName, setPersonName] = useState('');
+  const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
+  const [originalPersonId, setOriginalPersonId] = useState<string | null>(null);
   const [category, setCategory] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -43,7 +46,15 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
     setAmount(String(transaction.amount));
     setAccountId(transaction.type === 'loan_taken' ? transaction.destinationAccountId ?? '' : transaction.sourceAccountId ?? '');
     setCashAdvanceCardId(transaction.type === 'loan_taken' ? transaction.sourceAccountId ?? '' : '');
-    setPersonName(transaction.relatedPerson ?? '');
+    // Hydrate contact from personId when present (post-backfill or post-Phase-1
+    // rows); fall back to the legacy string cache for the exceptional case
+    // where a row predates Phase 1B-A backfill.
+    const hydratedId = transaction.personId ?? null;
+    const hydratedName = hydratedId
+      ? usePersonStore.getState().persons.find((p) => p.id === hydratedId)?.name ?? transaction.relatedPerson ?? ''
+      : transaction.relatedPerson ?? '';
+    setContact({ id: hydratedId, name: hydratedName });
+    setOriginalPersonId(hydratedId);
     setCategory(transaction.category ?? '');
     setNotes(parsedNote.visibleNote);
   }, [transaction, open]);
@@ -68,9 +79,18 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
 
   const canSave = (() => {
     if (!(editableAmount > 0) || !accountId) return false;
-    if ((isLoanGiven || isLoanTaken) && !personName.trim()) return false;
+    if ((isLoanGiven || isLoanTaken) && !contact.name.trim()) return false;
     return true;
   })();
+
+  // A non-null original id that the user has since typed over creates a
+  // different contact rather than renaming the existing one — surface that
+  // so they don't do it unintentionally. Rename lives in a later phase.
+  const willCreateNewContact =
+    (isLoanGiven || isLoanTaken) &&
+    contact.id === null &&
+    contact.name.trim() !== '' &&
+    originalPersonId !== null;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -86,20 +106,30 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           notes,
         });
       } else if (isLoanGiven) {
+        const trimmedName = contact.name.trim();
+        const resolved = contact.id
+          ? { id: contact.id, name: trimmedName }
+          : await usePersonStore.getState().findOrCreateByName(trimmedName);
         await updateTransaction(transaction.id, {
           type: 'loan_given',
           amount: editableAmount,
           sourceAccountId: accountId,
-          personName: personName.trim(),
+          personName: resolved.name,
+          personId: resolved.id,
           notes,
         });
       } else if (isLoanTaken) {
+        const trimmedName = contact.name.trim();
+        const resolved = contact.id
+          ? { id: contact.id, name: trimmedName }
+          : await usePersonStore.getState().findOrCreateByName(trimmedName);
         await updateTransaction(transaction.id, {
           type: 'loan_taken',
           amount: editableAmount,
           destinationAccountId: accountId,
           sourceAccountId: selectedCashAdvanceCard?.id,
-          personName: personName.trim(),
+          personName: resolved.name,
+          personId: resolved.id,
           notes,
         });
       }
@@ -251,12 +281,15 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
         {(isLoanGiven || isLoanTaken) && (
           <div>
             <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_who')}</label>
-            <input
-              value={personName}
-              onChange={(event) => setPersonName(event.target.value)}
-              className={inputClass}
+            <ContactPicker
+              value={contact}
+              onChange={setContact}
               placeholder={t('quick_who_placeholder')}
+              className={inputClass}
             />
+            {willCreateNewContact && (
+              <p className="text-[11px] text-amber-600 mt-1.5">This will create a new contact.</p>
+            )}
           </div>
         )}
 

@@ -39,8 +39,12 @@ export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) =
 
   loadExpenses: async () => {
     set({ loading: true });
-    const expenses = await upcomingExpensesDb.getAll();
-    set({ expenses, loading: false });
+    try {
+      const expenses = await upcomingExpensesDb.getAll();
+      set({ expenses });
+    } finally {
+      set({ loading: false });
+    }
   },
 
   createExpense: async (input) => {

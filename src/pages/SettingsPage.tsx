@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Shield, Download, Upload, Globe, Smartphone, Info, ChevronRight, Lock, Unlock, User, Mail, Phone, KeyRound, LogOut } from 'lucide-react';
+import { Shield, Download, Upload, Globe, Smartphone, Info, ChevronRight, Lock, Unlock, User, Mail, Phone, KeyRound, LogOut, Users } from 'lucide-react';
+import { ContactsModal } from './ContactsModal';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -26,6 +27,7 @@ export function SettingsPage() {
   const [pin1, setPin1] = useState('');
   const [pin2, setPin2] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [email] = useState(() => user?.email ?? localStorage.getItem('hisaab_email') ?? '');
   const [mobile, setMobile] = useState(() => localStorage.getItem('hisaab_mobile') ?? '');
@@ -290,6 +292,18 @@ export function SettingsPage() {
           )}
         </div>
 
+        {/* Contacts */}
+        <div className={sectionClass}>
+          <button onClick={() => setShowContacts(true)} className={rowClass + ' w-full text-left'}>
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center"><Users size={16} className="text-indigo-500" /></div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-slate-700">Your Contacts</p>
+              <p className="text-[11px] text-slate-400">People linked to your loans and transactions</p>
+            </div>
+            <ChevronRight size={16} className="text-slate-300" />
+          </button>
+        </div>
+
         {/* Backup */}
         <div className={sectionClass}>
           <button onClick={handleExport} disabled={exporting} className={rowClass + ' w-full text-left'}>
@@ -340,6 +354,8 @@ export function SettingsPage() {
           <p className="text-[11px] text-slate-400">Made with ❤️ by GM-300</p>
         </div>
       </div>
+
+      <ContactsModal open={showContacts} onClose={() => setShowContacts(false)} />
     </div>
   );
 }

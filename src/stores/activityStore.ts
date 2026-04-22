@@ -24,8 +24,12 @@ export const useActivityStore = create<ActivityState>((set) => ({
 
   loadActivities: async () => {
     set({ loading: true });
-    const activities = await activitiesDb.getAll();
-    set({ activities, loading: false });
+    try {
+      const activities = await activitiesDb.getAll();
+      set({ activities });
+    } finally {
+      set({ loading: false });
+    }
   },
 
   logActivity: async (type, description, relatedEntityId, relatedEntityType) => {

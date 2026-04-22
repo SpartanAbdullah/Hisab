@@ -184,9 +184,13 @@ export const useSplitStore = create<SplitState>((set, get) => ({
 
   loadGroups: async () => {
     set({ loading: true });
-    const groups = await splitGroupsDb.getAll();
-    const hydrated = await Promise.all(groups.map((group) => hydrateGroup(group)));
-    set({ groups: hydrated.filter(Boolean) as SplitGroup[], loading: false });
+    try {
+      const groups = await splitGroupsDb.getAll();
+      const hydrated = await Promise.all(groups.map((group) => hydrateGroup(group)));
+      set({ groups: hydrated.filter(Boolean) as SplitGroup[] });
+    } finally {
+      set({ loading: false });
+    }
   },
 
   // Compute per-group "my balance" in one shot: two batched queries for

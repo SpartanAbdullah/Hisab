@@ -36,8 +36,14 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
   loadAccounts: async () => {
     set({ loading: true });
-    const accounts = await accountsDb.getAll();
-    set({ accounts, loading: false });
+    try {
+      const accounts = await accountsDb.getAll();
+      set({ accounts });
+    } finally {
+      // Always clear loading — error still propagates so page-level
+      // useAsyncLoad can render its retry UI.
+      set({ loading: false });
+    }
   },
 
   createAccount: async (input) => {
@@ -71,6 +77,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         sourceAccountId: null,
         destinationAccountId: account.id,
         relatedPerson: null,
+        personId: null,
         relatedLoanId: null,
         relatedGoalId: null,
         conversionRate: null,

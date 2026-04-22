@@ -30,6 +30,7 @@ export interface Transaction {
   sourceAccountId: string | null;
   destinationAccountId: string | null;
   relatedPerson: string | null;
+  personId?: string | null;
   relatedLoanId: string | null;
   relatedGoalId: string | null;
   conversionRate: number | null;
@@ -44,6 +45,7 @@ export type LoanStatus = 'active' | 'settled';
 export interface Loan {
   id: string;
   personName: string;
+  personId?: string | null;
   type: LoanType;
   totalAmount: number;
   remainingAmount: number;
@@ -51,6 +53,14 @@ export interface Loan {
   status: LoanStatus;
   notes: string;
   createdAt: string;
+}
+
+export interface Person {
+  id: string;
+  name: string;
+  phone?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type EmiStatus = 'upcoming' | 'paid' | 'late';

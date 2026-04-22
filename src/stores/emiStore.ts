@@ -36,8 +36,12 @@ export const useEmiStore = create<EmiState>((set, get) => ({
 
   loadSchedules: async () => {
     set({ loading: true });
-    const schedules = await emiSchedulesDb.getAll();
-    set({ schedules, loading: false });
+    try {
+      const schedules = await emiSchedulesDb.getAll();
+      set({ schedules });
+    } finally {
+      set({ loading: false });
+    }
   },
 
   generateSchedule: async (input) => {
