@@ -649,6 +649,32 @@ export const groupsLookupDb = {
     const row = data[0] as { id: string; name: string; emoji: string; currency: string };
     return { id: row.id, name: row.name ?? '', emoji: row.emoji ?? '', currency: row.currency ?? 'PKR' };
   },
+
+  // Atomic join: SECURITY DEFINER RPC resolves the code and upserts the
+  // caller's membership in one step. Needed because a non-member can't read
+  // split_groups directly — the prior "lookup → re-fetch → insert" flow
+  // always failed at the re-fetch step under strict RLS.
+  async joinByCode(
+    normalizedCode: string,
+    displayName: string,
+  ): Promise<{ groupId: string; memberId: string; wasAlreadyConnected: boolean } | null> {
+    const { data, error } = await supabase.rpc('join_group_by_code', {
+      p_code_normalized: normalizedCode,
+      p_display_name: displayName,
+    });
+    if (error) {
+      // Bubble the Postgres message up so the UI layer can classify it
+      // ("Group code not found", "Not authenticated", …).
+      throw new Error(error.message || 'Join failed');
+    }
+    if (!data || data.length === 0) return null;
+    const row = data[0] as { group_id: string; member_id: string; was_already_connected: boolean };
+    return {
+      groupId: row.group_id,
+      memberId: row.member_id,
+      wasAlreadyConnected: Boolean(row.was_already_connected),
+    };
+  },
 };
 
 

@@ -337,62 +337,45 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   joinGroupByCode: async (rawCode) => {
     const normalized = normalizeGroupCode(rawCode);
     if (!normalized) throw new Error('Enter a group code');
-    const match = await groupsLookupDb.findByJoinCode(normalized);
-    if (!match) throw new Error('Group code not found');
+
+    // One atomic RPC handles: code lookup, membership upsert, status flip.
+    // The caller no longer needs to be able to SELECT split_groups before
+    // joining — the old two-step flow failed because strict RLS blocks that
+    // pre-read for non-members. See supabase-migration-join-by-code-rpc.sql.
+    const result = await groupsLookupDb.joinByCode(normalized, getCurrentUserName());
+    if (!result) throw new Error('Group code not found');
 
     const currentUserId = getCurrentUserId();
     const now = new Date().toISOString();
 
-    const hydrated = await hydrateGroup(await splitGroupsDb.get(match.id));
-    if (!hydrated) throw new Error('Group not found');
-
-    const existing = hydrated.members.find(m => m.profileId === currentUserId);
-    let joinedMemberId = existing?.id ?? null;
-
-    if (existing) {
-      if (existing.status !== 'connected') {
-        await groupMembersDb.update(existing.id, {
-          status: 'connected',
-          joinedAt: now,
-          profileId: currentUserId,
-        });
+    // After the RPC commits, the caller is a connected member, so the usual
+    // RLS-guarded reads work. Only fire member_joined fan-out if this was
+    // an actual transition — re-joining an already-connected group would
+    // otherwise spam notifications on every paste of the code.
+    if (!result.wasAlreadyConnected) {
+      const nextGroup = await hydrateGroup(await splitGroupsDb.get(result.groupId));
+      if (nextGroup) {
+        await fanOutGroupUpdate(
+          nextGroup,
+          {
+            id: uuid(),
+            groupId: nextGroup.id,
+            actorProfileId: currentUserId,
+            eventType: 'member_joined',
+            entityType: 'member',
+            entityId: result.memberId,
+            summary: `${getCurrentUserName()} joined ${nextGroup.name}`,
+            payload: { memberId: result.memberId, via: 'join_code' },
+            createdAt: now,
+          },
+          `${getCurrentUserName()} joined ${nextGroup.name}`,
+          `${getCurrentUserName()} is now connected to the group.`,
+        );
       }
-    } else {
-      const newMember: GroupMember = {
-        id: uuid(),
-        name: getCurrentUserName(),
-        isOwner: false,
-        profileId: currentUserId,
-        role: 'member',
-        status: 'connected',
-        joinedAt: now,
-      };
-      await groupMembersDb.add({ ...newMember, groupId: hydrated.id });
-      joinedMemberId = newMember.id;
-    }
-
-    const nextGroup = await hydrateGroup(await splitGroupsDb.get(hydrated.id));
-    if (nextGroup) {
-      await fanOutGroupUpdate(
-        nextGroup,
-        {
-          id: uuid(),
-          groupId: nextGroup.id,
-          actorProfileId: currentUserId,
-          eventType: 'member_joined',
-          entityType: 'member',
-          entityId: joinedMemberId ?? currentUserId,
-          summary: `${getCurrentUserName()} joined ${nextGroup.name}`,
-          payload: { memberId: joinedMemberId, via: 'join_code' },
-          createdAt: now,
-        },
-        `${getCurrentUserName()} joined ${nextGroup.name}`,
-        `${getCurrentUserName()} is now connected to the group.`,
-      );
     }
 
     await get().loadGroups();
-    return { groupId: hydrated.id };
+    return { groupId: result.groupId };
   },
 
   deleteGroup: async (id) => {
