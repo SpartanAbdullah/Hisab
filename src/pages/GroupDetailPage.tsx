@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3, Copy } from 'lucide-react';
+import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { AddGroupExpenseModal } from './AddGroupExpenseModal';
@@ -175,29 +175,72 @@ export function GroupDetailPage() {
         </div>
       </header>
 
-      {group.joinCode && (
-        <div className="px-5 pt-4">
-          <div className="card-premium p-3.5 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-              <Share2 size={16} className="text-indigo-500" />
+      {group.joinCode && (() => {
+        // When the owner is the only connected person, the group code card
+        // becomes the primary activation surface — bigger, louder, with an
+        // explicit "why you're seeing this" headline. Once others have
+        // joined, it compacts back into the quiet reference card.
+        const connectedCount = group.members.filter(m => m.status === 'connected').length;
+        const isSolo = connectedCount <= 1;
+        const copyCode = async () => {
+          if (!group.joinCode) return;
+          await navigator.clipboard.writeText(group.joinCode);
+          toast.show({ type: 'success', title: 'Code copied', subtitle: 'Share it so others can join.' });
+        };
+
+        if (isSolo) {
+          return (
+            <div className="px-5 pt-4">
+              <div className="card-premium p-4 animate-fade-in">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600 flex items-center justify-center shrink-0">
+                    <Sparkles size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-bold text-slate-800 tracking-tight">
+                      {t('group_solo_invite_title')}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                      {t('group_solo_invite_body')}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3.5 flex items-center gap-2.5 bg-slate-50 rounded-2xl px-3.5 py-2.5 border border-slate-200/60">
+                  <p className="flex-1 text-[15px] font-bold font-mono tracking-tight text-slate-800 truncate">
+                    {group.joinCode}
+                  </p>
+                  <button
+                    onClick={copyCode}
+                    className="shrink-0 rounded-xl btn-gradient text-white px-3 py-1.5 text-[11px] font-bold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/20"
+                  >
+                    <Copy size={11} strokeWidth={2.5} /> Copy
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Group Code</p>
-              <p className="text-[15px] font-bold text-slate-800 font-mono tracking-tight">{group.joinCode}</p>
+          );
+        }
+
+        return (
+          <div className="px-5 pt-4">
+            <div className="card-premium p-3.5 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                <Share2 size={16} className="text-indigo-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Group Code</p>
+                <p className="text-[15px] font-bold text-slate-800 font-mono tracking-tight">{group.joinCode}</p>
+              </div>
+              <button
+                onClick={copyCode}
+                className="shrink-0 rounded-xl bg-slate-100 text-slate-600 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-all"
+              >
+                <Copy size={12} /> Copy
+              </button>
             </div>
-            <button
-              onClick={async () => {
-                if (!group.joinCode) return;
-                await navigator.clipboard.writeText(group.joinCode);
-                toast.show({ type: 'success', title: 'Code copied', subtitle: 'Share it so others can join.' });
-              }}
-              className="shrink-0 rounded-xl bg-slate-100 text-slate-600 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-all"
-            >
-              <Copy size={12} /> Copy
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Group health — total spend on the left, settled-% ring on the right.
           Always present once there's any activity so users have an at-a-glance
@@ -271,8 +314,25 @@ export function GroupDetailPage() {
       {tab === 'expenses' ? (
         <div className="px-5 pt-4 space-y-2">
           {expenses.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
-              <p className="text-sm">{t('group_no_expenses')}</p>
+            // Activation card — strong CTA instead of a passive "no expenses"
+            // line. This is the single most important first action after
+            // creating/joining a group, so give it real visual weight.
+            <div className="card-premium p-6 text-center animate-fade-in">
+              <div className="mx-auto w-14 h-14 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-600 flex items-center justify-center">
+                <Receipt size={24} strokeWidth={1.8} />
+              </div>
+              <p className="text-[15px] font-bold text-slate-800 tracking-tight mt-4">
+                {t('group_first_expense_title')}
+              </p>
+              <p className="text-[12px] text-slate-500 mt-1.5 leading-relaxed max-w-[260px] mx-auto">
+                {t('group_first_expense_body')}
+              </p>
+              <button
+                onClick={() => setShowAddExpense(true)}
+                className="mt-5 w-full rounded-2xl py-3 text-[13px] font-bold btn-gradient shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+              >
+                <Plus size={14} strokeWidth={2.5} /> {t('group_first_expense_cta')}
+              </button>
             </div>
           ) : (
             expenses.map((expense, index) => (

@@ -72,7 +72,15 @@ export function CreateGroupModal({ open, onClose }: Props) {
     setSaving(true);
     try {
       const created = await createGroup(name.trim(), emoji, members, currency);
-      toast.show({ type: 'success', title: t('group_created'), subtitle: name });
+      // Guide the user straight into the activation loop: created → add
+      // first expense or share code. Longer duration so the nudge outlives
+      // the page transition.
+      toast.show({
+        type: 'success',
+        title: t('group_created'),
+        subtitle: t('group_created_subtitle'),
+        duration: 5000,
+      });
       reset();
       onClose();
       navigate(`/group/${created.id}`);

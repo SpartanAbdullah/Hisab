@@ -1,13 +1,91 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Plus, LogIn } from 'lucide-react';
+import {
+  Plus,
+  LogIn,
+  Users,
+  Receipt,
+  Scale,
+  HandCoins,
+} from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
+import { ActionCard } from '../components/ActionCard';
+import { GroupCard } from '../components/GroupCard';
+import { PageErrorState } from '../components/PageErrorState';
 import { CreateGroupModal } from './CreateGroupModal';
 import { JoinGroupModal } from './JoinGroupModal';
 import { useT } from '../lib/i18n';
-import { formatMoney } from '../lib/constants';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
+
+function GroupsListSkeleton() {
+  return (
+    <div className="px-5 pt-6 space-y-2.5">
+      <div className="h-3 w-24 rounded-full bg-slate-100 animate-pulse mb-3" />
+      {[0, 1, 2].map(i => (
+        <div key={i} className="card-premium p-4 flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 animate-pulse shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="h-3.5 w-32 rounded-full bg-slate-100 animate-pulse" />
+            <div className="h-2.5 w-20 rounded-full bg-slate-100 animate-pulse" />
+          </div>
+          <div className="h-3.5 w-14 rounded-full bg-slate-100 animate-pulse" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Education block for users with zero groups. Intentionally does NOT repeat
+// Create/Join buttons — those already sit above as ActionCards. Having one
+// obvious place to start avoids the "two doors to the same room" confusion
+// the old design caused.
+function GroupsEducationCard() {
+  const t = useT();
+  const benefits = [
+    { icon: Receipt, title: t('groups_edu_split_title'), body: t('groups_edu_split_body') },
+    { icon: Scale, title: t('groups_edu_track_title'), body: t('groups_edu_track_body') },
+    { icon: HandCoins, title: t('groups_edu_settle_title'), body: t('groups_edu_settle_body') },
+  ];
+  return (
+    <div className="px-5 pt-6">
+      <div className="card-premium p-6">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
+            <Users size={22} className="text-indigo-600" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[15px] font-bold text-slate-800 tracking-tight">
+              {t('groups_edu_title')}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+              {t('groups_edu_subtitle')}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {benefits.map(({ icon: Icon, title, body }) => (
+            <div key={title} className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
+                <Icon size={14} className="text-slate-500" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[12px] font-bold text-slate-700 tracking-tight">{title}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-[11px] text-slate-400 mt-5 text-center leading-relaxed">
+          {t('groups_edu_hint')}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function SplitsPage() {
   const { groups, loadGroups, balances, balancesLoaded, loadBalances } = useSplitStore();
@@ -16,100 +94,113 @@ export function SplitsPage() {
   const navigate = useNavigate();
   const t = useT();
 
-  // Kick off groups + balances in parallel on mount. Both are independent
-  // queries at the network level, so fetching in parallel ~halves perceived
-  // time to first number. Re-runs when groups change so realtime joins/leaves
-  // refresh balances too.
-  useEffect(() => {
-    void loadGroups();
+  // Block page rendering only on the group list load — balances load in the
+  // background and have their own per-card skeleton, so a slow balance query
+  // never stalls the whole page.
+  const load = useCallback(async () => {
+    await loadGroups();
     void loadBalances();
   }, [loadGroups, loadBalances]);
 
+  const { status, error, retry } = useAsyncLoad(load);
+
+  // Refresh balances whenever groups change (realtime join/leave, post-create).
   useEffect(() => {
     if (groups.length > 0) void loadBalances();
   }, [groups, loadBalances]);
+
+  const hasGroups = groups.length > 0;
+  const isInitialLoading = status === 'loading' && !hasGroups;
+  const showEducation = status === 'ready' && !hasGroups;
 
   return (
     <div className="pb-28 bg-mesh min-h-dvh">
       <PageHeader
         title={t('groups_title')}
-        action={
-          <div className="flex items-center gap-2">
-            <LanguageToggle />
-            <button onClick={() => setShowJoin(true)} className="bg-slate-100 text-slate-600 rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all">
-              <LogIn size={13} strokeWidth={2.5} /> Join
-            </button>
-            <button onClick={() => setShowCreate(true)} className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5">
-              <Plus size={13} strokeWidth={2.5} /> {t('naya')}
-            </button>
-          </div>
-        }
+        action={<LanguageToggle />}
       />
 
-      <div className="px-5 pt-5 space-y-2.5">
-        {groups.length === 0 ? (
-          <div className="card-premium p-8 text-center animate-fade-in">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
-              <Users size={24} className="text-indigo-500" />
-            </div>
-            <p className="text-[15px] font-bold text-slate-800 mt-4 tracking-tight">{t('group_empty')}</p>
-            <p className="text-[12px] text-slate-400 mt-1.5 leading-relaxed max-w-[260px] mx-auto">
-              {t('group_empty_desc')}
-            </p>
-            <div className="mt-5 flex gap-2.5">
-              <button
-                onClick={() => setShowJoin(true)}
-                className="flex-1 rounded-2xl py-3 text-[13px] font-bold bg-slate-100 text-slate-700 active:scale-95 transition-all flex items-center justify-center gap-1.5"
-              >
-                <LogIn size={14} /> Join Group
-              </button>
-              <button
-                onClick={() => setShowCreate(true)}
-                className="flex-1 rounded-2xl py-3 text-[13px] font-bold btn-gradient active:scale-95 transition-all flex items-center justify-center gap-1.5"
-              >
-                <Plus size={14} /> Create Group
-              </button>
-            </div>
-          </div>
-        ) : (
-          groups.map((g, i) => {
-            const bal = balances[g.id] ?? 0;
-            const hasBalance = balancesLoaded;
-            return (
-              <button
-                key={g.id}
-                onClick={() => navigate(`/group/${g.id}`)}
-                className="w-full card-premium p-4 flex items-center gap-3.5 animate-fade-in text-left"
-                style={{ animationDelay: `${i * 50}ms` }}
-              >
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center text-xl shrink-0">
-                  {g.emoji}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-bold text-slate-800 truncate">{g.name}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{g.members.length} {t('group_members_count')}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  {!hasBalance ? (
-                    // Skeleton shimmer — prevents the misleading "All settled"
-                    // flash during the brief initial load window.
-                    <div className="h-3.5 w-14 rounded-full bg-slate-100 animate-pulse" />
-                  ) : bal > 0 ? (
-                    <p className="text-[12px] font-bold text-emerald-600">+{formatMoney(bal, g.currency)}</p>
-                  ) : bal < 0 ? (
-                    <p className="text-[12px] font-bold text-red-500">-{formatMoney(Math.abs(bal), g.currency)}</p>
-                  ) : (
-                    <p className="text-[11px] text-slate-400 font-medium">{t('group_settled')}</p>
-                  )}
-                </div>
-              </button>
-            );
-          })
-        )}
+      {/* Primary action cards — always visible, the single source of truth
+          for "add something". Header no longer carries duplicate chips. */}
+      <div className="px-5 pt-5">
+        <div className="grid grid-cols-2 gap-2.5">
+          <ActionCard
+            icon={Plus}
+            title={t('groups_action_create_title')}
+            subtitle={t('groups_action_create_sub')}
+            variant="primary"
+            onClick={() => setShowCreate(true)}
+          />
+          <ActionCard
+            icon={LogIn}
+            title={t('groups_action_join_title')}
+            subtitle={t('groups_action_join_sub')}
+            variant="secondary"
+            onClick={() => setShowJoin(true)}
+          />
+        </div>
       </div>
 
-      <CreateGroupModal open={showCreate} onClose={() => { setShowCreate(false); loadGroups(); }} />
-      <JoinGroupModal open={showJoin} onClose={() => { setShowJoin(false); loadGroups(); }} />
+      {status === 'error' && (
+        <div className="px-5 pt-4">
+          <PageErrorState
+            variant="inline"
+            title={t('groups_load_error_title')}
+            message={error ?? t('groups_load_error_msg')}
+            onRetry={retry}
+          />
+        </div>
+      )}
+
+      {isInitialLoading && <GroupsListSkeleton />}
+
+      {hasGroups && (
+        <div className="px-5 pt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+              {t('groups_list_heading')}
+            </h2>
+            <span className="text-[11px] text-slate-400 font-semibold tabular-nums">
+              {groups.length}
+            </span>
+          </div>
+          <div className="space-y-2.5">
+            {groups.map((g, i) => (
+              <div
+                key={g.id}
+                className="animate-fade-in"
+                style={{ animationDelay: `${i * 50}ms` }}
+              >
+                <GroupCard
+                  group={g}
+                  balance={balances[g.id] ?? 0}
+                  balanceLoaded={balancesLoaded}
+                  settledLabel={t('group_settled')}
+                  membersLabel={t('group_members_count')}
+                  onClick={() => navigate(`/group/${g.id}`)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showEducation && <GroupsEducationCard />}
+
+      <CreateGroupModal
+        open={showCreate}
+        onClose={() => {
+          setShowCreate(false);
+          void loadGroups();
+        }}
+      />
+      <JoinGroupModal
+        open={showJoin}
+        onClose={() => {
+          setShowJoin(false);
+          void loadGroups();
+        }}
+      />
     </div>
   );
 }
