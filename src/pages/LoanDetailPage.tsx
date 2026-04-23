@@ -85,7 +85,7 @@ export function LoanDetailPage() {
   };
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader
         title={displayName || loan.personName}
         back

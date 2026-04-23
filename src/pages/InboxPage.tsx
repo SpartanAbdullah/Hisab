@@ -150,7 +150,7 @@ export function InboxPage() {
   }
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader title={t('ltr_inbox_title')} />
 
       <div className="px-5 pt-4">

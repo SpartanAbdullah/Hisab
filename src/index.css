@@ -591,4 +591,51 @@ input, select, textarea {
     background: white;
     border-top: 1px solid rgba(241, 245, 249, 0.6); /* slate-100/60 */
   }
+
+  /* ========================================================
+   * PHASE F1 TOKENS — Navigation / Page Layout
+   *
+   * Introduced, NOT yet adopted. Every value extracted verbatim
+   * from the existing page-wrapper / nav-button patterns; nothing
+   * invented. Composed by call sites in Phase F2 / F3.
+   * ======================================================== */
+
+  /* Outermost page wrapper. Replicates the `pb-28 bg-mesh min-h-dvh`
+   * triplet that every authenticated route currently writes as its
+   * outermost <div>. The `bg-mesh` gradients are duplicated here
+   * rather than composed so consumers can switch to a single class.
+   * KEEP IN SYNC with the `.bg-mesh` rule above if the design ever
+   * evolves. */
+  .page-shell {
+    padding-bottom: 112px;                        /* pb-28 — clears the floating BottomNav */
+    min-height: 100dvh;                           /* min-h-dvh — fills the viewport */
+    background:
+      radial-gradient(at 30% 10%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+      radial-gradient(at 80% 80%, rgba(168, 85, 247, 0.04) 0%, transparent 50%),
+      radial-gradient(at 10% 90%, rgba(16, 185, 129, 0.04) 0%, transparent 50%);
+  }
+
+  /* Small rounded square icon button used in page headers (back
+   * arrow) and modal headers (close X). Same pattern byte-for-byte
+   * across both consumers; positional offset (e.g. `-ml-1` for the
+   * PageHeader back alignment) stays on the call site as a utility.
+   *
+   * Transition matches Tailwind's `transition-colors` default so
+   * swapping from that utility is zero-regression. */
+  .nav-icon-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;                                  /* w-8 */
+    height: 32px;                                 /* h-8 */
+    border-radius: 12px;                          /* rounded-xl */
+    background: rgba(241, 245, 249, 0.8);         /* bg-slate-100/80 */
+    transition-property: color, background-color, border-color,
+                         outline-color, text-decoration-color, fill, stroke;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .nav-icon-button:active {
+    background: #e2e8f0;                          /* slate-200 */
+  }
 }

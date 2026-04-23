@@ -68,7 +68,7 @@ export function BottomNav() {
                       <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white" />
                     ) : null}
                   </div>
-                  <span className="tracking-tight">{label}</span>
+                  <span className="tracking-tight truncate">{label}</span>
                 </>
               )}
             </NavLink>

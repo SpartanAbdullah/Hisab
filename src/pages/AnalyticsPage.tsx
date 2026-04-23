@@ -47,7 +47,7 @@ export function AnalyticsPage() {
   ];
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader title={t('analytics_title')} action={<LanguageToggle />} />
 
       {/* Period selector */}

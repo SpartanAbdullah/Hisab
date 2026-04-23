@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { usePersonStore } from '../stores/personStore';
 import { ContactDetailSheet } from './ContactDetailSheet';
+import { useT } from '../lib/i18n';
 import type { Person } from '../db';
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 // ContactDetailSheet where Phase 2A's link-to-Hisaab-user flow lives.
 export function ContactsModal({ open, onClose }: Props) {
   const persons = usePersonStore((s) => s.persons);
+  const t = useT();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const sorted = useMemo(
@@ -26,9 +28,9 @@ export function ContactsModal({ open, onClose }: Props) {
 
   return (
     <>
-      <Modal open={open} onClose={onClose} title="Your Contacts">
+      <Modal open={open} onClose={onClose} title={t('contacts_title')}>
         {sorted.length === 0 ? (
-          <p className="text-[13px] text-slate-400 text-center py-10">No contacts yet.</p>
+          <p className="text-[13px] text-slate-400 text-center py-10">{t('contacts_empty')}</p>
         ) : (
           <div className="space-y-1.5">
             {sorted.map((person) => (

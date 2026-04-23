@@ -144,6 +144,28 @@ export const spacing = {
   '5xl': '48px',
 } as const;
 
+// ----- PAGE SPACING RHYTHM -----
+// Per-page top padding (`pt-*`) for the first content wrapper that sits
+// immediately below `<PageHeader>`. Pick by content type, not feel. All
+// three live alongside canonical `px-5` horizontal padding.
+//
+//   pt-4  (16px)  → SCROLL-DENSE pages where many rows or chart sections
+//                    stack tightly and breathing room hurts.
+//                    Canonical call sites: TransactionsPage, AnalyticsPage.
+//
+//   pt-5  (20px)  → CANONICAL list pages — settings, goals, inbox, splits.
+//                    Default choice when no other rule applies.
+//                    Canonical call sites: SettingsPage, InboxPage, GoalsPage,
+//                    LoansPage, SplitsPage, ContactsModal pages.
+//
+//   pt-6  (24px)  → HERO-PREFACED pages whose first content block is a large
+//                    premium card (gradient hero, progress ring, avatar).
+//                    The extra 4px prevents the hero from feeling crowded
+//                    under the sticky header.
+//                    Canonical call sites: GroupDetailPage, LoanDetailPage.
+//
+// New pages: default to `pt-5`. Only deviate with explicit justification.
+
 // ----- RADIUS LADDER -----
 // Mobile-first. Most cards should round at `lg`; sharper corners (≤ md)
 // belong on dense inline chips; softer ones (xl+) on premium surfaces.
@@ -164,19 +186,58 @@ export const radii = {
 } as const;
 
 // ----- ICON SIZE LADDER (container × glyph) -----
-// Pick the container that tiles evenly with the spacing scale. Avoid
-// w-9 / w-11 for new UI unless matching an existing canonical surface.
-// The container radius usually follows the radius ladder at `md` or `lg`
-// depending on chip vs card context.
+// Four named tiers. Pick by role, not aesthetics. The container radius
+// usually follows the radius ladder at `md` or `lg` depending on chip
+// vs card context.
 //
-//   32 × 14  → list-row micro icon (empty-state benefit rows, chevrons)
-//   36 × 16  → row icons where density matters (inbox cards, modal row chips)
-//   40 × 18  → CANONICAL tile / card icon (ActionCard, ContactsModal rows)
-//   44 × 20  → premium card icons (AccountCard, linked-loan hero avatars)
-//   48 × 22  → emphasis moments only (education cards, hero avatars)
+//   Tier   Size    Role                            Canonical call sites
+//   ────   ─────   ──────────────────────────────  ────────────────────────────
+//   nav    32×14   Nav / header icon buttons       .nav-icon-button
+//                  empty-state micro-row icons     (PageHeader back, Modal X,
+//                                                   GroupsEducationCard rows)
 //
-// This ladder is documentation-only for now; runtime values live in the
-// component classes (w-8 / w-9 / w-10 / w-11 / w-12).
+//   tight  36×16   Tight list rows / compact       Inbox card leading dots,
+//                  dense row layouts               modal row chips
+//
+//   std    40×18   CANONICAL row / tile icon       ActionCard chip, Settings
+//                                                   row icons, Contacts avatars
+//
+//   card   44×20   Premium card icons / avatars    AccountCard chip, linked-loan
+//                  (44px) or hero avatars (48×22)   hero avatars, ContactDetailSheet
+//                                                   header avatar
+//
+// Avoid w-9 (36) for surfaces that aren't explicitly dense rows — bias
+// toward `std` (40) for standard navigation list rows.
+//
+// This ladder is documentation-only; runtime values live in component
+// classes (w-8 / w-9 / w-10 / w-11 / w-12).
+
+// ----- ANIMATION TIMING CONVENTIONS -----
+// Three timing curves coexist by role. Pick by what's animating, not by
+// habit. Runtime differences are subtle but the consistency matters on
+// careful inspection.
+//
+//   DEFAULT (Tailwind)       cubic-bezier(0.4, 0, 0.2, 1)
+//     → Use for inputs, rows, chips, nav, tap-state bg flashes, and
+//       anything that flows smoothly between states in place.
+//     → Canonical tokens: .input-field, .row-interactive, .selector-base,
+//       .chip-base, .nav-icon-button, .modal-backdrop, .cta-secondary,
+//       .cta-destructive.
+//
+//   ELEVATED (expo ease-out)  cubic-bezier(0.16, 1, 0.3, 1)
+//     → Use for elements that LIFT into view — cards settling, sheets
+//       sliding up, elevated surfaces reacting. Snappier deceleration
+//       communicates "premium weight."
+//     → Canonical tokens: .card-premium, .card-base, .card-interactive,
+//       .modal-sheet (slide-up), animate-slide-up, animate-scale-in.
+//
+//   LEGACY (ease)             cubic-bezier(0.25, 0.1, 0.25, 1)  -- AVOID
+//     → Still present inside .btn-gradient and .cta-primary because those
+//       were extracted from pre-token inline patterns. DO NOT reach for
+//       `ease` on new tokens; pick DEFAULT or ELEVATED by role.
+//
+// Durations: 150ms for tap-state flashes, 200ms for card settles, 300ms
+// for backdrop fades, 350ms for sheet slides. Stick to these four.
 
 // ----- CURRENCY FLAGS -----
 export const currencyFlags: Record<string, string> = {

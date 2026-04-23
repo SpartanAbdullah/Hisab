@@ -169,7 +169,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Edit Entry"
+      title={t('edit_entry_title')}
       footer={(
         <div className="flex gap-2">
           <button

@@ -47,8 +47,8 @@ export function Modal({ open, onClose, title, children, footer }: Props) {
         </div>
         {/* Header */}
         <div className="modal-header">
-          <h2 className="font-bold text-[15px] tracking-tight text-slate-800">{title}</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center bg-slate-100/80 active:bg-slate-200 transition-colors">
+          <h2 className="font-bold text-[15px] tracking-tight text-slate-800 truncate flex-1 min-w-0 pr-3">{title}</h2>
+          <button onClick={onClose} className="nav-icon-button shrink-0">
             <X size={15} className="text-slate-400" />
           </button>
         </div>

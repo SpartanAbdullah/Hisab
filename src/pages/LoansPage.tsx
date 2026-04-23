@@ -81,7 +81,7 @@ export function LoansPage() {
   };
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader title={t('loans_title')}
         action={<div className="flex items-center gap-2"><LanguageToggle /><button onClick={() => setShowAdd(true)} className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5"><Plus size={13} strokeWidth={2.5} /> {t('naya')}</button></div>}
       />

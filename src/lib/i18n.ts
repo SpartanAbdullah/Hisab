@@ -664,6 +664,11 @@ const S = {
   },
   // Meta line on sender-side history for accepted settlements with an account.
   stl_applied_from: { ur: 'Aap ke {account} se', en: 'From your {account}' },
+
+  // ── Phase G7: minor standalone UI strings ──
+  contacts_title:     { ur: 'Aap ke Contacts',     en: 'Your Contacts' },
+  contacts_empty:     { ur: 'Abhi koi contact nahi.', en: 'No contacts yet.' },
+  edit_entry_title:   { ur: 'Entry Edit Karein',   en: 'Edit Entry' },
 } as const;
 
 type Key = keyof typeof S;

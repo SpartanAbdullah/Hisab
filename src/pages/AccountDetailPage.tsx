@@ -111,7 +111,7 @@ export function AccountDetailPage() {
   const filteredTxns = filterByTime(accountTxns, timeFilter);
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader title={account.name} back
         action={
           <div className="flex items-center gap-2">

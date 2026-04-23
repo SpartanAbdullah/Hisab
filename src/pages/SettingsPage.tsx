@@ -188,7 +188,7 @@ export function SettingsPage() {
     "row-base row-interactive px-4 py-3.5";
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader title={t("settings_title")} action={<LanguageToggle />} />
 
       <div className="px-5 pt-5 space-y-4">

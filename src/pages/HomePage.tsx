@@ -105,7 +105,7 @@ export function HomePage() {
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       {/* Header — calm greeting + avatar anchor on the right. Actions moved
           into their own section headers to keep this row quiet. */}
       <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-4 z-40">

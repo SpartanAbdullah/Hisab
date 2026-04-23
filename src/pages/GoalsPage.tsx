@@ -49,7 +49,7 @@ export function GoalsPage() {
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader title={t('goals_title')} action={<LanguageToggle />} />
 
       {/* Upcoming Expenses Section */}

@@ -78,7 +78,7 @@ export function ActivityPage() {
   const hasAnyItems = notifications.length > 0 || activities.length > 0;
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader
         title={t('activity_title')}
         action={(

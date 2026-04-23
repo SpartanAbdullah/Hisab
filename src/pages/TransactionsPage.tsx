@@ -135,7 +135,7 @@ export function TransactionsPage() {
   }, [transactions, filter, timeFilter, search]);
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <PageHeader
         title={t('txpage_title')}
         action={

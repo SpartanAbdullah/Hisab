@@ -134,7 +134,7 @@ export function GroupDetailPage() {
   };
 
   return (
-    <div className="pb-28 bg-mesh min-h-dvh">
+    <div className="page-shell">
       <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-3.5 z-40">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
