@@ -49,37 +49,37 @@ function GroupsEducationCard() {
     { icon: HandCoins, title: t('groups_edu_settle_title'), body: t('groups_edu_settle_body') },
   ];
   return (
-    <div className="px-5 pt-6">
-      <div className="card-premium p-6">
+    <div className="px-5 pt-5">
+      <div className="card-premium p-4 rounded-2xl ring-1 ring-indigo-100/50 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
-            <Users size={22} className="text-indigo-600" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center shrink-0">
+            <Users size={18} className="text-indigo-600" />
           </div>
-          <div className="min-w-0">
-            <p className="text-[15px] font-bold text-slate-800 tracking-tight">
+          <div className="min-w-0 leading-normal">
+            <p className="text-sm font-semibold text-slate-800 tracking-tight truncate">
               {t('groups_edu_title')}
             </p>
-            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+            <p className="text-xs text-slate-400 mt-0.5 truncate">
               {t('groups_edu_subtitle')}
             </p>
           </div>
         </div>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-3 space-y-2">
           {benefits.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="flex items-start gap-3">
+            <div key={title} className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
                 <Icon size={14} className="text-slate-500" />
               </div>
-              <div className="min-w-0">
-                <p className="text-[12px] font-bold text-slate-700 tracking-tight">{title}</p>
-                <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{body}</p>
+              <div className="min-w-0 leading-normal">
+                <p className="text-xs font-semibold text-slate-700 tracking-tight truncate">{title}</p>
+                <p className="text-[11px] text-slate-400 truncate">{body}</p>
               </div>
             </div>
           ))}
         </div>
 
-        <p className="text-[11px] text-slate-400 mt-5 text-center leading-relaxed">
+        <p className="text-[11px] text-slate-400 mt-3 text-center leading-normal">
           {t('groups_edu_hint')}
         </p>
       </div>
