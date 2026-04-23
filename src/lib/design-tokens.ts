@@ -89,7 +89,21 @@ export const gradients = {
   mesh: 'radial-gradient(at 40% 20%, rgba(99,102,241,0.08) 0%, transparent 50%), radial-gradient(at 80% 80%, rgba(168,85,247,0.06) 0%, transparent 50%)',
 } as const;
 
-// ----- SHADOWS -----
+// ----- SHADOW HIERARCHY -----
+// Use by role, not aesthetics. Each step communicates how "present" the
+// surface is in the visual stack.
+//
+//   xs          → hint banners, flat chips, depressed states
+//   sm          → default card elevation (.card-premium baseline)
+//   md          → primary CTAs with brand tint, slightly lifted cards
+//   lg          → floating elements (hover-lift on primary CTAs, FAB hover)
+//   xl          → rare; reserved for modal containers / overlays
+//   glow.*      → focus/emphasis moments; NOT for default state
+//   card / cardHover → explicit pairing for interactive surfaces
+//   float       → fixed elements that float over content (FAB)
+//
+// When adding a shadow to a new element, pick the smallest step that
+// clearly reads. Climbing the ladder for "just in case" stack pollution.
 export const shadows = {
   xs: '0 1px 2px rgba(0,0,0,0.04)',
   sm: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
@@ -107,7 +121,17 @@ export const shadows = {
   float: '0 8px 30px rgba(0,0,0,0.08)',
 } as const;
 
-// ----- SPACING -----
+// ----- SPACING SCALE -----
+// Use by role, not feel. A mobile screen rarely needs anything above `2xl`.
+//
+//   xs   4px   → icon inner padding, chip paddings, hair gaps
+//   sm   8px   → tight gaps between related rows, inside list rows (gap-2)
+//   md  12px   → compact card padding, modal footer action gaps (p-3, gap-3)
+//   lg  16px   → CANONICAL card/input/button padding (p-4, py-4)
+//   xl  20px   → section gaps, generous empty-state padding (p-5)
+//   2xl 24px   → page top spacing before first content block (pt-6)
+//   3xl 32px   → rare; between distinct page blocks
+//   4xl/5xl    → reserved; avoid on mobile unless explicitly justified
 export const spacing = {
   xs: '4px',
   sm: '8px',
@@ -120,7 +144,16 @@ export const spacing = {
   '5xl': '48px',
 } as const;
 
-// ----- RADII -----
+// ----- RADIUS LADDER -----
+// Mobile-first. Most cards should round at `lg`; sharper corners (≤ md)
+// belong on dense inline chips; softer ones (xl+) on premium surfaces.
+//
+//   sm   8px   → chips, pills, small round things
+//   md  12px   → icon containers, tight inline error hints (.state-hint-error)
+//   lg  16px   → CANONICAL card/input/button radius (rounded-2xl)
+//   xl  20px   → premium cards (AccountCard, .card-premium baseline)
+//   2xl 24px   → legacy (old ActionCard); avoid for new surfaces
+//   full       → avatars, badges, unread dots
 export const radii = {
   sm: '8px',
   md: '12px',
@@ -129,6 +162,21 @@ export const radii = {
   '2xl': '24px',
   full: '9999px',
 } as const;
+
+// ----- ICON SIZE LADDER (container × glyph) -----
+// Pick the container that tiles evenly with the spacing scale. Avoid
+// w-9 / w-11 for new UI unless matching an existing canonical surface.
+// The container radius usually follows the radius ladder at `md` or `lg`
+// depending on chip vs card context.
+//
+//   32 × 14  → list-row micro icon (empty-state benefit rows, chevrons)
+//   36 × 16  → row icons where density matters (inbox cards, modal row chips)
+//   40 × 18  → CANONICAL tile / card icon (ActionCard, ContactsModal rows)
+//   44 × 20  → premium card icons (AccountCard, linked-loan hero avatars)
+//   48 × 22  → emphasis moments only (education cards, hero avatars)
+//
+// This ladder is documentation-only for now; runtime values live in the
+// component classes (w-8 / w-9 / w-10 / w-11 / w-12).
 
 // ----- CURRENCY FLAGS -----
 export const currencyFlags: Record<string, string> = {

@@ -48,7 +48,6 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
   const [saving, setSaving] = useState(false);
 
   const selectedAccount = accounts.find(a => a.id === accountId);
-  const inputClass = "w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all";
 
   const reset = () => {
     setStep(0); setTitle(''); setCategory(''); setAmount(''); setDueDate('');
@@ -125,16 +124,16 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
       {step === 0 && (
         <div className="space-y-4 animate-fade-in">
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {t('upcoming_name')}
             </label>
             <input value={title} onChange={e => setTitle(e.target.value)}
               placeholder="e.g. Beti ki Fees, Car Service, Rent..."
-              className={inputClass} autoFocus />
+              className="input-field" autoFocus />
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {t('category')}
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -167,12 +166,12 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
             </div>
           </div>
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {t('upcoming_amount')}
             </label>
             <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}
               placeholder="0.00"
-              className={`${inputClass} text-center text-2xl font-bold tabular-nums`} autoFocus />
+              className="input-field text-center text-2xl font-bold tabular-nums" autoFocus />
           </div>
           <button onClick={() => setStep(0)}
             className="w-full text-center text-[12px] text-slate-400 py-1 font-medium">&larr; Back</button>
@@ -187,12 +186,12 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
             <p className="text-[11px] text-slate-400 mt-1">{title} · {category}</p>
           </div>
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {t('upcoming_due')}
             </label>
             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
               min={new Date().toISOString().split('T')[0]}
-              className={inputClass} autoFocus />
+              className="input-field" autoFocus />
           </div>
           <button onClick={() => setStep(1)}
             className="w-full text-center text-[12px] text-slate-400 py-1 font-medium">&larr; Back</button>
@@ -213,7 +212,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
 
           {/* Account selection */}
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {t('upcoming_account')}
             </label>
             <div className="space-y-2">
@@ -241,7 +240,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
 
           {/* Reminder timing */}
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               Reminder
             </label>
             <div className="flex gap-2 flex-wrap">
@@ -257,11 +256,11 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
 
           {/* Notes */}
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {t('quick_note')}
             </label>
             <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional..."
-              className={inputClass} />
+              className="input-field" />
           </div>
         </div>
       )}

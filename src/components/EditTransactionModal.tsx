@@ -71,7 +71,6 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   ));
   const selectedCashAdvanceCard = availableCashAdvanceCards.find((account) => account.id === cashAdvanceCardId);
 
-  const inputClass = 'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
   const editableAmount = parseFloat(amount);
   const isExpense = transaction.type === 'expense';
   const isLoanGiven = transaction.type === 'loan_given';
@@ -201,18 +200,18 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Amount</label>
+          <label className="form-label">Amount</label>
           <input
             type="number"
             step="0.01"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
-            className={`${inputClass} text-center text-lg font-bold tabular-nums`}
+            className="input-field text-center text-lg font-bold tabular-nums"
           />
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+          <label className="form-label">
             {isLoanTaken ? t('loan_received_into') : t('quick_from')}
           </label>
           <div className="space-y-2">
@@ -247,7 +246,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
 
         {isLoanTaken && availableCashAdvanceCards.length > 0 && (
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Cash Advance Source</label>
+            <label className="form-label">Cash Advance Source</label>
             <div className="space-y-2">
               <button
                 type="button"
@@ -280,12 +279,12 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
 
         {(isLoanGiven || isLoanTaken) && (
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_who')}</label>
+            <label className="form-label">{t('quick_who')}</label>
             <ContactPicker
               value={contact}
               onChange={setContact}
               placeholder={t('quick_who_placeholder')}
-              className={inputClass}
+              className="input-field"
             />
             {willCreateNewContact && (
               <p className="text-[11px] text-amber-600 mt-1.5">This will create a new contact.</p>
@@ -295,7 +294,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
 
         {isExpense && (
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('category')}</label>
+            <label className="form-label">{t('category')}</label>
             <div className="flex flex-wrap gap-1.5">
               {EXPENSE_CATEGORIES.map((item) => (
                 <button
@@ -314,11 +313,11 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
         )}
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_note')}</label>
+          <label className="form-label">{t('quick_note')}</label>
           <input
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
-            className={inputClass}
+            className="input-field"
             placeholder="Optional..."
           />
         </div>

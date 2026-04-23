@@ -21,8 +21,6 @@ export function AddGoalModal({ open, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const inputClass = "w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all";
-
   const savingsAccounts = accounts.filter(a => a.type === 'savings' || a.type === 'bank');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -61,18 +59,18 @@ export function AddGoalModal({ open, onClose }: Props) {
     >
       <form id="goal-form" onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('goal_name')}</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Emergency Fund, Laptop" className={inputClass} required />
+          <label className="form-label">{t('goal_name')}</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Emergency Fund, Laptop" className="input-field" required />
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('goal_target')}</label>
-          <input type="number" step="0.01" value={targetAmount} onChange={e => setTargetAmount(e.target.value)} placeholder="0.00" className={`${inputClass} text-center text-lg font-bold tabular-nums`} required />
+          <label className="form-label">{t('goal_target')}</label>
+          <input type="number" step="0.01" value={targetAmount} onChange={e => setTargetAmount(e.target.value)} placeholder="0.00" className="input-field text-center text-lg font-bold tabular-nums" required />
         </div>
 
         {/* FIX 3: Ask if goal has a linked savings account */}
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('goal_has_account')}</label>
+          <label className="form-label">{t('goal_has_account')}</label>
           <div className="flex gap-2.5">
             <button type="button" onClick={() => { setLinkAccount(true); }}
               className={`flex-1 py-3 rounded-2xl text-[13px] font-bold border-2 transition-all active:scale-[0.97] ${
@@ -89,7 +87,7 @@ export function AddGoalModal({ open, onClose }: Props) {
 
         {linkAccount ? (
           <div className="animate-fade-in">
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('goal_linked')}</label>
+            <label className="form-label">{t('goal_linked')}</label>
             <div className="space-y-2">
               {savingsAccounts.map(a => {
                 const meta = currencyMeta[a.currency];
@@ -112,7 +110,7 @@ export function AddGoalModal({ open, onClose }: Props) {
               <p className="text-[12px] text-slate-500 font-medium">{t('goal_no_link_desc')}</p>
             </div>
             <div className="mt-3">
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Currency</label>
+              <label className="form-label">Currency</label>
               <div className="grid grid-cols-2 gap-2">
                 {(['AED', 'PKR'] as Currency[]).map(c => {
                   const meta = currencyMeta[c];

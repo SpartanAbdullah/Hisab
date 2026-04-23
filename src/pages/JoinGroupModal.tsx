@@ -136,7 +136,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
         </div>
       )}
     >
-      <div className="p-5 space-y-4">
+      <div className="space-y-4">
         <div className="rounded-2xl bg-indigo-50/60 border border-indigo-100/70 px-4 py-3 flex items-start gap-3">
           <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shrink-0">
             <Info size={14} className="text-indigo-500" />

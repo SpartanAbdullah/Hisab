@@ -128,13 +128,11 @@ export function AddLoanModal({ open, onClose }: Props) {
     return usePersonStore.getState().findOrCreateByName(name);
   }
 
-  const inputClass = 'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
-
   return (
     <Modal open={open} onClose={onClose} title={t('loan_new')}
       footer={
         <button type="submit" form="loan-form" disabled={saving}
-          className="w-full btn-gradient rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
+          className="cta-primary"
         >{saving ? t('loan_creating') : wouldBranchToLinked ? t('ltr_branch_cta') : t('loan_create')}</button>
       }
     >
@@ -152,28 +150,26 @@ export function AddLoanModal({ open, onClose }: Props) {
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('loan_to_whom')}</label>
-          <ContactPicker value={contact} onChange={setContact} placeholder="Naam likho..." required className={inputClass} />
+          <label className="form-label">{t('loan_to_whom')}</label>
+          <ContactPicker value={contact} onChange={setContact} placeholder="Naam likho..." required className="input-field" />
           {wouldBranchToLinked ? (
             <p className="text-[11px] text-indigo-600 mt-1.5">{t('ltr_branch_helper')}</p>
           ) : null}
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Amount</label>
-          <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className={`${inputClass} text-center text-lg font-bold tabular-nums`} required />
+          <label className="form-label">Amount</label>
+          <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="input-field text-center text-lg font-bold tabular-nums" required />
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{loanType === 'given' ? t('loan_paid_from') : t('loan_received_into')}</label>
+          <label className="form-label">{loanType === 'given' ? t('loan_paid_from') : t('loan_received_into')}</label>
           <div className="space-y-2">
             {accounts.map(a => {
               const meta = currencyMeta[a.currency];
               return (
                 <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
-                  className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    accountId === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
-                  }`}
+                  className={accountId === a.id ? 'selector-base selector-selected' : 'selector-base'}
                 >
                   <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-1.5"><span>{meta?.flag}</span> {a.name}</span>
                   <span className="text-[12px] text-slate-400 tabular-nums">{a.currency}</span>
@@ -185,7 +181,7 @@ export function AddLoanModal({ open, onClose }: Props) {
 
         {loanType === 'taken' && availableCashAdvanceCards.length > 0 && (
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Cash Advance Source</label>
+            <label className="form-label">Cash Advance Source</label>
             <div className="space-y-2">
               <button
                 type="button"
@@ -211,8 +207,8 @@ export function AddLoanModal({ open, onClose }: Props) {
         )}
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_note')}</label>
-          <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail..." className={inputClass} />
+          <label className="form-label">{t('quick_note')}</label>
+          <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail..." className="input-field" />
         </div>
 
         <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-slate-50/80 border border-slate-100/60">
@@ -223,12 +219,12 @@ export function AddLoanModal({ open, onClose }: Props) {
         {hasEmi && (
           <div className="grid grid-cols-2 gap-3 animate-fade-in">
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('loan_installments')}</label>
-              <input type="number" value={installments} onChange={e => setInstallments(e.target.value)} placeholder="12" className={inputClass} required />
+              <label className="form-label">{t('loan_installments')}</label>
+              <input type="number" value={installments} onChange={e => setInstallments(e.target.value)} placeholder="12" className="input-field" required />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Start Date</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputClass} required />
+              <label className="form-label">Start Date</label>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-field" required />
             </div>
           </div>
         )}

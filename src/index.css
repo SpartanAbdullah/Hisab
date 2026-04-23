@@ -140,7 +140,13 @@ input, select, textarea {
   -webkit-backdrop-filter: blur(12px);
 }
 
-/* ========== PREMIUM CARD ========== */
+/* ========== PREMIUM CARD ==========
+ * @deprecated — prefer `.card-base` (passive) or `.card-base.card-interactive`
+ * (tappable). `.card-premium` uses a 20px radius that callers frequently
+ * override with `!rounded-2xl`; `.card-base` canonicalises at 16px so the
+ * override hack goes away. Left in place for existing callers; do NOT adopt
+ * for new surfaces. See @layer components tokens below.
+ */
 .card-premium {
   background: white;
   border: 1px solid rgba(226, 232, 240, 0.6);
@@ -206,3 +212,383 @@ input, select, textarea {
 }
 .btn-gradient:active::after { opacity: 1; }
 .btn-gradient:active { transform: scale(0.97); }
+
+/* ============================================================
+ * PHASE A CANONICAL TOKENS
+ *
+ * Extracted verbatim from existing good implementations — these
+ * don't invent new styles. Wrapped in @layer components so that
+ * utility classes (text-lg, font-bold, etc.) applied alongside
+ * can naturally override token defaults without !important.
+ *
+ * Pairs with the ladder comments in src/lib/design-tokens.ts.
+ * ============================================================ */
+
+@layer components {
+  /* ========== FORM FIELD TOKENS ==========
+   * Transition values match Tailwind's `transition-all` default so
+   * swapping from `className={inputClass}` → `className="input-field"`
+   * does not change focus-state animation timing. Placeholder color
+   * is intentionally NOT set here so inputs keep the browser default
+   * (same as the inline pattern this extracts from). */
+  .input-field {
+    width: 100%;
+    background: white;
+    border: 1px solid rgba(226, 232, 240, 0.6); /* slate-200/60 */
+    border-radius: 16px;                         /* rounded-2xl */
+    padding: 14px 16px;                          /* py-3.5 px-4 */
+    font-size: 14px;                             /* text-sm */
+    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1); /* = transition-all */
+    outline: none;
+  }
+  .input-field:focus {
+    border-color: #818cf8;                       /* indigo-400 */
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); /* ring-2 indigo-500/20 */
+  }
+
+  .form-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;                            /* bold */
+    color: #94a3b8;                              /* slate-400 */
+    text-transform: uppercase;
+    letter-spacing: 0.1em;                       /* tracking-widest */
+    margin-bottom: 8px;                          /* mb-2 */
+  }
+
+  /* ========== CTA TOKENS ==========
+   * Full-width mobile footer buttons: py-4 px-4, rounded-2xl, text-sm/bold.
+   * Self-contained — cta-primary duplicates the btn-gradient paint/press
+   * behaviour so call sites need only one class after Phase C migration. */
+  /* Transition matches the inline `btn-gradient` class (transition: all 0.2s
+   * ease) so the disabled-opacity and active-scale animations time
+   * identically after swap. Cursor is left at the browser default on :disabled
+   * to match the inline pattern (which did not set cursor). */
+  .cta-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: white;
+    border: none;
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 14px;
+    font-weight: 700;
+    /* shadow-md shadow-indigo-500/20 */
+    box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2),
+                0 2px 4px -2px rgba(99, 102, 241, 0.2);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s ease;
+  }
+  .cta-primary::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, transparent 100%);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .cta-primary:active::after { opacity: 1; }
+  .cta-primary:active { transform: scale(0.97); }
+  .cta-primary:disabled { opacity: 0.3; }
+
+  .cta-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f5f9;                          /* slate-100 */
+    color: #64748b;                               /* slate-500 */
+    border: none;
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 14px;
+    font-weight: 700;
+    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .cta-secondary:active { background: #e2e8f0; }  /* slate-200 */
+  .cta-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Density Tier B (action card). Matches the inline pattern used for the
+   * ContactDetailSheet Unlink button: w-full, py-3, text-[13px], transition-all.
+   * Cursor is left at browser default on :disabled to match the inline pattern. */
+  .cta-destructive {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    background: #fef2f2;                          /* red-50 */
+    color: #ef4444;                               /* red-500 */
+    border: none;
+    border-radius: 16px;
+    padding: 12px 16px;                           /* py-3 — horizontal padding
+                                                     is invisible under w-full
+                                                     with centered content */
+    font-size: 13px;                              /* text-[13px] */
+    font-weight: 700;
+    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1); /* = transition-all */
+  }
+  .cta-destructive:active { background: #fee2e2; } /* red-100 */
+  .cta-destructive:disabled { opacity: 0.5; }
+
+  /* ========== STATE HINT TOKENS ==========
+   * Inline advisory banners. Info/warn follow the rounded-2xl + leading-
+   * relaxed pattern seen in linked-request/settlement UIs; error stays
+   * tighter (rounded-xl, no loosened leading) to match the inline form
+   * error pattern used across modals. */
+  .state-hint-info {
+    font-size: 12px;
+    color: #4338ca;                               /* indigo-700 */
+    background: rgba(238, 242, 255, 0.7);         /* indigo-50/70 */
+    border-radius: 16px;
+    padding: 12px;                                 /* p-3 */
+    line-height: 1.625;                            /* leading-relaxed */
+  }
+
+  .state-hint-warn {
+    font-size: 12px;
+    color: #b45309;                               /* amber-700 */
+    background: rgba(255, 251, 235, 0.7);         /* amber-50/70 */
+    border-radius: 16px;
+    padding: 12px;
+    line-height: 1.625;
+  }
+
+  .state-hint-error {
+    font-size: 12px;
+    font-weight: 600;                             /* semibold */
+    color: #ef4444;                               /* red-500 */
+    background: #fef2f2;                          /* red-50 */
+    border-radius: 12px;                          /* rounded-xl */
+    padding: 12px;
+  }
+
+  /* ========================================================
+   * PHASE D1 TOKENS — Cards / Rows / Selectors / Chips / Toggles
+   *
+   * Introduced, NOT yet adopted. Every value extracted from an
+   * existing good implementation in the codebase; nothing invented.
+   * Composition model: `*-base` is structural, `*-interactive` /
+   * `*-selected` are modifier classes layered on top.
+   *   <div class="card-base">…</div>
+   *   <button class="card-base card-interactive">…</button>
+   *   <button class="selector-base selector-selected">…</button>
+   *   <button class="chip-base chip-selected">…</button>
+   * ======================================================== */
+
+  /* ========== CARD TOKENS ==========
+   * `.card-base` canonicalises the passive card look at `rounded-2xl` (16px),
+   * which is what most consumers actually render (they override .card-premium
+   * with `!rounded-2xl`). Colour, border, and shadow are identical to the
+   * deprecated `.card-premium`. */
+  .card-base {
+    background: white;
+    border: 1px solid rgba(226, 232, 240, 0.6);   /* slate-200/60 */
+    border-radius: 16px;                          /* rounded-2xl */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04),
+                0 4px 12px rgba(0, 0, 0, 0.02);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  /* Modifier: layered on top of `.card-base` for tappable cards. */
+  .card-interactive:active {
+    transform: scale(0.98);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+
+  /* ========== ROW TOKENS ==========
+   * Three composable tokens:
+   *   `.row-base`        — structure only (flex layout, gap, alignment).
+   *                        No chrome, no padding, no width.
+   *                        Use alone for inside-card rows (e.g. SettingsPage
+   *                        rows stacked inside a `card-premium divide-y`
+   *                        wrapper) + utility padding.
+   *   `.row-card`        — standalone card-row chrome (width, padding, border,
+   *                        radius, bg). Layer atop `.row-base` when the row
+   *                        is a self-contained visual unit (e.g. ContactsModal).
+   *   `.row-interactive` — tap-feedback slate-50 flash with matching
+   *                        transition timing. Composable with either.
+   *
+   * Cursor is not set here; `<button>` gets `cursor: pointer` from Tailwind's
+   * preflight, and non-interactive elements that still want `:active` flash
+   * (e.g. SettingsPage section-header divs) should not show a pointer cursor. */
+  .row-base {
+    display: flex;
+    align-items: center;
+    gap: 12px;                                    /* gap-3 */
+    text-align: left;
+    color: inherit;
+  }
+  .row-card {
+    width: 100%;                                  /* w-full */
+    padding: 12px;                                /* p-3 */
+    border: 1px solid rgba(226, 232, 240, 0.6);   /* slate-200/60 */
+    border-radius: 16px;                          /* rounded-2xl */
+    background: white;                            /* bg-white */
+  }
+  .row-interactive {
+    /* Timing matches Tailwind's `transition-colors` default so swapping
+     * from that utility is zero-regression. */
+    transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .row-interactive:active {
+    background-color: #f8fafc;                    /* slate-50 */
+  }
+
+  /* ========== SELECTOR TOKENS ==========
+   * `.selector-base` is the canonical row-shaped selector used in 6+ entry
+   * modals (account picker, cash-advance picker, bank-preset picker).
+   * `.selector-selected` is layered on top to apply the indigo selected state. */
+  .selector-base {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 14px;                                /* p-3.5 */
+    border: 2px solid rgba(226, 232, 240, 0.6);   /* slate-200/60 */
+    border-radius: 16px;                          /* rounded-2xl */
+    background: white;
+    text-align: left;
+    cursor: pointer;
+    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .selector-base:active {
+    transform: scale(0.98);
+  }
+  .selector-selected {
+    border-color: #818cf8;                        /* indigo-400 */
+    background: rgba(238, 242, 255, 0.5);         /* indigo-50/50 */
+    /* shadow-sm shadow-indigo-500/5 */
+    box-shadow: 0 1px 2px 0 rgba(99, 102, 241, 0.05);
+  }
+
+  /* ========== CHIP TOKENS ==========
+   * `.chip-base` matches the reminder-option / category-pill pattern used in
+   * QuickEntry and AddUpcomingExpenseModal. Slight variance exists in the
+   * codebase on selected-state shadow (some add shadow-indigo-500/20); the
+   * canonical here uses plain `shadow-sm`, which is the AddUpcomingExpense
+   * reminder pattern. The difference is imperceptible against the solid
+   * indigo-600 background. */
+  .chip-base {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;                            /* py-1.5 px-3 */
+    border: 1px solid rgba(226, 232, 240, 0.6);   /* slate-200/60 */
+    border-radius: 12px;                          /* rounded-xl */
+    background: white;
+    color: #64748b;                               /* slate-500 */
+    font-size: 11px;
+    font-weight: 600;                             /* semibold */
+    cursor: pointer;
+    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .chip-base:active {
+    transform: scale(0.95);
+  }
+  .chip-selected {
+    background: #4f46e5;                          /* indigo-600 */
+    color: white;
+    border-color: #4f46e5;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);  /* shadow-sm */
+  }
+
+  /* ========== TOGGLE ROW TOKEN ==========
+   * `.toggle-row` matches the enabled-state EMI toggle / apply-to-balance
+   * toggle pattern. The disabled state (e.g. no eligible accounts for the
+   * apply-to-balance toggle) is handled at call sites today via composed
+   * `opacity-60 cursor-not-allowed` utilities; a modifier class may be
+   * added in a later phase if the disabled pattern recurs. */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;                                    /* gap-2.5 */
+    padding: 12px;                                /* p-3 */
+    border: 1px solid rgba(241, 245, 249, 0.6);   /* slate-100/60 */
+    border-radius: 16px;                          /* rounded-2xl */
+    background: rgba(248, 250, 252, 0.8);         /* slate-50/80 */
+    cursor: pointer;
+    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ========================================================
+   * PHASE E1 TOKENS — Modal structural anatomy
+   *
+   * Introduced, NOT yet adopted. Every value extracted verbatim
+   * from `src/components/Modal.tsx`; nothing invented. The tokens
+   * define the five structural slots of a modal sheet so that the
+   * shared <Modal> component can compose them in Phase E2 without
+   * any visible change to consumers.
+   *
+   * Animation state (backdrop opacity, sheet transform) stays on
+   * the JSX side — driven by the `show` state and composed as
+   * utility classes atop these tokens.
+   * ======================================================== */
+
+  /* Backdrop layer inside the modal root. Transitions the opacity
+   * driven externally via `opacity-0` / `opacity-100` utility on
+   * the `show` state. Timing curve matches Tailwind's default
+   * `transition-opacity` so swapping from that utility is
+   * zero-regression. */
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);            /* bg-slate-900/40 */
+    backdrop-filter: blur(4px);                   /* backdrop-blur-sm */
+    -webkit-backdrop-filter: blur(4px);
+    transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Bottom-sheet card. Max 480px wide, clamps height at 92dvh,
+   * slides up via translate-y utility toggle. Transition timing
+   * matches the inline cubic-bezier the component applies today. */
+  .modal-sheet {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 480px;
+    max-height: 92dvh;
+    background: white;
+    border-top-left-radius: 24px;                 /* rounded-t-3xl */
+    border-top-right-radius: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); /* shadow-2xl */
+    transition: transform 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Sticky top region that holds the title + close button. Uses a
+   * translucent white + blur so body content behind the header
+   * shows faintly during scroll. */
+  .modal-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;                           /* py-2.5 px-5 */
+    background: rgba(255, 255, 255, 0.9);         /* bg-white/90 */
+    backdrop-filter: blur(12px);                  /* backdrop-blur-md */
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(241, 245, 249, 0.6); /* slate-100/60 */
+    z-index: 10;
+  }
+
+  /* Scrollable body. flex-1 so it consumes the remaining sheet
+   * height; p-5 gives consumers a consistent 20px gutter. */
+  .modal-body {
+    flex: 1 1 0%;                                 /* flex-1 */
+    overflow-y: auto;
+    padding: 20px;                                /* p-5 */
+  }
+
+  /* Pinned footer. shrink-0 keeps it visible while the body
+   * scrolls. Padding is asymmetric (`pt-3 px-5 pb-6`) to match
+   * the existing Modal — safe-area handling is NOT in the token;
+   * the current Modal uses a static 24px bottom and relies on
+   * that to clear most home-indicator geometries. */
+  .modal-footer {
+    flex-shrink: 0;
+    padding: 12px 20px 24px;                      /* pt-3 px-5 pb-6 */
+    background: white;
+    border-top: 1px solid rgba(241, 245, 249, 0.6); /* slate-100/60 */
+  }
+}

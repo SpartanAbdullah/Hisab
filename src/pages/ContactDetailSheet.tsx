@@ -96,9 +96,6 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     }
   };
 
-  const inputClass =
-    'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
-
   return (
     <Modal open={open} onClose={onClose} title={person.name}>
       <div className="space-y-4">
@@ -127,7 +124,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             <button
               onClick={handleUnlink}
               disabled={saving}
-              className="w-full py-3 rounded-2xl bg-red-50 text-red-500 text-[13px] font-bold active:bg-red-100 transition-all disabled:opacity-50"
+              className="cta-destructive"
             >
               {saving ? 'Working…' : 'Unlink'}
             </button>
@@ -142,7 +139,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
         ) : (
           <div className="space-y-3">
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+              <label className="form-label">
                 User code
               </label>
               <input
@@ -159,7 +156,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 autoCapitalize="characters"
                 autoCorrect="off"
                 autoComplete="off"
-                className={inputClass}
+                className="input-field"
               />
               <p className="text-[11px] text-slate-400 mt-1.5">
                 Ask them to copy their code from Settings &rarr; My Account.

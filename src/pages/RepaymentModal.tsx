@@ -51,7 +51,6 @@ export function RepaymentModal({
   const isCrossCurrency = selectedAccount ? selectedAccount.currency !== loan.currency : false;
   const isInstallmentPayment = Boolean(emiId);
   const installmentAmount = presetAmount != null ? Math.min(presetAmount, loan.remainingAmount) : undefined;
-  const inputClass = 'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
 
   useEffect(() => {
     if (!open) return;
@@ -155,7 +154,7 @@ export function RepaymentModal({
           <button
             onClick={handleSubmit}
             disabled={saving || !canSubmit()}
-            className="w-full btn-gradient rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
+            className="cta-primary"
           >
             {saving ? t('repay_paying') : isInstallmentPayment ? t('loan_mark_paid') : t('repay_confirm')}
           </button>
@@ -187,7 +186,7 @@ export function RepaymentModal({
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {(lockAmount ? t('loan_installment_amount') : t('repay_amount'))} ({loan.currency})
             </label>
             <input
@@ -197,7 +196,7 @@ export function RepaymentModal({
               onChange={(event) => setAmount(event.target.value)}
               placeholder="0.00"
               disabled={lockAmount}
-              className={`${inputClass} text-center text-xl font-bold tabular-nums disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed`}
+              className="input-field text-center text-xl font-bold tabular-nums disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
               autoFocus
             />
             {!lockAmount ? (
@@ -212,7 +211,7 @@ export function RepaymentModal({
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {isGiven ? t('repay_receive_in') : t('repay_pay_from')}
             </label>
             <div className="space-y-2">
@@ -226,9 +225,7 @@ export function RepaymentModal({
                       setAccountId(account.id);
                       setConversionRate('');
                     }}
-                    className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                      accountId === account.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
-                    }`}
+                    className={accountId === account.id ? 'selector-base selector-selected' : 'selector-base'}
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-sm">{meta?.flag}</span>
@@ -262,7 +259,7 @@ export function RepaymentModal({
                   value={conversionRate}
                   onChange={(event) => setConversionRate(event.target.value)}
                   placeholder="e.g. 78.50"
-                  className={inputClass}
+                  className="input-field"
                 />
               </div>
               {conversionRate && parseFloat(conversionRate) > 0 && parseFloat(amount) > 0 ? (
@@ -279,14 +276,14 @@ export function RepaymentModal({
           ) : null}
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {t('quick_note')}
             </label>
             <input
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Optional..."
-              className={inputClass}
+              className="input-field"
             />
           </div>
         </div>

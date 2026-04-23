@@ -36,7 +36,7 @@ export function ContactsModal({ open, onClose }: Props) {
                 key={person.id}
                 type="button"
                 onClick={() => setSelectedId(person.id)}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white border border-slate-200/60 text-left active:bg-slate-50 transition-colors"
+                className="row-base row-card row-interactive"
               >
                 <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-[13px] font-bold">
                   {(person.name[0] ?? '?').toUpperCase()}

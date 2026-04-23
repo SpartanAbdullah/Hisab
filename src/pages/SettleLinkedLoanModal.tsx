@@ -132,9 +132,6 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
     }
   };
 
-  const inputClass =
-    'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
-
   return (
     <Modal
       open={open}
@@ -144,7 +141,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
         <button
           onClick={handleSubmit}
           disabled={saving || !canSubmit}
-          className="w-full btn-gradient rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
+          className="cta-primary"
         >
           {saving ? t('stl_sending') : t('stl_send')}
         </button>
@@ -160,7 +157,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+          <label className="form-label">
             {t('stl_amount_label')}
           </label>
           <input
@@ -169,7 +166,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
             min="0"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className={`${inputClass} text-center text-lg font-bold tabular-nums`}
+            className="input-field text-center text-lg font-bold tabular-nums"
           />
           <p className="text-[11px] text-slate-400 mt-1.5">
             {t('stl_amount_hint').replace('{remaining}', formatMoney(loan.remainingAmount, loan.currency))}
@@ -177,13 +174,13 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+          <label className="form-label">
             {t('stl_note_label')}
           </label>
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className={inputClass}
+            className="input-field"
             placeholder=""
           />
         </div>
@@ -217,7 +214,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
 
         {applyToBalance && hasEligibleAccounts ? (
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            <label className="form-label">
               {t('stl_apply_pick_account')}
             </label>
             <div className="space-y-2">
@@ -229,9 +226,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
                     key={a.id}
                     type="button"
                     onClick={() => setSelectedAccountId(a.id)}
-                    className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                      isSelected ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
-                    }`}
+                    className={isSelected ? 'selector-base selector-selected' : 'selector-base'}
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-sm">{meta?.flag}</span>

@@ -139,7 +139,6 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
 
   const isCreditCard = accountType === 'credit_card';
   const title = inline ? t('acct_create_first') : step === 0 ? t('acct_what_type') : step === 1 ? t('acct_details') : t('acct_opening');
-  const inputClass = "w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all";
 
   const footerContent = step === 1 ? (
     <div className="flex gap-2.5">
@@ -218,29 +217,29 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                     })}
                   </div>
                   <input value={ccIssuer} onChange={e => { setCcIssuer(e.target.value); setName(`${e.target.value} Credit Card`); }}
-                    placeholder="Or type issuer name..." className={inputClass} />
+                    placeholder="Or type issuer name..." className="input-field" />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('cc_last4')}</label>
+                  <label className="form-label">{t('cc_last4')}</label>
                   <input value={ccLast4} onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 4); setCcLast4(v); }}
-                    placeholder="e.g. 4521" maxLength={4} inputMode="numeric" className={`${inputClass} text-center text-lg font-bold tracking-[0.3em]`} />
+                    placeholder="e.g. 4521" maxLength={4} inputMode="numeric" className="input-field text-center text-lg font-bold tracking-[0.3em]" />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('cc_limit')}</label>
+                  <label className="form-label">{t('cc_limit')}</label>
                   <input type="number" step="0.01" value={ccLimit} onChange={e => setCcLimit(e.target.value)}
-                    placeholder="e.g. 10000" className={`${inputClass} text-center text-lg font-bold tabular-nums`} />
+                    placeholder="e.g. 10000" className="input-field text-center text-lg font-bold tabular-nums" />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('cc_due_day')}</label>
+                  <label className="form-label">{t('cc_due_day')}</label>
                   <input type="number" min="1" max="31" value={ccDueDay} onChange={e => setCcDueDay(e.target.value)}
-                    placeholder="e.g. 15" className={`${inputClass} text-center`} />
+                    placeholder="e.g. 15" className="input-field text-center" />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Currency</label>
+                  <label className="form-label">Currency</label>
                   <div className="grid grid-cols-2 gap-2">
                     {(['AED', 'PKR'] as Currency[]).map(c => {
                       const meta = currencyMeta[c];
@@ -285,12 +284,12 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                   </p>
                   <input value={name} onChange={e => setName(e.target.value)}
                     placeholder={accountType === 'cash' ? 'e.g. Jaib Kharcha' : accountType === 'bank' ? 'e.g. My Account' : 'e.g. My Wallet'}
-                    className={inputClass}
+                    className="input-field"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Currency</label>
+                  <label className="form-label">Currency</label>
                   <div className="grid grid-cols-2 gap-2">
                     {(['AED', 'PKR'] as Currency[]).map(c => {
                       const meta = currencyMeta[c];
@@ -321,10 +320,10 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('acct_how_much')}</label>
+              <label className="form-label">{t('acct_how_much')}</label>
               <input type="number" step="0.01" value={balance} onChange={e => setBalance(e.target.value)}
                 placeholder="0.00"
-                className={`${inputClass} text-center text-xl font-bold tabular-nums`}
+                className="input-field text-center text-xl font-bold tabular-nums"
                 autoFocus
               />
               <p className="text-[11px] text-slate-400 text-center mt-1.5">{t('acct_leave_empty')}</p>
