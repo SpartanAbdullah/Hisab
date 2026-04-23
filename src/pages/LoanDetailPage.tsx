@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { format, isPast } from 'date-fns';
 import { AlertCircle, CheckCircle, Clock, RotateCcw } from 'lucide-react';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
+import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useSettlementRequestStore } from '../stores/settlementRequestStore';
+import { usePersonStore } from '../stores/personStore';
+import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { TransactionItem } from '../components/TransactionItem';
@@ -13,18 +17,24 @@ import { EditTransactionModal } from '../components/EditTransactionModal';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { RepaymentModal } from './RepaymentModal';
+import { SettleLinkedLoanModal } from './SettleLinkedLoanModal';
 import { isGroupLinkedNote } from '../lib/internalNotes';
 import { resolvePersonName } from '../lib/resolvePersonName';
-import type { EmiSchedule, Transaction } from '../db';
+import type { EmiSchedule, Transaction, SettlementRequest } from '../db';
 
 export function LoanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { loans, loadLoans } = useLoanStore();
   const { schedules, loadSchedules } = useEmiStore();
   const { loadTransactions, getByLoan } = useTransactionStore();
-  const { loadAccounts } = useAccountStore();
+  const { loadAccounts, accounts } = useAccountStore();
+  const linkedRequests = useLinkedRequestStore((s) => s.requests);
+  const settlementRequests = useSettlementRequestStore((s) => s.requests);
+  const persons = usePersonStore((s) => s.persons);
+  const currentUserId = useSupabaseAuthStore((s) => s.user?.id ?? '');
   const t = useT();
   const [showRepayment, setShowRepayment] = useState(false);
+  const [showSettleLinked, setShowSettleLinked] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedEmi, setSelectedEmi] = useState<(EmiSchedule & { isOverdue: boolean }) | null>(null);
 
@@ -40,6 +50,23 @@ export function LoanDetailPage() {
 
   const displayName = resolvePersonName({ personId: loan.personId, fallback: loan.personName });
   const loanTransactions = getByLoan(loan.id);
+
+  // Phase 2C-A: detect whether this loan is the local side of a linked pair.
+  // Only linked loans route through the settlement request flow.
+  const linkedPair = linkedRequests.find(
+    (r) => r.status === 'accepted' && (r.requesterLoanId === loan.id || r.responderLoanId === loan.id),
+  ) ?? null;
+  const isLinkedLoan = (() => {
+    if (!loan.personId) return false;
+    const p = persons.find((x) => x.id === loan.personId);
+    return !!(p?.linkedProfileId) && !!linkedPair;
+  })();
+  // 2C-A direction rule: only the debtor (type='taken') can initiate.
+  const canSettleLinked = isLinkedLoan && loan.status === 'active' && loan.type === 'taken';
+  const loanPairId = linkedPair?.id ?? null;
+  const settlementHistory = loanPairId
+    ? settlementRequests.filter((r) => r.loanPairId === loanPairId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    : [];
   const emiItems = schedules
     .filter((schedule) => schedule.loanId === loan.id)
     .sort((left, right) => left.installmentNumber - right.installmentNumber);
@@ -66,12 +93,21 @@ export function LoanDetailPage() {
           <div className="flex items-center gap-2">
             <LanguageToggle />
             {loan.status === 'active' ? (
-              <button
-                onClick={() => setShowRepayment(true)}
-                className="bg-emerald-50 text-emerald-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-500/5"
-              >
-                <RotateCcw size={13} strokeWidth={2.5} /> {t('loan_repay')}
-              </button>
+              canSettleLinked ? (
+                <button
+                  onClick={() => setShowSettleLinked(true)}
+                  className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5"
+                >
+                  <RotateCcw size={13} strokeWidth={2.5} /> {t('stl_settle_cta')}
+                </button>
+              ) : isLinkedLoan ? null : (
+                <button
+                  onClick={() => setShowRepayment(true)}
+                  className="bg-emerald-50 text-emerald-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-500/5"
+                >
+                  <RotateCcw size={13} strokeWidth={2.5} /> {t('loan_repay')}
+                </button>
+              )
             ) : null}
           </div>
         }
@@ -154,6 +190,35 @@ export function LoanDetailPage() {
         </div>
       ) : null}
 
+      {isLinkedLoan ? (
+        <div className="px-5 pt-6">
+          <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t('stl_history_title')}</h2>
+          {settlementHistory.length === 0 ? (
+            <p className="text-[12px] text-slate-400">{t('stl_history_empty')}</p>
+          ) : (
+            <div className="space-y-2">
+              {settlementHistory.map((s) => {
+                // Sender-side only: if the settlement carried an opted-in
+                // account AND the viewer is the sender, show a small meta
+                // line referencing their account name.
+                const appliedFromName =
+                  s.requesterAccountId && s.fromUserId === currentUserId
+                    ? accounts.find((a) => a.id === s.requesterAccountId)?.name ?? null
+                    : null;
+                return (
+                  <SettlementHistoryRow
+                    key={s.id}
+                    request={s}
+                    currency={loan.currency}
+                    appliedFromAccountName={appliedFromName}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+
       <div className="px-5 pt-6">
         <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t('tx_history')}</h2>
         {loanTransactions.length === 0 ? (
@@ -203,6 +268,64 @@ export function LoanDetailPage() {
         />
       ) : null}
       <EditTransactionModal open={!!selectedTransaction} transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} />
+      {isLinkedLoan ? (
+        <SettleLinkedLoanModal
+          open={showSettleLinked}
+          onClose={() => {
+            setShowSettleLinked(false);
+            refreshLoanDetail();
+          }}
+          loan={loan}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function SettlementHistoryRow({
+  request,
+  currency,
+  appliedFromAccountName,
+}: {
+  request: SettlementRequest;
+  currency: string;
+  appliedFromAccountName?: string | null;
+}) {
+  const t = useT();
+  const statusKey = (`stl_status_${request.status}`) as
+    | 'stl_status_pending' | 'stl_status_accepted' | 'stl_status_rejected' | 'stl_status_cancelled';
+  const statusClasses = {
+    pending:   'bg-amber-50 text-amber-600',
+    accepted:  'bg-emerald-50 text-emerald-600',
+    rejected:  'bg-slate-100 text-slate-500',
+    cancelled: 'bg-slate-100 text-slate-500',
+  }[request.status];
+  return (
+    <div className="card-premium !rounded-2xl p-3.5 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-semibold text-slate-700 tabular-nums">
+          {formatMoney(request.amount, currency as 'AED' | 'PKR')}
+        </p>
+        <p className="text-[10px] text-slate-400 mt-0.5">
+          {format(new Date(request.createdAt), 'MMM d, h:mm a')}
+        </p>
+        {appliedFromAccountName ? (
+          <p className="text-[10px] text-indigo-600 mt-0.5">
+            {t('stl_applied_from').replace('{account}', appliedFromAccountName)}
+          </p>
+        ) : null}
+        {request.note ? (
+          <p className="text-[11px] text-slate-500 italic mt-1 truncate">&ldquo;{request.note}&rdquo;</p>
+        ) : null}
+      </div>
+      <span className={`text-[10px] font-bold uppercase tracking-widest rounded-full px-2.5 py-1 ${statusClasses}`}>
+        {t(statusKey)}
+      </span>
+      {request.status === 'pending' ? (
+        <Link to="/inbox" className="text-[10px] text-indigo-600 font-bold active:opacity-70 transition-opacity">
+          {t('stl_history_view_in_inbox')}
+        </Link>
+      ) : null}
     </div>
   );
 }

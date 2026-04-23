@@ -9,6 +9,7 @@ import { useAppModeStore } from './stores/appModeStore';
 import { useSupabaseAuthStore } from './stores/supabaseAuthStore';
 import { usePersonStore } from './stores/personStore';
 import { useLinkedRequestStore } from './stores/linkedRequestStore';
+import { useSettlementRequestStore } from './stores/settlementRequestStore';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
@@ -96,6 +97,9 @@ function AppContent() {
     });
     void useLinkedRequestStore.getState().loadRequests().catch((err) => {
       console.error('loadRequests failed (non-fatal)', err);
+    });
+    void useSettlementRequestStore.getState().loadRequests().catch((err) => {
+      console.error('loadSettlements failed (non-fatal)', err);
     });
   }, [user?.id]);
 

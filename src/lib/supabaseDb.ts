@@ -3,7 +3,7 @@ import type {
   Account, Transaction, Loan, EmiSchedule, Goal,
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
   GroupMember, GroupInvite, GroupEvent, AppNotification, Person,
-  LinkedRequest, LinkedRequestKind,
+  LinkedRequest, LinkedRequestKind, SettlementRequest, Currency,
 } from '../db';
 
 // Helper to get current user ID (cached in localStorage by App.tsx)
@@ -281,10 +281,100 @@ function mapLinkedRequest(r: Record<string, unknown>): LinkedRequest {
     responderLoanId: (r.responder_loan_id as string) ?? null,
     requesterTxnId: (r.requester_txn_id as string) ?? null,
     responderTxnId: (r.responder_txn_id as string) ?? null,
+    loanPairId: (r.loan_pair_id as string) ?? null,
     createdAt: r.created_at as string,
     respondedAt: (r.responded_at as string) ?? null,
   };
 }
+
+function mapSettlementRequest(r: Record<string, unknown>): SettlementRequest {
+  return {
+    id: r.id as string,
+    loanPairId: r.loan_pair_id as string,
+    requesterLoanId: r.requester_loan_id as string,
+    responderLoanId: r.responder_loan_id as string,
+    fromUserId: r.from_user_id as string,
+    toUserId: r.to_user_id as string,
+    amount: Number(r.amount),
+    currency: r.currency as SettlementRequest['currency'],
+    note: (r.note as string) ?? '',
+    status: r.status as SettlementRequest['status'],
+    rejectionReason: (r.rejection_reason as string) ?? null,
+    requesterTxnId: (r.requester_txn_id as string) ?? null,
+    responderTxnId: (r.responder_txn_id as string) ?? null,
+    requesterAccountId: (r.requester_account_id as string) ?? null,
+    createdAt: r.created_at as string,
+    respondedAt: (r.responded_at as string) ?? null,
+  };
+}
+
+// ══════════════════════════════════════
+// LINKED SETTLEMENT REQUESTS (Phase 2C-A)
+// Cloud-only. Ledger-only semantics: accept writes mirrored repayment
+// transactions with null account ids and decrements remaining_amount on
+// both loans. No account balance movement anywhere in 2C-A.
+// ══════════════════════════════════════
+export const settlementRequestsDb = {
+  async getAll(): Promise<SettlementRequest[]> {
+    const me = getUserId();
+    const { data, error } = await supabase
+      .from('linked_settlement_requests')
+      .select('*')
+      .or(`from_user_id.eq.${me},to_user_id.eq.${me}`)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapSettlementRequest);
+  },
+  async insert(input: {
+    id: string;
+    loanPairId: string;
+    requesterLoanId: string;
+    responderLoanId: string;
+    toUserId: string;
+    amount: number;
+    currency: Currency;
+    note: string;
+    requesterAccountId?: string | null;
+  }) {
+    const { error } = await supabase.from('linked_settlement_requests').insert({
+      id: input.id,
+      loan_pair_id: input.loanPairId,
+      requester_loan_id: input.requesterLoanId,
+      responder_loan_id: input.responderLoanId,
+      from_user_id: getUserId(),
+      to_user_id: input.toUserId,
+      amount: input.amount,
+      currency: input.currency,
+      note: input.note,
+      requester_account_id: input.requesterAccountId ?? null,
+    });
+    if (error) throw error;
+  },
+  async accept(requestId: string): Promise<SettlementRequest> {
+    const { data, error } = await supabase.rpc('accept_settlement_request', { request_id: requestId });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error('lsr: accept returned no row');
+    return mapSettlementRequest(row as Record<string, unknown>);
+  },
+  async reject(requestId: string, reason?: string): Promise<SettlementRequest> {
+    const { data, error } = await supabase.rpc('reject_settlement_request', {
+      request_id: requestId,
+      reason: reason ?? null,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error('lsr: reject returned no row');
+    return mapSettlementRequest(row as Record<string, unknown>);
+  },
+  async cancel(requestId: string): Promise<SettlementRequest> {
+    const { data, error } = await supabase.rpc('cancel_settlement_request', { request_id: requestId });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error('lsr: cancel returned no row');
+    return mapSettlementRequest(row as Record<string, unknown>);
+  },
+};
 
 // ══════════════════════════════════════
 // EMI SCHEDULES

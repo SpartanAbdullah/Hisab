@@ -581,6 +581,89 @@ const S = {
 
   // Fallback person name for requests when contact details are missing
   ltr_unknown_person: { ur: 'Hisaab user', en: 'Hisaab user' },
+
+  // ── Phase 2C-A: Linked Settlement Requests (ledger-only) ────
+  stl_settle_cta: { ur: 'Settlement Record Karein', en: 'Record Settlement' },
+  stl_title: { ur: 'Settlement — {name}', en: 'Settlement — {name}' },
+
+  // Direction line, shown on the modal. Settler is always the debtor in 2C-A.
+  stl_direction_paying_to: {
+    ur: 'Aap {name} ko {amount} adaa kar rahe hain.',
+    en: "You'll mark {amount} as paid to {name}.",
+  },
+
+  stl_amount_label: { ur: 'Kitni adaigi?', en: 'How much?' },
+  stl_amount_hint: { ur: 'Baaki: {remaining}', en: 'Remaining: {remaining}' },
+  stl_note_label: { ur: 'Note (Optional)', en: 'Note (Optional)' },
+  stl_send: { ur: 'Confirmation ke liye bhejo', en: 'Send for confirmation' },
+  stl_sending: { ur: 'Bhej raha…', en: 'Sending…' },
+
+  // Strong hint on every surface. Word-for-word per Phase 2C-A requirement.
+  stl_ledger_only_hint: {
+    ur: 'Yeh dono taraf repayment record karega. Yeh aap ke account balance ko change nahi karega.',
+    en: 'This will record repayment in both records. It will NOT change your account balances.',
+  },
+
+  // Toasts
+  stl_sent_title: { ur: 'Settlement bhej di gayi', en: 'Settlement sent' },
+  stl_sent_subtitle: {
+    ur: 'Dusra user accept karega tabhi dono taraf repayment record hoga.',
+    en: 'The other person must accept before repayment is recorded on both sides.',
+  },
+  stl_create_error: {
+    ur: 'Settlement nahi bhej saki. Dobara koshish karein.',
+    en: 'Could not send the settlement. Try again.',
+  },
+  stl_accept_error: { ur: 'Accept nahi ho saka. Dobara koshish karein.', en: 'Could not accept. Try again.' },
+  stl_reject_error: { ur: 'Reject nahi ho saka. Dobara koshish karein.', en: 'Could not reject. Try again.' },
+  stl_cancel_error: { ur: 'Cancel nahi ho saka. Dobara koshish karein.', en: 'Could not cancel. Try again.' },
+  stl_amount_invalid: {
+    ur: 'Amount galat hai. Baaki se zyada nahi ho sakta.',
+    en: 'Invalid amount. It cannot exceed the remaining balance.',
+  },
+
+  // Inbox card strings
+  stl_card_incoming: {
+    ur: '{name} ne settlement record ki hai',
+    en: '{name} marked a settlement',
+  },
+  stl_card_outgoing: {
+    ur: '{name} ke liye settlement bheji',
+    en: 'Settlement sent to {name}',
+  },
+
+  // LoanDetailPage settlement history section
+  stl_history_title: { ur: 'Settlement history', en: 'Settlement history' },
+  stl_history_empty: { ur: 'Abhi tak koi settlement nahi.', en: 'No settlements yet.' },
+  stl_history_view_in_inbox: { ur: 'Inbox mein dekhein →', en: 'View in Inbox →' },
+
+  // Terminal state pills (share palette with ltr_status_*)
+  stl_status_pending:   { ur: 'Pending',   en: 'Pending' },
+  stl_status_accepted:  { ur: 'Accepted',  en: 'Accepted' },
+  stl_status_rejected:  { ur: 'Rejected',  en: 'Rejected' },
+  stl_status_cancelled: { ur: 'Cancelled', en: 'Cancelled' },
+
+  // ── Phase 2C-B: sender-side optional apply-to-balance ──
+  stl_apply_toggle_label: {
+    ur: 'Mere account mein apply karein',
+    en: 'Apply to one of my accounts',
+  },
+  stl_apply_toggle_hint: {
+    ur: 'Sirf is loan ki currency wale accounts use ho sakte hain.',
+    en: "Only accounts in this loan's currency can be used.",
+  },
+  stl_apply_pick_account: { ur: 'Account chunein', en: 'Pick an account' },
+  stl_apply_no_eligible: {
+    ur: 'Matching-currency ka koi account nahi. Ledger-only settlement phir bhi mojood hai.',
+    en: 'No matching-currency account. Ledger-only settlement is still available.',
+  },
+  // Strong new clarification shown when an account is selected.
+  stl_apply_reduce_hint: {
+    ur: 'Jab dusra user accept karega tab aap ke account ka balance kam hoga.',
+    en: 'This will reduce your account balance when the other person accepts.',
+  },
+  // Meta line on sender-side history for accepted settlements with an account.
+  stl_applied_from: { ur: 'Aap ke {account} se', en: 'From your {account}' },
 } as const;
 
 type Key = keyof typeof S;

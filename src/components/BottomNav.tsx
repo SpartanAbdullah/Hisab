@@ -3,6 +3,7 @@ import { Home, ArrowLeftRight, Users, Target, Settings, Clock, Inbox } from 'luc
 import { useUIStore } from '../stores/uiStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { useT } from '../lib/i18n';
 
@@ -11,9 +12,13 @@ export function BottomNav() {
   const mode = useAppModeStore(s => s.mode);
   const t = useT();
   const userId = useSupabaseAuthStore(s => s.user?.id ?? '');
-  const incomingPendingCount = useLinkedRequestStore(
+  const linkedPending = useLinkedRequestStore(
     s => s.requests.filter(r => r.status === 'pending' && r.toUserId === userId).length,
   );
+  const settlementPending = useSettlementRequestStore(
+    s => s.requests.filter(r => r.status === 'pending' && r.toUserId === userId).length,
+  );
+  const incomingPendingCount = linkedPending + settlementPending;
 
   if (modalCount > 0) return null;
 

@@ -23,6 +23,7 @@ import { useAuthStore } from './authStore';
 import { useUIStore } from './uiStore';
 import { usePersonStore } from './personStore';
 import { useLinkedRequestStore } from './linkedRequestStore';
+import { useSettlementRequestStore } from './settlementRequestStore';
 
 // hisaab_supabase_uid is NOT listed here — it's owned by supabaseAuthStore's
 // onAuthStateChange handler, which clears it when the Supabase session ends.
@@ -55,6 +56,7 @@ export function resetAllUserStores(): void {
   useUIStore.getState().reset();
   usePersonStore.getState().reset();
   useLinkedRequestStore.getState().reset();
+  useSettlementRequestStore.getState().reset();
 
   for (const key of USER_SCOPED_LOCALSTORAGE_KEYS) {
     localStorage.removeItem(key);

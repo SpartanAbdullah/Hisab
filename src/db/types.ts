@@ -83,6 +83,31 @@ export interface LinkedRequest {
   responderLoanId: string | null;
   requesterTxnId: string | null;
   responderTxnId: string | null;
+  loanPairId: string | null;
+  createdAt: string;
+  respondedAt: string | null;
+}
+
+// Phase 2C-A: linked settlement request. Cloud-only; same mirroring pattern
+// as LinkedRequest. No account-related fields — Phase 2C-A is ledger-only.
+export type SettlementRequestStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled';
+
+export interface SettlementRequest {
+  id: string;
+  loanPairId: string;
+  requesterLoanId: string;
+  responderLoanId: string;
+  fromUserId: string;
+  toUserId: string;
+  amount: number;
+  currency: Currency;
+  note: string;
+  status: SettlementRequestStatus;
+  rejectionReason: string | null;
+  requesterTxnId: string | null;
+  responderTxnId: string | null;
+  // Phase 2C-B (sender-only opt-in). Null ⇒ ledger-only on both sides.
+  requesterAccountId?: string | null;
   createdAt: string;
   respondedAt: string | null;
 }
