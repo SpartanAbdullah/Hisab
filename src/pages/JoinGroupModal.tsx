@@ -6,6 +6,8 @@ import { useSplitStore } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
 
+type TFunction = ReturnType<typeof useT>;
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -42,7 +44,7 @@ function parseInput(raw: string): ParsedInput {
 // Map backend error messages to user-friendly keys. Kept narrow and explicit
 // so a new failure mode surfaces the raw message instead of being silently
 // lumped under "unknown".
-function classifyJoinError(err: unknown, tFn: (key: string) => string): string {
+function classifyJoinError(err: unknown, tFn: TFunction): string {
   const raw = err instanceof Error ? err.message : '';
   const lower = raw.toLowerCase();
   if (lower.includes('group code not found') || lower.includes('invite not found')) {
