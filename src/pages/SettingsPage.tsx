@@ -15,6 +15,8 @@ import {
   KeyRound,
   LogOut,
   Users,
+  AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { ContactsModal } from "./ContactsModal";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
@@ -39,7 +41,7 @@ export function SettingsPage() {
   const { accounts } = useAccountStore();
   const { lang, setLang } = useI18nStore();
   const { hasPin, setPin, removePin } = useAuthStore();
-  const { signOut, user } = useSupabaseAuthStore();
+  const { signOut, deleteAccount, user } = useSupabaseAuthStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [showPinSetup, setShowPinSetup] = useState(false);
@@ -58,6 +60,9 @@ export function SettingsPage() {
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [publicCode, setPublicCode] = useState("");
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteSaving, setDeleteSaving] = useState(false);
   const userName = localStorage.getItem("hisaab_user_name") ?? "";
 
   useEffect(() => {
@@ -179,6 +184,22 @@ export function SettingsPage() {
       toast.show({ type: "error", title: "Failed to update password" });
     } finally {
       setPasswordSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirm !== "DELETE") return;
+    setDeleteSaving(true);
+    try {
+      await deleteAccount();
+      window.location.assign("/");
+    } catch (error) {
+      toast.show({
+        type: "error",
+        title: "Could not delete account",
+        subtitle: error instanceof Error ? error.message : "Please try again.",
+      });
+      setDeleteSaving(false);
     }
   };
 
@@ -548,6 +569,66 @@ export function SettingsPage() {
             </div>
           </div>
         </div>
+
+        {/* Danger Zone */}
+        {user && (
+          <div className="card-premium overflow-hidden border border-red-100/80 divide-y divide-red-100/60">
+            <button
+              onClick={() => setShowDeleteAccount(!showDeleteAccount)}
+              className="row-base row-interactive px-4 py-3.5 w-full text-left"
+            >
+              <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+                <AlertTriangle size={16} className="text-red-500" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold text-red-600">
+                  Delete account
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Anonymize your profile and sign out
+                </p>
+              </div>
+              <ChevronRight
+                size={16}
+                className={`text-red-300 transition-transform ${showDeleteAccount ? "rotate-90" : ""}`}
+              />
+            </button>
+            {showDeleteAccount && (
+              <div className="p-4 space-y-3 bg-red-50/50 animate-fade-in">
+                <div className="rounded-xl border border-red-100 bg-white px-3.5 py-3">
+                  <p className="text-[12px] font-bold text-red-600">
+                    This cannot be undone.
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Your profile will be marked deleted and shown as Deleted User.
+                    Shared groups, expenses, settlements, and financial history stay
+                    intact so other members keep their accounting records.
+                  </p>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1.5 block">
+                    Type DELETE to confirm
+                  </label>
+                  <input
+                    value={deleteConfirm}
+                    onChange={(event) => setDeleteConfirm(event.target.value)}
+                    disabled={deleteSaving}
+                    className="w-full border border-red-100 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-300 transition-all bg-white"
+                    placeholder="DELETE"
+                  />
+                </div>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleteConfirm !== "DELETE" || deleteSaving}
+                  className="w-full py-2.5 rounded-xl bg-red-500 text-white text-[12px] font-bold disabled:opacity-30 flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all"
+                >
+                  <Trash2 size={13} />
+                  {deleteSaving ? "Deleting..." : "Delete my account"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Sign Out */}
         {user && (

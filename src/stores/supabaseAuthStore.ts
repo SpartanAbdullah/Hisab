@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 import { generatePublicCodeCandidate, normalizePublicCode } from '../lib/collaboration';
 import { resetAllUserStores } from './resetAllStores';
+import { accountDeletionDb } from '../lib/supabaseDb';
 
 interface SupabaseAuthState {
   user: User | null;
@@ -14,6 +15,7 @@ interface SupabaseAuthState {
   signUp: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signIn: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   updateProfile: (data: { name?: string; primary_currency?: string; app_mode?: string; lang?: string }) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
   getProfile: () => Promise<Record<string, unknown> | null>;
@@ -27,6 +29,31 @@ function buildAuthRedirectUrl(path = '/'): string {
   return baseUrl ? `${baseUrl}${nextPath}` : nextPath;
 }
 
+async function isDeletedProfile(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('is_deleted')
+    .eq('id', userId)
+    .single();
+  if (error) return false;
+  return data?.is_deleted === true;
+}
+
+async function blockDeletedSession(set: (state: Partial<SupabaseAuthState>) => void) {
+  try {
+    await supabase.auth.signOut();
+  } finally {
+    resetAllUserStores();
+    localStorage.removeItem('hisaab_supabase_uid');
+    set({
+      user: null,
+      session: null,
+      loading: false,
+      error: 'This account has been deleted. Please create a new account to use Hisaab again.',
+    });
+  }
+}
+
 export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
   user: null,
   session: null,
@@ -36,6 +63,10 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
   initialize: async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id && await isDeletedProfile(session.user.id)) {
+        await blockDeletedSession(set);
+        return;
+      }
       // Write uid synchronously BEFORE resolving so any DB call that depends on
       // localStorage.hisaab_supabase_uid sees the right value on the first paint.
       if (session?.user?.id) {
@@ -49,6 +80,9 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
       supabase.auth.onAuthStateChange((_event, session) => {
         if (session?.user?.id) {
           localStorage.setItem('hisaab_supabase_uid', session.user.id);
+          void isDeletedProfile(session.user.id).then((isDeleted) => {
+            if (isDeleted) void blockDeletedSession(set);
+          });
         } else {
           localStorage.removeItem('hisaab_supabase_uid');
         }
@@ -98,6 +132,14 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
       return { success: false, message: error.message };
     }
 
+    if (data.user && await isDeletedProfile(data.user.id)) {
+      await blockDeletedSession(set);
+      return {
+        success: false,
+        message: 'This account has been deleted. Please create a new account to use Hisaab again.',
+      };
+    }
+
     set({ user: data.user, session: data.session });
     return { success: true, message: 'Logged in!' };
   },
@@ -112,6 +154,11 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
       resetAllUserStores();
       set({ user: null, session: null, error: null });
     }
+  },
+
+  deleteAccount: async () => {
+    await accountDeletionDb.softDeleteCurrentUser();
+    await get().signOut();
   },
 
   updateProfile: async (data) => {

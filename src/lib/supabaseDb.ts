@@ -876,6 +876,13 @@ export const profilesDb = {
   },
 };
 
+export const accountDeletionDb = {
+  async softDeleteCurrentUser() {
+    const { error } = await supabase.rpc('soft_delete_current_user');
+    if (error) throw error;
+  },
+};
+
 export const groupsLookupDb = {
   async findByJoinCode(normalizedCode: string): Promise<{ id: string; name: string; emoji: string; currency: string } | null> {
     const { data, error } = await supabase.rpc('lookup_group_by_join_code', {
