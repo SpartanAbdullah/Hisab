@@ -21,12 +21,11 @@ This keeps the current web/PWA behavior intact while giving native-specific UI a
 
 ## Service Worker
 
-Service worker registration remains unchanged in `index.html`.
+Service worker registration now lives in `src/lib/serviceWorker.ts` instead of an inline `index.html` script.
 
-Before adding Capacitor, revisit this and consider making registration conditional so the native wrapper does not keep a stale web shell cache. A safe future policy is:
+It uses `isNativeRuntime()` from `src/lib/runtime.ts`, so the policy is:
 
 - keep service worker enabled for hosted web/PWA
 - skip service worker registration for Capacitor/native runtime
 
-Do not make that change until the native runtime bootstrap exists and can be tested.
-
+This avoids stale cached web shell assets in Android while preserving current PWA offline behavior.
