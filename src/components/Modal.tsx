@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUIStore } from '../stores/uiStore';
 
 interface Props {
@@ -13,21 +13,26 @@ interface Props {
 export function Modal({ open, onClose, title, children, footer }: Props) {
   const [show, setShow] = useState(false);
   const { openModal, closeModal } = useUIStore();
+  const onCloseRef = useRef(onClose);
 
   useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    let modalId: string | null = null;
     if (open) {
       document.body.style.overflow = 'hidden';
-      openModal();
+      modalId = openModal(() => onCloseRef.current());
       requestAnimationFrame(() => setShow(true));
     } else {
       setShow(false);
       document.body.style.overflow = '';
-      closeModal();
     }
     return () => {
       if (open) {
         document.body.style.overflow = '';
-        closeModal();
+        closeModal(modalId ?? undefined);
       }
     };
   }, [open, openModal, closeModal]);

@@ -13,6 +13,9 @@ import { useSettlementRequestStore } from './stores/settlementRequestStore';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
+import { isNativeRuntime } from './lib/runtime';
+import { useUIStore } from './stores/uiStore';
+import { App as CapacitorApp } from '@capacitor/app';
 
 // Lazy-loaded pages for code splitting
 const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })));
@@ -58,6 +61,39 @@ function AppContent() {
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showAddLoan, setShowAddLoan] = useState(false);
+
+  useEffect(() => {
+    if (!isNativeRuntime()) return;
+
+    let removed = false;
+    let removeListener: (() => void) | undefined;
+
+    void CapacitorApp.addListener('backButton', async ({ canGoBack }) => {
+      if (useUIStore.getState().closeTopModal()) return;
+
+      if (canGoBack && location.pathname !== '/') {
+        navigate(-1);
+        return;
+      }
+
+      try {
+        await CapacitorApp.minimizeApp();
+      } catch {
+        await CapacitorApp.exitApp();
+      }
+    }).then((handle) => {
+      if (removed) {
+        void handle.remove();
+        return;
+      }
+      removeListener = () => void handle.remove();
+    });
+
+    return () => {
+      removed = true;
+      removeListener?.();
+    };
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     initialize();

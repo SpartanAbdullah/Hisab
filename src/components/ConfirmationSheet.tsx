@@ -1,8 +1,9 @@
 import { CheckCircle, ArrowRight } from 'lucide-react';
 import { formatMoney } from '../lib/constants';
 import { Button } from './Button';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useT } from '../lib/i18n';
+import { useUIStore } from '../stores/uiStore';
 
 interface BalanceChange {
   accountName: string;
@@ -22,16 +23,27 @@ interface Props {
 export function ConfirmationSheet({ open, onClose, title, description, balanceChanges }: Props) {
   const [show, setShow] = useState(false);
   const t = useT();
+  const { openModal, closeModal } = useUIStore();
+  const onCloseRef = useRef(onClose);
 
   useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    let modalId: string | null = null;
     if (open) {
+      modalId = openModal(() => onCloseRef.current());
       requestAnimationFrame(() => setShow(true));
-      const timer = setTimeout(onClose, 2500);
-      return () => clearTimeout(timer);
+      const timer = setTimeout(() => onCloseRef.current(), 2500);
+      return () => {
+        clearTimeout(timer);
+        closeModal(modalId ?? undefined);
+      };
     } else {
       setShow(false);
     }
-  }, [open, onClose]);
+  }, [open, openModal, closeModal]);
 
   if (!open) return null;
 
