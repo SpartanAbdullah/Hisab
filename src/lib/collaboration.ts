@@ -39,9 +39,15 @@ export async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+function getPublicAppUrl(): string {
+  const configuredUrl = import.meta.env.VITE_PUBLIC_APP_URL as string | undefined;
+  const fallbackUrl = typeof window === 'undefined' ? '' : window.location.origin;
+  return (configuredUrl?.trim() || fallbackUrl).replace(/\/+$/, '');
+}
+
 export function buildInviteUrl(token: string): string {
-  if (typeof window === 'undefined') return `/join/${token}`;
-  return `${window.location.origin}/join/${token}`;
+  const publicAppUrl = getPublicAppUrl();
+  return publicAppUrl ? `${publicAppUrl}/join/${token}` : `/join/${token}`;
 }
 
 // Phase 2A: single place that turns a raw user-entered code into a resolved
