@@ -35,6 +35,7 @@ export function LoansPage() {
   // original amount) — the ring visualises collection progress:
   // collected = (total − remaining) / total.
   type Aggregate = { remaining: number; total: number; count: number };
+  type PersonAggregate = Aggregate & { key: string; name: string; currency: Currency };
   const aggregateByCurrency = (items: typeof loans): Record<string, Aggregate> =>
     items.reduce((acc, l) => {
       const bucket = acc[l.currency] ?? { remaining: 0, total: 0, count: 0 };
@@ -44,11 +45,34 @@ export function LoansPage() {
       acc[l.currency] = bucket;
       return acc;
     }, {} as Record<string, Aggregate>);
+  const aggregateByPerson = (items: typeof loans): PersonAggregate[] => {
+    const buckets = new Map<string, PersonAggregate>();
+    for (const loan of items) {
+      const key = `${loan.currency}:${loan.personId ?? loan.personName.trim().toLowerCase()}`;
+      const bucket = buckets.get(key) ?? {
+        key,
+        name: loan.personName,
+        currency: loan.currency,
+        remaining: 0,
+        total: 0,
+        count: 0,
+      };
+      bucket.remaining += loan.remainingAmount;
+      bucket.total += loan.totalAmount;
+      bucket.count += 1;
+      buckets.set(key, bucket);
+    }
+    return Array.from(buckets.values())
+      .filter(person => person.remaining > 0)
+      .sort((a, b) => b.remaining - a.remaining);
+  };
 
   const receivableAgg = aggregateByCurrency(receivables);
   const payableAgg = aggregateByCurrency(payables);
   const receivableEntries = Object.entries(receivableAgg).filter(([, a]) => a.remaining > 0);
   const payableEntries = Object.entries(payableAgg).filter(([, a]) => a.remaining > 0);
+  const receivablePeople = aggregateByPerson(receivables);
+  const payablePeople = aggregateByPerson(payables);
   const hasReceivables = receivableEntries.length > 0;
   const hasPayables = payableEntries.length > 0;
 
@@ -155,6 +179,88 @@ export function LoansPage() {
           >{tb === 'active' ? t('loan_tab_active') : t('loan_tab_settled')}</button>
         ))}
       </div>
+
+      {tab === 'active' && receivablePeople.length > 0 && (
+        <div className="px-5 pt-4">
+          <h2 className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+            <HandCoins size={11} /> Receivable by person
+          </h2>
+          <div className="space-y-2.5">
+            {receivablePeople.map((person, index) => {
+              const progress = person.total > 0 ? (person.total - person.remaining) / person.total : 0;
+              return (
+                <div
+                  key={`recv-person-${person.key}`}
+                  className="card-premium p-4 flex items-center gap-3.5 animate-fade-in"
+                  style={{ animationDelay: `${index * 40}ms` }}
+                >
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm font-bold shrink-0">
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-slate-800 truncate">{person.name}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {formatMoney(person.total - person.remaining, person.currency)} received
+                          <span className="mx-1.5">·</span>{person.count} {person.count === 1 ? 'loan' : 'loans'}
+                        </p>
+                      </div>
+                      <p className="text-[13px] font-extrabold text-emerald-600 tabular-nums shrink-0">
+                        {formatMoney(person.remaining, person.currency)}
+                      </p>
+                    </div>
+                    <div className="mt-2 h-1.5 rounded-full overflow-hidden bg-emerald-100">
+                      <div className="h-full rounded-full bg-emerald-500 transition-all duration-700" style={{ width: `${Math.round(progress * 100)}%` }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {tab === 'active' && payablePeople.length > 0 && (
+        <div className="px-5 pt-4">
+          <h2 className="text-[11px] font-bold text-red-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+            <Handshake size={11} /> Payable by person
+          </h2>
+          <div className="space-y-2.5">
+            {payablePeople.map((person, index) => {
+              const progress = person.total > 0 ? (person.total - person.remaining) / person.total : 0;
+              return (
+                <div
+                  key={`pay-person-${person.key}`}
+                  className="card-premium p-4 flex items-center gap-3.5 animate-fade-in"
+                  style={{ animationDelay: `${index * 40}ms` }}
+                >
+                  <div className="w-10 h-10 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center text-sm font-bold shrink-0">
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-slate-800 truncate">{person.name}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {formatMoney(person.total - person.remaining, person.currency)} paid
+                          <span className="mx-1.5">·</span>{person.count} {person.count === 1 ? 'loan' : 'loans'}
+                        </p>
+                      </div>
+                      <p className="text-[13px] font-extrabold text-red-500 tabular-nums shrink-0">
+                        {formatMoney(person.remaining, person.currency)}
+                      </p>
+                    </div>
+                    <div className="mt-2 h-1.5 rounded-full overflow-hidden bg-red-100">
+                      <div className="h-full rounded-full bg-red-500 transition-all duration-700" style={{ width: `${Math.round(progress * 100)}%` }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {receivables.length > 0 && (
         <div className="px-5 pt-5">

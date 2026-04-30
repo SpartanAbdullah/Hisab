@@ -125,6 +125,41 @@ export function GroupDetailPage() {
     1,
     ...Array.from(memberNet.values()).map(v => Math.abs(v)),
   );
+  const memberStats = new Map<string, { paid: number; share: number; settlement: number }>();
+  for (const member of group.members) memberStats.set(member.id, { paid: 0, share: 0, settlement: 0 });
+  for (const expense of expenses) {
+    const paidStats = memberStats.get(expense.paidBy) ?? { paid: 0, share: 0, settlement: 0 };
+    paidStats.paid += expense.amount;
+    memberStats.set(expense.paidBy, paidStats);
+
+    for (const split of expense.splits) {
+      const splitStats = memberStats.get(split.memberId) ?? { paid: 0, share: 0, settlement: 0 };
+      splitStats.share += split.amount;
+      memberStats.set(split.memberId, splitStats);
+    }
+  }
+  for (const settlement of settlements) {
+    const fromStats = memberStats.get(settlement.fromMember) ?? { paid: 0, share: 0, settlement: 0 };
+    fromStats.settlement += settlement.amount;
+    memberStats.set(settlement.fromMember, fromStats);
+
+    const toStats = memberStats.get(settlement.toMember) ?? { paid: 0, share: 0, settlement: 0 };
+    toStats.settlement += settlement.amount;
+    memberStats.set(settlement.toMember, toStats);
+  }
+  const balanceRows = group.members
+    .map(member => {
+      const stats = memberStats.get(member.id) ?? { paid: 0, share: 0, settlement: 0 };
+      return {
+        member,
+        paid: Math.round(stats.paid * 100) / 100,
+        share: Math.round(stats.share * 100) / 100,
+        settlement: Math.round(stats.settlement * 100) / 100,
+        net: Math.round((memberNet.get(member.id) ?? 0) * 100) / 100,
+      };
+    })
+    .filter(row => row.paid > 0.01 || row.share > 0.01 || row.settlement > 0.01 || Math.abs(row.net) > 0.01)
+    .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.paid - a.paid || a.member.name.localeCompare(b.member.name));
 
   const handleDelete = async () => {
     if (confirm(t('group_delete_confirm'))) {
@@ -359,46 +394,76 @@ export function GroupDetailPage() {
           )}
         </div>
       ) : tab === 'balances' ? (
-        <div className="px-5 pt-4 space-y-2">
-          {group.members.map(member => {
-            if (member.id === currentMember?.id) return null;
-            const owedToMe = debts.filter(debt => debt.from === member.id && debt.to === currentMember?.id).reduce((sum, debt) => sum + debt.amount, 0);
-            const iOwe = debts.filter(debt => debt.to === member.id && debt.from === currentMember?.id).reduce((sum, debt) => sum + debt.amount, 0);
-            // Ring visualises this member's weight in the group's outstanding
-            // imbalance: larger ring = bigger net position either way.
-            const net = memberNet.get(member.id) ?? 0;
+        <div className="px-5 pt-4 pb-44 space-y-2">
+          {balanceRows.length === 0 ? (
+            <div className="card-premium p-6 text-center animate-fade-in">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+                <Receipt size={22} />
+              </div>
+              <p className="text-sm font-semibold text-slate-700 mt-3">No balances yet</p>
+              <p className="text-[12px] text-slate-400 mt-1">Add an expense to see paid, share, and final balance for each member.</p>
+            </div>
+          ) : balanceRows.map(({ member, paid, share, net }, index) => {
             const ringProgress = Math.abs(net) / maxAbs;
             const isPositive = net > 0.01;
             const isNegative = net < -0.01;
             const ringColor = isPositive ? '#10b981' : isNegative ? '#f43f5e' : '#cbd5e1';
             return (
-              <div key={member.id} className="card-premium p-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 ${memberStatusClass(member.status, member.isOwner)}`}>
-                    {member.name.charAt(0).toUpperCase()}
+              <div
+                key={member.id}
+                className="card-premium p-4 animate-fade-in"
+                style={{ animationDelay: `${index * 30}ms` }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 ${memberStatusClass(member.status, member.isOwner)}`}>
+                      {member.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-slate-700 truncate">{member.name}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {member.isOwner ? 'owner' : member.status ?? 'guest'}
+                        {member.id === currentMember?.id ? <span className="font-semibold text-indigo-500"> · you</span> : null}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-slate-700 truncate">{member.name}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">{member.status ?? 'guest'}</p>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right">
+                      {isPositive ? (
+                        <>
+                          <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wide">Gets back</p>
+                          <p className="text-[13px] font-extrabold text-emerald-600 tabular-nums">+{formatMoney(net, group.currency)}</p>
+                        </>
+                      ) : isNegative ? (
+                        <>
+                          <p className="text-[10px] text-red-500 font-bold uppercase tracking-wide">Has to pay</p>
+                          <p className="text-[13px] font-extrabold text-red-500 tabular-nums">-{formatMoney(Math.abs(net), group.currency)}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Balance</p>
+                          <p className="text-[11px] text-slate-400">{t('group_settled')}</p>
+                        </>
+                      )}
+                    </div>
+                    <ProgressRing
+                      size={38}
+                      strokeWidth={3}
+                      progress={ringProgress}
+                      color={ringColor}
+                      trackColor="#f1f5f9"
+                    />
                   </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="text-right">
-                    {owedToMe > 0 ? (
-                      <p className="text-[12px] font-bold text-emerald-600 tabular-nums">+{formatMoney(owedToMe, group.currency)}</p>
-                    ) : iOwe > 0 ? (
-                      <p className="text-[12px] font-bold text-red-500 tabular-nums">-{formatMoney(iOwe, group.currency)}</p>
-                    ) : (
-                      <p className="text-[11px] text-slate-400">{t('group_settled')}</p>
-                    )}
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <div className="rounded-xl bg-slate-50 border border-slate-100/70 px-3 py-2">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Paid total</p>
+                    <p className="text-[12px] font-bold text-slate-700 tabular-nums mt-0.5">{formatMoney(paid, group.currency)}</p>
                   </div>
-                  <ProgressRing
-                    size={36}
-                    strokeWidth={3}
-                    progress={ringProgress}
-                    color={ringColor}
-                    trackColor="#f1f5f9"
-                  />
+                  <div className="rounded-xl bg-slate-50 border border-slate-100/70 px-3 py-2">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Share total</p>
+                    <p className="text-[12px] font-bold text-slate-700 tabular-nums mt-0.5">{formatMoney(share, group.currency)}</p>
+                  </div>
                 </div>
               </div>
             );
