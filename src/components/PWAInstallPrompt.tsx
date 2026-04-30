@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Share2, Smartphone, X } from 'lucide-react';
 import { useT } from '../lib/i18n';
+import { isStandaloneRuntime, shouldShowPwaInstallPrompts } from '../lib/runtime';
 
 const DISMISS_KEY = 'hisaab_pwa_dismissed';
 
@@ -9,24 +10,13 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-interface NavigatorWithStandalone extends Navigator {
-  standalone?: boolean;
-}
-
 type InstallMode = 'native' | 'ios' | 'android' | null;
-
-function isStandaloneMode() {
-  if (typeof window === 'undefined') return false;
-  const navigatorWithStandalone = window.navigator as NavigatorWithStandalone;
-  return window.matchMedia('(display-mode: standalone)').matches || navigatorWithStandalone.standalone === true;
-}
 
 function getInstallPlatform(): 'ios' | 'android' | 'other' {
   if (typeof window === 'undefined') return 'other';
 
   const userAgent = window.navigator.userAgent.toLowerCase();
-  const navigatorWithStandalone = window.navigator as NavigatorWithStandalone;
-  const isDesktopIpad = userAgent.includes('macintosh') && (navigatorWithStandalone.maxTouchPoints ?? 0) > 1;
+  const isDesktopIpad = userAgent.includes('macintosh') && window.navigator.maxTouchPoints > 1;
 
   if (/iphone|ipad|ipod/.test(userAgent) || isDesktopIpad) return 'ios';
   if (/android/.test(userAgent)) return 'android';
@@ -37,10 +27,15 @@ export function PWAInstallPrompt() {
   const t = useT();
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem(DISMISS_KEY) === '1');
-  const [installed, setInstalled] = useState(() => isStandaloneMode());
+  const [installed, setInstalled] = useState(() => !shouldShowPwaInstallPrompts());
   const [showFallback, setShowFallback] = useState(false);
 
   useEffect(() => {
+    if (!shouldShowPwaInstallPrompts()) {
+      setInstalled(true);
+      return;
+    }
+
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setDeferredPrompt(event as BeforeInstallPromptEvent);
@@ -57,7 +52,7 @@ export function PWAInstallPrompt() {
       removeListener?: (listener: (event: MediaQueryListEvent) => void) => void;
     };
     const handleStandaloneChange = (event?: MediaQueryListEvent) => {
-      if (event?.matches ?? mediaQuery.matches) {
+      if ((event?.matches ?? mediaQuery.matches) || isStandaloneRuntime()) {
         setInstalled(true);
         setDeferredPrompt(null);
       }
