@@ -19,6 +19,14 @@ interface SupabaseAuthState {
   getProfile: () => Promise<Record<string, unknown> | null>;
 }
 
+function buildAuthRedirectUrl(path = '/'): string {
+  const configuredUrl = import.meta.env.VITE_PUBLIC_APP_URL as string | undefined;
+  const fallbackUrl = typeof window === 'undefined' ? '' : window.location.origin;
+  const baseUrl = (configuredUrl?.trim() || fallbackUrl).replace(/\/+$/, '');
+  const nextPath = path.startsWith('/') ? path : `/${path}`;
+  return baseUrl ? `${baseUrl}${nextPath}` : nextPath;
+}
+
 export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
   user: null,
   session: null,
@@ -53,7 +61,13 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
 
   signUp: async (email, password) => {
     set({ error: null });
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: buildAuthRedirectUrl('/'),
+      },
+    });
 
     if (error) {
       set({ error: error.message });
