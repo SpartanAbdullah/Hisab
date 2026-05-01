@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, ChevronRight, Users, HandCoins, Handshake } from 'lucide-react';
+import { Plus, ChevronRight, Users, HandCoins, Handshake, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
@@ -11,8 +11,10 @@ import { EmptyState } from '../components/EmptyState';
 import { ProgressRing } from '../components/ProgressRing';
 import { Modal } from '../components/Modal';
 import { TransactionItem } from '../components/TransactionItem';
+import { PaymentReminderModal } from '../components/PaymentReminderModal';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { getOldestIsoDate, getReminderAge, type PaymentReminderDirection } from '../lib/paymentReminders';
 import { AddLoanModal } from './AddLoanModal';
 import type { Currency, Loan } from '../db';
 
@@ -32,9 +34,17 @@ type LoanGroup = LoanAggregate & {
   loans: Loan[];
 };
 
+type ReminderTarget = {
+  personName: string;
+  amount: number;
+  currency: Currency;
+  direction: PaymentReminderDirection;
+  startedAt: string | null;
+};
+
 export function LoansPage() {
   const { loans, loadLoans } = useLoanStore();
-  const { loadSchedules } = useEmiStore();
+  const { schedules, loadSchedules } = useEmiStore();
   const { transactions, loadTransactions } = useTransactionStore();
   const { loadAccounts } = useAccountStore();
   const navigate = useNavigate();
@@ -42,6 +52,7 @@ export function LoansPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [tab, setTab] = useState<'active' | 'settled'>('active');
   const [selectedGroup, setSelectedGroup] = useState<LoanGroup | null>(null);
+  const [reminderTarget, setReminderTarget] = useState<ReminderTarget | null>(null);
 
   useEffect(() => {
     void loadLoans();
@@ -104,6 +115,34 @@ export function LoansPage() {
     .filter((transaction) => transaction.relatedLoanId && selectedLoanIds.has(transaction.relatedLoanId))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  const getGroupReminderDate = (group: LoanGroup) => {
+    const loanIds = new Set(group.loans.map((loan) => loan.id));
+    const overdueScheduleDate = getOldestIsoDate(
+      schedules
+        .filter((schedule) => loanIds.has(schedule.loanId) && schedule.status !== 'paid')
+        .map((schedule) => schedule.dueDate),
+    );
+    return overdueScheduleDate ?? getOldestIsoDate(group.loans.map((loan) => loan.createdAt));
+  };
+
+  const formatReminderMeta = (startedAt: string | null) => {
+    const age = getReminderAge(startedAt);
+    if (age.days === null) return t('reminder_no_due_date');
+    if (age.isOverdue) return t('reminder_overdue_days').replace('{count}', String(age.days));
+    return t('reminder_open_days').replace('{count}', String(age.days));
+  };
+
+  const openReminder = (group: LoanGroup) => {
+    setSelectedGroup(null);
+    setReminderTarget({
+      personName: group.name,
+      amount: group.remaining,
+      currency: group.currency,
+      direction: group.direction === 'given' ? 'receivable' : 'payable',
+      startedAt: getGroupReminderDate(group),
+    });
+  };
+
   const renderSummaryCard = (direction: LoanDirection, currency: string, aggregate: LoanAggregate) => {
     const isGiven = direction === 'given';
     const progress = aggregate.total > 0 ? (aggregate.total - aggregate.remaining) / aggregate.total : 0;
@@ -141,43 +180,66 @@ export function LoansPage() {
     const settledAmount = group.total - group.remaining;
     const progress = group.total > 0 ? settledAmount / group.total : 0;
     const primaryAmount = tab === 'active' ? group.remaining : group.total;
+    const reminderStartedAt = getGroupReminderDate(group);
+    const reminderAge = getReminderAge(reminderStartedAt);
+    const showReminder = tab === 'active' && group.remaining > 0 && group.name.trim() && reminderAge.isOverdue;
+
     return (
-      <button
+      <div
         key={group.key}
-        onClick={() => setSelectedGroup(group)}
-        className="w-full card-premium p-4 flex items-center gap-3.5 text-left animate-fade-in active:scale-[0.99]"
+        className="w-full card-premium p-4 animate-fade-in"
         style={{ animationDelay: `${index * 40}ms` }}
       >
-        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold shrink-0 ${
-          isGiven ? 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 text-emerald-600' : 'bg-gradient-to-br from-red-50 to-red-100/50 text-red-500'
-        }`}>
-          {group.name.charAt(0).toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-semibold text-[13px] text-slate-800 tracking-tight truncate">{group.name}</p>
-              <p className={`text-[10px] font-bold uppercase tracking-wider mt-0.5 ${isGiven ? 'text-emerald-600' : 'text-red-500'}`}>
-                {isGiven ? t('loan_receivable') : t('loan_payable')} - {group.currency}
+        <button
+          type="button"
+          onClick={() => setSelectedGroup(group)}
+          className="w-full flex items-center gap-3.5 text-left active:opacity-80 transition-opacity"
+        >
+          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold shrink-0 ${
+            isGiven ? 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 text-emerald-600' : 'bg-gradient-to-br from-red-50 to-red-100/50 text-red-500'
+          }`}>
+            {group.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-[13px] text-slate-800 tracking-tight truncate">{group.name}</p>
+                <p className={`text-[10px] font-bold uppercase tracking-wider mt-0.5 ${isGiven ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {isGiven ? t('loan_receivable') : t('loan_payable')} - {group.currency}
+                </p>
+              </div>
+              <p className={`text-[13px] font-extrabold tabular-nums shrink-0 ${isGiven ? 'text-emerald-600' : 'text-red-500'}`}>
+                {formatMoney(primaryAmount, group.currency)}
               </p>
             </div>
-            <p className={`text-[13px] font-extrabold tabular-nums shrink-0 ${isGiven ? 'text-emerald-600' : 'text-red-500'}`}>
-              {formatMoney(primaryAmount, group.currency)}
+            <div className="flex items-center gap-2 mt-2">
+              <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isGiven ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                <div className={`h-full rounded-full transition-all duration-700 ${isGiven ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${Math.round(progress * 100)}%` }} />
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium tabular-nums">{Math.round(progress * 100)}%</span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {formatMoney(settledAmount, group.currency)} {isGiven ? 'received' : 'paid'}
+              <span className="mx-1.5">-</span>{group.count} {group.count === 1 ? 'loan' : 'loans'}
             </p>
           </div>
-          <div className="flex items-center gap-2 mt-2">
-            <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isGiven ? 'bg-emerald-100' : 'bg-red-100'}`}>
-              <div className={`h-full rounded-full transition-all duration-700 ${isGiven ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${Math.round(progress * 100)}%` }} />
-            </div>
-            <span className="text-[10px] text-slate-400 font-medium tabular-nums">{Math.round(progress * 100)}%</span>
+          <ChevronRight size={16} className="text-slate-300 shrink-0" />
+        </button>
+
+        {showReminder ? (
+          <div className={`mt-3 rounded-2xl px-3 py-2.5 flex items-center gap-2 ${isGiven ? 'bg-emerald-50/70' : 'bg-red-50/70'}`}>
+            <Bell size={13} className={isGiven ? 'text-emerald-600' : 'text-red-500'} />
+            <p className="flex-1 text-[11px] text-slate-500 font-medium">{formatReminderMeta(reminderStartedAt)}</p>
+            <button
+              type="button"
+              onClick={() => openReminder(group)}
+              className={`rounded-xl px-3 py-1.5 text-[11px] font-bold active:scale-95 transition-all ${isGiven ? 'bg-white text-emerald-600' : 'bg-white text-red-500'}`}
+            >
+              {t('reminder_cta')}
+            </button>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {formatMoney(settledAmount, group.currency)} {isGiven ? 'received' : 'paid'}
-            <span className="mx-1.5">-</span>{group.count} {group.count === 1 ? 'loan' : 'loans'}
-          </p>
-        </div>
-        <ChevronRight size={16} className="text-slate-300 shrink-0" />
-      </button>
+        ) : null}
+      </div>
     );
   };
 
@@ -250,7 +312,7 @@ export function LoansPage() {
       <Modal open={!!selectedGroup} onClose={() => setSelectedGroup(null)} title={selectedGroup?.name ?? ''}>
         {selectedGroup ? (
           <div className="space-y-5">
-            <LoanGroupSummary group={selectedGroup} tab={tab} />
+            <LoanGroupSummary group={selectedGroup} tab={tab} onRemind={tab === 'active' && selectedGroup.remaining > 0 ? () => openReminder(selectedGroup) : undefined} reminderMeta={formatReminderMeta(getGroupReminderDate(selectedGroup))} />
 
             <div>
               <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Individual loans</h3>
@@ -280,12 +342,24 @@ export function LoansPage() {
         ) : null}
       </Modal>
 
+      {reminderTarget ? (
+        <PaymentReminderModal
+          open={!!reminderTarget}
+          onClose={() => setReminderTarget(null)}
+          personName={reminderTarget.personName}
+          amount={reminderTarget.amount}
+          currency={reminderTarget.currency}
+          direction={reminderTarget.direction}
+          startedAt={reminderTarget.startedAt}
+        />
+      ) : null}
+
       <AddLoanModal open={showAdd} onClose={() => setShowAdd(false)} />
     </div>
   );
 }
 
-function LoanGroupSummary({ group, tab }: { group: LoanGroup; tab: 'active' | 'settled' }) {
+function LoanGroupSummary({ group, tab, onRemind, reminderMeta }: { group: LoanGroup; tab: 'active' | 'settled'; onRemind?: () => void; reminderMeta?: string }) {
   const t = useT();
   const isGiven = group.direction === 'given';
   const settledAmount = group.total - group.remaining;
@@ -305,6 +379,18 @@ function LoanGroupSummary({ group, tab }: { group: LoanGroup; tab: 'active' | 's
       <div className={`mt-3 h-2 rounded-full overflow-hidden ${isGiven ? 'bg-emerald-100' : 'bg-red-100'}`}>
         <div className={`h-full rounded-full ${isGiven ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${Math.round(progress * 100)}%` }} />
       </div>
+      {onRemind ? (
+        <div className="mt-3 flex items-center gap-2">
+          {reminderMeta ? <p className="flex-1 text-[11px] text-slate-500">{reminderMeta}</p> : null}
+          <button
+            type="button"
+            onClick={onRemind}
+            className={`rounded-xl px-3.5 py-2 text-[11px] font-bold active:scale-95 transition-all ${isGiven ? 'bg-white text-emerald-600' : 'bg-white text-red-500'}`}
+          >
+            {t('reminder_cta')}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

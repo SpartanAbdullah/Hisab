@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { format, isPast } from 'date-fns';
-import { AlertCircle, CheckCircle, Clock, RotateCcw } from 'lucide-react';
+import { AlertCircle, Bell, CheckCircle, Clock, RotateCcw } from 'lucide-react';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -14,12 +14,14 @@ import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { TransactionItem } from '../components/TransactionItem';
 import { EditTransactionModal } from '../components/EditTransactionModal';
+import { PaymentReminderModal } from '../components/PaymentReminderModal';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { RepaymentModal } from './RepaymentModal';
 import { SettleLinkedLoanModal } from './SettleLinkedLoanModal';
 import { isGroupLinkedNote } from '../lib/internalNotes';
 import { resolvePersonName } from '../lib/resolvePersonName';
+import { getOldestIsoDate } from '../lib/paymentReminders';
 import type { EmiSchedule, Transaction, SettlementRequest } from '../db';
 
 export function LoanDetailPage() {
@@ -35,6 +37,7 @@ export function LoanDetailPage() {
   const t = useT();
   const [showRepayment, setShowRepayment] = useState(false);
   const [showSettleLinked, setShowSettleLinked] = useState(false);
+  const [showReminder, setShowReminder] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedEmi, setSelectedEmi] = useState<(EmiSchedule & { isOverdue: boolean }) | null>(null);
 
@@ -76,6 +79,11 @@ export function LoanDetailPage() {
     ...schedule,
     isOverdue: schedule.status === 'upcoming' && isPast(new Date(schedule.dueDate)),
   }));
+  const reminderStartedAt = getOldestIsoDate(
+    enrichedEmis
+      .filter((schedule) => schedule.status !== 'paid' && isPast(new Date(schedule.dueDate)))
+      .map((schedule) => schedule.dueDate),
+  ) ?? loan.createdAt;
 
   const refreshLoanDetail = () => {
     void loadLoans();
@@ -93,21 +101,31 @@ export function LoanDetailPage() {
           <div className="flex items-center gap-2">
             <LanguageToggle />
             {loan.status === 'active' ? (
-              canSettleLinked ? (
-                <button
-                  onClick={() => setShowSettleLinked(true)}
-                  className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5"
-                >
-                  <RotateCcw size={13} strokeWidth={2.5} /> {t('stl_settle_cta')}
-                </button>
-              ) : isLinkedLoan ? null : (
-                <button
-                  onClick={() => setShowRepayment(true)}
-                  className="bg-emerald-50 text-emerald-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-500/5"
-                >
-                  <RotateCcw size={13} strokeWidth={2.5} /> {t('loan_repay')}
-                </button>
-              )
+              <>
+                {loan.remainingAmount > 0 ? (
+                  <button
+                    onClick={() => setShowReminder(true)}
+                    className="bg-amber-50 text-amber-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-amber-500/5"
+                  >
+                    <Bell size={13} strokeWidth={2.5} /> {t('reminder_cta')}
+                  </button>
+                ) : null}
+                {canSettleLinked ? (
+                  <button
+                    onClick={() => setShowSettleLinked(true)}
+                    className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5"
+                  >
+                    <RotateCcw size={13} strokeWidth={2.5} /> {t('stl_settle_cta')}
+                  </button>
+                ) : isLinkedLoan ? null : (
+                  <button
+                    onClick={() => setShowRepayment(true)}
+                    className="bg-emerald-50 text-emerald-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-500/5"
+                  >
+                    <RotateCcw size={13} strokeWidth={2.5} /> {t('loan_repay')}
+                  </button>
+                )}
+              </>
             ) : null}
           </div>
         }
@@ -268,6 +286,15 @@ export function LoanDetailPage() {
         />
       ) : null}
       <EditTransactionModal open={!!selectedTransaction} transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} />
+      <PaymentReminderModal
+        open={showReminder}
+        onClose={() => setShowReminder(false)}
+        personName={displayName || loan.personName}
+        amount={loan.remainingAmount}
+        currency={loan.currency}
+        direction={loan.type === 'given' ? 'receivable' : 'payable'}
+        startedAt={reminderStartedAt}
+      />
       {isLinkedLoan ? (
         <SettleLinkedLoanModal
           open={showSettleLinked}

@@ -124,6 +124,60 @@ const S = {
   loan_desc_active: { ur: 'Jab kisi ko paisa dein ya lein, yahan dikhega', en: 'Loans will appear here' },
   loan_desc_settled: { ur: 'Jab koi qarz settle hoga, yahan aayega', en: 'Settled loans will appear here' },
 
+  // Soft payment reminders
+  reminder_title: { ur: 'Reminder Message', en: 'Reminder Message' },
+  reminder_cta: { ur: 'Remind', en: 'Remind' },
+  reminder_copy: { ur: 'Copy', en: 'Copy' },
+  reminder_share: { ur: 'Share', en: 'Share' },
+  reminder_copied: { ur: 'Reminder copied', en: 'Reminder copied' },
+  reminder_copy_failed: { ur: 'Copy nahi ho saka', en: 'Could not copy' },
+  reminder_share_failed: { ur: 'Share nahi ho saka', en: 'Could not share' },
+  reminder_tone: { ur: 'Tone', en: 'Tone' },
+  reminder_tone_friendly: { ur: 'Friendly', en: 'Friendly' },
+  reminder_tone_neutral: { ur: 'Neutral', en: 'Neutral' },
+  reminder_tone_formal: { ur: 'Formal', en: 'Formal' },
+  reminder_preview: { ur: 'Preview', en: 'Preview' },
+  reminder_they_owe_me: { ur: 'They owe me', en: 'They owe me' },
+  reminder_i_owe_them: { ur: 'I owe them', en: 'I owe them' },
+  reminder_manual_only: {
+    ur: 'Ye message auto-send nahi hota. Copy ya share karke manually bhejein.',
+    en: 'This will not auto-send. Copy or share it manually.',
+  },
+  reminder_no_due_date: { ur: 'No exact due date', en: 'No exact due date' },
+  reminder_open_today: { ur: 'opened today', en: 'opened today' },
+  reminder_open_days: { ur: 'open for {count} days', en: 'open for {count} days' },
+  reminder_overdue_days: { ur: '{count} days overdue', en: '{count} days overdue' },
+  reminder_duration_fallback: { ur: 'earlier', en: 'earlier' },
+  reminder_duration_today: { ur: 'today', en: 'today' },
+  reminder_duration_yesterday: { ur: '1 day ago', en: '1 day ago' },
+  reminder_duration_days: { ur: '{count} days ago', en: '{count} days ago' },
+  reminder_duration_month: { ur: '1 month ago', en: '1 month ago' },
+  reminder_duration_months: { ur: '{count} months ago', en: '{count} months ago' },
+  reminder_receivable_friendly: {
+    ur: "Hey {name} \u{1F44B}\nJust a quick reminder about the {amount} from {duration}.\nLet me know when it's convenient for you \u{1F44D}",
+    en: "Hey {name} \u{1F44B}\nJust a quick reminder about the {amount} from {duration}.\nLet me know when it's convenient for you \u{1F44D}",
+  },
+  reminder_receivable_neutral: {
+    ur: 'Hi {name}, this is a reminder that {amount} is still pending from {duration}. Please update me when possible.',
+    en: 'Hi {name}, this is a reminder that {amount} is still pending from {duration}. Please update me when possible.',
+  },
+  reminder_receivable_formal: {
+    ur: 'Dear {name}, this is a polite reminder regarding the pending amount of {amount}, overdue since {duration}. Kindly arrange repayment when convenient.',
+    en: 'Dear {name}, this is a polite reminder regarding the pending amount of {amount}, overdue since {duration}. Kindly arrange repayment when convenient.',
+  },
+  reminder_payable_friendly: {
+    ur: "Hey {name} \u{1F44B}\nJust noting that I still have {amount} pending to pay you from {duration}. I'll update you once it's cleared.",
+    en: "Hey {name} \u{1F44B}\nJust noting that I still have {amount} pending to pay you from {duration}. I'll update you once it's cleared.",
+  },
+  reminder_payable_neutral: {
+    ur: "Hi {name}, I have {amount} pending to pay you from {duration}. I'll update you once payment is made.",
+    en: "Hi {name}, I have {amount} pending to pay you from {duration}. I'll update you once payment is made.",
+  },
+  reminder_payable_formal: {
+    ur: 'Dear {name}, this is to acknowledge that {amount} remains payable from my side from {duration}. I will update you once it is settled.',
+    en: 'Dear {name}, this is to acknowledge that {amount} remains payable from my side from {duration}. I will update you once it is settled.',
+  },
+
   // Repayment modal
   repay_title: { ur: 'Wapsi Karo', en: 'Make Repayment' },
   repay_amount: { ur: 'Kitna Dena Hai?', en: 'How Much?' },
