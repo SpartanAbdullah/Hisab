@@ -471,13 +471,25 @@ const S = {
   onboard_demo_desc: { ur: 'Accounts, transactions, loans — sab tayar milega.', en: 'Accounts, transactions, loans — all preloaded.' },
   onboard_fresh_title: { ur: 'Fresh Start Karo', en: 'Start Fresh' },
   onboard_fresh_sub: { ur: 'Khali slate, apna hisaab', en: 'Clean slate, your own records' },
-  onboard_fresh_desc: { ur: 'Apne accounts khud banao aur shuru karo.', en: 'Create your accounts and start tracking.' },
+  onboard_fresh_desc: { ur: 'Seedha apne real accounts se shuru karein. Demo data nahi hoga.', en: 'Start directly with your real accounts. No demo data will be added.' },
+  onboard_fresh_tip_cash: { ur: 'Sabse pehle apna cash wallet add karein.', en: 'Add your cash wallet first.' },
+  onboard_fresh_tip_bank: { ur: 'Phir apna main bank account add karein.', en: 'Add your main bank account next.' },
+  onboard_fresh_tip_savings: { ur: 'Savings account ho to woh bhi add kar lein.', en: 'Add a savings account if you use one.' },
+  onboard_fresh_tip_loans: { ur: 'Jo paisa diya ya liya hai, loans mein track karein.', en: 'Track money lent or borrowed from the loans area.' },
+  onboard_fresh_tip_transactions: { ur: 'Uske baad daily transactions record karna shuru karein.', en: 'Then start recording daily transactions.' },
   onboard_loading: { ur: 'Aapka Hisaab tayyar ho raha hai...', en: 'Setting up your Hisaab...' },
   onboard_back: { ur: '← Wapas Jayen', en: '← Go Back' },
 
   // ── Account Detail ──
   acct_add_opening_bal: { ur: 'Opening Balance Daalein', en: 'Add Opening Balance' },
   acct_opening_bal_prompt: { ur: 'Is account ka opening balance kitna hai?', en: 'What\'s the opening balance of this account?' },
+  acct_opening_title: { ur: 'Opening Balance', en: 'Opening Balance' },
+  acct_opening_help: { ur: 'Yeh sirf account ka starting balance set karega. Is mein expense, income ya category select karne ki zaroorat nahi.', en: 'This only sets the account starting balance. No expense, income, or category selection is needed.' },
+  acct_opening_amount: { ur: 'Amount', en: 'Amount' },
+  acct_opening_date: { ur: 'Date', en: 'Date' },
+  acct_opening_note_placeholder: { ur: 'Optional note', en: 'Optional note' },
+  acct_opening_save: { ur: 'Opening Balance Save Karein', en: 'Save Opening Balance' },
+  acct_opening_saved: { ur: 'Opening balance save ho gaya', en: 'Opening balance saved' },
 
   // ── Search ──
   search_placeholder: { ur: 'Kharcha dhoondo...', en: 'Search expenses...' },

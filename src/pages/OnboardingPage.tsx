@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wallet, ArrowRight, Sparkles, Play, Shield, Globe, Users, BarChart3 } from 'lucide-react';
+import { Wallet, ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle } from 'lucide-react';
 import { useOnboardingStore } from '../stores/onboardingStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useI18nStore, useT } from '../lib/i18n';
@@ -7,7 +7,7 @@ import { Button } from '../components/Button';
 import type { Currency, AppMode } from '../db';
 
 export function OnboardingPage() {
-  const { completeOnboarding, seedDemoData } = useOnboardingStore();
+  const { completeOnboarding } = useOnboardingStore();
   const { setMode } = useAppModeStore();
   const { lang, setLang } = useI18nStore();
   const t = useT();
@@ -17,12 +17,11 @@ export function OnboardingPage() {
   const [selectedMode, setSelectedMode] = useState<AppMode>('full_tracker');
   const [loading, setLoading] = useState(false);
 
-  const handleStart = async (withDemo: boolean) => {
+  const handleStart = async () => {
     if (!name.trim()) return;
     setLoading(true);
     setMode(selectedMode);
-    if (withDemo) await seedDemoData(name.trim(), currency);
-    else await completeOnboarding(name.trim(), currency);
+    await completeOnboarding(name.trim(), currency);
   };
 
   // Language toggle — shown on every step
@@ -210,7 +209,7 @@ export function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 4: Start Mode (Demo or Fresh) */}
+        {/* Step 4: Fresh Start */}
         {step === 4 && (
           <div className="flex-1 flex flex-col px-8 pt-20 animate-fade-in">
             <div className="mb-8">
@@ -219,20 +218,7 @@ export function OnboardingPage() {
               <p className="text-white/60 text-[13px] mt-2">{t('onboard_how_sub')}</p>
             </div>
             <div className="space-y-4 flex-1">
-              <button onClick={() => handleStart(true)} disabled={loading}
-                className="w-full bg-white/8 border-2 border-white/15 rounded-3xl p-6 text-left transition-all active:scale-[0.98] backdrop-blur-sm hover:bg-white/12">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-11 h-11 rounded-2xl bg-amber-500/15 flex items-center justify-center backdrop-blur-sm">
-                    <Sparkles size={20} className="text-amber-300" strokeWidth={1.5} />
-                  </div>
-                  <div>
-                    <p className="font-bold text-[14px] tracking-tight text-white">{t('onboard_demo_title')}</p>
-                    <p className="text-[11px] text-white/50">{t('onboard_demo_sub')}</p>
-                  </div>
-                </div>
-                <p className="text-[12px] text-white/40 leading-relaxed">{t('onboard_demo_desc')}</p>
-              </button>
-              <button onClick={() => handleStart(false)} disabled={loading}
+              <button onClick={handleStart} disabled={loading}
                 className="w-full bg-white/8 border-2 border-white/15 rounded-3xl p-6 text-left transition-all active:scale-[0.98] backdrop-blur-sm hover:bg-white/12">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 flex items-center justify-center backdrop-blur-sm">
@@ -244,6 +230,20 @@ export function OnboardingPage() {
                   </div>
                 </div>
                 <p className="text-[12px] text-white/40 leading-relaxed">{t('onboard_fresh_desc')}</p>
+                <div className="mt-5 space-y-2.5">
+                  {[
+                    t('onboard_fresh_tip_cash'),
+                    t('onboard_fresh_tip_bank'),
+                    t('onboard_fresh_tip_savings'),
+                    t('onboard_fresh_tip_loans'),
+                    t('onboard_fresh_tip_transactions'),
+                  ].map((tip) => (
+                    <div key={tip} className="flex items-start gap-2.5">
+                      <CheckCircle size={14} className="text-emerald-300 mt-0.5 shrink-0" />
+                      <p className="text-[11px] text-white/65 leading-snug">{tip}</p>
+                    </div>
+                  ))}
+                </div>
               </button>
             </div>
             {loading && (

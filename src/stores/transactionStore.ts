@@ -14,6 +14,7 @@ interface BaseTransactionInput {
   amount: number;
   category?: string;
   notes?: string;
+  createdAt?: string;
 }
 
 interface IncomeInput extends BaseTransactionInput {
@@ -66,6 +67,11 @@ interface GoalContributionInput extends BaseTransactionInput {
   conversionRate?: number;
 }
 
+interface OpeningBalanceInput extends BaseTransactionInput {
+  type: 'opening_balance';
+  destinationAccountId: string;
+}
+
 export type TransactionInput =
   | IncomeInput
   | ExpenseInput
@@ -73,7 +79,8 @@ export type TransactionInput =
   | LoanGivenInput
   | LoanTakenInput
   | RepaymentInput
-  | GoalContributionInput;
+  | GoalContributionInput
+  | OpeningBalanceInput;
 
 interface TransactionState {
   transactions: Transaction[];
@@ -640,6 +647,16 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             }
             break;
           }
+
+          case 'opening_balance': {
+            const destAccount = accountStore.getAccount(input.destinationAccountId);
+            if (!destAccount) throw new Error('Destination account not found');
+            currency = destAccount.currency;
+            destinationAccountId = input.destinationAccountId;
+            await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+            description = `Opening Balance — ${currency} ${input.amount} in ${destAccount.name}`;
+            break;
+          }
         }
 
         const transaction: Transaction = {
@@ -656,7 +673,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           conversionRate,
           category: input.category ?? '',
           notes: input.notes ?? '',
-          createdAt: new Date().toISOString(),
+          createdAt: input.createdAt ?? new Date().toISOString(),
         };
 
         await trackedAddTransaction(scope, transaction);
@@ -668,7 +685,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
     // Post-commit: activity log is a secondary audit trail. Its failure must
     // NOT roll back real money (which has already moved successfully).
-    await logActivitySafe('transaction_created', description, transaction.id, 'transaction');
+    await logActivitySafe(
+      transaction.type === 'opening_balance' ? 'opening_balance' : 'transaction_created',
+      description,
+      transaction.id,
+      'transaction',
+    );
 
     return transaction;
   },

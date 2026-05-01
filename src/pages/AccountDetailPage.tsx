@@ -8,6 +8,7 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { TransactionItem } from '../components/TransactionItem';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { EmptyState } from '../components/EmptyState';
+import { Modal } from '../components/Modal';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
@@ -66,6 +67,11 @@ export function AccountDetailPage() {
   const toast = useToast();
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
+  const [showOpeningBalance, setShowOpeningBalance] = useState(false);
+  const [openingAmount, setOpeningAmount] = useState('');
+  const [openingDate, setOpeningDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [openingNote, setOpeningNote] = useState('');
+  const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [showMenu, setShowMenu] = useState(false);
   const [showRename, setShowRename] = useState(false);
@@ -109,6 +115,35 @@ export function AccountDetailPage() {
   ];
 
   const filteredTxns = filterByTime(accountTxns, timeFilter);
+
+  const closeOpeningBalance = () => {
+    setShowOpeningBalance(false);
+    setOpeningAmount('');
+    setOpeningDate(new Date().toISOString().slice(0, 10));
+    setOpeningNote('');
+  };
+
+  const saveOpeningBalance = async () => {
+    const amount = parseFloat(openingAmount);
+    if (!amount || amount <= 0) return;
+    setSavingOpeningBalance(true);
+    try {
+      await useTransactionStore.getState().processTransaction({
+        type: 'opening_balance',
+        amount,
+        destinationAccountId: account.id,
+        notes: openingNote.trim() || 'Opening Balance',
+        createdAt: openingDate ? new Date(`${openingDate}T12:00:00`).toISOString() : undefined,
+      });
+      await Promise.all([loadAccounts(), loadTransactions()]);
+      toast.show({ type: 'success', title: t('acct_opening_saved') });
+      closeOpeningBalance();
+    } catch (err) {
+      toast.show({ type: 'error', title: err instanceof Error ? err.message : 'Failed' });
+    } finally {
+      setSavingOpeningBalance(false);
+    }
+  };
 
   return (
     <div className="page-shell">
@@ -233,7 +268,7 @@ export function AccountDetailPage() {
               <Wallet size={20} className="text-indigo-500" />
             </div>
             <p className="text-[13px] font-bold text-slate-700 mb-1">{t('acct_opening_bal_prompt')}</p>
-            <button onClick={() => setShowAdd(true)}
+            <button onClick={() => setShowOpeningBalance(true)}
               className="btn-gradient rounded-2xl px-6 py-3 text-[12px] font-bold shadow-md shadow-indigo-500/20">
               {t('acct_add_opening_bal')}
             </button>
@@ -316,6 +351,49 @@ export function AccountDetailPage() {
       </div>
 
       <QuickEntry open={showAdd} onClose={() => setShowAdd(false)} />
+      <Modal open={showOpeningBalance} onClose={closeOpeningBalance} title={t('acct_opening_title')}
+        footer={
+          <button onClick={saveOpeningBalance} disabled={savingOpeningBalance || !parseFloat(openingAmount) || !openingDate}
+            className="w-full btn-gradient rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 transition-all">
+            {savingOpeningBalance ? t('quick_processing') : t('acct_opening_save')}
+          </button>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-[12px] text-slate-500 leading-relaxed">{t('acct_opening_help')}</p>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('acct_opening_amount')}</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={openingAmount}
+              onChange={e => setOpeningAmount(e.target.value)}
+              placeholder="0.00"
+              autoFocus
+              className="w-full border border-slate-200/60 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('acct_opening_date')}</label>
+            <input
+              type="date"
+              value={openingDate}
+              onChange={e => setOpeningDate(e.target.value)}
+              className="w-full border border-slate-200/60 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_note')}</label>
+            <input
+              value={openingNote}
+              onChange={e => setOpeningNote(e.target.value)}
+              placeholder={t('acct_opening_note_placeholder')}
+              className="w-full border border-slate-200/60 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all"
+            />
+          </div>
+        </div>
+      </Modal>
       <EditTransactionModal open={!!selectedTransaction} transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} />
     </div>
   );
