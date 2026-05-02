@@ -5,8 +5,6 @@ import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useGoalStore } from '../stores/goalStore';
-import { useActivityStore } from '../stores/activityStore';
-import { useEmiStore } from '../stores/emiStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { AccountCard } from '../components/AccountCard';
 import { TransactionItem } from '../components/TransactionItem';
@@ -20,13 +18,21 @@ import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 
+function waitForNextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      resolve();
+      return;
+    }
+    window.requestAnimationFrame(() => window.setTimeout(resolve, 0));
+  });
+}
+
 export function HomePage() {
   const { accounts, loadAccounts } = useAccountStore();
   const { transactions, loadTransactions } = useTransactionStore();
   const { loans, loadLoans } = useLoanStore();
   const { goals, loadGoals } = useGoalStore();
-  const { loadActivities } = useActivityStore();
-  const { loadSchedules } = useEmiStore();
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
   const navigate = useNavigate();
   const t = useT();
@@ -34,20 +40,18 @@ export function HomePage() {
 
   const userName = localStorage.getItem('hisaab_user_name') ?? 'User';
 
-  // Surface load failures as a retry-able banner instead of leaving the user
-  // staring at a half-empty dashboard. Uses Promise.all so any individual
-  // store failure flags the whole batch; retry re-runs everything.
+  // Load account balances first so the mobile dashboard can paint its core
+  // money view before supporting widgets compete for network/CPU.
   const loadEverything = useCallback(async () => {
+    await loadAccounts();
+    await waitForNextPaint();
     await Promise.all([
-      loadAccounts(),
       loadTransactions(),
       loadLoans(),
       loadGoals(),
-      loadActivities(),
-      loadSchedules(),
       loadExpenses(),
     ]);
-  }, [loadAccounts, loadTransactions, loadLoans, loadGoals, loadActivities, loadSchedules, loadExpenses]);
+  }, [loadAccounts, loadTransactions, loadLoans, loadGoals, loadExpenses]);
 
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(loadEverything);
 
