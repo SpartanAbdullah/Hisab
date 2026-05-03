@@ -4,7 +4,8 @@ import { useOnboardingStore } from '../stores/onboardingStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useI18nStore, useT } from '../lib/i18n';
 import { Button } from '../components/Button';
-import type { Currency, AppMode } from '../db';
+import { SUPPORTED_CURRENCIES, type Currency, type AppMode } from '../db';
+import { currencyMeta } from '../lib/design-tokens';
 
 export function OnboardingPage() {
   const { completeOnboarding } = useOnboardingStore();
@@ -94,14 +95,17 @@ export function OnboardingPage() {
               <div>
                 <label className="block text-[11px] text-white/50 font-medium uppercase tracking-widest mb-2">{t('onboard_currency_label')}</label>
                 <div className="grid grid-cols-2 gap-3">
-                  {([{ value: 'AED' as Currency, label: 'AED', sub: 'UAE Dirham', flag: '🇦🇪' }, { value: 'PKR' as Currency, label: 'PKR', sub: 'Pakistani Rupee', flag: '🇵🇰' }]).map(c => (
-                    <button key={c.value} type="button" onClick={() => setCurrency(c.value)}
-                      className={`p-4 rounded-2xl border-2 text-left transition-all duration-200 backdrop-blur-sm ${currency === c.value ? 'border-white/40 bg-white/15 scale-[1.02] shadow-lg shadow-white/5' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
-                      <span className="text-2xl">{c.flag}</span>
-                      <p className="font-bold text-[14px] mt-2 tracking-tight text-white">{c.label}</p>
-                      <p className="text-[11px] text-white/50">{c.sub}</p>
+                  {SUPPORTED_CURRENCIES.map(c => {
+                    const meta = currencyMeta[c];
+                    return (
+                    <button key={c} type="button" onClick={() => setCurrency(c)}
+                      className={`p-4 rounded-2xl border-2 text-left transition-all duration-200 backdrop-blur-sm ${currency === c ? 'border-white/40 bg-white/15 scale-[1.02] shadow-lg shadow-white/5' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
+                      <span className="text-2xl">{meta.flag}</span>
+                      <p className="font-bold text-[14px] mt-2 tracking-tight text-white">{c}</p>
+                      <p className="text-[11px] text-white/50">{meta.name}</p>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

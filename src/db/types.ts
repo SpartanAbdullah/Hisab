@@ -1,4 +1,5 @@
-export type Currency = 'AED' | 'PKR';
+export const SUPPORTED_CURRENCIES = ['AED', 'PKR', 'SAR', 'QAR', 'OMR', 'KWD', 'BHD'] as const;
+export type Currency = typeof SUPPORTED_CURRENCIES[number];
 
 export type AccountType = 'cash' | 'bank' | 'digital_wallet' | 'savings' | 'credit_card';
 

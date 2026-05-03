@@ -224,7 +224,7 @@ export const linkedRequestsDb = {
     personId: string;
     kind: LinkedRequestKind;
     amount: number;
-    currency: 'AED' | 'PKR';
+    currency: Currency;
     note: string;
   }) {
     const { error } = await supabase.from('linked_transaction_requests').insert({

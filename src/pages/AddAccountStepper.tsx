@@ -4,7 +4,7 @@ import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
 import { StepIndicator } from '../components/StepIndicator';
-import type { AccountType, Currency } from '../db';
+import { SUPPORTED_CURRENCIES, type AccountType, type Currency } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 
@@ -241,7 +241,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                 <div>
                   <label className="form-label">Currency</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {(['AED', 'PKR'] as Currency[]).map(c => {
+                    {SUPPORTED_CURRENCIES.map(c => {
                       const meta = currencyMeta[c];
                       return (
                         <button key={c} type="button" onClick={() => setCurrency(c)}
@@ -291,7 +291,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                 <div>
                   <label className="form-label">Currency</label>
                   <div className="grid grid-cols-2 gap-2">
-                    {(['AED', 'PKR'] as Currency[]).map(c => {
+                    {SUPPORTED_CURRENCIES.map(c => {
                       const meta = currencyMeta[c];
                       return (
                         <button key={c} type="button" onClick={() => setCurrency(c)}

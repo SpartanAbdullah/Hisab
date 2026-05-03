@@ -5,7 +5,7 @@ import { Modal } from '../components/Modal';
 import { useSplitStore, type ResolvedMemberInput } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
-import type { Currency } from '../db';
+import { SUPPORTED_CURRENCIES, type Currency } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
 import { profilesDb } from '../lib/supabaseDb';
 import { normalizePublicCode } from '../lib/collaboration';
@@ -122,7 +122,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         <div>
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Currency</label>
           <div className="grid grid-cols-2 gap-2 mt-1.5">
-            {(['AED', 'PKR'] as Currency[]).map(c => {
+            {SUPPORTED_CURRENCIES.map(c => {
               const meta = currencyMeta[c];
               return (
                 <button key={c} onClick={() => setCurrency(c)}

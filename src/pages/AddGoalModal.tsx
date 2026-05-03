@@ -4,7 +4,7 @@ import { useGoalStore } from '../stores/goalStore';
 import { useAccountStore } from '../stores/accountStore';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
-import type { Currency } from '../db';
+import { SUPPORTED_CURRENCIES, type Currency } from '../db';
 
 interface Props { open: boolean; onClose: () => void; }
 
@@ -112,7 +112,7 @@ export function AddGoalModal({ open, onClose }: Props) {
             <div className="mt-3">
               <label className="form-label">Currency</label>
               <div className="grid grid-cols-2 gap-2">
-                {(['AED', 'PKR'] as Currency[]).map(c => {
+                {SUPPORTED_CURRENCIES.map(c => {
                   const meta = currencyMeta[c];
                   return (
                     <button key={c} type="button" onClick={() => setCurrency(c)}

@@ -28,7 +28,12 @@ export const INCOME_CATEGORIES = [
 
 export const CURRENCY_SYMBOLS: Record<string, string> = {
   AED: 'AED',
-  PKR: '₨',
+  PKR: '\u20A8',
+  SAR: 'SAR',
+  QAR: 'QAR',
+  OMR: 'OMR',
+  KWD: 'KWD',
+  BHD: 'BHD',
 };
 
 export const formatMoney = (amount: number, currency: string): string => {

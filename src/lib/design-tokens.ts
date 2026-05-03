@@ -243,9 +243,19 @@ export const radii = {
 export const currencyFlags: Record<string, string> = {
   AED: '\u{1F1E6}\u{1F1EA}',
   PKR: '\u{1F1F5}\u{1F1F0}',
+  SAR: '\u{1F1F8}\u{1F1E6}',
+  QAR: '\u{1F1F6}\u{1F1E6}',
+  OMR: '\u{1F1F4}\u{1F1F2}',
+  KWD: '\u{1F1F0}\u{1F1FC}',
+  BHD: '\u{1F1E7}\u{1F1ED}',
 };
 
 export const currencyMeta: Record<string, { flag: string; symbol: string; name: string }> = {
   AED: { flag: '\u{1F1E6}\u{1F1EA}', symbol: 'AED', name: 'UAE Dirham' },
   PKR: { flag: '\u{1F1F5}\u{1F1F0}', symbol: '\u20A8', name: 'Pakistani Rupee' },
+  SAR: { flag: '\u{1F1F8}\u{1F1E6}', symbol: 'SAR', name: 'Saudi Riyal' },
+  QAR: { flag: '\u{1F1F6}\u{1F1E6}', symbol: 'QAR', name: 'Qatari Riyal' },
+  OMR: { flag: '\u{1F1F4}\u{1F1F2}', symbol: 'OMR', name: 'Omani Rial' },
+  KWD: { flag: '\u{1F1F0}\u{1F1FC}', symbol: 'KWD', name: 'Kuwaiti Dinar' },
+  BHD: { flag: '\u{1F1E7}\u{1F1ED}', symbol: 'BHD', name: 'Bahraini Dinar' },
 };

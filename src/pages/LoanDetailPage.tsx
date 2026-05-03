@@ -331,7 +331,7 @@ function SettlementHistoryRow({
     <div className="card-premium !rounded-2xl p-3.5 flex items-center gap-3">
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-semibold text-slate-700 tabular-nums">
-          {formatMoney(request.amount, currency as 'AED' | 'PKR')}
+          {formatMoney(request.amount, currency)}
         </p>
         <p className="text-[10px] text-slate-400 mt-0.5">
           {format(new Date(request.createdAt), 'MMM d, h:mm a')}
