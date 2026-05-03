@@ -7,6 +7,7 @@ import { useLoanStore, type CreateLoanInput } from './loanStore';
 import { useGoalStore } from './goalStore';
 import { useEmiStore } from './emiStore';
 import { useActivityStore } from './activityStore';
+import { useAppModeStore } from './appModeStore';
 import { parseInternalNote } from '../lib/internalNotes';
 import { MutationScope, runSafeMutation } from '../lib/mutationSafety';
 
@@ -104,11 +105,35 @@ const INITIAL_TRANSACTION_STATE = {
   loading: false,
 };
 
+type BalanceCheckedTransactionType = Extract<TransactionInput['type'], 'expense' | 'loan_given' | 'loan_taken' | 'repayment'>;
+type BalanceCheckedAccount = { name: string; balance: number; type: string; metadata: Record<string, string> };
+
 // Insufficient balance check helper
-function checkBalance(account: { name: string; balance: number; type: string; metadata: Record<string, string> }, amount: number) {
+function checkBalance(account: BalanceCheckedAccount, amount: number) {
   if (account.balance < amount) {
     throw new Error(`${account.name} mein sirf ${account.balance.toLocaleString()} hain. Itne pesay nahi hain.`);
   }
+}
+
+function isSimpleModeBalanceBypassAllowed(transactionType: BalanceCheckedTransactionType): boolean {
+  return useAppModeStore.getState().mode === 'splits_only'
+    && (
+      transactionType === 'expense'
+      || transactionType === 'loan_given'
+      || transactionType === 'loan_taken'
+      || transactionType === 'repayment'
+    );
+}
+
+function checkBalanceForTransaction(
+  account: BalanceCheckedAccount,
+  amount: number,
+  transactionType: BalanceCheckedTransactionType,
+) {
+  // Simple mode is for recording reality, so these entries may intentionally
+  // make an account negative. Full Money Tracker still uses strict validation.
+  if (isSimpleModeBalanceBypassAllowed(transactionType)) return;
+  checkBalance(account, amount);
 }
 
 async function ensureSupportingStoresLoaded() {
@@ -435,7 +460,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           case 'expense': {
             const srcAccount = accountStore.getAccount(input.sourceAccountId);
             if (!srcAccount) throw new Error('Source account not found');
-            checkBalance(srcAccount, input.amount);
+            checkBalanceForTransaction(srcAccount, input.amount, input.type);
             currency = srcAccount.currency;
             sourceAccountId = input.sourceAccountId;
             await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
@@ -476,7 +501,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           case 'loan_given': {
             const src = accountStore.getAccount(input.sourceAccountId);
             if (!src) throw new Error('Source account not found');
-            checkBalance(src, input.amount);
+            checkBalanceForTransaction(src, input.amount, input.type);
             currency = src.currency;
             sourceAccountId = input.sourceAccountId;
             relatedPerson = input.personName;
@@ -513,7 +538,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               if (!src) throw new Error('Source account not found');
               if (src.type !== 'credit_card') throw new Error('Cash advance source must be a credit card account');
               if (src.currency !== dest.currency) throw new Error('Cash advance source card must match the receiving account currency');
-              checkBalance(src, input.amount);
+              checkBalanceForTransaction(src, input.amount, input.type);
               sourceAccountId = input.sourceAccountId;
               await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
               description = `Cash advance from ${src.name} into ${dest.name}: ${currency} ${input.amount}`;
@@ -574,12 +599,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 if (!input.conversionRate) throw new Error('Conversion rate required — different currencies');
                 conversionRate = input.conversionRate;
                 const srcDeduct = Math.round(input.amount / input.conversionRate * 100) / 100;
-                checkBalance(src, srcDeduct);
+                checkBalanceForTransaction(src, srcDeduct, input.type);
                 sourceAccountId = input.sourceAccountId;
                 await trackedBalanceDelta(scope, input.sourceAccountId, -srcDeduct);
                 description = `Repaid ${loan.currency} ${input.amount} (deducted ${src.currency} ${srcDeduct}) to ${loan.personName} (rate: ${input.conversionRate})`;
               } else {
-                checkBalance(src, input.amount);
+                checkBalanceForTransaction(src, input.amount, input.type);
                 sourceAccountId = input.sourceAccountId;
                 await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
                 description = `Repaid ${currency} ${input.amount} to ${loan.personName}`;
@@ -733,12 +758,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             // refund the old account at all — we used to refund first, then
             // discover the shortfall, leaving the user silently richer.
             if (previousSource.id !== nextSource.id) {
-              checkBalance(nextSource, expenseInput.amount);
+              checkBalanceForTransaction(nextSource, expenseInput.amount, expenseInput.type);
             } else {
               // Same account — refund-then-charge nets (next - existing);
               // only that delta needs to be available.
               const netDebit = expenseInput.amount - existing.amount;
-              if (netDebit > 0) checkBalance(nextSource, netDebit);
+              if (netDebit > 0) checkBalanceForTransaction(nextSource, netDebit, expenseInput.type);
             }
 
             await trackedBalanceDelta(scope, previousSource.id, existing.amount);
@@ -775,10 +800,10 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             if (!previousSource || !nextSource) throw new Error('Source account not found');
 
             if (previousSource.id !== nextSource.id) {
-              checkBalance(nextSource, loanGivenInput.amount);
+              checkBalanceForTransaction(nextSource, loanGivenInput.amount, loanGivenInput.type);
             } else {
               const netDebit = loanGivenInput.amount - existing.amount;
-              if (netDebit > 0) checkBalance(nextSource, netDebit);
+              if (netDebit > 0) checkBalanceForTransaction(nextSource, netDebit, loanGivenInput.type);
             }
 
             await trackedBalanceDelta(scope, previousSource.id, existing.amount);
@@ -841,9 +866,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               // the net debit needs to be available.
               if (existing.sourceAccountId === nextCard.id) {
                 const netDebit = loanTakenInput.amount - existing.amount;
-                if (netDebit > 0) checkBalance(nextCard, netDebit);
+                if (netDebit > 0) checkBalanceForTransaction(nextCard, netDebit, loanTakenInput.type);
               } else {
-                checkBalance(nextCard, loanTakenInput.amount);
+                checkBalanceForTransaction(nextCard, loanTakenInput.amount, loanTakenInput.type);
               }
             }
 
