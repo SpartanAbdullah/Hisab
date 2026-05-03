@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, ArrowLeftRight, Users, Target, Settings, Clock, Inbox } from 'lucide-react';
+import { Home, ArrowLeftRight, Users, Target, Settings, Inbox, HandCoins } from 'lucide-react';
 import { useUIStore } from '../stores/uiStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -13,20 +13,21 @@ export function BottomNav() {
   const t = useT();
   const userId = useSupabaseAuthStore(s => s.user?.id ?? '');
   const linkedPending = useLinkedRequestStore(
-    s => s.requests.filter(r => r.status === 'pending' && r.toUserId === userId).length,
+    s => s.requests.filter(r => r.status === 'pending' && (r.toUserId === userId || r.fromUserId === userId)).length,
   );
   const settlementPending = useSettlementRequestStore(
-    s => s.requests.filter(r => r.status === 'pending' && r.toUserId === userId).length,
+    s => s.requests.filter(r => r.status === 'pending' && (r.toUserId === userId || r.fromUserId === userId)).length,
   );
-  const incomingPendingCount = linkedPending + settlementPending;
+  const pendingApprovalCount = linkedPending + settlementPending;
 
   if (modalCount > 0) return null;
 
   const splitsLinks = [
     { to: '/', icon: Home, label: t('nav_home') },
+    { to: '/transactions', icon: ArrowLeftRight, label: t('nav_transactions') },
+    { to: '/loans', icon: HandCoins, label: t('nav_loans') },
     { to: '/groups', icon: Users, label: t('nav_groups') },
-    { to: '/inbox', icon: Inbox, label: t('nav_inbox'), badge: incomingPendingCount },
-    { to: '/activity', icon: Clock, label: t('nav_activity') },
+    { to: '/inbox', icon: Inbox, label: t('nav_inbox'), badge: pendingApprovalCount },
     { to: '/settings', icon: Settings, label: t('nav_settings') },
   ];
 
@@ -35,7 +36,7 @@ export function BottomNav() {
     { to: '/transactions', icon: ArrowLeftRight, label: t('nav_transactions') },
     { to: '/groups', icon: Users, label: t('nav_groups') },
     { to: '/goals', icon: Target, label: t('nav_goals') },
-    { to: '/inbox', icon: Inbox, label: t('nav_inbox'), badge: incomingPendingCount },
+    { to: '/inbox', icon: Inbox, label: t('nav_inbox'), badge: pendingApprovalCount },
     { to: '/settings', icon: Settings, label: t('nav_settings') },
   ];
 
@@ -65,7 +66,9 @@ export function BottomNav() {
                   }`}>
                     <Icon size={19} strokeWidth={isActive ? 2.5 : 1.5} />
                     {badge && badge > 0 ? (
-                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white" />
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] leading-4 text-center font-extrabold ring-2 ring-white tabular-nums">
+                        {badge > 9 ? '9+' : badge}
+                      </span>
                     ) : null}
                   </div>
                   <span className="tracking-tight truncate">{label}</span>

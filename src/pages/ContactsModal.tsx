@@ -29,6 +29,9 @@ export function ContactsModal({ open, onClose }: Props) {
   return (
     <>
       <Modal open={open} onClose={onClose} title={t('contacts_title')}>
+        <div className="mb-3 rounded-2xl bg-indigo-50/70 border border-indigo-100/70 p-3">
+          <p className="text-[11px] text-indigo-700 leading-relaxed font-medium">{t('contacts_link_help')}</p>
+        </div>
         {sorted.length === 0 ? (
           <p className="text-[13px] text-slate-400 text-center py-10">{t('contacts_empty')}</p>
         ) : (

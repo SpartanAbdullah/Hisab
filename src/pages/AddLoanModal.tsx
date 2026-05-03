@@ -154,7 +154,9 @@ export function AddLoanModal({ open, onClose }: Props) {
           <ContactPicker value={contact} onChange={setContact} placeholder="Naam likho..." required className="input-field" />
           {wouldBranchToLinked ? (
             <p className="text-[11px] text-indigo-600 mt-1.5">{t('ltr_branch_helper')}</p>
-          ) : null}
+          ) : (
+            <p className="text-[11px] text-slate-400 mt-1.5">{t('ltr_linked_only_helper')}</p>
+          )}
         </div>
 
         <div>

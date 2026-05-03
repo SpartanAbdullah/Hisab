@@ -36,7 +36,7 @@ export function OnboardingPage() {
   );
 
   return (
-    <div className="min-h-dvh relative overflow-hidden">
+    <div className="min-h-dvh relative overflow-y-auto overflow-x-hidden">
       {/* Background */}
       <div className="absolute inset-0 bg-gradient-to-b from-indigo-600 via-indigo-700 to-slate-900" />
       <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(circle at 30% 20%, rgba(168,85,247,0.4), transparent 50%), radial-gradient(circle at 70% 80%, rgba(99,102,241,0.3), transparent 50%)' }} />
@@ -59,9 +59,10 @@ export function OnboardingPage() {
             </p>
             <div className="mt-8 space-y-3 text-left w-full max-w-[280px]">
               {[
-                { icon: '💸', text: t('onboard_bullet_1') },
-                { icon: '🏦', text: t('onboard_bullet_2') },
-                { icon: '🎯', text: t('onboard_bullet_3') },
+                { icon: '\u{1F91D}', text: t('onboard_bullet_1') },
+                { icon: '\u{1F4CB}', text: t('onboard_bullet_2') },
+                { icon: '\u{1F514}', text: t('onboard_bullet_3') },
+                { icon: '\u{1F4B3}', text: t('onboard_bullet_4') },
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-3 bg-white/8 rounded-2xl px-4 py-3 border border-white/10 backdrop-blur-sm">
                   <span className="text-lg">{item.icon}</span>
@@ -94,14 +95,15 @@ export function OnboardingPage() {
               </div>
               <div>
                 <label className="block text-[11px] text-white/50 font-medium uppercase tracking-widest mb-2">{t('onboard_currency_label')}</label>
-                <div className="grid grid-cols-2 gap-3">
+                <p className="text-[11px] text-white/45 leading-relaxed mb-3">{t('onboard_currency_help')}</p>
+                <div className="grid grid-cols-2 gap-2">
                   {SUPPORTED_CURRENCIES.map(c => {
                     const meta = currencyMeta[c];
                     return (
                     <button key={c} type="button" onClick={() => setCurrency(c)}
-                      className={`p-4 rounded-2xl border-2 text-left transition-all duration-200 backdrop-blur-sm ${currency === c ? 'border-white/40 bg-white/15 scale-[1.02] shadow-lg shadow-white/5' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
-                      <span className="text-2xl">{meta.flag}</span>
-                      <p className="font-bold text-[14px] mt-2 tracking-tight text-white">{c}</p>
+                      className={`p-3 rounded-2xl border-2 text-left transition-all duration-200 backdrop-blur-sm ${currency === c ? 'border-white/40 bg-white/15 scale-[1.02] shadow-lg shadow-white/5' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
+                      <span className="text-xl">{meta.flag}</span>
+                      <p className="font-bold text-[13px] mt-1.5 tracking-tight text-white">{c}</p>
                       <p className="text-[11px] text-white/50">{meta.name}</p>
                     </button>
                     );
@@ -220,10 +222,11 @@ export function OnboardingPage() {
               <p className="text-white/50 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">STEP 4 {t('onboard_step_of')} 4</p>
               <h2 className="text-2xl font-bold tracking-tight text-white">{name.trim()}, {t('onboard_how_start')}</h2>
               <p className="text-white/60 text-[13px] mt-2">{t('onboard_how_sub')}</p>
+              <p className="text-emerald-200 text-[12px] font-semibold mt-3">{t('onboard_start_instruction')}</p>
             </div>
             <div className="space-y-4 flex-1">
               <button onClick={handleStart} disabled={loading}
-                className="w-full bg-white/8 border-2 border-white/15 rounded-3xl p-6 text-left transition-all active:scale-[0.98] backdrop-blur-sm hover:bg-white/12">
+                className="w-full bg-white/8 border-2 border-emerald-300/40 rounded-3xl p-6 text-left transition-all active:scale-[0.98] backdrop-blur-sm hover:bg-white/12 shadow-lg shadow-emerald-400/10">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 flex items-center justify-center backdrop-blur-sm">
                     <Play size={20} className="text-emerald-300" strokeWidth={1.5} />
@@ -248,7 +251,13 @@ export function OnboardingPage() {
                     </div>
                   ))}
                 </div>
+                <div className="mt-5 rounded-2xl bg-emerald-400/20 border border-emerald-300/30 py-3 text-center">
+                  <span className="text-[13px] font-bold text-white">{t('onboard_fresh_cta')}</span>
+                </div>
               </button>
+              <div className="bg-white/8 border border-white/10 rounded-2xl p-4">
+                <p className="text-[12px] text-white/75 leading-relaxed">{t('onboard_linked_contacts_help')}</p>
+              </div>
             </div>
             {loading && (
               <div className="text-center py-6">

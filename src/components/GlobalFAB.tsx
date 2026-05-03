@@ -23,7 +23,7 @@ export function GlobalFAB({ onQuickEntry, onAddGoal, onAddExpense, onAddLoan, on
   if (modalCount > 0) return null;
 
   // Mode-aware visibility
-  const splitsShowPaths = ['/', '/groups'];
+  const splitsShowPaths = ['/', '/transactions', '/loans', '/groups'];
   const fullShowPaths = ['/', '/transactions', '/loans', '/goals', '/groups'];
   const showOnPaths = mode === 'splits_only' ? splitsShowPaths : fullShowPaths;
   const isVisible = showOnPaths.some(p => location.pathname === p);

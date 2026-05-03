@@ -184,19 +184,19 @@ function AppContent() {
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/account/:id" element={<AccountDetailPage />} />
+          <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/loans" element={<LoansPage />} />
+          <Route path="/loan/:id" element={<LoanDetailPage />} />
 
-          {/* Full tracker only routes */}
+          {/* Savings goals stay full-tracker only. Transactions and loans are
+              available in both modes so simple users can still record expense
+              notes and manage payables/receivables. */}
           {mode === 'full_tracker' ? (
             <>
-              <Route path="/transactions" element={<TransactionsPage />} />
-              <Route path="/loans" element={<LoansPage />} />
-              <Route path="/loan/:id" element={<LoanDetailPage />} />
               <Route path="/goals" element={<GoalsPage />} />
             </>
           ) : (
             <>
-              <Route path="/transactions" element={<Navigate to="/" replace />} />
-              <Route path="/loans" element={<Navigate to="/" replace />} />
               <Route path="/goals" element={<Navigate to="/" replace />} />
             </>
           )}
