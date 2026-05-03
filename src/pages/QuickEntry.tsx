@@ -11,6 +11,7 @@ import { useEmiStore } from '../stores/emiStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { usePersonStore } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useAppModeStore } from '../stores/appModeStore';
 import { Modal } from '../components/Modal';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
@@ -35,6 +36,7 @@ export function QuickEntry({ open, onClose }: Props) {
   const { goals } = useGoalStore();
   const { generateSchedule } = useEmiStore();
   const { expenses: upcomingExpenses } = useUpcomingExpenseStore();
+  const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
 
@@ -181,6 +183,7 @@ export function QuickEntry({ open, onClose }: Props) {
     : null;
   const branchAccount = type === 'loan_given' ? srcAccount : type === 'loan_taken' ? dstAccount : null;
   const wouldBranchToLinked = !!(
+    appMode !== 'splits_only' &&
     (type === 'loan_given' || type === 'loan_taken') &&
     contactInStore?.linkedProfileId &&
     branchAccount?.currency
@@ -209,9 +212,10 @@ export function QuickEntry({ open, onClose }: Props) {
             : await usePersonStore.getState().findOrCreateByName(contact.name.trim()))
         : null;
 
-      // Phase 2B: branch loan_given / loan_taken against a linked contact into
-      // a linked_transaction_request instead of creating loans/txns directly.
-      if (type === 'loan_given' || type === 'loan_taken') {
+      // Phase 2B: Full Money Tracker can branch linked-contact loan entries
+      // into an approval request. Simple mode must record local wallet effects
+      // immediately, so it uses the normal transaction path below.
+      if (appMode !== 'splits_only' && (type === 'loan_given' || type === 'loan_taken')) {
         const accountForBranch = type === 'loan_given' ? srcAccount : dstAccount;
         const branch = decideLinkedBranch({
           type,
@@ -634,6 +638,12 @@ export function QuickEntry({ open, onClose }: Props) {
               <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_note')}</label>
               <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail likho..." className={inputClass} />
             </div>
+
+            {(needsPerson || needsLoan) && (
+              <p className="text-[12px] text-slate-500 bg-slate-50/80 border border-slate-100/70 rounded-2xl p-3 leading-relaxed">
+                {t('money_not_moved_notice')}
+              </p>
+            )}
 
           </div>
         )}

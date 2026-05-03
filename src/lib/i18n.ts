@@ -123,6 +123,10 @@ const S = {
   loan_none_settled: { ur: 'Koi Settled Nahi', en: 'None Settled' },
   loan_desc_active: { ur: 'Jab kisi ko paisa dein ya lein, yahan dikhega', en: 'Loans will appear here' },
   loan_desc_settled: { ur: 'Jab koi qarz settle hoga, yahan aayega', en: 'Settled loans will appear here' },
+  money_not_moved_notice: {
+    ur: 'Yeh action asal paisay transfer nahi karta. Barah-e-karam apne account check karein.',
+    en: 'This action does not move real money. Please check your accounts for actual transfer.',
+  },
 
   // Soft payment reminders
   reminder_title: { ur: 'Reminder Message', en: 'Reminder Message' },

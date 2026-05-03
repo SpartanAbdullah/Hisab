@@ -6,6 +6,7 @@ import { useEmiStore } from '../stores/emiStore';
 import { useLoanStore } from '../stores/loanStore';
 import { usePersonStore } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useAppModeStore } from '../stores/appModeStore';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { useToast } from '../components/Toast';
 import { currencyMeta } from '../lib/design-tokens';
@@ -20,6 +21,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   const { processTransaction } = useTransactionStore();
   const { generateSchedule } = useEmiStore();
   const { loans } = useLoanStore();
+  const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
 
@@ -56,6 +58,7 @@ export function AddLoanModal({ open, onClose }: Props) {
     : null;
   const selectedAccount = accounts.find((a) => a.id === accountId);
   const wouldBranchToLinked = !!(
+    appMode !== 'splits_only' &&
     personInStore?.linkedProfileId &&
     selectedAccount &&
     selectedAccount.currency
@@ -81,7 +84,7 @@ export function AddLoanModal({ open, onClose }: Props) {
         requestCurrency: selectedAccount?.currency,
       });
 
-      if (branch.branch === true) {
+      if (appMode !== 'splits_only' && branch.branch === true) {
         await useLinkedRequestStore.getState().createRequest({
           toUserId: branch.toUserId,
           personId: branch.personId,
@@ -212,6 +215,10 @@ export function AddLoanModal({ open, onClose }: Props) {
           <label className="form-label">{t('quick_note')}</label>
           <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail..." className="input-field" />
         </div>
+
+        <p className="text-[12px] text-slate-500 bg-slate-50/80 border border-slate-100/70 rounded-2xl p-3 leading-relaxed">
+          {t('money_not_moved_notice')}
+        </p>
 
         <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-slate-50/80 border border-slate-100/60">
           <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-indigo-600 accent-indigo-600" />

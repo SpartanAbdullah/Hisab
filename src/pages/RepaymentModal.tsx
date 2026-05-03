@@ -286,6 +286,10 @@ export function RepaymentModal({
               className="input-field"
             />
           </div>
+
+          <p className="text-[12px] text-slate-500 bg-slate-50/80 border border-slate-100/70 rounded-2xl p-3 leading-relaxed">
+            {t('money_not_moved_notice')}
+          </p>
         </div>
       </Modal>
 
