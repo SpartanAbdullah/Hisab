@@ -13,7 +13,7 @@ import { PageErrorState } from '../components/PageErrorState';
 import { ProgressRing } from '../components/ProgressRing';
 import { UserAvatar } from '../components/UserAvatar';
 import { AddAccountStepper } from './AddAccountStepper';
-import { formatMoney } from '../lib/constants';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
@@ -214,10 +214,16 @@ export function HomePage() {
               const monthTxns = transactions.filter(tx =>
                 new Date(tx.createdAt) >= startOfMonth && tx.currency === currency,
               );
-              const monthIncome = monthTxns.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0);
-              const monthExpense = monthTxns.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
-              const hasActivity = monthIncome > 0 || monthExpense > 0;
-              const savingsRate = monthIncome > 0 ? (monthIncome - monthExpense) / monthIncome : 0;
+              const monthIncome = monthTxns.filter(tx => tx.type === 'income' || tx.type === 'loan_taken' || tx.type === 'opening_balance').reduce((s, tx) => s + tx.amount, 0);
+              const monthOutflow = monthTxns.filter(tx => (
+                tx.type === 'expense' ||
+                tx.type === 'loan_given' ||
+                tx.type === 'goal_contribution' ||
+                (tx.type === 'repayment' && Boolean(tx.sourceAccountId))
+              )).reduce((s, tx) => s + tx.amount, 0);
+              const hasActivity = monthIncome > 0 || monthOutflow > 0;
+              const netMonthFlow = monthIncome - monthOutflow;
+              const savingsRate = monthIncome > 0 ? netMonthFlow / monthIncome : netMonthFlow < 0 ? -1 : 0;
               const ringProgress = hasActivity ? Math.max(0, Math.min(1, savingsRate)) : 0;
               const ringColor = !hasActivity ? '#cbd5e1' : savingsRate >= 0 ? '#10b981' : '#f43f5e';
               const ringLabel = !hasActivity
@@ -240,7 +246,7 @@ export function HomePage() {
                       </p>
                     </div>
                     <p className="text-[26px] font-extrabold tracking-tight text-slate-800 mt-1 tabular-nums animate-count-up">
-                      {formatMoney(total, currency)}
+                      {formatSignedMoney(total, currency)}
                     </p>
                     <p className="text-[11px] text-slate-400 mt-1">
                       {accountCount} {accountCount === 1 ? 'account' : 'accounts'}

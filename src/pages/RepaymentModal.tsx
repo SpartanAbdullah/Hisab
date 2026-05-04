@@ -4,7 +4,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { useToast } from '../components/Toast';
-import { formatMoney } from '../lib/constants';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { resolvePersonName } from '../lib/resolvePersonName';
@@ -235,7 +235,7 @@ export function RepaymentModal({
                       </div>
                     </div>
                     <p className="text-[13px] font-bold text-slate-700 tabular-nums">
-                      {formatMoney(account.balance, account.currency)}
+                      {formatSignedMoney(account.balance, account.currency)}
                     </p>
                   </button>
                 );

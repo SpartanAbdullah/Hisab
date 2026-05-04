@@ -1,5 +1,5 @@
 import { CheckCircle, ArrowRight } from 'lucide-react';
-import { formatMoney } from '../lib/constants';
+import { formatSignedMoney } from '../lib/constants';
 import { Button } from './Button';
 import { useEffect, useState } from 'react';
 import { useT } from '../lib/i18n';
@@ -67,7 +67,7 @@ export function ConfirmationSheet({ open, onClose, title, description, balanceCh
                 <div className="flex-1 text-center">
                   <p className="text-[10px] text-slate-400 font-medium">{change.accountName}</p>
                   <p className="text-sm font-bold text-slate-400 line-through mt-1">
-                    {formatMoney(change.before, change.currency)}
+                    {formatSignedMoney(change.before, change.currency)}
                   </p>
                 </div>
                 <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center shrink-0">
@@ -76,7 +76,7 @@ export function ConfirmationSheet({ open, onClose, title, description, balanceCh
                 <div className="flex-1 text-center">
                   <p className="text-[10px] text-slate-400 font-medium">{t('updated')}</p>
                   <p className={`text-sm font-bold mt-1 ${change.after >= change.before ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {formatMoney(change.after, change.currency)}
+                    {formatSignedMoney(change.after, change.currency)}
                   </p>
                 </div>
               </div>

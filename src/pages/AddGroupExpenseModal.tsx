@@ -4,7 +4,7 @@ import { useSplitStore } from '../stores/splitStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
-import { formatMoney } from '../lib/constants';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
 import type { SplitGroup, SplitType, SplitDetail } from '../db';
 
 interface Props { open: boolean; group: SplitGroup; onClose: () => void; }
@@ -204,7 +204,7 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
                     <p className="text-[13px] font-semibold text-slate-700">{account.name}</p>
                     <p className="text-[10px] text-slate-400 capitalize">{account.type.replace('_', ' ')}</p>
                   </div>
-                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatMoney(account.balance, account.currency)}</p>
+                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
                 </button>
               ))}
             </div>

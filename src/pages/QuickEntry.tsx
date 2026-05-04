@@ -18,7 +18,7 @@ import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { SpendingWarningModal } from '../components/SpendingWarningModal';
 import { useToast } from '../components/Toast';
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatMoney } from '../lib/constants';
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import type { TransactionType } from '../db';
@@ -457,7 +457,7 @@ export function QuickEntry({ open, onClose }: Props) {
                           <p className="text-[10px] text-slate-400 capitalize">{a.type.replace('_', ' ')}</p>
                         </div>
                       </div>
-                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatMoney(a.balance, a.currency)}</p>
+                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                     </button>
                   );})}
                 </div>
@@ -483,7 +483,7 @@ export function QuickEntry({ open, onClose }: Props) {
                           <p className="text-[10px] text-slate-400 capitalize">{a.type.replace('_', ' ')}</p>
                         </div>
                       </div>
-                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatMoney(a.balance, a.currency)}</p>
+                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                     </button>
                   );})}
                 </div>
@@ -550,7 +550,7 @@ export function QuickEntry({ open, onClose }: Props) {
                         <p className="text-[13px] font-semibold text-slate-700">{a.name}</p>
                         <p className="text-[10px] text-slate-400">Credit card</p>
                       </div>
-                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatMoney(a.balance, a.currency)}</p>
+                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                     </button>
                   ))}
                 </div>

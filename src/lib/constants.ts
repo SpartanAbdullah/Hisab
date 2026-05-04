@@ -44,3 +44,7 @@ export const formatMoney = (amount: number, currency: string): string => {
   });
   return `${symbol} ${formatted}`;
 };
+
+export const formatSignedMoney = (amount: number, currency: string): string => (
+  amount < 0 ? `-${formatMoney(amount, currency)}` : formatMoney(amount, currency)
+);

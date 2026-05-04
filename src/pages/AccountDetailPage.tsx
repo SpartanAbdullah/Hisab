@@ -9,7 +9,7 @@ import { TransactionItem } from '../components/TransactionItem';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
-import { formatMoney } from '../lib/constants';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, Plus, ArrowLeftRight, AlertTriangle, MoreVertical, Pencil, Trash2 } from 'lucide-react';
@@ -231,7 +231,7 @@ export function AccountDetailPage() {
 
             {isCreditCard ? (
               <>
-                <p className="text-3xl font-bold mt-2 tabular-nums tracking-tighter animate-count-up">{formatMoney(account.balance, account.currency)}</p>
+                <p className="text-3xl font-bold mt-2 tabular-nums tracking-tighter animate-count-up">{formatSignedMoney(account.balance, account.currency)}</p>
                 <p className="text-[11px] opacity-60 mt-1">{t('cc_available')}</p>
 
                 {/* Credit card usage bar */}
@@ -251,7 +251,7 @@ export function AccountDetailPage() {
               </>
             ) : (
               <>
-                <p className="text-3xl font-bold mt-2 tabular-nums tracking-tighter animate-count-up">{formatMoney(account.balance, account.currency)}</p>
+                <p className="text-3xl font-bold mt-2 tabular-nums tracking-tighter animate-count-up">{formatSignedMoney(account.balance, account.currency)}</p>
                 {account.metadata.bankName && <p className="text-[11px] opacity-50 mt-2">{account.metadata.bankName}</p>}
                 {account.metadata.walletType && <p className="text-[11px] opacity-50 mt-2 capitalize">{account.metadata.walletType}</p>}
               </>

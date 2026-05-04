@@ -1,6 +1,6 @@
 import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, AlertTriangle } from 'lucide-react';
 import type { Account, UpcomingExpense } from '../db';
-import { formatMoney } from '../lib/constants';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 
@@ -98,7 +98,7 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
           </div>
           <div className="text-right shrink-0">
             <p className="font-bold text-[15px] text-emerald-400 tabular-nums tracking-tight">
-              {formatMoney(account.balance, account.currency)}
+              {formatSignedMoney(account.balance, account.currency)}
             </p>
             <p className="text-[10px] text-slate-500 mt-0.5">{t('cc_available')}</p>
           </div>
@@ -132,7 +132,7 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
         </div>
         <div className="text-right shrink-0">
           <p className="font-bold text-[15px] text-white tabular-nums tracking-tight">
-            {formatMoney(account.balance, account.currency)}
+            {formatSignedMoney(account.balance, account.currency)}
           </p>
           <p className="text-[10px] text-white/50 mt-0.5">Balance</p>
         </div>

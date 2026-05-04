@@ -5,7 +5,7 @@ import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { usePersonStore } from '../stores/personStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
-import { formatMoney } from '../lib/constants';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import type { Loan } from '../db';
@@ -240,7 +240,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
                       </div>
                     </div>
                     <p className="text-[13px] font-bold text-slate-700 tabular-nums">
-                      {formatMoney(a.balance, a.currency)}
+                      {formatSignedMoney(a.balance, a.currency)}
                     </p>
                   </button>
                 );

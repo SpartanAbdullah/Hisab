@@ -6,7 +6,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
-import { EXPENSE_CATEGORIES, formatMoney } from '../lib/constants';
+import { EXPENSE_CATEGORIES, formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { parseInternalNote } from '../lib/internalNotes';
 import { useT } from '../lib/i18n';
@@ -237,7 +237,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                       <p className="text-[10px] text-slate-400 capitalize">{account.type.replace('_', ' ')}</p>
                     </div>
                   </div>
-                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatMoney(account.balance, account.currency)}</p>
+                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
                 </button>
               );
             })}
@@ -270,7 +270,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                     <p className="text-[13px] font-semibold text-slate-700">{account.name}</p>
                     <p className="text-[10px] text-slate-400">Credit card</p>
                   </div>
-                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatMoney(account.balance, account.currency)}</p>
+                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
                 </button>
               ))}
             </div>
