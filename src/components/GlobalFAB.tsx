@@ -23,7 +23,7 @@ export function GlobalFAB({ onQuickEntry, onAddGoal, onAddExpense, onAddLoan, on
   if (modalCount > 0) return null;
 
   // Mode-aware visibility
-  const splitsShowPaths = ['/', '/transactions', '/loans', '/groups'];
+  const splitsShowPaths = ['/', '/loans', '/groups'];
   const fullShowPaths = ['/', '/transactions', '/loans', '/goals', '/groups'];
   const showOnPaths = mode === 'splits_only' ? splitsShowPaths : fullShowPaths;
   const isVisible = showOnPaths.some(p => location.pathname === p);
@@ -36,9 +36,9 @@ export function GlobalFAB({ onQuickEntry, onAddGoal, onAddExpense, onAddLoan, on
   const handlePress = () => {
     if (isGoalsTab) {
       setMenuOpen(!menuOpen);
-    } else if (isLoansTab) {
+    } else if (isLoansTab || (mode === 'splits_only' && location.pathname === '/')) {
       onAddLoan();
-    } else if (isGroupsTab || (mode === 'splits_only' && location.pathname === '/')) {
+    } else if (isGroupsTab) {
       if (onAddGroupExpense) onAddGroupExpense();
       else onQuickEntry();
     } else {

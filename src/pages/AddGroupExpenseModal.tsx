@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
 import { useAccountStore } from '../stores/accountStore';
+import { useAppModeStore } from '../stores/appModeStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
@@ -16,6 +17,7 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
   const toast = useToast();
   const { addGroupExpense } = useSplitStore();
   const { accounts, loadAccounts } = useAccountStore();
+  const appMode = useAppModeStore((s) => s.mode);
   const defaultPayerId = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id
     ?? group.members.find(member => member.isOwner)?.id
     ?? '';
@@ -35,13 +37,13 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
 
   const amt = parseFloat(amount) || 0;
   const currentMemberId = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id ?? '';
-  const shouldTrackExpense = paidBy === currentMemberId && accounts.length > 0;
+  const shouldTrackExpense = appMode === 'full_tracker' && paidBy === currentMemberId && accounts.length > 0;
 
   useEffect(() => {
-    if (open) {
+    if (open && appMode === 'full_tracker') {
       void loadAccounts();
     }
-  }, [open, loadAccounts]);
+  }, [appMode, open, loadAccounts]);
 
   useEffect(() => {
     if (!open) return;

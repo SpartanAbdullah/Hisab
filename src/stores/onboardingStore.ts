@@ -1,16 +1,21 @@
-import { create } from 'zustand';
-import { accountsDb, profilesDb } from '../lib/supabaseDb';
-import type { Currency } from '../db';
-import { useAccountStore } from './accountStore';
-import { useTransactionStore } from './transactionStore';
-import { useLoanStore } from './loanStore';
-import { useGoalStore } from './goalStore';
+import { create } from "zustand";
+import { accountsDb, profilesDb } from "../lib/supabaseDb";
+import type { AppMode, Currency } from "../db";
+import { useAccountStore } from "./accountStore";
+import { useTransactionStore } from "./transactionStore";
+import { useLoanStore } from "./loanStore";
+import { useGoalStore } from "./goalStore";
+import { useAppModeStore } from "./appModeStore";
 
 interface OnboardingState {
   completed: boolean;
   loading: boolean;
   checkOnboarding: () => Promise<void>;
-  completeOnboarding: (name: string, currency: Currency) => Promise<void>;
+  completeOnboarding: (
+    name: string,
+    currency: Currency,
+    mode: AppMode,
+  ) => Promise<void>;
   seedDemoData: (name: string, currency: Currency) => Promise<void>;
   reset: () => void;
 }
@@ -39,50 +44,59 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
         profilesDb.getCurrent().catch(() => null),
       ]);
       const profileDone = profile?.onboarding_completed === true;
-      const localDone = localStorage.getItem('hisaab_onboarded') === '1';
+      if (
+        profile?.app_mode === "splits_only" ||
+        profile?.app_mode === "full_tracker"
+      ) {
+        useAppModeStore.getState().setMode(profile.app_mode);
+      }
+      const localDone = localStorage.getItem("hisaab_onboarded") === "1";
       const completed = profileDone || count > 0 || localDone;
-      if (completed) localStorage.setItem('hisaab_onboarded', '1');
+      if (completed) localStorage.setItem("hisaab_onboarded", "1");
       set({ completed, loading: false });
     } catch {
-      const localDone = localStorage.getItem('hisaab_onboarded') === '1';
+      const localDone = localStorage.getItem("hisaab_onboarded") === "1";
       set({ completed: localDone, loading: false });
     }
   },
 
-  completeOnboarding: async (name, currency) => {
-    localStorage.setItem('hisaab_user_name', name);
-    localStorage.setItem('hisaab_primary_currency', currency);
-    localStorage.setItem('hisaab_data_version', '3');
+  completeOnboarding: async (name, currency, mode) => {
+    localStorage.setItem("hisaab_user_name", name);
+    localStorage.setItem("hisaab_primary_currency", currency);
+    localStorage.setItem("hisaab_app_mode", mode);
+    localStorage.setItem("hisaab_data_version", "3");
 
-    // Idempotent: only seed the default wallet if the user has zero accounts.
-    // Protects against duplicate Cash Wallets if onboarding is re-entered.
+    // Full Money Tracker needs a starter wallet. Splits Only is deliberately
+    // account-free, so it must not create a hidden Cash Wallet.
     const existingCount = await accountsDb.count().catch(() => 0);
-    if (existingCount === 0) {
+    if (mode === "full_tracker" && existingCount === 0) {
       await useAccountStore.getState().createAccount({
-        name: currency === 'AED' ? 'Cash Wallet' : 'Naqdee',
-        type: 'cash',
+        name: currency === "AED" ? "Cash Wallet" : "Naqdee",
+        type: "cash",
         currency,
         balance: 0,
       });
     }
 
     // Persist flag on the profile so it survives cleared localStorage on any device.
-    await profilesDb.updateCurrent({
-      name,
-      primary_currency: currency,
-      onboarding_completed: true,
-    }).catch(() => {});
+    await profilesDb
+      .updateCurrent({
+        name,
+        primary_currency: currency,
+        app_mode: mode,
+        onboarding_completed: true,
+      })
+      .catch(() => {});
 
-    // Set localStorage flag AFTER the account exists so a mid-flow failure
-    // doesn't leave the user flagged-onboarded with zero accounts.
-    localStorage.setItem('hisaab_onboarded', '1');
+    // Set localStorage flag after required mode setup finishes.
+    localStorage.setItem("hisaab_onboarded", "1");
     set({ completed: true });
   },
 
   seedDemoData: async (name, currency) => {
-    localStorage.setItem('hisaab_user_name', name);
-    localStorage.setItem('hisaab_primary_currency', currency);
-    localStorage.setItem('hisaab_data_version', '3');
+    localStorage.setItem("hisaab_user_name", name);
+    localStorage.setItem("hisaab_primary_currency", currency);
+    localStorage.setItem("hisaab_data_version", "3");
 
     const accountStore = useAccountStore.getState();
     const txStore = useTransactionStore.getState();
@@ -91,73 +105,73 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
 
     // Create demo accounts
     const cashAccount = await accountStore.createAccount({
-      name: currency === 'AED' ? 'Cash Wallet' : 'Naqdee',
-      type: 'cash',
+      name: currency === "AED" ? "Cash Wallet" : "Naqdee",
+      type: "cash",
       currency,
-      balance: currency === 'AED' ? 2500 : 85000,
+      balance: currency === "AED" ? 2500 : 85000,
     });
 
     const bankAccount = await accountStore.createAccount({
-      name: currency === 'AED' ? 'Mashreq Salary' : 'HBL Account',
-      type: 'bank',
+      name: currency === "AED" ? "Mashreq Salary" : "HBL Account",
+      type: "bank",
       currency,
-      balance: currency === 'AED' ? 12000 : 350000,
-      metadata: { bankName: currency === 'AED' ? 'Mashreq' : 'HBL' },
+      balance: currency === "AED" ? 12000 : 350000,
+      metadata: { bankName: currency === "AED" ? "Mashreq" : "HBL" },
     });
 
     const walletAccount = await accountStore.createAccount({
-      name: 'EasyPaisa',
-      type: 'digital_wallet',
-      currency: 'PKR',
+      name: "EasyPaisa",
+      type: "digital_wallet",
+      currency: "PKR",
       balance: 15000,
-      metadata: { walletType: 'easypaisa' },
+      metadata: { walletType: "easypaisa" },
     });
 
     // Demo transactions
     await txStore.processTransaction({
-      type: 'income',
-      amount: currency === 'AED' ? 8500 : 250000,
+      type: "income",
+      amount: currency === "AED" ? 8500 : 250000,
       destinationAccountId: bankAccount.id,
-      category: 'Salary',
-      notes: 'March salary',
+      category: "Salary",
+      notes: "March salary",
     });
 
     await txStore.processTransaction({
-      type: 'expense',
-      amount: currency === 'AED' ? 350 : 12000,
+      type: "expense",
+      amount: currency === "AED" ? 350 : 12000,
       sourceAccountId: cashAccount.id,
-      category: 'Groceries',
-      notes: 'Weekly groceries',
+      category: "Groceries",
+      notes: "Weekly groceries",
     });
 
     await txStore.processTransaction({
-      type: 'expense',
-      amount: currency === 'AED' ? 120 : 4500,
+      type: "expense",
+      amount: currency === "AED" ? 120 : 4500,
       sourceAccountId: cashAccount.id,
-      category: 'Transport',
-      notes: 'Metro card recharge',
+      category: "Transport",
+      notes: "Metro card recharge",
     });
 
     // Demo loan
     await txStore.processTransaction({
-      type: 'loan_given',
-      amount: currency === 'AED' ? 500 : 20000,
+      type: "loan_given",
+      amount: currency === "AED" ? 500 : 20000,
       sourceAccountId: cashAccount.id,
-      personName: 'Ahmed Bhai',
-      notes: 'Emergency help',
+      personName: "Ahmed Bhai",
+      notes: "Emergency help",
     });
 
     // Demo goals
     await goalStore.createGoal({
-      title: 'Emergency Fund',
-      targetAmount: currency === 'AED' ? 10000 : 300000,
+      title: "Emergency Fund",
+      targetAmount: currency === "AED" ? 10000 : 300000,
       currency,
       storedInAccountId: bankAccount.id,
     });
 
     await goalStore.createGoal({
-      title: 'New Laptop',
-      targetAmount: currency === 'AED' ? 4000 : 150000,
+      title: "New Laptop",
+      targetAmount: currency === "AED" ? 4000 : 150000,
       currency,
       storedInAccountId: bankAccount.id,
     });
@@ -170,13 +184,15 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     await accountStore.loadAccounts();
     await txStore.loadTransactions();
 
-    await profilesDb.updateCurrent({
-      name,
-      primary_currency: currency,
-      onboarding_completed: true,
-    }).catch(() => {});
+    await profilesDb
+      .updateCurrent({
+        name,
+        primary_currency: currency,
+        onboarding_completed: true,
+      })
+      .catch(() => {});
 
-    localStorage.setItem('hisaab_onboarded', '1');
+    localStorage.setItem("hisaab_onboarded", "1");
     set({ completed: true });
   },
 }));

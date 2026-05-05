@@ -22,7 +22,7 @@ export function OnboardingPage() {
     if (!name.trim()) return;
     setLoading(true);
     setMode(selectedMode);
-    await completeOnboarding(name.trim(), currency);
+    await completeOnboarding(name.trim(), currency, selectedMode);
   };
 
   // Language toggle — shown on every step
@@ -236,15 +236,24 @@ export function OnboardingPage() {
                     <p className="text-[11px] text-white/50">{t('onboard_fresh_sub')}</p>
                   </div>
                 </div>
-                <p className="text-[12px] text-white/40 leading-relaxed">{t('onboard_fresh_desc')}</p>
+                <p className="text-[12px] text-white/40 leading-relaxed">
+                  {selectedMode === 'splits_only' ? t('onboard_fresh_desc_splits') : t('onboard_fresh_desc')}
+                </p>
                 <div className="mt-5 space-y-2.5">
-                  {[
-                    t('onboard_fresh_tip_cash'),
-                    t('onboard_fresh_tip_bank'),
-                    t('onboard_fresh_tip_savings'),
-                    t('onboard_fresh_tip_loans'),
-                    t('onboard_fresh_tip_transactions'),
-                  ].map((tip) => (
+                  {(selectedMode === 'splits_only'
+                    ? [
+                        t('onboard_fresh_tip_iou'),
+                        t('onboard_fresh_tip_groups'),
+                        t('onboard_fresh_tip_contacts'),
+                        t('onboard_fresh_tip_reminders'),
+                      ]
+                    : [
+                        t('onboard_fresh_tip_cash'),
+                        t('onboard_fresh_tip_bank'),
+                        t('onboard_fresh_tip_savings'),
+                        t('onboard_fresh_tip_loans'),
+                        t('onboard_fresh_tip_transactions'),
+                      ]).map((tip) => (
                     <div key={tip} className="flex items-start gap-2.5">
                       <CheckCircle size={14} className="text-emerald-300 mt-0.5 shrink-0" />
                       <p className="text-[11px] text-white/65 leading-snug">{tip}</p>

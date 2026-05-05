@@ -12,7 +12,7 @@ import { useToast } from '../components/Toast';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
-import type { LoanType } from '../db';
+import { SUPPORTED_CURRENCIES, type Currency, type LoanType } from '../db';
 
 interface Props { open: boolean; onClose: () => void; }
 
@@ -20,8 +20,9 @@ export function AddLoanModal({ open, onClose }: Props) {
   const { accounts, loadAccounts } = useAccountStore();
   const { processTransaction } = useTransactionStore();
   const { generateSchedule } = useEmiStore();
-  const { loans } = useLoanStore();
+  const { loans, createLoan } = useLoanStore();
   const appMode = useAppModeStore((s) => s.mode);
+  const isLedgerOnlyMode = appMode === 'splits_only';
   const toast = useToast();
   const t = useT();
 
@@ -29,6 +30,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
+  const [ledgerCurrency, setLedgerCurrency] = useState<Currency>((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
   const [cashAdvanceSourceId, setCashAdvanceSourceId] = useState('');
   const [notes, setNotes] = useState('');
   const [hasEmi, setHasEmi] = useState(false);
@@ -40,10 +42,10 @@ export function AddLoanModal({ open, onClose }: Props) {
   void loans;
 
   useEffect(() => {
-    if (open) {
+    if (open && !isLedgerOnlyMode) {
       void loadAccounts();
     }
-  }, [open, loadAccounts]);
+  }, [isLedgerOnlyMode, open, loadAccounts]);
 
   const destinationAccount = accounts.find((account) => account.id === accountId);
   const availableCashAdvanceCards = accounts.filter((account) => (
@@ -57,11 +59,10 @@ export function AddLoanModal({ open, onClose }: Props) {
     ? usePersonStore.getState().persons.find((p) => p.id === contact.id) ?? null
     : null;
   const selectedAccount = accounts.find((a) => a.id === accountId);
+  const requestCurrency = isLedgerOnlyMode ? ledgerCurrency : selectedAccount?.currency;
   const wouldBranchToLinked = !!(
-    appMode !== 'splits_only' &&
     personInStore?.linkedProfileId &&
-    selectedAccount &&
-    selectedAccount.currency
+    requestCurrency
   );
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -69,22 +70,21 @@ export function AddLoanModal({ open, onClose }: Props) {
     setError('');
     const amt = parseFloat(amount);
     const trimmedName = contact.name.trim();
-    if (!amt || !trimmedName || !accountId) { setError(t('fill_all')); return; }
+    if (!amt || !trimmedName || (!isLedgerOnlyMode && !accountId)) { setError(t('fill_all')); return; }
     setSaving(true);
     try {
       const person = contact.id
         ? await ensureResolvedPerson(trimmedName, contact.id)
         : await usePersonStore.getState().findOrCreateByName(trimmedName);
 
-      const selectedAccount = accounts.find((a) => a.id === accountId);
       const txType = loanType === 'given' ? 'loan_given' : 'loan_taken';
       const branch = decideLinkedBranch({
         type: txType,
         person,
-        requestCurrency: selectedAccount?.currency,
+        requestCurrency,
       });
 
-      if (appMode !== 'splits_only' && branch.branch === true) {
+      if (branch.branch === true) {
         await useLinkedRequestStore.getState().createRequest({
           toUserId: branch.toUserId,
           personId: branch.personId,
@@ -94,6 +94,24 @@ export function AddLoanModal({ open, onClose }: Props) {
           note: notes,
         });
         toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
+        setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
+        setHasEmi(false); setInstallments(''); setStartDate('');
+        onClose();
+        return;
+      }
+
+      if (isLedgerOnlyMode) {
+        const loan = await createLoan({
+          personName: person.name,
+          personId: person.id,
+          type: loanType,
+          totalAmount: amt,
+          currency: ledgerCurrency,
+          notes,
+        });
+        if (hasEmi && installments && startDate) {
+          await generateSchedule({ loanId: loan.id, totalAmount: amt, installments: parseInt(installments), startDate });
+        }
         setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
         setHasEmi(false); setInstallments(''); setStartDate('');
         onClose();
@@ -167,24 +185,48 @@ export function AddLoanModal({ open, onClose }: Props) {
           <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="input-field text-center text-lg font-bold tabular-nums" required />
         </div>
 
-        <div>
-          <label className="form-label">{loanType === 'given' ? t('loan_paid_from') : t('loan_received_into')}</label>
-          <div className="space-y-2">
-            {accounts.map(a => {
-              const meta = currencyMeta[a.currency];
-              return (
-                <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
-                  className={accountId === a.id ? 'selector-base selector-selected' : 'selector-base'}
-                >
-                  <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-1.5"><span>{meta?.flag}</span> {a.name}</span>
-                  <span className="text-[12px] text-slate-400 tabular-nums">{a.currency}</span>
-                </button>
-              );
-            })}
+        {isLedgerOnlyMode ? (
+          <div>
+            <label className="form-label">{t('onboard_currency_label')}</label>
+            <div className="grid grid-cols-2 gap-2">
+              {SUPPORTED_CURRENCIES.map((currency) => {
+                const meta = currencyMeta[currency];
+                return (
+                  <button
+                    key={currency}
+                    type="button"
+                    onClick={() => setLedgerCurrency(currency)}
+                    className={ledgerCurrency === currency ? 'selector-base selector-selected' : 'selector-base'}
+                  >
+                    <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-1.5">
+                      <span>{meta?.flag}</span> {currency}
+                    </span>
+                    <span className="text-[11px] text-slate-400">{meta?.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div>
+            <label className="form-label">{loanType === 'given' ? t('loan_paid_from') : t('loan_received_into')}</label>
+            <div className="space-y-2">
+              {accounts.map(a => {
+                const meta = currencyMeta[a.currency];
+                return (
+                  <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
+                    className={accountId === a.id ? 'selector-base selector-selected' : 'selector-base'}
+                  >
+                    <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-1.5"><span>{meta?.flag}</span> {a.name}</span>
+                    <span className="text-[12px] text-slate-400 tabular-nums">{a.currency}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-        {loanType === 'taken' && availableCashAdvanceCards.length > 0 && (
+        {!isLedgerOnlyMode && loanType === 'taken' && availableCashAdvanceCards.length > 0 && (
           <div>
             <label className="form-label">Cash Advance Source</label>
             <div className="space-y-2">

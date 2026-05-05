@@ -102,6 +102,21 @@ export function GroupDetailPage() {
   const getMemberName = (memberId: string) => group.members.find(member => member.id === memberId)?.name ?? '?';
   const currentMember = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))
     ?? group.members.find(member => member.isOwner);
+  const getSplitTypeLabel = (splitType: GroupExpense['splitType']) => {
+    if (splitType === 'equal') return t('group_split_equal');
+    if (splitType === 'exact') return t('group_split_exact');
+    if (splitType === 'percentage') return t('group_split_pct');
+    return t('group_split_shares');
+  };
+  const formatExpenseMeta = (expense: GroupExpense) => {
+    const myShare = currentMember
+      ? expense.splits.find(split => split.memberId === currentMember.id)?.amount ?? 0
+      : 0;
+    return t('group_expense_meta')
+      .replace('{name}', getMemberName(expense.paidBy))
+      .replace('{split}', getSplitTypeLabel(expense.splitType))
+      .replace('{amount}', formatMoney(myShare, group.currency));
+  };
 
   // Group-level health: total spend, settlements, and how far toward "zero
   // imbalance" the group is. Used both by the summary card and by the
@@ -381,7 +396,7 @@ export function GroupDetailPage() {
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-semibold text-slate-800 truncate">{expense.description}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      {getMemberName(expense.paidBy)} {t('group_paid_by').toLowerCase()} &middot; {expense.splitType}
+                      {formatExpenseMeta(expense)}
                     </p>
                   </div>
                   <div className="text-right shrink-0">

@@ -1,0 +1,1 @@
+import{h as e}from"./supabaseDb-XJQJBcP-.js";export{e as personsDb};

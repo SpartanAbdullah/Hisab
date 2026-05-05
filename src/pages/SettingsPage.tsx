@@ -388,13 +388,17 @@ export function SettingsPage() {
                   return;
                 }
                 setMode("splits_only");
+                void profilesDb.updateCurrent({ app_mode: "splits_only" }).catch(() => {});
               }}
               className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${mode === "splits_only" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}
             >
               {t("mode_splits_title")}
             </button>
             <button
-              onClick={() => setMode("full_tracker")}
+              onClick={() => {
+                setMode("full_tracker");
+                void profilesDb.updateCurrent({ app_mode: "full_tracker" }).catch(() => {});
+              }}
               className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${mode === "full_tracker" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}
             >
               {t("mode_full_title")}

@@ -1,0 +1,1 @@
+var e={AED:{flag:`🇦🇪`,symbol:`AED`,name:`UAE Dirham`},PKR:{flag:`🇵🇰`,symbol:`₨`,name:`Pakistani Rupee`},SAR:{flag:`🇸🇦`,symbol:`SAR`,name:`Saudi Riyal`},QAR:{flag:`🇶🇦`,symbol:`QAR`,name:`Qatari Riyal`},OMR:{flag:`🇴🇲`,symbol:`OMR`,name:`Omani Rial`},KWD:{flag:`🇰🇼`,symbol:`KWD`,name:`Kuwaiti Dinar`},BHD:{flag:`🇧🇭`,symbol:`BHD`,name:`Bahraini Dinar`}};export{e as t};

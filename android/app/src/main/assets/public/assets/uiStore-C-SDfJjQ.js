@@ -1,1 +1,0 @@
-import{p as e}from"./jsx-runtime-DSS7vBgK.js";var t=e((e,t)=>({modalCount:0,openModal:()=>e(e=>({modalCount:e.modalCount+1})),closeModal:()=>e(e=>({modalCount:Math.max(0,e.modalCount-1)})),isModalOpen:()=>t().modalCount>0,reset:()=>e({modalCount:0})}));export{t};

@@ -4,6 +4,7 @@ import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { usePersonStore } from '../stores/personStore';
 import { useAccountStore } from '../stores/accountStore';
+import { useAppModeStore } from '../stores/appModeStore';
 import { useToast } from '../components/Toast';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
@@ -24,6 +25,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
   const linkedRequests = useLinkedRequestStore((s) => s.requests);
   const persons = usePersonStore((s) => s.persons);
   const { accounts, loadAccounts } = useAccountStore();
+  const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
 
@@ -43,16 +45,16 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
       setError('');
       setApplyToBalance(false);
       setSelectedAccountId('');
-      void loadAccounts();
+      if (appMode === 'full_tracker') void loadAccounts();
     }
-  }, [open, loan.remainingAmount, loadAccounts]);
+  }, [appMode, open, loan.remainingAmount, loadAccounts]);
 
   // Currency-strict filter: only the loan's currency is eligible.
   const eligibleAccounts = useMemo(
     () => accounts.filter((a) => a.currency === loan.currency),
     [accounts, loan.currency],
   );
-  const hasEligibleAccounts = eligibleAccounts.length > 0;
+  const hasEligibleAccounts = appMode === 'full_tracker' && eligibleAccounts.length > 0;
 
   // Resolve the counterparty name for the header.
   const counterpartyName = (() => {
@@ -189,6 +191,8 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
           />
         </div>
 
+        {appMode === 'full_tracker' && (
+        <>
         {/* Phase 2C-B: sender-side opt-in toggle + account picker. */}
         <label className={`flex items-center gap-2.5 p-3 rounded-2xl border ${
           hasEligibleAccounts
@@ -258,6 +262,14 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
             {t('stl_ledger_only_hint')}
           </p>
         )}
+        </>
+        )}
+
+        {appMode === 'splits_only' ? (
+          <p className="text-[12px] text-indigo-700 bg-indigo-50/70 rounded-2xl p-3 leading-relaxed">
+            {t('stl_ledger_only_hint')}
+          </p>
+        ) : null}
 
         {error && (
           <p className="text-[12px] text-red-500 font-semibold bg-red-50 rounded-xl p-3">{error}</p>

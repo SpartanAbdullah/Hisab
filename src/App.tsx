@@ -51,6 +51,7 @@ function PageLoader() {
 function AppContent() {
   const { completed, loading: onboardingLoading, checkOnboarding } = useOnboardingStore();
   const mode = useAppModeStore(s => s.mode);
+  const setMode = useAppModeStore(s => s.setMode);
   const { user, loading: authLoading, initialize } = useSupabaseAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
@@ -123,13 +124,15 @@ function AppContent() {
       if (cancelled || !profile) return;
       const name = typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : localStorage.getItem('hisaab_user_name');
       const currency = typeof profile.primary_currency === 'string' ? profile.primary_currency : localStorage.getItem('hisaab_primary_currency');
+      const profileMode = profile.app_mode === 'splits_only' || profile.app_mode === 'full_tracker' ? profile.app_mode : null;
       if (name) localStorage.setItem('hisaab_user_name', name);
       if (currency) localStorage.setItem('hisaab_primary_currency', currency);
+      if (profileMode) setMode(profileMode);
     });
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [setMode, user?.id]);
 
   useEffect(() => {
     if (!user || !completed) return;
@@ -183,8 +186,8 @@ function AppContent() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/inbox" element={<InboxPage />} />
-          <Route path="/account/:id" element={<AccountDetailPage />} />
-          <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/account/:id" element={mode === 'full_tracker' ? <AccountDetailPage /> : <Navigate to="/" replace />} />
+          <Route path="/transactions" element={mode === 'full_tracker' ? <TransactionsPage /> : <Navigate to="/" replace />} />
           <Route path="/loans" element={<LoansPage />} />
           <Route path="/loan/:id" element={<LoanDetailPage />} />
 

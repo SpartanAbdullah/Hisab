@@ -24,7 +24,6 @@ export function BottomNav() {
 
   const splitsLinks = [
     { to: '/', icon: Home, label: t('nav_home') },
-    { to: '/transactions', icon: ArrowLeftRight, label: t('nav_transactions') },
     { to: '/loans', icon: HandCoins, label: t('nav_loans') },
     { to: '/groups', icon: Users, label: t('nav_groups') },
     { to: '/inbox', icon: Inbox, label: t('nav_inbox'), badge: pendingApprovalCount },

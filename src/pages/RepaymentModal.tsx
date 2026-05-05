@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useLoanStore } from '../stores/loanStore';
+import { useAppModeStore } from '../stores/appModeStore';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { useToast } from '../components/Toast';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
@@ -31,6 +33,8 @@ export function RepaymentModal({
 }: Props) {
   const { accounts } = useAccountStore();
   const { processTransaction } = useTransactionStore();
+  const { applyRepayment } = useLoanStore();
+  const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
 
@@ -47,6 +51,7 @@ export function RepaymentModal({
   }>({ title: '', description: '', changes: [] });
 
   const isGiven = loan.type === 'given';
+  const isLedgerOnlyMode = appMode === 'splits_only';
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const isCrossCurrency = selectedAccount ? selectedAccount.currency !== loan.currency : false;
   const isInstallmentPayment = Boolean(emiId);
@@ -70,8 +75,9 @@ export function RepaymentModal({
 
   const canSubmit = () => {
     const parsedAmount = parseFloat(amount);
-    if (!(parsedAmount > 0) || !accountId) return false;
-    if (isCrossCurrency && !parseFloat(conversionRate)) return false;
+    if (!(parsedAmount > 0)) return false;
+    if (!isLedgerOnlyMode && !accountId) return false;
+    if (!isLedgerOnlyMode && isCrossCurrency && !parseFloat(conversionRate)) return false;
     return true;
   };
 
@@ -82,12 +88,15 @@ export function RepaymentModal({
     setSaving(true);
     try {
       const changes: Array<{ accountName: string; currency: string; before: number; after: number }> = [];
-      const account = accounts.find((entry) => entry.id === accountId);
-      if (!account) throw new Error('Account not found');
+      const account = isLedgerOnlyMode ? null : accounts.find((entry) => entry.id === accountId);
+      if (!isLedgerOnlyMode && !account) throw new Error('Account not found');
 
       const rate = parseFloat(conversionRate) || undefined;
 
-      if (isGiven) {
+      if (isLedgerOnlyMode) {
+        await applyRepayment(loan.id, parsedAmount);
+      } else if (isGiven) {
+        if (!account) throw new Error('Account not found');
         const addedAmount = isCrossCurrency && rate ? Math.round(parsedAmount * rate * 100) / 100 : parsedAmount;
         changes.push({
           accountName: account.name,
@@ -105,6 +114,7 @@ export function RepaymentModal({
           notes,
         });
       } else {
+        if (!account) throw new Error('Account not found');
         const deductedAmount = isCrossCurrency && rate ? Math.round(parsedAmount / rate * 100) / 100 : parsedAmount;
         changes.push({
           accountName: account.name,
@@ -210,6 +220,7 @@ export function RepaymentModal({
             ) : null}
           </div>
 
+          {!isLedgerOnlyMode && (
           <div>
             <label className="form-label">
               {isGiven ? t('repay_receive_in') : t('repay_pay_from')}
@@ -242,8 +253,9 @@ export function RepaymentModal({
               })}
             </div>
           </div>
+          )}
 
-          {isCrossCurrency && selectedAccount ? (
+          {!isLedgerOnlyMode && isCrossCurrency && selectedAccount ? (
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-4 border border-blue-100/60 space-y-3 animate-fade-in">
               <p className="text-[11px] font-bold text-blue-600 uppercase tracking-widest">{t('conv_title')}</p>
               <p className="text-[12px] text-slate-600">
