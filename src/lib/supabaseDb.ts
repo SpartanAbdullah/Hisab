@@ -849,6 +849,15 @@ export const notificationsDb = {
       .is('read_at', null);
     if (error) throw error;
   },
+  async markGroupRead(groupId: string) {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('user_id', getUserId())
+      .eq('group_id', groupId)
+      .is('read_at', null);
+    if (error) throw error;
+  },
 };
 
 export const profilesDb = {

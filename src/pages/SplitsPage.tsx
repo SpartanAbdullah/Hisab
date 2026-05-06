@@ -9,6 +9,7 @@ import {
   HandCoins,
 } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
+import { useNotificationStore } from '../stores/notificationStore';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { ActionCard } from '../components/ActionCard';
@@ -89,6 +90,7 @@ function GroupsEducationCard() {
 
 export function SplitsPage() {
   const { groups, loadGroups, balances, balancesLoaded, loadBalances } = useSplitStore();
+  const { notifications, loadNotifications } = useNotificationStore();
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const navigate = useNavigate();
@@ -98,9 +100,9 @@ export function SplitsPage() {
   // background and have their own per-card skeleton, so a slow balance query
   // never stalls the whole page.
   const load = useCallback(async () => {
-    await loadGroups();
+    await Promise.all([loadGroups(), loadNotifications()]);
     void loadBalances();
-  }, [loadGroups, loadBalances]);
+  }, [loadGroups, loadNotifications, loadBalances]);
 
   const { status, error, retry } = useAsyncLoad(load);
 
@@ -109,9 +111,20 @@ export function SplitsPage() {
     if (groups.length > 0) void loadBalances();
   }, [groups, loadBalances]);
 
+  useEffect(() => {
+    const onFocus = () => { void loadNotifications(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadNotifications]);
+
   const hasGroups = groups.length > 0;
   const isInitialLoading = status === 'loading' && !hasGroups;
   const showEducation = status === 'ready' && !hasGroups;
+  const unreadGroupIds = new Set(
+    notifications
+      .filter(notification => notification.type === 'group_update' && notification.groupId && !notification.readAt)
+      .map(notification => notification.groupId as string),
+  );
 
   return (
     <div className="page-shell">
@@ -177,6 +190,7 @@ export function SplitsPage() {
                   balanceLoaded={balancesLoaded}
                   settledLabel={t('group_settled')}
                   membersLabel={t('group_members_count')}
+                  hasUnreadActivity={unreadGroupIds.has(g.id)}
                   onClick={() => navigate(`/group/${g.id}`)}
                 />
               </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
+import { useNotificationStore } from '../stores/notificationStore';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { AddGroupExpenseModal } from './AddGroupExpenseModal';
 import { EditGroupExpenseModal } from './EditGroupExpenseModal';
@@ -29,6 +30,7 @@ export function GroupDetailPage() {
   const t = useT();
   const toast = useToast();
   const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents, getSettlements, loadGroups } = useSplitStore();
+  const markGroupRead = useNotificationStore((state) => state.markGroupRead);
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
   const [expenses, setExpenses] = useState<GroupExpense[]>([]);
@@ -65,6 +67,11 @@ export function GroupDetailPage() {
   }, [id, getGroupExpenses, getSimplifiedDebts, getGroupEvents, getSettlements, loadGroups]);
 
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(reload);
+
+  useEffect(() => {
+    if (!id || loadStatus !== 'ready') return;
+    void markGroupRead(id).catch(err => console.error('mark group read failed', err));
+  }, [id, loadStatus, markGroupRead]);
 
   // While this page is open, subscribe to member changes on this group so
   // the header avatars and member count reflect joins/leaves instantly.
@@ -394,7 +401,16 @@ export function GroupDetailPage() {
               >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-slate-800 truncate">{expense.description}</p>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="text-[13px] font-semibold text-slate-800 truncate">{expense.description}</p>
+                      {(expense.version ?? 1) > 1 ? (
+                        <span
+                          className="h-2.5 w-2.5 rounded-full bg-orange-400 ring-2 ring-orange-100 shrink-0"
+                          aria-label="Edited expense"
+                          title="Edited"
+                        />
+                      ) : null}
+                    </div>
                     <p className="text-[10px] text-slate-400 mt-0.5">
                       {formatExpenseMeta(expense)}
                     </p>

@@ -8,6 +8,7 @@ interface Props {
   balanceLoaded: boolean;
   settledLabel: string;
   membersLabel: string;
+  hasUnreadActivity: boolean;
   onClick: () => void;
 }
 
@@ -16,7 +17,7 @@ interface Props {
 // Skeleton shimmer when the balance hasn't loaded — prevents the misleading
 // "All settled" flash users saw on first paint before the batched balance
 // query resolved.
-export function GroupCard({ group, balance, balanceLoaded, settledLabel, membersLabel, onClick }: Props) {
+export function GroupCard({ group, balance, balanceLoaded, settledLabel, membersLabel, hasUnreadActivity, onClick }: Props) {
   const connected = group.members.filter(m => m.status === 'connected').length;
 
   return (
@@ -24,8 +25,14 @@ export function GroupCard({ group, balance, balanceLoaded, settledLabel, members
       onClick={onClick}
       className="w-full card-premium p-4 flex items-center gap-3.5 text-left active:scale-[0.98] transition-all"
     >
-      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center text-xl shrink-0">
+      <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center text-xl shrink-0">
         {group.emoji}
+        <span
+          className={`absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full ring-2 ring-white ${
+            hasUnreadActivity ? 'bg-rose-500' : 'bg-emerald-500'
+          }`}
+          aria-label={hasUnreadActivity ? 'Unread group activity' : 'No unread group activity'}
+        />
       </div>
 
       <div className="flex-1 min-w-0">

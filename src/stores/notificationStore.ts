@@ -8,6 +8,7 @@ interface NotificationState {
   unreadCount: number;
   loadNotifications: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
+  markGroupRead: (groupId: string) => Promise<void>;
   markAllRead: () => Promise<void>;
   reset: () => void;
 }
@@ -38,9 +39,24 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 
   markRead: async (id) => {
     await notificationsDb.markRead(id);
+    const readAt = new Date().toISOString();
     set((state) => {
       const notifications = state.notifications.map(notification =>
-        notification.id === id ? { ...notification, readAt: new Date().toISOString() } : notification,
+        notification.id === id ? { ...notification, readAt } : notification,
+      );
+      return {
+        notifications,
+        unreadCount: notifications.filter(notification => !notification.readAt).length,
+      };
+    });
+  },
+
+  markGroupRead: async (groupId) => {
+    await notificationsDb.markGroupRead(groupId);
+    const readAt = new Date().toISOString();
+    set((state) => {
+      const notifications = state.notifications.map(notification =>
+        notification.groupId === groupId && !notification.readAt ? { ...notification, readAt } : notification,
       );
       return {
         notifications,
