@@ -17,6 +17,8 @@ import {
   Users,
   AlertTriangle,
   Trash2,
+  Share2,
+  Sparkles,
 } from "lucide-react";
 import { ContactsModal } from "./ContactsModal";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
@@ -30,9 +32,37 @@ import { useT, useI18nStore } from "../lib/i18n";
 import { exportAllData, importData, downloadJSON } from "../lib/dataExport";
 import { profilesDb } from "../lib/supabaseDb";
 import {
+  buildAppShareUrl,
   generatePublicCodeCandidate,
   normalizePublicCode,
 } from "../lib/collaboration";
+
+function copyWithTextareaFallback(text: string): Promise<void> {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    document.execCommand("copy");
+    return Promise.resolve();
+  } catch (error) {
+    return Promise.reject(error);
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
+function copyShareText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => copyWithTextareaFallback(text));
+  }
+
+  return copyWithTextareaFallback(text);
+}
 
 export function SettingsPage() {
   const t = useT();
@@ -163,6 +193,32 @@ export function SettingsPage() {
   const handleSaveProfile = () => {
     if (mobile) localStorage.setItem("hisaab_mobile", mobile);
     toast.show({ type: "success", title: t("settings_profile_saved") });
+  };
+
+  const handleShareApp = async () => {
+    const shareUrl = buildAppShareUrl();
+    const shareText = t("settings_share_app_text");
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Hisaab",
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      }
+
+      await copyShareText(`${shareText}\n${shareUrl}`);
+      toast.show({
+        type: "success",
+        title: t("settings_share_app_copied"),
+        subtitle: shareUrl,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast.show({ type: "error", title: t("settings_share_app_failed") });
+    }
   };
 
   const handlePasswordReset = async () => {
@@ -501,13 +557,41 @@ export function SettingsPage() {
             </div>
             <div className="flex-1">
               <p className="text-[13px] font-semibold text-slate-700">
-                Your Contacts
+                {t("settings_contacts_tile")}
               </p>
               <p className="text-[11px] text-slate-400">
-                People linked to your loans and transactions
+                {t("settings_contacts_tile_desc")}
               </p>
             </div>
             <ChevronRight size={16} className="text-slate-300" />
+          </button>
+          <button
+            onClick={handleShareApp}
+            className={
+              rowClass +
+              " w-full text-left bg-gradient-to-r from-rose-50 via-white to-sky-50"
+            }
+          >
+            <div className="relative w-9 h-9 rounded-xl bg-white shadow-sm shadow-rose-200/70 flex items-center justify-center">
+              <Share2 size={16} className="text-rose-500" />
+              <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-sky-100 flex items-center justify-center">
+                <Sparkles size={10} className="text-sky-500" />
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-[13px] font-semibold text-slate-700 truncate">
+                  {t("settings_share_app")}
+                </p>
+                <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-rose-500 shadow-sm">
+                  {t("settings_share_app_badge")}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                {t("settings_share_app_desc")}
+              </p>
+            </div>
+            <ChevronRight size={16} className="text-rose-300" />
           </button>
         </div>
 

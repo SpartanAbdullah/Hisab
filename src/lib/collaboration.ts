@@ -45,6 +45,10 @@ function getPublicAppUrl(): string {
   return (configuredUrl?.trim() || fallbackUrl).replace(/\/+$/, '');
 }
 
+export function buildAppShareUrl(): string {
+  return getPublicAppUrl() || '/';
+}
+
 export function buildInviteUrl(token: string): string {
   const publicAppUrl = getPublicAppUrl();
   return publicAppUrl ? `${publicAppUrl}/join/${token}` : `/join/${token}`;

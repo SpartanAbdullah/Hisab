@@ -734,6 +734,32 @@ const S = {
     ur: "Aapka paisa, aapki nazar mein",
     en: "Your money, your way",
   },
+  settings_contacts_tile: { ur: "Aap ke Contacts", en: "Your Contacts" },
+  settings_contacts_tile_desc: {
+    ur: "Loans aur splits ke linked log",
+    en: "People linked to your loans and transactions",
+  },
+  settings_share_app: {
+    ur: "Hisaab ka chota sa magic link",
+    en: "Share Hisaab's tiny magic link",
+  },
+  settings_share_app_desc: {
+    ur: "Doston ko app bhejo taake hisaab saath saath rahe",
+    en: "Send the app to friends so every bill finds its buddy",
+  },
+  settings_share_app_badge: { ur: "Link ready", en: "Link ready" },
+  settings_share_app_text: {
+    ur: "Hisaab try karo - loans, splits aur daily paisay ek cute app mein.",
+    en: "Try Hisaab - loans, splits, and daily money in one cute little app.",
+  },
+  settings_share_app_copied: {
+    ur: "App link copy ho gaya",
+    en: "App link copied",
+  },
+  settings_share_app_failed: {
+    ur: "Share nahi ho saka",
+    en: "Could not share the app",
+  },
 
   // ── PIN Lock ──
   pin_title: { ur: "PIN Daalo", en: "Enter PIN" },
