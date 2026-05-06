@@ -69,8 +69,8 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       setPaidFromAccountId('');
       return;
     }
-    if (!paidFromAccountId || !accounts.some(account => account.id === paidFromAccountId)) {
-      setPaidFromAccountId(accounts[0]?.id ?? '');
+    if (paidFromAccountId && !accounts.some(account => account.id === paidFromAccountId)) {
+      setPaidFromAccountId('');
     }
   }, [open, shouldTrackExpense, paidFromAccountId, accounts]);
 
@@ -108,10 +108,6 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       toast.show({ type: 'error', title: t('fill_all') });
       return;
     }
-    if (shouldTrackExpense && !paidFromAccountId) {
-      toast.show({ type: 'error', title: 'Select the account you paid from' });
-      return;
-    }
     const { valid, splits, error } = computeSplits();
     if (!valid) {
       toast.show({ type: 'error', title: error || t('error') });
@@ -126,12 +122,13 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         splitType,
         splits,
         category,
-        paidFromAccountId: shouldTrackExpense ? paidFromAccountId : null,
+        paidFromAccountId: shouldTrackExpense ? paidFromAccountId || null : null,
       });
       toast.show({ type: 'success', title: 'Expense updated!' });
       onClose();
-    } catch {
-      toast.show({ type: 'error', title: t('error') });
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : t('error');
+      toast.show({ type: 'error', title: 'Expense not updated', subtitle: message });
     } finally {
       setSaving(false);
     }
@@ -187,6 +184,17 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Paid From</label>
             <div className="space-y-2 mt-1.5">
+              <button
+                onClick={() => setPaidFromAccountId('')}
+                className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
+                  !paidFromAccountId ? 'border-emerald-300 bg-emerald-50/60 shadow-sm shadow-emerald-500/5' : 'border-slate-200/60 bg-white'
+                }`}
+              >
+                <div>
+                  <p className="text-[13px] font-semibold text-slate-700">Not tracked in my wallet</p>
+                  <p className="text-[10px] text-slate-400">Use this for card/cash paid outside this app.</p>
+                </div>
+              </button>
               {accounts.map(account => (
                 <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
