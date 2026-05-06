@@ -127,7 +127,8 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
       });
       toast.show({ type: 'success', title: t('stl_sent_title'), subtitle: t('stl_sent_subtitle') });
       onClose();
-    } catch {
+    } catch (err) {
+      console.error('settlement request create failed', err);
       setError(t('stl_create_error'));
     } finally {
       setSaving(false);
