@@ -59,6 +59,12 @@ export function InboxPage() {
       settlements.filter((r) => r.status === 'pending' && r.toUserId === myId).length,
     [requests, settlements, myId],
   );
+  const outgoingPendingCount = useMemo(
+    () =>
+      requests.filter((r) => r.status === 'pending' && r.fromUserId === myId).length +
+      settlements.filter((r) => r.status === 'pending' && r.fromUserId === myId).length,
+    [requests, settlements, myId],
+  );
 
   const handleAccept = async (id: string) => {
     setBusyId(id);
@@ -158,7 +164,7 @@ export function InboxPage() {
           <TabButton active={tab === 'incoming'} onClick={() => setTab('incoming')}
             label={t('ltr_tab_incoming')} badge={incomingPendingCount} />
           <TabButton active={tab === 'outgoing'} onClick={() => setTab('outgoing')}
-            label={t('ltr_tab_outgoing')} />
+            label={t('ltr_tab_outgoing')} badge={outgoingPendingCount} />
         </div>
 
         <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
@@ -206,19 +212,30 @@ export function InboxPage() {
 function TabButton({
   active, onClick, label, badge,
 }: { active: boolean; onClick: () => void; label: string; badge?: number }) {
+  const count = badge ?? 0;
+
   return (
     <button
       onClick={onClick}
-      className={`flex-1 py-2.5 rounded-2xl text-[12px] font-bold transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
+      className={`flex-1 min-h-12 py-2.5 rounded-2xl text-[12px] font-bold transition-all active:scale-[0.97] flex items-center justify-center gap-2 ${
         active ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'bg-slate-100 text-slate-500'
       }`}
     >
       <span>{label}</span>
-      {badge && badge > 0 ? (
-        <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 ${active ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-600'}`}>
-          {badge}
+      {count > 0 ? (
+        <span className={`min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] leading-[18px] text-center font-extrabold tabular-nums ${
+          active ? 'bg-white text-rose-600' : 'bg-rose-500 text-white ring-2 ring-white'
+        }`}>
+          {count > 9 ? '9+' : count}
         </span>
-      ) : null}
+      ) : (
+        <span
+          className={`h-2.5 w-2.5 rounded-full ${
+            active ? 'bg-emerald-300 ring-2 ring-white/35' : 'bg-emerald-500 ring-2 ring-white'
+          }`}
+          aria-label="No pending items"
+        />
+      )}
     </button>
   );
 }
