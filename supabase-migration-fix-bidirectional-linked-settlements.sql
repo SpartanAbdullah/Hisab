@@ -6,8 +6,54 @@
 -- workflow intact: sender proposes, counterparty accepts, then both mirrored
 -- loans receive repayment transactions.
 
+alter table public.linked_transaction_requests
+  add column if not exists loan_pair_id text;
+
+update public.linked_transaction_requests
+   set loan_pair_id = id
+ where status = 'accepted'
+   and loan_pair_id is null;
+
+create table if not exists public.linked_settlement_requests (
+  id                   text primary key,
+  loan_pair_id         text not null,
+  requester_loan_id    text not null references public.loans(id) on delete cascade,
+  responder_loan_id    text not null references public.loans(id) on delete cascade,
+  from_user_id         uuid not null references auth.users(id) on delete cascade,
+  to_user_id           uuid not null references auth.users(id) on delete cascade,
+  amount               numeric not null check (amount > 0),
+  currency             text not null check (currency in ('AED','PKR')),
+  note                 text not null default '',
+  status               text not null default 'pending'
+                         check (status in ('pending','accepted','rejected','cancelled')),
+  rejection_reason     text,
+  requester_txn_id     text,
+  responder_txn_id     text,
+  requester_account_id text,
+  created_at           timestamptz not null default now(),
+  responded_at         timestamptz,
+  constraint lsr_different_parties check (from_user_id <> to_user_id)
+);
+
+create index if not exists idx_lsr_to_pending
+  on public.linked_settlement_requests(to_user_id, created_at desc)
+  where status = 'pending';
+
+create index if not exists idx_lsr_from_pending
+  on public.linked_settlement_requests(from_user_id, created_at desc)
+  where status = 'pending';
+
+create index if not exists idx_lsr_pair
+  on public.linked_settlement_requests(loan_pair_id);
+
+alter table public.linked_settlement_requests enable row level security;
+
 alter table public.linked_settlement_requests
   add column if not exists requester_account_id text;
+
+drop policy if exists lsr_select_participant on public.linked_settlement_requests;
+create policy lsr_select_participant on public.linked_settlement_requests
+  for select using (from_user_id = auth.uid() or to_user_id = auth.uid());
 
 -- New app versions create requests through the RPC below; currently deployed
 -- app versions may still use a raw table insert, so keep that path valid too.
