@@ -129,7 +129,8 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
       onClose();
     } catch (err) {
       console.error('settlement request create failed', err);
-      setError(t('stl_create_error'));
+      const detail = err instanceof Error ? err.message : '';
+      setError(detail ? `${t('stl_create_error')} (${detail})` : t('stl_create_error'));
     } finally {
       setSaving(false);
     }

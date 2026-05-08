@@ -336,12 +336,11 @@ export const settlementRequestsDb = {
     note: string;
     requesterAccountId?: string | null;
   }) {
-    const { error } = await supabase.from('linked_settlement_requests').insert({
-      id: input.id,
+    const { error } = await supabase.rpc('create_settlement_request', {
+      request_id: input.id,
       loan_pair_id: input.loanPairId,
       requester_loan_id: input.requesterLoanId,
       responder_loan_id: input.responderLoanId,
-      from_user_id: getUserId(),
       to_user_id: input.toUserId,
       amount: input.amount,
       currency: input.currency,

@@ -9,6 +9,15 @@
 alter table public.linked_settlement_requests
   add column if not exists requester_account_id text;
 
+-- New app versions create requests through the RPC below; currently deployed
+-- app versions may still use a raw table insert, so keep that path valid too.
+drop trigger if exists lsr_validate_insert on public.linked_settlement_requests;
+
+drop policy if exists lsr_insert_own on public.linked_settlement_requests;
+drop policy if exists lsr_insert_via_rpc_only on public.linked_settlement_requests;
+create policy lsr_insert_own on public.linked_settlement_requests
+  for insert with check (from_user_id = auth.uid());
+
 create or replace function public.tg_lsr_validate_insert() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
@@ -91,6 +100,114 @@ begin
   new.requester_txn_id := null;
   new.responder_txn_id := null;
   return new;
+end $$;
+
+create trigger lsr_validate_insert before insert on public.linked_settlement_requests
+for each row execute function public.tg_lsr_validate_insert();
+
+create or replace function public.create_settlement_request(
+  request_id text,
+  loan_pair_id text,
+  requester_loan_id text,
+  responder_loan_id text,
+  to_user_id uuid,
+  amount numeric,
+  currency text,
+  note text default '',
+  requester_account_id text default null
+)
+returns public.linked_settlement_requests
+language plpgsql security definer set search_path = public as $$
+declare
+  v_req public.linked_settlement_requests;
+  v_r_loan public.loans;
+  v_p_loan public.loans;
+  v_r_pair text;
+  v_p_pair text;
+  v_acct public.accounts;
+  v_from_user_id uuid := auth.uid();
+begin
+  if v_from_user_id is null then
+    raise exception 'lsr: not authenticated';
+  end if;
+  if v_from_user_id = to_user_id then
+    raise exception 'lsr: self-settlement not allowed';
+  end if;
+
+  select * into v_r_loan from public.loans where id = requester_loan_id;
+  if not found then
+    raise exception 'lsr: requester loan not found';
+  end if;
+  if v_r_loan.user_id <> v_from_user_id then
+    raise exception 'lsr: requester loan does not belong to sender';
+  end if;
+
+  select * into v_p_loan from public.loans where id = responder_loan_id;
+  if not found then
+    raise exception 'lsr: responder loan not found';
+  end if;
+  if v_p_loan.user_id <> to_user_id then
+    raise exception 'lsr: responder loan does not belong to receiver';
+  end if;
+
+  select ltr.id into v_r_pair
+    from public.linked_transaction_requests ltr
+   where ltr.status = 'accepted'
+     and (ltr.requester_loan_id = v_r_loan.id or ltr.responder_loan_id = v_r_loan.id);
+  select ltr.id into v_p_pair
+    from public.linked_transaction_requests ltr
+   where ltr.status = 'accepted'
+     and (ltr.requester_loan_id = v_p_loan.id or ltr.responder_loan_id = v_p_loan.id);
+
+  if v_r_pair is null or v_p_pair is null or v_r_pair <> v_p_pair then
+    raise exception 'lsr: loans do not share the same linked pair';
+  end if;
+  if loan_pair_id <> v_r_pair then
+    raise exception 'lsr: loan_pair_id does not match the loans';
+  end if;
+  if v_r_loan.status <> 'active' or v_p_loan.status <> 'active' then
+    raise exception 'lsr: both loans must be active';
+  end if;
+  if v_r_loan.currency <> v_p_loan.currency or currency <> v_r_loan.currency then
+    raise exception 'lsr: currency mismatch';
+  end if;
+  if amount <= 0 then
+    raise exception 'lsr: amount must be positive';
+  end if;
+  if amount > v_r_loan.remaining_amount or amount > v_p_loan.remaining_amount then
+    raise exception 'lsr: amount exceeds remaining';
+  end if;
+  if v_r_loan.type = v_p_loan.type then
+    raise exception 'lsr: linked loan directions are invalid';
+  end if;
+
+  if requester_account_id is not null then
+    select * into v_acct
+      from public.accounts
+     where id = requester_account_id;
+    if not found then
+      raise exception 'lsr: requester account not found';
+    end if;
+    if v_acct.user_id <> v_from_user_id then
+      raise exception 'lsr: requester account not owned';
+    end if;
+    if v_acct.currency <> currency then
+      raise exception 'lsr: requester account currency mismatch';
+    end if;
+  end if;
+
+  insert into public.linked_settlement_requests(
+    id, loan_pair_id, requester_loan_id, responder_loan_id,
+    from_user_id, to_user_id, amount, currency, note, requester_account_id,
+    status, rejection_reason, requester_txn_id, responder_txn_id
+  ) values (
+    request_id, loan_pair_id, requester_loan_id, responder_loan_id,
+    v_from_user_id, to_user_id, amount, currency, coalesce(note, ''), requester_account_id,
+    'pending', null, null, null
+  )
+  returning * into v_req;
+
+  return v_req;
 end $$;
 
 create or replace function public.accept_settlement_request(request_id text)
@@ -240,3 +357,4 @@ begin
 end $$;
 
 grant execute on function public.accept_settlement_request(text) to authenticated;
+grant execute on function public.create_settlement_request(text, text, text, text, uuid, numeric, text, text, text) to authenticated;
