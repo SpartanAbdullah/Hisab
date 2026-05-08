@@ -17,9 +17,8 @@ interface Props {
   loan: Loan;
 }
 
-// Phase 2C-A: ledger-only settlement. Shown only for linked loans where the
-// current user is the debtor (loan.type === 'taken'). Non-linked loans use
-// the existing RepaymentModal, unchanged.
+// Phase 2C-A: linked settlement request. Either side can send it; the other
+// linked user must confirm before both mirrored loans are repaid.
 export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
   const { createRequest } = useSettlementRequestStore();
   const linkedRequests = useLinkedRequestStore((s) => s.requests);
@@ -36,6 +35,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
   // Phase 2C-B: sender-side optional apply-to-balance.
   const [applyToBalance, setApplyToBalance] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState('');
+  const isGiven = loan.type === 'given';
 
   useEffect(() => {
     if (open) {
@@ -153,7 +153,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
       <div className="space-y-4">
         <div className="bg-slate-50/80 rounded-2xl p-3.5 border border-slate-100/60">
           <p className="text-[13px] text-slate-600">
-            {t('stl_direction_paying_to')
+            {(isGiven ? t('stl_direction_receiving_from') : t('stl_direction_paying_to'))
               .replace('{name}', counterpartyName)
               .replace('{amount}', formatMoney(parseFloat(amount) || 0, loan.currency))}
           </p>
@@ -256,7 +256,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
 
         {applyToBalance && selectedAccountId ? (
           <p className="text-[12px] text-amber-700 bg-amber-50/70 rounded-2xl p-3 leading-relaxed">
-            {t('stl_apply_reduce_hint')}
+            {isGiven ? t('stl_apply_increase_hint') : t('stl_apply_reduce_hint')}
           </p>
         ) : (
           <p className="text-[12px] text-indigo-700 bg-indigo-50/70 rounded-2xl p-3 leading-relaxed">

@@ -64,8 +64,7 @@ export function LoanDetailPage() {
     const p = persons.find((x) => x.id === loan.personId);
     return !!(p?.linkedProfileId) && !!linkedPair;
   })();
-  // 2C-A direction rule: only the debtor (type='taken') can initiate.
-  const canSettleLinked = isLinkedLoan && loan.status === 'active' && loan.type === 'taken';
+  const canSettleLinked = isLinkedLoan && loan.status === 'active' && loan.remainingAmount > 0;
   const loanPairId = linkedPair?.id ?? null;
   const settlementHistory = loanPairId
     ? settlementRequests.filter((r) => r.loanPairId === loanPairId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -338,7 +337,7 @@ function SettlementHistoryRow({
         </p>
         {appliedFromAccountName ? (
           <p className="text-[10px] text-indigo-600 mt-0.5">
-            {t('stl_applied_from').replace('{account}', appliedFromAccountName)}
+            {t('stl_applied_account').replace('{account}', appliedFromAccountName)}
           </p>
         ) : null}
         {request.note ? (

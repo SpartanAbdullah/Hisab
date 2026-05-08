@@ -1123,10 +1123,14 @@ const S = {
   stl_settle_cta: { ur: "Settlement Record Karein", en: "Record Settlement" },
   stl_title: { ur: "Settlement — {name}", en: "Settlement — {name}" },
 
-  // Direction line, shown on the modal. Settler is always the debtor in 2C-A.
+  // Direction line, shown on the modal.
   stl_direction_paying_to: {
     ur: "Aap {name} ko {amount} adaa kar rahe hain.",
     en: "You'll mark {amount} as paid to {name}.",
+  },
+  stl_direction_receiving_from: {
+    ur: "Aap {name} se {amount} receive mark kar rahe hain.",
+    en: "You'll mark {amount} as received from {name}.",
   },
 
   stl_amount_label: { ur: "Kitni adaigi?", en: "How much?" },
@@ -1214,8 +1218,12 @@ const S = {
     ur: "Jab dusra user accept karega tab aap ke account ka balance kam hoga.",
     en: "This will reduce your account balance when the other person accepts.",
   },
+  stl_apply_increase_hint: {
+    ur: "Jab dusra user accept karega tab aap ke account ka balance barhega.",
+    en: "This will increase your account balance when the other person accepts.",
+  },
   // Meta line on sender-side history for accepted settlements with an account.
-  stl_applied_from: { ur: "Aap ke {account} se", en: "From your {account}" },
+  stl_applied_account: { ur: "Aap ke {account} par apply hua", en: "Applied to your {account}" },
 
   // ── Phase G7: minor standalone UI strings ──
   contacts_title: { ur: "Aap ke Contacts", en: "Your Contacts" },
