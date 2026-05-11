@@ -7,6 +7,7 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { groupByCategory, monthlyTrend, dailySpending, topExpenses } from '../lib/analytics';
+import { parseInternalNote } from '../lib/internalNotes';
 import type { Currency, Transaction } from '../db';
 
 type Period = 'this_month' | 'last_month' | '3months' | 'year';
@@ -53,6 +54,11 @@ function MoneyLines({ totals, tone }: { totals: { currency: Currency; amount: nu
       ))}
     </div>
   );
+}
+
+function getTransactionSubtitle(tx: Transaction) {
+  const parsedNote = parseInternalNote(tx.notes);
+  return parsedNote.visibleNote || parsedNote.meta.expenseDescription || '';
 }
 
 export function AnalyticsPage() {
@@ -236,15 +242,18 @@ export function AnalyticsPage() {
                 <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
               </div>
               <div className="card-premium divide-y divide-slate-100/60">
-                {topExp.map(tx => (
-                  <div key={tx.id} className="px-4 py-3 flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12px] font-semibold text-slate-700 truncate">{tx.category || 'Other'}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{tx.notes || ''}</p>
+                {topExp.map(tx => {
+                  const subtitle = getTransactionSubtitle(tx);
+                  return (
+                    <div key={tx.id} className="px-4 py-3 flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12px] font-semibold text-slate-700 truncate">{tx.category || 'Other'}</p>
+                        {subtitle ? <p className="text-[10px] text-slate-400 truncate">{subtitle}</p> : null}
+                      </div>
+                      <p className="text-[13px] font-bold text-red-500 tabular-nums shrink-0 ml-2">{formatMoney(tx.amount, tx.currency)}</p>
                     </div>
-                    <p className="text-[13px] font-bold text-red-500 tabular-nums shrink-0 ml-2">{formatMoney(tx.amount, tx.currency)}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
