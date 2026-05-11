@@ -115,14 +115,15 @@ export function GroupDetailPage() {
     if (splitType === 'percentage') return t('group_split_pct');
     return t('group_split_shares');
   };
-  const formatExpenseMeta = (expense: GroupExpense) => {
+  const getExpenseMeta = (expense: GroupExpense) => {
     const myShare = currentMember
       ? expense.splits.find(split => split.memberId === currentMember.id)?.amount ?? 0
       : 0;
-    return t('group_expense_meta')
-      .replace('{name}', getMemberName(expense.paidBy))
-      .replace('{split}', getSplitTypeLabel(expense.splitType))
-      .replace('{amount}', formatMoney(myShare, group.currency));
+    return {
+      paidBy: getMemberName(expense.paidBy),
+      split: getSplitTypeLabel(expense.splitType),
+      share: formatMoney(myShare, group.currency),
+    };
   };
 
   // Group-level health: total spend, settlements, and how far toward "zero
@@ -392,36 +393,47 @@ export function GroupDetailPage() {
               </button>
             </div>
           ) : (
-            expenses.map((expense, index) => (
-              <button
-                key={expense.id}
-                onClick={() => setEditExpense(expense)}
-                className="w-full text-left card-premium p-4 animate-fade-in active:scale-[0.98] transition-all"
-                style={{ animationDelay: `${index * 30}ms` }}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <p className="text-[13px] font-semibold text-slate-800 truncate">{expense.description}</p>
-                      {(expense.version ?? 1) > 1 ? (
-                        <span
-                          className="h-2.5 w-2.5 rounded-full bg-orange-400 ring-2 ring-orange-100 shrink-0"
-                          aria-label="Edited expense"
-                          title="Edited"
-                        />
-                      ) : null}
+            expenses.map((expense, index) => {
+              const meta = getExpenseMeta(expense);
+              return (
+                <button
+                  key={expense.id}
+                  onClick={() => setEditExpense(expense)}
+                  className="w-full text-left card-premium p-4 animate-fade-in active:scale-[0.98] transition-all"
+                  style={{ animationDelay: `${index * 30}ms` }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className="text-[13px] font-semibold text-slate-800 truncate">{expense.description}</p>
+                        {(expense.version ?? 1) > 1 ? (
+                          <span
+                            className="h-2.5 w-2.5 rounded-full bg-orange-400 ring-2 ring-orange-100 shrink-0"
+                            aria-label="Edited expense"
+                            title="Edited"
+                          />
+                        ) : null}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-semibold leading-none text-sky-700 ring-1 ring-sky-100">
+                          {t('group_paid_by_short')} <span className="font-extrabold">{meta.paidBy}</span>
+                        </span>
+                        <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold leading-none text-amber-700 ring-1 ring-amber-100">
+                          {t('group_split_short')} <span className="font-extrabold">{meta.split}</span>
+                        </span>
+                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold leading-none text-emerald-700 ring-1 ring-emerald-100">
+                          {t('group_your_share_short')} <span className="font-extrabold tabular-nums">{meta.share}</span>
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      {formatExpenseMeta(expense)}
-                    </p>
+                    <div className="text-right shrink-0">
+                      <p className="text-[14px] font-bold text-slate-800 tabular-nums">{formatMoney(expense.amount, group.currency)}</p>
+                      <p className="text-[9px] text-slate-400">{new Date(expense.date).toLocaleDateString()}</p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[14px] font-bold text-slate-800 tabular-nums">{formatMoney(expense.amount, group.currency)}</p>
-                    <p className="text-[9px] text-slate-400">{new Date(expense.date).toLocaleDateString()}</p>
-                  </div>
-                </div>
-              </button>
-            ))
+                </button>
+              );
+            })
           )}
         </div>
       ) : tab === 'balances' ? (
