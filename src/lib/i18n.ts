@@ -695,6 +695,7 @@ const S = {
   analytics_year: { ur: "Poora Saal", en: "Full Year" },
   analytics_total_spent: { ur: "Total Kharcha", en: "Total Spent" },
   analytics_total_income: { ur: "Total Aamdani", en: "Total Income" },
+  analytics_currency: { ur: "Currency", en: "Currency" },
   analytics_group_spending: { ur: "Group Kharche", en: "Group Spending" },
   analytics_your_share: { ur: "Aapka Hissa", en: "Your Share" },
 

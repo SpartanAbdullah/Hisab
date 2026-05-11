@@ -7,6 +7,7 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { groupByCategory, monthlyTrend, dailySpending, topExpenses } from '../lib/analytics';
+import type { Currency, Transaction } from '../db';
 
 type Period = 'this_month' | 'last_month' | '3months' | 'year';
 
@@ -20,24 +21,81 @@ function getDateRange(period: Period): [Date, Date] {
   }
 }
 
+function inRange(tx: Transaction, start: Date, end: Date) {
+  const date = new Date(tx.createdAt);
+  return date >= start && date <= end;
+}
+
+function sumByCurrency(transactions: Transaction[], type: 'expense' | 'income', start: Date, end: Date) {
+  const totals = new Map<Currency, number>();
+  transactions
+    .filter(tx => tx.type === type && inRange(tx, start, end))
+    .forEach(tx => totals.set(tx.currency, (totals.get(tx.currency) ?? 0) + tx.amount));
+
+  return Array.from(totals.entries())
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((a, b) => b.amount - a.amount || a.currency.localeCompare(b.currency));
+}
+
+function MoneyLines({ totals, tone }: { totals: { currency: Currency; amount: number }[]; tone: 'expense' | 'income' }) {
+  const color = tone === 'expense' ? 'text-red-500' : 'text-emerald-600';
+
+  if (totals.length === 0) {
+    return <p className={`text-lg font-bold mt-1 tabular-nums ${color}`}>0.00</p>;
+  }
+
+  return (
+    <div className="mt-1 space-y-0.5">
+      {totals.map(({ currency, amount }) => (
+        <p key={currency} className={`text-[15px] font-bold tabular-nums leading-tight ${color}`}>
+          {formatMoney(amount, currency)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function AnalyticsPage() {
   const t = useT();
   const { transactions, loadTransactions } = useTransactionStore();
   const { loadGroups } = useSplitStore();
   const [period, setPeriod] = useState<Period>('this_month');
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
 
   useEffect(() => { loadTransactions(); loadGroups(); }, [loadTransactions, loadGroups]);
 
   const [start, end] = useMemo(() => getDateRange(period), [period]);
 
-  const categories = useMemo(() => groupByCategory(transactions, start, end), [transactions, start, end]);
-  const trend = useMemo(() => monthlyTrend(transactions, period === 'year' ? 12 : period === '3months' ? 3 : 2), [transactions, period]);
-  const daily = useMemo(() => dailySpending(transactions, start, end), [transactions, start, end]);
-  const topExp = useMemo(() => topExpenses(transactions, start, end), [transactions, start, end]);
+  const periodTransactions = useMemo(
+    () => transactions.filter(tx => inRange(tx, start, end)),
+    [transactions, start, end],
+  );
+  const currencies = useMemo(() => {
+    const activeCurrencies = new Set<Currency>();
+    periodTransactions
+      .filter(tx => tx.type === 'expense' || tx.type === 'income')
+      .forEach(tx => activeCurrencies.add(tx.currency));
+    return Array.from(activeCurrencies).sort();
+  }, [periodTransactions]);
+  const primaryCurrency = (localStorage.getItem('hisaab_primary_currency') || 'PKR') as Currency;
+  const chartCurrency = selectedCurrency && currencies.includes(selectedCurrency)
+    ? selectedCurrency
+    : currencies.includes(primaryCurrency)
+      ? primaryCurrency
+      : currencies[0] ?? primaryCurrency;
+  const chartTransactions = useMemo(
+    () => transactions.filter(tx => tx.currency === chartCurrency),
+    [transactions, chartCurrency],
+  );
 
-  const totalSpent = categories.reduce((s, c) => s + c.amount, 0);
-  const totalIncome = transactions.filter(tx => tx.type === 'income' && new Date(tx.createdAt) >= start && new Date(tx.createdAt) <= end).reduce((s, tx) => s + tx.amount, 0);
-  const currency = localStorage.getItem('hisaab_primary_currency') || 'PKR';
+  const categories = useMemo(() => groupByCategory(chartTransactions, start, end), [chartTransactions, start, end]);
+  const trend = useMemo(() => monthlyTrend(chartTransactions, period === 'year' ? 12 : period === '3months' ? 3 : 2), [chartTransactions, period]);
+  const daily = useMemo(() => dailySpending(chartTransactions, start, end), [chartTransactions, start, end]);
+  const topExp = useMemo(() => topExpenses(chartTransactions, start, end), [chartTransactions, start, end]);
+
+  const spentByCurrency = useMemo(() => sumByCurrency(transactions, 'expense', start, end), [transactions, start, end]);
+  const incomeByCurrency = useMemo(() => sumByCurrency(transactions, 'income', start, end), [transactions, start, end]);
+  const hasAnyData = spentByCurrency.length > 0 || incomeByCurrency.length > 0;
 
   const periods: { key: Period; label: string }[] = [
     { key: 'this_month', label: t('analytics_this_month') },
@@ -64,15 +122,36 @@ export function AnalyticsPage() {
       <div className="px-5 pt-4 grid grid-cols-2 gap-2.5">
         <div className="card-premium p-4">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{t('analytics_total_spent')}</p>
-          <p className="text-lg font-bold text-red-500 mt-1 tabular-nums">{formatMoney(totalSpent, currency)}</p>
+          <MoneyLines totals={spentByCurrency} tone="expense" />
         </div>
         <div className="card-premium p-4">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{t('analytics_total_income')}</p>
-          <p className="text-lg font-bold text-emerald-600 mt-1 tabular-nums">{formatMoney(totalIncome, currency)}</p>
+          <MoneyLines totals={incomeByCurrency} tone="income" />
         </div>
       </div>
 
-      {totalSpent === 0 && totalIncome === 0 ? (
+      {currencies.length > 1 && (
+        <div className="px-5 pt-3">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 shrink-0">{t('analytics_currency')}</span>
+            {currencies.map(currency => (
+              <button
+                key={currency}
+                onClick={() => setSelectedCurrency(currency)}
+                className={`shrink-0 rounded-xl px-3 py-1.5 text-[11px] font-bold transition-all ${
+                  chartCurrency === currency
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-white border border-slate-200/60 text-slate-500'
+                }`}
+              >
+                {currency}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!hasAnyData ? (
         <div className="px-5 pt-12 text-center">
           <p className="text-4xl mb-3">📊</p>
           <p className="text-slate-400 text-sm">{t('analytics_no_data')}</p>
@@ -82,7 +161,10 @@ export function AnalyticsPage() {
           {/* Category Pie Chart */}
           {categories.length > 0 && (
             <div className="px-5 pt-6">
-              <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t('analytics_categories')}</h2>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('analytics_categories')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
+              </div>
               <div className="card-premium p-4">
                 <div className="flex items-center">
                   <ResponsiveContainer width="50%" height={140}>
@@ -109,13 +191,16 @@ export function AnalyticsPage() {
           {/* Monthly Trend */}
           {trend.length > 0 && (
             <div className="px-5 pt-6">
-              <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t('analytics_trend')}</h2>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('analytics_trend')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
+              </div>
               <div className="card-premium p-4">
                 <ResponsiveContainer width="100%" height={160}>
                   <BarChart data={trend}>
                     <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 10 }} width={40} />
-                    <Tooltip formatter={(value: unknown) => formatMoney(Number(value), currency)} />
+                    <Tooltip formatter={(value: unknown) => formatMoney(Number(value), chartCurrency)} />
                     <Bar dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} name="Income" />
                     <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} name="Expense" />
                   </BarChart>
@@ -127,12 +212,15 @@ export function AnalyticsPage() {
           {/* Daily Spending */}
           {daily.some(d => d.amount > 0) && (
             <div className="px-5 pt-6">
-              <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t('analytics_daily')}</h2>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('analytics_daily')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
+              </div>
               <div className="card-premium p-4">
                 <ResponsiveContainer width="100%" height={120}>
                   <BarChart data={daily}>
                     <XAxis dataKey="day" tick={{ fontSize: 9 }} />
-                    <Tooltip formatter={(value: unknown) => formatMoney(Number(value), currency)} />
+                    <Tooltip formatter={(value: unknown) => formatMoney(Number(value), chartCurrency)} />
                     <Bar dataKey="amount" fill="#6366f1" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -143,7 +231,10 @@ export function AnalyticsPage() {
           {/* Top Expenses */}
           {topExp.length > 0 && (
             <div className="px-5 pt-6">
-              <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t('analytics_top')}</h2>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('analytics_top')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
+              </div>
               <div className="card-premium divide-y divide-slate-100/60">
                 {topExp.map(tx => (
                   <div key={tx.id} className="px-4 py-3 flex items-center justify-between">
