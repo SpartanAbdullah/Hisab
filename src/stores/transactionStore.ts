@@ -93,6 +93,7 @@ interface TransactionState {
     input: ExpenseInput | LoanGivenInput | LoanTakenInput,
     options?: { allowLinkedGroupExpense?: boolean }
   ) => Promise<Transaction>;
+  setReconciled: (id: string, isReconciled: boolean) => Promise<void>;
   deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean }) => Promise<void>;
   getTransaction: (id: string) => Transaction | undefined;
   getByAccount: (accountId: string) => Transaction[];
@@ -699,6 +700,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           category: input.category ?? '',
           notes: input.notes ?? '',
           createdAt: input.createdAt ?? new Date().toISOString(),
+          isReconciled: false,
+          reconciledAt: null,
+          reconciledBy: null,
         };
 
         await trackedAddTransaction(scope, transaction);
@@ -776,6 +780,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               sourceAccountId: expenseInput.sourceAccountId,
               category: expenseInput.category ?? '',
               notes: expenseInput.notes ?? '',
+              isReconciled: false,
+              reconciledAt: null,
+              reconciledBy: null,
             };
             description = `Updated expense: ${nextSource.currency} ${expenseInput.amount} from ${nextSource.name}`;
             break;
@@ -827,6 +834,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               relatedPerson: loanGivenInput.personName,
               ...(loanGivenInput.personId !== undefined ? { personId: loanGivenInput.personId } : {}),
               notes: loanGivenInput.notes ?? '',
+              isReconciled: false,
+              reconciledAt: null,
+              reconciledBy: null,
             };
             description = `Updated money lent to ${loanGivenInput.personName}: ${nextSource.currency} ${loanGivenInput.amount}`;
             break;
@@ -908,6 +918,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               ...(loanTakenInput.personId !== undefined ? { personId: loanTakenInput.personId } : {}),
               conversionRate: null,
               notes: loanTakenInput.notes ?? '',
+              isReconciled: false,
+              reconciledAt: null,
+              reconciledBy: null,
             };
             description = nextSourceAccountId
               ? `Updated cash advance from credit card for ${loanTakenInput.personName}: ${nextDestination.currency} ${loanTakenInput.amount}`
@@ -926,6 +939,25 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     await logActivitySafe('transaction_modified', description, updated.id, 'transaction');
 
     return updated;
+  },
+
+  setReconciled: async (id, isReconciled) => {
+    const existing = get().transactions.find((transaction) => transaction.id === id) ?? await transactionsDb.get(id);
+    if (!existing) throw new Error('Transaction not found');
+
+    const reconciledBy = localStorage.getItem('hisaab_supabase_uid');
+    const changes: Partial<Transaction> = {
+      isReconciled,
+      reconciledAt: isReconciled ? new Date().toISOString() : null,
+      reconciledBy: isReconciled ? reconciledBy : null,
+    };
+
+    await transactionsDb.update(id, changes);
+    set(state => ({
+      transactions: state.transactions.map(transaction =>
+        transaction.id === id ? { ...transaction, ...changes } : transaction
+      ),
+    }));
   },
 
   deleteTransaction: async (id, options = {}) => {

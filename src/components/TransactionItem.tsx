@@ -1,10 +1,13 @@
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  HandCoins, Handshake, RotateCcw, Target, Landmark,
+  HandCoins, Handshake, RotateCcw, Target, Landmark, Check,
 } from 'lucide-react';
+import { useState } from 'react';
+import type { MouseEvent } from 'react';
 import { format } from 'date-fns';
 import type { Transaction } from '../db';
 import { useAccountStore } from '../stores/accountStore';
+import { useTransactionStore } from '../stores/transactionStore';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { parseInternalNote } from '../lib/internalNotes';
@@ -43,13 +46,17 @@ const accountTypeStyleMap: Record<string, { text: string; bg: string }> = {
 interface Props {
   transaction: Transaction;
   accountContextId?: string;
+  onClick?: () => void;
 }
 
-export function TransactionItem({ transaction, accountContextId }: Props) {
+export function TransactionItem({ transaction, accountContextId, onClick }: Props) {
   const t = useT();
+  const [savingReconciliation, setSavingReconciliation] = useState(false);
   const accounts = useAccountStore((state) => state.accounts);
+  const setReconciled = useTransactionStore((state) => state.setReconciled);
   const Icon = iconMap[transaction.type] ?? ArrowLeftRight;
   const { visibleNote, meta } = parseInternalNote(transaction.notes);
+  const isReconciled = transaction.isReconciled ?? false;
 
   const primaryAccountId = accountContextId || transaction.sourceAccountId || transaction.destinationAccountId;
   const primaryAccount = primaryAccountId ? accounts.find((account) => account.id === primaryAccountId) : null;
@@ -107,8 +114,47 @@ export function TransactionItem({ transaction, accountContextId }: Props) {
   if (meta.groupName) detailParts.push(meta.groupName);
   if (visibleNote) detailParts.push(visibleNote);
 
+  const handleReconcileClick = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (savingReconciliation) return;
+    setSavingReconciliation(true);
+    try {
+      await setReconciled(transaction.id, !isReconciled);
+    } catch (err) {
+      console.error('Failed to update reconciliation', err);
+    } finally {
+      setSavingReconciliation(false);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-3 py-3.5">
+    <div
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      } : undefined}
+      className={`flex items-center gap-3 py-3.5 ${onClick ? 'cursor-pointer active:opacity-80 transition-opacity' : ''}`}
+    >
+      <button
+        type="button"
+        onClick={handleReconcileClick}
+        disabled={savingReconciliation}
+        aria-pressed={isReconciled}
+        aria-label={isReconciled ? 'Mark transaction unreconciled' : 'Mark transaction reconciled'}
+        title={isReconciled ? 'Reconciled' : 'Mark reconciled'}
+        className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:opacity-60 ${
+          isReconciled
+            ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-500/20'
+            : 'bg-white border-slate-200 text-transparent hover:border-emerald-300'
+        }`}
+      >
+        <Check size={14} strokeWidth={3} />
+      </button>
       <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${style.bg} ${style.text}`}>
         <Icon size={17} strokeWidth={1.8} />
       </div>

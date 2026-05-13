@@ -79,6 +79,9 @@ export const transactionsDb = {
       related_person: t.relatedPerson, person_id: t.personId ?? null, related_loan_id: t.relatedLoanId,
       related_goal_id: t.relatedGoalId, conversion_rate: t.conversionRate,
       category: t.category, notes: t.notes, created_at: t.createdAt,
+      is_reconciled: t.isReconciled ?? false,
+      reconciled_at: t.reconciledAt ?? null,
+      reconciled_by: t.reconciledBy ?? null,
     });
     if (error) throw error;
   },
@@ -96,6 +99,9 @@ export const transactionsDb = {
     if (changes.conversionRate !== undefined) row.conversion_rate = changes.conversionRate;
     if (changes.category !== undefined) row.category = changes.category;
     if (changes.notes !== undefined) row.notes = changes.notes;
+    if (changes.isReconciled !== undefined) row.is_reconciled = changes.isReconciled;
+    if (changes.reconciledAt !== undefined) row.reconciled_at = changes.reconciledAt;
+    if (changes.reconciledBy !== undefined) row.reconciled_by = changes.reconciledBy;
     const { error } = await supabase.from('transactions').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
@@ -605,6 +611,9 @@ export const groupExpensesDb = {
       created_by: e.createdBy ?? getUserId(),
       updated_by: e.updatedBy ?? getUserId(),
       version: e.version ?? 1,
+      is_reconciled: e.isReconciled ?? false,
+      reconciled_at: e.reconciledAt ?? null,
+      reconciled_by: e.reconciledBy ?? null,
     });
     if (error) throw error;
   },
@@ -621,6 +630,9 @@ export const groupExpensesDb = {
     if (changes.deletedAt !== undefined) row.deleted_at = changes.deletedAt;
     if (changes.deletedBy !== undefined) row.deleted_by = changes.deletedBy;
     if (changes.version !== undefined) row.version = changes.version;
+    if (changes.isReconciled !== undefined) row.is_reconciled = changes.isReconciled;
+    if (changes.reconciledAt !== undefined) row.reconciled_at = changes.reconciledAt;
+    if (changes.reconciledBy !== undefined) row.reconciled_by = changes.reconciledBy;
     const { error } = await supabase.from('group_expenses').update(row).eq('id', id);
     if (error) throw error;
   },
@@ -954,6 +966,9 @@ function mapTransaction(r: Record<string, unknown>): Transaction {
     conversionRate: r.conversion_rate != null ? Number(r.conversion_rate) : null,
     category: (r.category as string) ?? '', notes: (r.notes as string) ?? '',
     createdAt: r.created_at as string,
+    isReconciled: Boolean(r.is_reconciled),
+    reconciledAt: (r.reconciled_at as string) ?? null,
+    reconciledBy: (r.reconciled_by as string) ?? null,
   };
 }
 
@@ -1043,6 +1058,9 @@ function mapGroupExpense(r: Record<string, unknown>): GroupExpense {
     deletedAt: (r.deleted_at as string) ?? null,
     deletedBy: (r.deleted_by as string) ?? null,
     version: Number(r.version ?? 1),
+    isReconciled: Boolean(r.is_reconciled),
+    reconciledAt: (r.reconciled_at as string) ?? null,
+    reconciledBy: (r.reconciled_by as string) ?? null,
   };
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles } from 'lucide-react';
+import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -29,7 +29,7 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const t = useT();
   const toast = useToast();
-  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents, getSettlements, loadGroups } = useSplitStore();
+  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents, getSettlements, loadGroups, setGroupExpenseReconciled } = useSplitStore();
   const markGroupRead = useNotificationStore((state) => state.markGroupRead);
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
@@ -42,6 +42,7 @@ export function GroupDetailPage() {
   const [showSettle, setShowSettle] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [editExpense, setEditExpense] = useState<GroupExpense | null>(null);
+  const [savingReconciliationId, setSavingReconciliationId] = useState<string | null>(null);
 
   useEffect(() => {
     const nextGroup = groups.find(item => item.id === id);
@@ -188,6 +189,24 @@ export function GroupDetailPage() {
     if (confirm(t('group_delete_confirm'))) {
       await deleteGroup(group.id);
       navigate('/groups');
+    }
+  };
+
+  const handleGroupExpenseReconcile = async (expense: GroupExpense) => {
+    if (savingReconciliationId) return;
+    setSavingReconciliationId(expense.id);
+    try {
+      await setGroupExpenseReconciled(expense.id, !(expense.isReconciled ?? false));
+      await reload();
+    } catch (err) {
+      console.error('Failed to update group expense reconciliation', err);
+      toast.show({
+        type: 'error',
+        title: 'Could not update reconciliation',
+        subtitle: err instanceof Error ? err.message : 'Please try again.',
+      });
+    } finally {
+      setSavingReconciliationId(null);
     }
   };
 
@@ -395,14 +414,52 @@ export function GroupDetailPage() {
           ) : (
             expenses.map((expense, index) => {
               const meta = getExpenseMeta(expense);
+              const canReconcile = expense.paidBy === currentMember?.id;
+              const isReconciled = expense.isReconciled ?? false;
               return (
-                <button
+                <div
                   key={expense.id}
                   onClick={() => setEditExpense(expense)}
-                  className="w-full text-left card-premium p-4 animate-fade-in active:scale-[0.98] transition-all"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setEditExpense(expense);
+                    }
+                  }}
+                  className="w-full text-left card-premium p-4 animate-fade-in active:scale-[0.98] transition-all cursor-pointer"
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
                   <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (canReconcile) void handleGroupExpenseReconcile(expense);
+                      }}
+                      disabled={!canReconcile || savingReconciliationId === expense.id}
+                      aria-pressed={isReconciled}
+                      aria-label={
+                        canReconcile
+                          ? isReconciled ? 'Mark expense unreconciled' : 'Mark expense reconciled'
+                          : isReconciled ? 'Expense reconciled by payer' : 'Only the payer can reconcile this expense'
+                      }
+                      title={
+                        canReconcile
+                          ? isReconciled ? 'Reconciled' : 'Mark reconciled'
+                          : isReconciled ? 'Reconciled by payer' : 'Only the payer can reconcile'
+                      }
+                      className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:cursor-default ${
+                        isReconciled
+                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-500/20 disabled:opacity-100'
+                          : canReconcile
+                            ? 'bg-white border-slate-200 text-transparent hover:border-emerald-300'
+                            : 'bg-slate-50 border-slate-200 text-transparent opacity-50'
+                      }`}
+                    >
+                      <Check size={14} strokeWidth={3} />
+                    </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <p className="text-[13px] font-semibold text-slate-800 truncate">{expense.description}</p>
@@ -431,7 +488,7 @@ export function GroupDetailPage() {
                       <p className="text-[9px] text-slate-400">{new Date(expense.date).toLocaleDateString()}</p>
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })
           )}

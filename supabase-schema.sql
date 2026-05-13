@@ -70,7 +70,10 @@ CREATE TABLE IF NOT EXISTS transactions (
   conversion_rate NUMERIC DEFAULT NULL,
   category TEXT DEFAULT '',
   notes TEXT DEFAULT '',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  is_reconciled BOOLEAN NOT NULL DEFAULT false,
+  reconciled_at TIMESTAMPTZ DEFAULT NULL,
+  reconciled_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_transactions_user ON transactions(user_id);
@@ -216,7 +219,10 @@ CREATE TABLE IF NOT EXISTS group_expenses (
   category TEXT DEFAULT '',
   date TEXT DEFAULT '',
   notes TEXT DEFAULT '',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  is_reconciled BOOLEAN NOT NULL DEFAULT false,
+  reconciled_at TIMESTAMPTZ DEFAULT NULL,
+  reconciled_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_group_expenses_group ON group_expenses(group_id);

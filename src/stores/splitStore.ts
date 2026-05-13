@@ -77,6 +77,7 @@ interface SplitState {
   }) => Promise<GroupExpense>;
 
   updateGroupExpense: (id: string, changes: Partial<GroupExpense> & { paidFromAccountId?: string | null }) => Promise<void>;
+  setGroupExpenseReconciled: (id: string, isReconciled: boolean) => Promise<void>;
   deleteGroupExpense: (id: string) => Promise<void>;
   getSettlements: (groupId: string) => Promise<GroupSettlement[]>;
   addSettlement: (input: {
@@ -524,6 +525,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       createdBy: currentUserId,
       updatedBy: currentUserId,
       version: 1,
+      isReconciled: false,
+      reconciledAt: null,
+      reconciledBy: null,
     };
 
     let linkedTransactionId: string | undefined;
@@ -657,6 +661,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       }),
       updatedBy: currentUserId,
       version: (existing.version ?? 1) + 1,
+      isReconciled: existing.paidBy === nextExpense.paidBy ? existing.isReconciled ?? false : false,
+      reconciledAt: existing.paidBy === nextExpense.paidBy ? existing.reconciledAt ?? null : null,
+      reconciledBy: existing.paidBy === nextExpense.paidBy ? existing.reconciledBy ?? null : null,
     });
 
     const actorName = currentMember?.name ?? getCurrentUserName();
@@ -686,6 +693,33 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       nextExpense.id,
       'group_expense',
     );
+  },
+
+  setGroupExpenseReconciled: async (id, isReconciled) => {
+    const existing = await groupExpensesDb.get(id);
+    if (!existing) throw new Error('Group expense not found');
+
+    const group = await hydrateGroup(get().groups.find((item) => item.id === existing.groupId) ?? await splitGroupsDb.get(existing.groupId));
+    if (!group) throw new Error('Group not found');
+
+    const currentUserId = getCurrentUserId();
+    const currentMember = group.members.find(member => member.profileId === currentUserId);
+    if (existing.paidBy !== currentMember?.id) {
+      throw new Error('Only the member who paid can reconcile this expense');
+    }
+
+    const changes: Partial<GroupExpense> = {
+      isReconciled,
+      reconciledAt: isReconciled ? new Date().toISOString() : null,
+      reconciledBy: isReconciled ? currentUserId : null,
+    };
+
+    await groupExpensesDb.update(id, changes);
+
+    const linkedTransactionId = parseInternalNote(existing.notes).meta.linkedTransactionId;
+    if (linkedTransactionId) {
+      await useTransactionStore.getState().setReconciled(linkedTransactionId, isReconciled);
+    }
   },
 
   deleteGroupExpense: async (id) => {

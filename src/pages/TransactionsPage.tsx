@@ -205,9 +205,7 @@ export function TransactionsPage() {
             {filtered.map((txn, index) => (
               <div key={txn.id} className="animate-fade-in" style={{ animationDelay: `${index * 25}ms` }}>
                 {['expense', 'loan_given', 'loan_taken'].includes(txn.type) && !isGroupLinkedNote(txn.notes) ? (
-                  <button type="button" onClick={() => setSelectedTransaction(txn)} className="w-full text-left active:opacity-80 transition-opacity">
-                    <TransactionItem transaction={txn} />
-                  </button>
+                  <TransactionItem transaction={txn} onClick={() => setSelectedTransaction(txn)} />
                 ) : (
                   <TransactionItem transaction={txn} />
                 )}

@@ -38,6 +38,9 @@ export interface Transaction {
   category: string;
   notes: string;
   createdAt: string;
+  isReconciled?: boolean;
+  reconciledAt?: string | null;
+  reconciledBy?: string | null;
 }
 
 export type LoanType = 'given' | 'taken';
@@ -224,6 +227,9 @@ export interface GroupExpense {
   deletedAt?: string | null;
   deletedBy?: string | null;
   version?: number;
+  isReconciled?: boolean;
+  reconciledAt?: string | null;
+  reconciledBy?: string | null;
 }
 
 export interface GroupSettlement {

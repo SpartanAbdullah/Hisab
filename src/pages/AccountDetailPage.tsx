@@ -338,9 +338,7 @@ export function AccountDetailPage() {
             {filteredTxns.map((txn, i) => (
               <div key={txn.id} className="animate-fade-in" style={{ animationDelay: `${i * 40}ms` }}>
                 {['expense', 'loan_given', 'loan_taken'].includes(txn.type) && !isGroupLinkedNote(txn.notes) ? (
-                  <button type="button" onClick={() => setSelectedTransaction(txn)} className="w-full text-left active:opacity-80 transition-opacity">
-                    <TransactionItem transaction={txn} accountContextId={account.id} />
-                  </button>
+                  <TransactionItem transaction={txn} accountContextId={account.id} onClick={() => setSelectedTransaction(txn)} />
                 ) : (
                   <TransactionItem transaction={txn} accountContextId={account.id} />
                 )}
