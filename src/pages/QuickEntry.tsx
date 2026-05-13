@@ -315,9 +315,10 @@ export function QuickEntry({ open, onClose }: Props) {
       }
 
       const typeLabel = TX_TYPES.find(tx => tx.value === type)?.label ?? type;
+      const confirmationCurrency = changes[0]?.currency ?? localStorage.getItem('hisaab_primary_currency') ?? 'PKR';
       setConfirmData({
         title: emiFailed ? `${typeLabel} — Saved (EMI pending)` : `${typeLabel} — Done!`,
-        description: `${formatMoney(amt, changes[0]?.currency ?? 'AED')} processed`,
+        description: `${formatMoney(amt, confirmationCurrency)} processed`,
         changes,
       });
       setShowConfirmation(true);

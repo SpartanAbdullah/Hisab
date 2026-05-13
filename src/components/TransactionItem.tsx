@@ -42,16 +42,19 @@ const accountTypeStyleMap: Record<string, { text: string; bg: string }> = {
 
 interface Props {
   transaction: Transaction;
+  accountContextId?: string;
 }
 
-export function TransactionItem({ transaction }: Props) {
+export function TransactionItem({ transaction, accountContextId }: Props) {
   const t = useT();
   const accounts = useAccountStore((state) => state.accounts);
   const Icon = iconMap[transaction.type] ?? ArrowLeftRight;
   const { visibleNote, meta } = parseInternalNote(transaction.notes);
 
-  const primaryAccountId = transaction.sourceAccountId || transaction.destinationAccountId;
+  const primaryAccountId = accountContextId || transaction.sourceAccountId || transaction.destinationAccountId;
   const primaryAccount = primaryAccountId ? accounts.find((account) => account.id === primaryAccountId) : null;
+  const sourceAccount = transaction.sourceAccountId ? accounts.find((account) => account.id === transaction.sourceAccountId) : null;
+  const destinationAccount = transaction.destinationAccountId ? accounts.find((account) => account.id === transaction.destinationAccountId) : null;
 
   const style = primaryAccount && accountTypeStyleMap[primaryAccount.type]
     ? accountTypeStyleMap[primaryAccount.type]
@@ -68,11 +71,33 @@ export function TransactionItem({ transaction }: Props) {
     opening_balance: t('tx_opening_balance'),
   };
 
-  const isDebit = transaction.type === 'opening_balance'
-    ? false
-    : transaction.type === 'repayment'
-      ? !!transaction.sourceAccountId
-      : ['expense', 'loan_given', 'transfer', 'goal_contribution'].includes(transaction.type);
+  const contextIsDestination = Boolean(accountContextId && transaction.destinationAccountId === accountContextId);
+  const contextIsSource = Boolean(accountContextId && transaction.sourceAccountId === accountContextId);
+  const isDebit = accountContextId
+    ? contextIsSource && !contextIsDestination
+    : transaction.type === 'opening_balance'
+      ? false
+      : transaction.type === 'repayment'
+        ? !!transaction.sourceAccountId
+        : ['expense', 'loan_given', 'transfer', 'goal_contribution'].includes(transaction.type);
+
+  const displayMoney = (() => {
+    if (!accountContextId) return { amount: transaction.amount, currency: transaction.currency };
+    if (contextIsDestination && destinationAccount) {
+      const amount = transaction.conversionRate && destinationAccount.currency !== transaction.currency
+        ? Math.round(transaction.amount * transaction.conversionRate * 100) / 100
+        : transaction.amount;
+      return { amount, currency: destinationAccount.currency };
+    }
+    if (contextIsSource && sourceAccount) {
+      const usesLoanOrGoalCurrency = ['repayment', 'goal_contribution'].includes(transaction.type);
+      const amount = transaction.conversionRate && usesLoanOrGoalCurrency && sourceAccount.currency !== transaction.currency
+        ? Math.round((transaction.amount / transaction.conversionRate) * 100) / 100
+        : transaction.amount;
+      return { amount, currency: sourceAccount.currency };
+    }
+    return { amount: transaction.amount, currency: transaction.currency };
+  })();
 
   const title = meta.groupExpenseId
     ? meta.expenseDescription || transaction.category || typeLabels[transaction.type] || transaction.type.replace(/_/g, ' ')
@@ -100,7 +125,7 @@ export function TransactionItem({ transaction }: Props) {
         </p>
       </div>
       <p className={`text-[14px] font-bold tabular-nums tracking-tight ${isDebit ? 'text-red-500' : 'text-emerald-600'}`}>
-        {isDebit ? '-' : '+'}{formatMoney(transaction.amount, transaction.currency)}
+        {isDebit ? '-' : '+'}{formatMoney(displayMoney.amount, displayMoney.currency)}
       </p>
     </div>
   );

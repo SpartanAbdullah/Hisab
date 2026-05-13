@@ -48,11 +48,12 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const { accounts, createAccount, loadAccounts } = useAccountStore();
   const toast = useToast();
   const t = useT();
+  const primaryCurrency = ((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
 
   const [step, setStep] = useState(0);
   const [accountType, setAccountType] = useState<AccountType>('cash');
   const [name, setName] = useState('');
-  const [currency, setCurrency] = useState<Currency>('AED');
+  const [currency, setCurrency] = useState<Currency>(primaryCurrency);
   const [balance, setBalance] = useState('');
   const [bankName, setBankName] = useState('');
   const [walletType, setWalletType] = useState('');
@@ -64,7 +65,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setStep(0); setAccountType('cash'); setName(''); setCurrency('AED');
+    setStep(0); setAccountType('cash'); setName(''); setCurrency(primaryCurrency);
     setBalance(''); setBankName(''); setWalletType('');
     setCcIssuer(''); setCcLast4(''); setCcLimit(''); setCcDueDay('');
   };
@@ -72,7 +73,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
 
   const selectType = (type: AccountType) => {
     setAccountType(type);
-    if (type === 'cash') { setName(''); setCurrency('AED'); }
+    if (type === 'cash') { setName(''); setCurrency(primaryCurrency); }
     setStep(1);
   };
 

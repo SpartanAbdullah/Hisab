@@ -68,6 +68,8 @@ export function HomePage() {
   const navigate = useNavigate();
   const t = useT();
   const [showAddAccount, setShowAddAccount] = useState(false);
+  const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
+  const [renderNowMs] = useState(() => Date.now());
 
   const userName = localStorage.getItem("hisaab_user_name") ?? "User";
 
@@ -347,14 +349,13 @@ export function HomePage() {
       : "\u{1F319}";
 
   // Upcoming expense reminders — within their reminder window
-  const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
   const urgentExpenses = expenses
     .filter(
       (e) => e.status === "upcoming" && !dismissedReminders.includes(e.id),
     )
     .filter((e) => {
       const daysLeft = Math.ceil(
-        (new Date(e.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+        (new Date(e.dueDate).getTime() - renderNowMs) / (1000 * 60 * 60 * 24),
       );
       const reminderWindow = e.reminderDaysBefore ?? 7;
       return daysLeft <= reminderWindow;
@@ -473,7 +474,7 @@ export function HomePage() {
         <div className="px-5 pt-3 space-y-2">
           {urgentExpenses.slice(0, 2).map((exp) => {
             const daysLeft = Math.ceil(
-              (new Date(exp.dueDate).getTime() - Date.now()) /
+                (new Date(exp.dueDate).getTime() - renderNowMs) /
                 (1000 * 60 * 60 * 24),
             );
             return (
@@ -795,7 +796,7 @@ export function HomePage() {
             <div className="card-premium px-4 divide-y divide-slate-100/60">
               {upcomingList.map((exp) => {
                 const daysLeft = Math.ceil(
-                  (new Date(exp.dueDate).getTime() - Date.now()) /
+                      (new Date(exp.dueDate).getTime() - renderNowMs) /
                     (1000 * 60 * 60 * 24),
                 );
                 return (

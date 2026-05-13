@@ -15,7 +15,7 @@ export function AddGoalModal({ open, onClose }: Props) {
 
   const [title, setTitle] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
-  const [currency, setCurrency] = useState<Currency>('AED');
+  const [currency, setCurrency] = useState<Currency>(() => (localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
   const [linkAccount, setLinkAccount] = useState(false);
   const [accountId, setAccountId] = useState('');
   const [saving, setSaving] = useState(false);
