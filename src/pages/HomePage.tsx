@@ -41,6 +41,17 @@ function waitForNextPaint(): Promise<void> {
   });
 }
 
+function formatMoneyList(totals: Record<string, number>) {
+  return Object.entries(totals)
+    .filter(([, amount]) => amount > 0)
+    .sort(([currencyA, amountA], [currencyB, amountB]) => {
+      if (amountB !== amountA) return amountB - amountA;
+      return currencyA.localeCompare(currencyB);
+    })
+    .map(([currency, amount]) => formatMoney(amount, currency))
+    .join(" + ");
+}
+
 export function HomePage() {
   const { accounts, loadAccounts } = useAccountStore();
   const { transactions, loadTransactions } = useTransactionStore();
@@ -398,9 +409,15 @@ export function HomePage() {
           const thisMonthTxns = transactions.filter(
             (t) => new Date(t.createdAt) >= startOfMonth,
           );
-          const monthExpenses = thisMonthTxns
+          const monthExpensesByCurrency = thisMonthTxns
             .filter((t) => t.type === "expense")
-            .reduce((s, t) => s + t.amount, 0);
+            .reduce(
+              (acc, t) => {
+                acc[t.currency] = (acc[t.currency] ?? 0) + t.amount;
+                return acc;
+              },
+              {} as Record<string, number>,
+            );
           const activeGoal = goals.find((g) => g.savedAmount < g.targetAmount);
           const activePayable = activeLoans.find((l) => l.type === "taken");
           const upcomingCount = expenses.filter(
@@ -414,10 +431,11 @@ export function HomePage() {
 
           let insightText = "";
           let insightIcon = "\u{1F4A1}";
-          if (monthExpenses > 0) {
+          const monthExpenseText = formatMoneyList(monthExpensesByCurrency);
+          if (monthExpenseText) {
             insightText = t("insight_month_spent").replace(
               "{amount}",
-              formatMoney(monthExpenses, Object.keys(totals)[0] || "PKR"),
+              monthExpenseText,
             );
             insightIcon = "\u{1F4CA}";
           } else if (activeGoal) {
