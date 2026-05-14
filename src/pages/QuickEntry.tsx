@@ -328,7 +328,7 @@ export function QuickEntry({ open, onClose }: Props) {
     } finally { setSaving(false); }
   };
 
-  const inputClass = "w-full border border-slate-200/60 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all";
+  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all";
 
   return (
     <>
@@ -338,25 +338,25 @@ export function QuickEntry({ open, onClose }: Props) {
           <button
             onClick={() => { if (!hasAccounts) setShowInlineAccount(true); else if (parseFloat(amount) > 0) setStep(1); }}
             disabled={!parseFloat(amount)}
-            className="w-full btn-gradient rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 transition-all"
+            className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
           >{!hasAccounts ? `${t('quick_create_first')} \u2192` : `${t('quick_next')} \u2192`}</button>
         ) : step === 1 ? (
-          <button onClick={() => setStep(0)} className="w-full text-center text-[12px] text-slate-400 py-2 font-medium">
+          <button onClick={() => setStep(0)} className="w-full text-center text-[12px] text-ink-500 py-2 font-medium">
             &#x2190; {t('quick_change_amount')}
           </button>
         ) : step === 2 ? (
           <div className="flex gap-2.5">
-            <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-slate-200/60 text-slate-500 active:bg-slate-50 transition-all">
+            <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft transition-colors bg-cream-card">
               &#x2190;
             </button>
             <button onClick={preSubmit} disabled={saving || !canSubmit()}
-              className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 transition-all"
+              className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
             >{saving ? t('quick_processing') : wouldBranchToLinked ? t('ltr_branch_cta') : `${t('quick_save')} \u2713`}</button>
           </div>
         ) : undefined}
       >
 
-        {/* Step 0: Amount */}
+        {/* Step 0: Amount — Sukoon's centred big number + white keypad */}
         {step === 0 && (
           <div className="space-y-5">
             <div className="text-center py-4">
@@ -367,26 +367,27 @@ export function QuickEntry({ open, onClose }: Props) {
                 value={amount}
                 onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); if ((v.match(/\./g) ?? []).length <= 1) setAmount(v); }}
                 placeholder="0"
-                className="text-5xl font-bold text-center w-full border-none outline-none bg-transparent tabular-nums tracking-tighter text-slate-800"
+                className="text-[54px] font-semibold text-center w-full border-none outline-none bg-transparent tabular-nums text-ink-900"
+                style={{ letterSpacing: '-0.025em' }}
               />
-              <p className="text-[12px] text-slate-400 mt-2">{t('quick_enter_amount')}</p>
+              <p className="text-[12px] text-ink-500 mt-2">{t('quick_enter_amount')}</p>
             </div>
 
             {/* Quick amounts */}
             <div className="flex gap-2 justify-center flex-wrap">
               {[50, 100, 500, 1000, 5000].map(v => (
                 <button key={v} onClick={() => setAmount(String(v))}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100/60 active:bg-slate-100 active:scale-95 transition-all tabular-nums"
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-cream-card text-ink-600 border border-cream-border active:bg-cream-soft active:scale-95 transition-all tabular-nums"
                 >{v.toLocaleString()}</button>
               ))}
             </div>
 
-            {/* Numpad */}
+            {/* Numpad — Sukoon: white cells, 1px cream-border, radius 14 */}
             <div className="grid grid-cols-3 gap-2">
               {['1','2','3','4','5','6','7','8','9','.','0','del'].map(key => (
                 <button key={key} onClick={() => numpadPress(key)}
-                  className={`h-13 rounded-2xl text-lg font-semibold transition-all active:scale-95 flex items-center justify-center ${
-                    key === 'del' ? 'bg-red-50 text-red-500 active:bg-red-100 border border-red-100/60' : 'bg-slate-50 text-slate-700 active:bg-slate-100 border border-slate-100/60'
+                  className={`h-13 rounded-[14px] text-[19px] font-medium transition-all active:scale-95 flex items-center justify-center border ${
+                    key === 'del' ? 'bg-pay-50 text-pay-text border-pay-100 active:bg-pay-100' : 'bg-cream-card text-ink-900 border-cream-border active:bg-cream-soft'
                   }`}
                 >{key === 'del' ? <Delete size={18} /> : key}</button>
               ))}
@@ -395,29 +396,62 @@ export function QuickEntry({ open, onClose }: Props) {
           </div>
         )}
 
-        {/* Step 1: Type */}
+        {/* Step 1: Type — Sukoon card rows on cream */}
         {step === 1 && (
           <div className="space-y-5 animate-fade-in">
             <div className="text-center py-2">
-              <p className="text-4xl font-bold tabular-nums tracking-tighter text-slate-800">{parseFloat(amount).toLocaleString()}</p>
-              <p className="text-[12px] text-slate-400 mt-1">{t('quick_where_money')}</p>
+              <p className="text-4xl font-semibold tabular-nums text-ink-900" style={{ letterSpacing: '-0.025em' }}>
+                {parseFloat(amount).toLocaleString()}
+              </p>
+              <p className="text-[12px] text-ink-500 mt-1">{t('quick_where_money')}</p>
             </div>
             <div className="grid grid-cols-2 gap-2.5">
               {TX_TYPES.map(tx => {
                 const Icon = tx.icon;
                 const isActive = type === tx.value;
+                // Tone-map by transaction semantics: receive (green) for inflows,
+                // pay (coral) for outflows, accent (violet) for goals, neutral
+                // (ink/cream) for transfer, warn for loan_taken.
+                const tone =
+                  tx.value === 'income' || tx.value === 'repayment'
+                    ? 'receive'
+                    : tx.value === 'expense' || tx.value === 'loan_given'
+                    ? 'pay'
+                    : tx.value === 'goal_contribution'
+                    ? 'accent'
+                    : tx.value === 'loan_taken'
+                    ? 'warn'
+                    : 'neutral';
+                const inactiveBg = {
+                  receive: 'bg-receive-50',
+                  pay: 'bg-pay-50',
+                  accent: 'bg-accent-50',
+                  warn: 'bg-warn-50',
+                  neutral: 'bg-cream-soft',
+                }[tone];
+                const inactiveText = {
+                  receive: 'text-receive-text',
+                  pay: 'text-pay-text',
+                  accent: 'text-accent-600',
+                  warn: 'text-warn-600',
+                  neutral: 'text-ink-600',
+                }[tone];
                 return (
                   <button key={tx.value} onClick={() => { setType(tx.value); setStep(2); }}
-                    className={`p-3.5 rounded-2xl border-2 flex items-center gap-3 text-left transition-all duration-200 active:scale-[0.96] ${
-                      isActive ? `bg-gradient-to-br ${tx.gradient} text-white border-transparent shadow-md` : `bg-white ${tx.soft}`
+                    className={`p-3.5 rounded-2xl border flex items-center gap-3 text-left transition-all duration-200 active:scale-[0.96] ${
+                      isActive
+                        ? 'bg-ink-900 text-white border-ink-900'
+                        : `bg-cream-card border-cream-border`
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${isActive ? 'bg-white/20' : ''}`}>
-                      <Icon size={16} strokeWidth={isActive ? 2.5 : 1.8} />
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${isActive ? 'bg-white/15 text-white' : `${inactiveBg} ${inactiveText}`}`}>
+                      <Icon size={16} strokeWidth={1.8} />
                     </div>
-                    <div>
-                      <p className="text-[13px] font-bold tracking-tight">{tx.label}</p>
-                      <p className={`text-[10px] ${isActive ? 'opacity-70' : 'text-slate-400'}`}>{tx.sub}</p>
+                    <div className="min-w-0">
+                      <p className={`text-[13px] font-semibold tracking-tight ${isActive ? 'text-white' : 'text-ink-900'}`}>
+                        {tx.label}
+                      </p>
+                      <p className={`text-[10px] ${isActive ? 'text-white/65' : 'text-ink-500'}`}>{tx.sub}</p>
                     </div>
                   </button>
                 );
@@ -430,35 +464,43 @@ export function QuickEntry({ open, onClose }: Props) {
         {step === 2 && (
           <div className="space-y-4 animate-fade-in">
             {/* Summary */}
-            <div className="bg-slate-50/80 rounded-2xl p-3.5 flex items-center justify-between border border-slate-100/60">
+            <div className="bg-cream-card border border-cream-border rounded-2xl p-3.5 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                {(() => { const T = TX_TYPES.find(tx => tx.value === type); return T ? <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${T.soft}`}><T.icon size={14} /></div> : null; })()}
-                <span className="text-[13px] font-semibold text-slate-700 tracking-tight">{TX_TYPES.find(tx => tx.value === type)?.label}</span>
+                {(() => {
+                  const T = TX_TYPES.find(tx => tx.value === type);
+                  if (!T) return null;
+                  return (
+                    <div className="w-8 h-8 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center">
+                      <T.icon size={14} className="text-ink-600" />
+                    </div>
+                  );
+                })()}
+                <span className="text-[13px] font-semibold text-ink-900 tracking-tight">{TX_TYPES.find(tx => tx.value === type)?.label}</span>
               </div>
-              <span className="font-bold text-[15px] tabular-nums text-slate-800">{parseFloat(amount).toLocaleString()}</span>
+              <span className="font-semibold text-[15px] tabular-nums text-ink-900">{parseFloat(amount).toLocaleString()}</span>
             </div>
 
             {/* Account selectors */}
             {needsSource && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_from')}</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_from')}</label>
                 <div className="space-y-2">
                   {accounts.map(a => {
                     const meta = currencyMeta[a.currency];
                     return (
                     <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
                       className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                        sourceId === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                        sourceId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
                       }`}
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-sm">{meta?.flag}</span>
                         <div>
-                          <p className="text-[13px] font-semibold text-slate-700">{a.name}</p>
-                          <p className="text-[10px] text-slate-400 capitalize">{a.type.replace('_', ' ')}</p>
+                          <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
+                          <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
                         </div>
                       </div>
-                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                     </button>
                   );})}
                 </div>
@@ -467,48 +509,48 @@ export function QuickEntry({ open, onClose }: Props) {
 
             {needsDest && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_to')}</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_to')}</label>
                 <div className="space-y-2">
                   {accounts.map(a => {
                     const meta = currencyMeta[a.currency];
                     return (
                     <button key={a.id} type="button" onClick={() => setDestId(a.id)}
                       className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                        destId === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                        destId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
                       }`}
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-sm">{meta?.flag}</span>
                         <div>
-                          <p className="text-[13px] font-semibold text-slate-700">{a.name}</p>
-                          <p className="text-[10px] text-slate-400 capitalize">{a.type.replace('_', ' ')}</p>
+                          <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
+                          <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
                         </div>
                       </div>
-                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                     </button>
                   );})}
                 </div>
               </div>
             )}
 
-            {/* BATCH6: Universal cross-currency conversion screen */}
+            {/* Universal cross-currency conversion screen */}
             {isCrossCurrency && crossCurrencyFrom && crossCurrencyTo && (
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-4 border border-blue-100/60 space-y-3 animate-fade-in">
-                <p className="text-[11px] font-bold text-blue-600 uppercase tracking-widest">{t('conv_title')}</p>
-                <p className="text-[12px] text-slate-600">
-                  {t('conv_moving')} <span className="font-bold">{formatMoney(parseFloat(amount), crossCurrencyFrom)}</span>
+              <div className="bg-info-50 rounded-2xl p-4 border border-cream-border space-y-3 animate-fade-in">
+                <p className="text-[10.5px] font-semibold text-info-600 uppercase tracking-[0.12em]">{t('conv_title')}</p>
+                <p className="text-[12px] text-ink-600">
+                  {t('conv_moving')} <span className="font-semibold text-ink-900">{formatMoney(parseFloat(amount), crossCurrencyFrom)}</span>
                 </p>
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1.5">
+                  <label className="block text-[11px] font-semibold text-ink-500 mb-1.5">
                     {t('conv_rate')} 1 {crossCurrencyFrom} = ___ {crossCurrencyTo}
                   </label>
                   <input type="number" step="0.0001" value={conversionRate} onChange={e => setConversionRate(e.target.value)}
                     placeholder="e.g. 78.50" className={inputClass} autoFocus />
                 </div>
                 {conversionRate && parseFloat(conversionRate) > 0 && (
-                  <div className="bg-white rounded-xl p-3 text-center border border-blue-100/60 animate-fade-in">
-                    <p className="text-[10px] text-slate-400">{t('conv_will_get')}</p>
-                    <p className="text-lg font-bold text-emerald-600 tabular-nums">
+                  <div className="bg-cream-card rounded-xl p-3 text-center border border-cream-border animate-fade-in">
+                    <p className="text-[10px] text-ink-500">{t('conv_will_get')}</p>
+                    <p className="text-lg font-semibold text-receive-text tabular-nums">
                       {formatMoney(Math.round(parseFloat(amount) * parseFloat(conversionRate) * 100) / 100, crossCurrencyTo)}
                     </p>
                   </div>
@@ -518,25 +560,25 @@ export function QuickEntry({ open, onClose }: Props) {
 
             {needsPerson && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_who')}</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_who')}</label>
                 <ContactPicker value={contact} onChange={setContact} placeholder={t('quick_who_placeholder')} className={inputClass} />
                 {wouldBranchToLinked ? (
-                  <p className="text-[11px] text-indigo-600 mt-1.5">{t('ltr_branch_helper')}</p>
+                  <p className="text-[11px] text-accent-600 mt-1.5">{t('ltr_branch_helper')}</p>
                 ) : (
-                  <p className="text-[11px] text-slate-400 mt-1.5">{t('ltr_linked_only_helper')}</p>
+                  <p className="text-[11px] text-ink-500 mt-1.5">{t('ltr_linked_only_helper')}</p>
                 )}
               </div>
             )}
 
             {type === 'loan_taken' && availableCashAdvanceCards.length > 0 && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Cash Advance Source</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">Cash Advance Source</label>
                 <div className="space-y-2">
                   <button
                     type="button"
                     onClick={() => setSourceId('')}
                     className={`w-full p-3 rounded-2xl border text-left text-[12px] font-semibold transition-all ${
-                      !selectedCashAdvanceCard ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700' : 'border-slate-200/60 bg-white text-slate-500'
+                      !selectedCashAdvanceCard ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-cream-card text-ink-500'
                     }`}
                   >
                     No credit card
@@ -544,14 +586,14 @@ export function QuickEntry({ open, onClose }: Props) {
                   {availableCashAdvanceCards.map(a => (
                     <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
                       className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                        selectedCashAdvanceCard?.id === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                        selectedCashAdvanceCard?.id === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
                       }`}
                     >
                       <div>
-                        <p className="text-[13px] font-semibold text-slate-700">{a.name}</p>
-                        <p className="text-[10px] text-slate-400">Credit card</p>
+                        <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
+                        <p className="text-[10px] text-ink-500">Credit card</p>
                       </div>
-                      <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                     </button>
                   ))}
                 </div>
@@ -561,18 +603,18 @@ export function QuickEntry({ open, onClose }: Props) {
             {/* EMI Setup for Loans */}
             {needsPerson && (
               <div className="space-y-3">
-                <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-slate-50/80 border border-slate-100/60">
-                  <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-indigo-600 accent-indigo-600" />
-                  <span className="text-[13px] text-slate-600 font-medium">{t('loan_set_emi')}</span>
+                <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-cream-card border border-cream-border">
+                  <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-cream-border text-accent-600 accent-accent-600" />
+                  <span className="text-[13px] text-ink-800 font-medium">{t('loan_set_emi')}</span>
                 </label>
                 {hasEmi && (
                   <div className="grid grid-cols-2 gap-3 animate-fade-in">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('loan_installments')}</label>
+                      <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('loan_installments')}</label>
                       <input type="number" value={emiInstallments} onChange={e => setEmiInstallments(e.target.value)} placeholder="12" className={inputClass} />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Start Date</label>
+                      <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">Start Date</label>
                       <input type="date" value={emiStartDate} onChange={e => setEmiStartDate(e.target.value)} className={inputClass} />
                     </div>
                   </div>
@@ -582,7 +624,7 @@ export function QuickEntry({ open, onClose }: Props) {
 
             {needsLoan && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_which_loan')}</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_which_loan')}</label>
                 <select value={loanId} onChange={e => setLoanId(e.target.value)} className={`${inputClass} appearance-none`}>
                   <option value="">Select loan...</option>
                   {loans.filter(l => l.status === 'active').map(l => (
@@ -593,7 +635,7 @@ export function QuickEntry({ open, onClose }: Props) {
             )}
             {needsLoan && selectedLoan?.type === 'given' && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_money_where')}</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_money_where')}</label>
                 <select value={destId} onChange={e => setDestId(e.target.value)} className={`${inputClass} appearance-none`}>
                   <option value="">Select account...</option>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
@@ -602,7 +644,7 @@ export function QuickEntry({ open, onClose }: Props) {
             )}
             {needsLoan && selectedLoan?.type === 'taken' && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_pay_from')}</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_pay_from')}</label>
                 <select value={sourceId} onChange={e => setSourceId(e.target.value)} className={`${inputClass} appearance-none`}>
                   <option value="">Select account...</option>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
@@ -612,7 +654,7 @@ export function QuickEntry({ open, onClose }: Props) {
 
             {needsGoal && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_which_goal')}</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_which_goal')}</label>
                 <select value={goalId} onChange={e => setGoalId(e.target.value)} className={`${inputClass} appearance-none`}>
                   <option value="">Select goal...</option>
                   {goals.map(g => <option key={g.id} value={g.id}>{g.title} ({formatMoney(g.savedAmount, g.currency)}/{formatMoney(g.targetAmount, g.currency)})</option>)}
@@ -622,12 +664,12 @@ export function QuickEntry({ open, onClose }: Props) {
 
             {showCategory && (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('category')}</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('category')}</label>
                 <div className="flex flex-wrap gap-1.5">
                   {(type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(c => (
                     <button key={c} type="button" onClick={() => setCategory(c)}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all active:scale-95 ${
-                        category === c ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20' : 'bg-white text-slate-500 border-slate-200/60'
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-colors active:scale-95 ${
+                        category === c ? 'bg-ink-900 text-white border-ink-900' : 'bg-cream-card text-ink-600 border-cream-border'
                       }`}
                     >{c}</button>
                   ))}
@@ -636,12 +678,12 @@ export function QuickEntry({ open, onClose }: Props) {
             )}
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('quick_note')}</label>
+              <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_note')}</label>
               <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail likho..." className={inputClass} />
             </div>
 
             {(needsPerson || needsLoan) && (
-              <p className="text-[12px] text-slate-500 bg-slate-50/80 border border-slate-100/70 rounded-2xl p-3 leading-relaxed">
+              <p className="text-[12px] text-ink-600 bg-cream-card border border-cream-border rounded-2xl p-3 leading-relaxed">
                 {t('money_not_moved_notice')}
               </p>
             )}

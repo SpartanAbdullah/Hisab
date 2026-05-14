@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Link2, Info, AlertTriangle } from 'lucide-react';
 import { Modal } from '../components/Modal';
@@ -107,7 +107,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
     }
   };
 
-  const inputClass = "w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all";
+  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-white transition-all";
 
   return (
     <Modal
@@ -119,16 +119,16 @@ export function JoinGroupModal({ open, onClose }: Props) {
           {submitError && (
             <div
               role="alert"
-              className="flex items-start gap-2 bg-red-50 border border-red-200/70 rounded-xl px-3 py-2.5"
+              className="flex items-start gap-2 bg-pay-50 border border-pay-100 rounded-xl px-3 py-2.5"
             >
-              <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
-              <p className="text-[12px] font-medium text-red-600 leading-snug">{submitError}</p>
+              <AlertTriangle size={14} className="text-pay-text shrink-0 mt-0.5" />
+              <p className="text-[12px] font-medium text-pay-text leading-snug">{submitError}</p>
             </div>
           )}
           <button
             onClick={handleJoin}
             disabled={loading || !input.trim()}
-            className="w-full btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20"
+            className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20"
           >
             <Link2 size={16} />
             {loading ? t('join_modal_joining') : t('join_modal_submit')}
@@ -137,20 +137,20 @@ export function JoinGroupModal({ open, onClose }: Props) {
       )}
     >
       <div className="space-y-4">
-        <div className="rounded-2xl bg-indigo-50/60 border border-indigo-100/70 px-4 py-3 flex items-start gap-3">
+        <div className="rounded-2xl bg-accent-100/60 border border-cream-border px-4 py-3 flex items-start gap-3">
           <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shrink-0">
-            <Info size={14} className="text-indigo-500" />
+            <Info size={14} className="text-accent-600" />
           </div>
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-indigo-700">{t('join_modal_hint_title')}</p>
-            <p className="text-[12px] text-indigo-600/80 mt-1 leading-relaxed">
+            <p className="text-[13px] font-semibold text-accent-600">{t('join_modal_hint_title')}</p>
+            <p className="text-[12px] text-accent-600/80 mt-1 leading-relaxed">
               {t('join_modal_hint_body')}
             </p>
           </div>
         </div>
 
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">
             {t('join_modal_label')}
           </label>
           <input

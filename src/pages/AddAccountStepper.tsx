@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
@@ -11,11 +11,11 @@ import { useT } from '../lib/i18n';
 interface Props { open: boolean; onClose: () => void; onComplete?: () => void; inline?: boolean; }
 
 const ACCOUNT_TYPES = [
-  { value: 'cash' as AccountType, label_key: 'type_cash' as const, icon: Wallet, gradient: 'from-emerald-500 to-teal-500', soft: 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 text-emerald-600 border-emerald-100' },
+  { value: 'cash' as AccountType, label_key: 'type_cash' as const, icon: Wallet, gradient: 'from-emerald-500 to-teal-500', soft: 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 text-receive-text border-receive-100' },
   { value: 'bank' as AccountType, label_key: 'type_bank' as const, icon: Building2, gradient: 'from-blue-500 to-indigo-500', soft: 'bg-gradient-to-br from-blue-50 to-blue-100/50 text-blue-600 border-blue-100' },
   { value: 'digital_wallet' as AccountType, label_key: 'type_wallet' as const, icon: Smartphone, gradient: 'from-purple-500 to-violet-500', soft: 'bg-gradient-to-br from-purple-50 to-purple-100/50 text-purple-600 border-purple-100' },
-  { value: 'savings' as AccountType, label_key: 'type_savings' as const, icon: PiggyBank, gradient: 'from-amber-500 to-orange-500', soft: 'bg-gradient-to-br from-amber-50 to-amber-100/50 text-amber-600 border-amber-100' },
-  { value: 'credit_card' as AccountType, label_key: 'type_credit_card' as const, icon: CreditCard, gradient: 'from-slate-700 to-slate-900', soft: 'bg-gradient-to-br from-slate-100 to-slate-200/50 text-slate-700 border-slate-200' },
+  { value: 'savings' as AccountType, label_key: 'type_savings' as const, icon: PiggyBank, gradient: 'from-amber-500 to-orange-500', soft: 'bg-gradient-to-br from-amber-50 to-amber-100/50 text-warn-600 border-amber-100' },
+  { value: 'credit_card' as AccountType, label_key: 'type_credit_card' as const, icon: CreditCard, gradient: 'from-slate-700 to-slate-900', soft: 'bg-gradient-to-br from-slate-100 to-slate-200/50 text-ink-800 border-cream-border' },
 ];
 
 const BANK_PRESETS = [
@@ -143,20 +143,20 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
 
   const footerContent = step === 1 ? (
     <div className="flex gap-2.5">
-      <button onClick={() => setStep(0)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-slate-200/60 text-slate-500 active:bg-slate-50">&#x2190;</button>
+      <button onClick={() => setStep(0)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft">&#x2190;</button>
       {isCreditCard ? (
         <button onClick={handleSubmit} disabled={saving || !canProceedStep1()}
-          className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+          className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
         >{saving ? t('acct_creating') : <><Check size={16} /> {t('acct_create')}</>}</button>
       ) : (
-        <button onClick={() => setStep(2)} disabled={!canProceedStep1()} className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">{t('quick_next')} &#x2192;</button>
+        <button onClick={() => setStep(2)} disabled={!canProceedStep1()} className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">{t('quick_next')} &#x2192;</button>
       )}
     </div>
   ) : step === 2 ? (
     <div className="flex gap-2.5">
-      <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-slate-200/60 text-slate-500 active:bg-slate-50">&#x2190;</button>
+      <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft">&#x2190;</button>
       <button onClick={handleSubmit} disabled={saving || !name.trim()}
-        className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+        className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
       >{saving ? t('acct_creating') : <><Check size={16} /> {t('acct_create')}</>}</button>
     </div>
   ) : undefined;
@@ -170,8 +170,8 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
         {step === 0 && (
           <div className="space-y-2.5 animate-fade-in">
             {inline && (
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/60 rounded-2xl p-3.5 mb-3">
-                <p className="text-[12px] text-amber-700 font-semibold tracking-tight">{t('acct_need_for_tx')}</p>
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-warn-50 rounded-2xl p-3.5 mb-3">
+                <p className="text-[12px] text-warn-600 font-semibold tracking-tight">{t('acct_need_for_tx')}</p>
               </div>
             )}
             {ACCOUNT_TYPES.map(at => {
@@ -201,18 +201,18 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
               <>
                 {/* Issuer presets */}
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('cc_issuer')}</p>
+                  <p className="text-[11px] font-bold text-ink-500 uppercase tracking-widest mb-2">{t('cc_issuer')}</p>
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     {CC_ISSUER_PRESETS.map(p => {
                       const meta = currencyMeta[p.currency];
                       return (
                         <button key={p.name} type="button" onClick={() => selectCcIssuer(p)}
                           className={`p-3 rounded-2xl border-2 text-left transition-all active:scale-[0.97] ${
-                            ccIssuer === p.name ? 'border-indigo-400 bg-indigo-50/50 shadow-sm' : 'border-slate-200/60 bg-white'
+                            ccIssuer === p.name ? 'border-accent-500 bg-accent-50 shadow-sm' : 'border-cream-border bg-white'
                           }`}
                         >
-                          <p className="font-semibold text-[12px] text-slate-700 tracking-tight">{p.name}</p>
-                          <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">{meta?.flag} {p.currency}</p>
+                          <p className="font-semibold text-[12px] text-ink-800 tracking-tight">{p.name}</p>
+                          <p className="text-[10px] text-ink-500 flex items-center gap-1 mt-0.5">{meta?.flag} {p.currency}</p>
                         </button>
                       );
                     })}
@@ -247,7 +247,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                       return (
                         <button key={c} type="button" onClick={() => setCurrency(c)}
                           className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                            currency === c ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white text-slate-500'
+                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white text-ink-500'
                           }`}
                         >{meta?.flag} {c}</button>
                       );
@@ -260,18 +260,18 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                 {/* Bank/Wallet presets */}
                 {(accountType === 'bank' || accountType === 'digital_wallet') && (
                   <div>
-                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('acct_quick_select')}</p>
+                    <p className="text-[11px] font-bold text-ink-500 uppercase tracking-widest mb-2">{t('acct_quick_select')}</p>
                     <div className="grid grid-cols-2 gap-2">
                       {(accountType === 'bank' ? BANK_PRESETS : WALLET_PRESETS).map(p => {
                         const meta = currencyMeta[p.currency];
                         return (
                           <button key={p.name} onClick={() => selectPreset(p)}
                             className={`p-3.5 rounded-2xl border-2 text-left transition-all active:scale-[0.97] ${
-                              name === p.name ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                              name === p.name ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
                             }`}
                           >
-                            <p className="font-semibold text-[12px] text-slate-700 tracking-tight">{p.name}</p>
-                            <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">{meta?.flag} {p.currency}</p>
+                            <p className="font-semibold text-[12px] text-ink-800 tracking-tight">{p.name}</p>
+                            <p className="text-[10px] text-ink-500 flex items-center gap-1 mt-0.5">{meta?.flag} {p.currency}</p>
                           </button>
                         );
                       })}
@@ -279,8 +279,8 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                   </div>
                 )}
 
-                <div className={accountType === 'bank' || accountType === 'digital_wallet' ? 'border-t border-slate-100/60 pt-4' : ''}>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                <div className={accountType === 'bank' || accountType === 'digital_wallet' ? 'border-t border-cream-hairline pt-4' : ''}>
+                  <p className="text-[11px] font-bold text-ink-500 uppercase tracking-widest mb-2">
                     {accountType === 'bank' || accountType === 'digital_wallet' ? t('acct_or_type') : t('acct_name')}
                   </p>
                   <input value={name} onChange={e => setName(e.target.value)}
@@ -297,7 +297,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                       return (
                         <button key={c} type="button" onClick={() => setCurrency(c)}
                           className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                            currency === c ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white text-slate-500'
+                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white text-ink-500'
                           }`}
                         >{meta?.flag} {c}</button>
                       );
@@ -312,10 +312,10 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
         {/* Step 2: Balance (non-credit-card only) */}
         {step === 2 && !isCreditCard && (
           <div className="space-y-4 animate-fade-in">
-            <div className="bg-slate-50/80 rounded-2xl p-4 text-center border border-slate-100/60">
-              <p className="text-[10px] text-slate-400 uppercase tracking-widest">{t('acct_new')}</p>
-              <p className="font-bold text-[15px] mt-1 text-slate-800 tracking-tight">{name}</p>
-              <p className="text-[11px] text-slate-400 capitalize mt-0.5 flex items-center gap-1 justify-center">
+            <div className="bg-cream-soft/80 rounded-2xl p-4 text-center border border-cream-hairline">
+              <p className="text-[10px] text-ink-500 uppercase tracking-widest">{t('acct_new')}</p>
+              <p className="font-bold text-[15px] mt-1 text-ink-900 tracking-tight">{name}</p>
+              <p className="text-[11px] text-ink-500 capitalize mt-0.5 flex items-center gap-1 justify-center">
                 <span>{currencyMeta[currency]?.flag}</span> {accountType.replace('_', ' ')} — {currency}
               </p>
             </div>
@@ -327,7 +327,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                 className="input-field text-center text-xl font-bold tabular-nums"
                 autoFocus
               />
-              <p className="text-[11px] text-slate-400 text-center mt-1.5">{t('acct_leave_empty')}</p>
+              <p className="text-[11px] text-ink-500 text-center mt-1.5">{t('acct_leave_empty')}</p>
             </div>
           </div>
         )}

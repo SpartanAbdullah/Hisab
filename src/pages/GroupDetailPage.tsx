@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check } from 'lucide-react';
+import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check } from 'lucide-react';
+import { NavyHero, TopBar } from '../components/NavyHero';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -18,10 +19,14 @@ import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { SplitGroup, GroupExpense, GroupEvent, GroupSettlement } from '../db';
 
 function memberStatusClass(status?: string, isOwner?: boolean) {
-  if (isOwner) return 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200';
-  if (status === 'connected') return 'bg-emerald-100 text-emerald-700';
-  if (status === 'invited') return 'bg-amber-100 text-amber-700';
-  return 'bg-slate-100 text-slate-600';
+  // Avatar chips render inside the navy hero, so the palette is white-on-dark
+  // tints rather than the legacy pastel-on-light. Owner uses the violet accent;
+  // connected uses receive green; invited uses warn amber; everyone else
+  // (synthetic guest, declined, etc.) falls back to a translucent neutral.
+  if (isOwner) return 'bg-accent-500/30 text-white ring-2 ring-accent-500/40';
+  if (status === 'connected') return 'bg-receive-600/25 text-white';
+  if (status === 'invited') return 'bg-warn-600/30 text-white';
+  return 'bg-white/15 text-white/80';
 }
 
 export function GroupDetailPage() {
@@ -102,7 +107,7 @@ export function GroupDetailPage() {
   if (!group || loadStatus === 'loading') {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-mesh">
-        <p className="text-slate-400">Loading...</p>
+        <p className="text-ink-500">Loading...</p>
       </div>
     );
   }
@@ -211,46 +216,56 @@ export function GroupDetailPage() {
   };
 
   return (
-    <div className="page-shell">
-      <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-3.5 z-40">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-slate-100/80 active:bg-slate-200 transition-colors">
-              <ArrowLeft size={16} className="text-slate-500" />
-            </button>
-            <span className="text-xl">{group.emoji}</span>
-            <div className="min-w-0">
-              <h1 className="text-[17px] font-bold tracking-tight text-slate-800 truncate">{group.name}</h1>
-              <p className="text-[10px] text-slate-400 mt-0.5">
-                {group.members.filter(member => member.status === 'connected').length} connected
-              </p>
+    <main className="min-h-dvh bg-cream-bg pb-28">
+      <NavyHero>
+        <TopBar
+          title={`${group.emoji} ${group.name}`}
+          back
+          action={
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowInvite(true)}
+                className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+                aria-label="Invite"
+              >
+                <Share2 size={14} className="text-white" />
+              </button>
+              <button
+                onClick={handleDelete}
+                className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+                aria-label="Delete"
+              >
+                <Trash2 size={14} className="text-white" />
+              </button>
+              <LanguageToggle />
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <LanguageToggle />
-            <button onClick={() => setShowInvite(true)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-indigo-50 active:bg-indigo-100 transition-colors">
-              <Share2 size={14} className="text-indigo-500" />
-            </button>
-            <button onClick={handleDelete} className="w-8 h-8 rounded-xl flex items-center justify-center bg-red-50 active:bg-red-100 transition-colors">
-              <Trash2 size={14} className="text-red-400" />
-            </button>
-          </div>
-        </div>
+          }
+        />
+        <div className="px-5 pb-7">
+          <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
+            {group.members.length} {t('group_members_count')} ·{' '}
+            {group.members.filter((m) => m.status === 'connected').length} connected ·{' '}
+            {group.currency}
+          </p>
 
-        <div className="flex items-center gap-1 mt-3 overflow-x-auto no-scrollbar">
-          {group.members.map(member => (
-            <div key={member.id} className="flex flex-col items-center gap-1 shrink-0">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${memberStatusClass(member.status, member.isOwner)}`}>
-                {member.name.charAt(0).toUpperCase()}
+          <div className="flex items-center gap-1.5 mt-3 overflow-x-auto no-scrollbar">
+            {group.members.map((member) => (
+              <div key={member.id} className="flex flex-col items-center gap-0.5 shrink-0 w-12">
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold ${memberStatusClass(member.status, member.isOwner)}`}
+                >
+                  {member.name.charAt(0).toUpperCase()}
+                </div>
+                <span className="text-[9px] text-white/60 truncate w-full text-center">
+                  {member.isOwner ? 'owner' : member.status ?? 'guest'}
+                </span>
               </div>
-              <span className="text-[9px] text-slate-400">
-                {member.isOwner ? 'owner' : member.status ?? 'guest'}
-              </span>
-            </div>
-          ))}
-          <span className="text-[10px] text-slate-400 ml-1.5">{group.members.length} {t('group_members_count')}</span>
+            ))}
+          </div>
         </div>
-      </header>
+      </NavyHero>
+
+      <div className="sukoon-body pt-4">
 
       {group.joinCode && (() => {
         // When the owner is the only connected person, the group code card
@@ -268,27 +283,27 @@ export function GroupDetailPage() {
         if (isSolo) {
           return (
             <div className="px-5 pt-4">
-              <div className="card-premium p-4 animate-fade-in">
+              <div className="rounded-[18px] bg-cream-card border border-cream-border p-4 animate-fade-in">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 text-accent-600 flex items-center justify-center shrink-0">
                     <Sparkles size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-bold text-slate-800 tracking-tight">
+                    <p className="text-[13px] font-bold text-ink-900 tracking-tight">
                       {t('group_solo_invite_title')}
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">
                       {t('group_solo_invite_body')}
                     </p>
                   </div>
                 </div>
-                <div className="mt-3.5 flex items-center gap-2.5 bg-slate-50 rounded-2xl px-3.5 py-2.5 border border-slate-200/60">
-                  <p className="flex-1 text-[15px] font-bold font-mono tracking-tight text-slate-800 truncate">
+                <div className="mt-3.5 flex items-center gap-2.5 bg-cream-soft rounded-2xl px-3.5 py-2.5 border border-cream-border">
+                  <p className="flex-1 text-[15px] font-bold font-mono tracking-tight text-ink-900 truncate">
                     {group.joinCode}
                   </p>
                   <button
                     onClick={copyCode}
-                    className="shrink-0 rounded-xl btn-gradient text-white px-3 py-1.5 text-[11px] font-bold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/20"
+                    className="shrink-0 rounded-xl bg-ink-900 text-white text-white px-3 py-1.5 text-[11px] font-bold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/20"
                   >
                     <Copy size={11} strokeWidth={2.5} /> Copy
                   </button>
@@ -300,17 +315,17 @@ export function GroupDetailPage() {
 
         return (
           <div className="px-5 pt-4">
-            <div className="card-premium p-3.5 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                <Share2 size={16} className="text-indigo-500" />
+            <div className="rounded-[18px] bg-cream-card border border-cream-border p-3.5 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-accent-100 flex items-center justify-center shrink-0">
+                <Share2 size={16} className="text-accent-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Group Code</p>
-                <p className="text-[15px] font-bold text-slate-800 font-mono tracking-tight">{group.joinCode}</p>
+                <p className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Group Code</p>
+                <p className="text-[15px] font-bold text-ink-900 font-mono tracking-tight">{group.joinCode}</p>
               </div>
               <button
                 onClick={copyCode}
-                className="shrink-0 rounded-xl bg-slate-100 text-slate-600 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-all"
+                className="shrink-0 rounded-xl bg-cream-card border border-cream-border text-ink-700 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-all"
               >
                 <Copy size={12} /> Copy
               </button>
@@ -324,18 +339,18 @@ export function GroupDetailPage() {
           sense of how far from "fully settled" the group is. */}
       {tab !== 'activity' && totalSpend > 0 && (
         <div className="px-5 pt-4">
-          <div className="card-premium p-4 flex items-center gap-4">
+          <div className="rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-4">
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Group spend</p>
-              <p className="text-[22px] font-extrabold text-slate-800 tabular-nums tracking-tight mt-0.5 leading-tight">
+              <p className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Group spend</p>
+              <p className="text-[22px] font-extrabold text-ink-900 tabular-nums tracking-tight mt-0.5 leading-tight">
                 {formatMoney(totalSpend, group.currency)}
               </p>
-              <p className="text-[11px] text-slate-400 mt-0.5">
+              <p className="text-[11px] text-ink-500 mt-0.5">
                 {totalOutstanding === 0 ? (
-                  <span className="text-emerald-600 font-semibold">All settled</span>
+                  <span className="text-receive-text font-semibold">All settled</span>
                 ) : (
                   <>
-                    <span className="text-rose-500 font-semibold">{formatMoney(totalOutstanding, group.currency)}</span>
+                    <span className="text-pay-text font-semibold">{formatMoney(totalOutstanding, group.currency)}</span>
                     <span> outstanding</span>
                   </>
                 )}
@@ -350,7 +365,7 @@ export function GroupDetailPage() {
               trackColor="#f1f5f9"
             >
               <span className={`text-[11px] font-extrabold tabular-nums ${
-                totalOutstanding === 0 ? 'text-emerald-600' : 'text-indigo-600'
+                totalOutstanding === 0 ? 'text-receive-text' : 'text-accent-600'
               }`}>
                 {settledPct}%
               </span>
@@ -361,15 +376,15 @@ export function GroupDetailPage() {
 
       {debts.length > 0 && tab !== 'activity' && (
         <div className="px-5 pt-3">
-          <div className="card-premium p-4 space-y-2.5">
+          <div className="rounded-[18px] bg-cream-card border border-cream-border p-4 space-y-2.5">
             {debts.map((debt, index) => (
               <div key={`${debt.from}-${debt.to}-${index}`} className="flex items-center justify-between">
-                <p className="text-[12px] text-slate-600">
-                  <span className="font-bold text-red-500">{debt.fromName}</span>
+                <p className="text-[12px] text-ink-600">
+                  <span className="font-bold text-pay-text">{debt.fromName}</span>
                   {' '}{t('group_owes')}{' '}
-                  <span className="font-bold text-emerald-600">{debt.toName}</span>
+                  <span className="font-bold text-receive-text">{debt.toName}</span>
                 </p>
-                <p className="text-[13px] font-bold text-slate-800 tabular-nums">{formatMoney(debt.amount, group.currency)}</p>
+                <p className="text-[13px] font-bold text-ink-900 tabular-nums">{formatMoney(debt.amount, group.currency)}</p>
               </div>
             ))}
           </div>
@@ -381,7 +396,7 @@ export function GroupDetailPage() {
           <button
             key={nextTab}
             onClick={() => setTab(nextTab)}
-            className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${tab === nextTab ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+            className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${tab === nextTab ? 'bg-ink-900 text-white' : 'bg-cream-card text-ink-500 border border-cream-border'}`}
           >
             {nextTab === 'expenses' ? t('group_expenses') : nextTab === 'balances' ? t('group_balances') : 'Activity'}
           </button>
@@ -394,19 +409,19 @@ export function GroupDetailPage() {
             // Activation card — strong CTA instead of a passive "no expenses"
             // line. This is the single most important first action after
             // creating/joining a group, so give it real visual weight.
-            <div className="card-premium p-6 text-center animate-fade-in">
-              <div className="mx-auto w-14 h-14 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-600 flex items-center justify-center">
+            <div className="rounded-[18px] bg-cream-card border border-cream-border p-6 text-center animate-fade-in">
+              <div className="mx-auto w-14 h-14 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 text-accent-600 flex items-center justify-center">
                 <Receipt size={24} strokeWidth={1.8} />
               </div>
-              <p className="text-[15px] font-bold text-slate-800 tracking-tight mt-4">
+              <p className="text-[15px] font-bold text-ink-900 tracking-tight mt-4">
                 {t('group_first_expense_title')}
               </p>
-              <p className="text-[12px] text-slate-500 mt-1.5 leading-relaxed max-w-[260px] mx-auto">
+              <p className="text-[12px] text-ink-500 mt-1.5 leading-relaxed max-w-[260px] mx-auto">
                 {t('group_first_expense_body')}
               </p>
               <button
                 onClick={() => setShowAddExpense(true)}
-                className="mt-5 w-full rounded-2xl py-3 text-[13px] font-bold btn-gradient shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+                className="mt-5 w-full rounded-2xl py-3 text-[13px] font-bold bg-ink-900 text-white shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
               >
                 <Plus size={14} strokeWidth={2.5} /> {t('group_first_expense_cta')}
               </button>
@@ -428,7 +443,7 @@ export function GroupDetailPage() {
                       setEditExpense(expense);
                     }
                   }}
-                  className="w-full text-left card-premium p-4 animate-fade-in active:scale-[0.98] transition-all cursor-pointer"
+                  className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 animate-fade-in active:scale-[0.98] transition-all cursor-pointer"
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -452,40 +467,40 @@ export function GroupDetailPage() {
                       }
                       className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:cursor-default ${
                         isReconciled
-                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-500/20 disabled:opacity-100'
+                          ? 'bg-receive-600 border-receive-600 text-white disabled:opacity-100'
                           : canReconcile
-                            ? 'bg-white border-slate-200 text-transparent hover:border-emerald-300'
-                            : 'bg-slate-50 border-slate-200 text-transparent opacity-50'
+                            ? 'bg-cream-card border-cream-border text-transparent hover:border-receive-600'
+                            : 'bg-cream-soft border-cream-hairline text-transparent opacity-50'
                       }`}
                     >
                       <Check size={14} strokeWidth={3} />
                     </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <p className="text-[13px] font-semibold text-slate-800 truncate">{expense.description}</p>
+                        <p className="text-[13px] font-semibold text-ink-900 truncate">{expense.description}</p>
                         {(expense.version ?? 1) > 1 ? (
                           <span
-                            className="h-2.5 w-2.5 rounded-full bg-orange-400 ring-2 ring-orange-100 shrink-0"
+                            className="h-2.5 w-2.5 rounded-full bg-warn-600 ring-2 ring-warn-50 shrink-0"
                             aria-label="Edited expense"
                             title="Edited"
                           />
                         ) : null}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                        <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-semibold leading-none text-sky-700 ring-1 ring-sky-100">
+                        <span className="rounded-full bg-info-50 px-2 py-1 text-[10px] font-semibold leading-none text-info-600 ring-1 ring-info-50">
                           {t('group_paid_by_short')} <span className="font-extrabold">{meta.paidBy}</span>
                         </span>
-                        <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold leading-none text-amber-700 ring-1 ring-amber-100">
+                        <span className="rounded-full bg-warn-50 px-2 py-1 text-[10px] font-semibold leading-none text-warn-600 ring-1 ring-warn-50">
                           {t('group_split_short')} <span className="font-extrabold">{meta.split}</span>
                         </span>
-                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold leading-none text-emerald-700 ring-1 ring-emerald-100">
+                        <span className="rounded-full bg-receive-50 px-2 py-1 text-[10px] font-semibold leading-none text-receive-text ring-1 ring-receive-100">
                           {t('group_your_share_short')} <span className="font-extrabold tabular-nums">{meta.share}</span>
                         </span>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-[14px] font-bold text-slate-800 tabular-nums">{formatMoney(expense.amount, group.currency)}</p>
-                      <p className="text-[9px] text-slate-400">{new Date(expense.date).toLocaleDateString()}</p>
+                      <p className="text-[14px] font-bold text-ink-900 tabular-nums">{formatMoney(expense.amount, group.currency)}</p>
+                      <p className="text-[9px] text-ink-500">{new Date(expense.date).toLocaleDateString()}</p>
                     </div>
                   </div>
                 </div>
@@ -496,12 +511,12 @@ export function GroupDetailPage() {
       ) : tab === 'balances' ? (
         <div className="px-5 pt-4 pb-44 space-y-2">
           {balanceRows.length === 0 ? (
-            <div className="card-premium p-6 text-center animate-fade-in">
-              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+            <div className="rounded-[18px] bg-cream-card border border-cream-border p-6 text-center animate-fade-in">
+              <div className="w-12 h-12 rounded-2xl bg-cream-soft border border-cream-hairline text-ink-500 mx-auto flex items-center justify-center">
                 <Receipt size={22} />
               </div>
-              <p className="text-sm font-semibold text-slate-700 mt-3">No balances yet</p>
-              <p className="text-[12px] text-slate-400 mt-1">Add an expense to see paid, share, and final balance for each member.</p>
+              <p className="text-sm font-semibold text-ink-800 mt-3">No balances yet</p>
+              <p className="text-[12px] text-ink-500 mt-1">Add an expense to see paid, share, and final balance for each member.</p>
             </div>
           ) : balanceRows.map(({ member, paid, share, net }, index) => {
             const ringProgress = Math.abs(net) / maxAbs;
@@ -511,7 +526,7 @@ export function GroupDetailPage() {
             return (
               <div
                 key={member.id}
-                className="card-premium p-4 animate-fade-in"
+                className="rounded-[18px] bg-cream-card border border-cream-border p-4 animate-fade-in"
                 style={{ animationDelay: `${index * 30}ms` }}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -520,10 +535,10 @@ export function GroupDetailPage() {
                       {member.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-slate-700 truncate">{member.name}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
+                      <p className="text-[13px] font-semibold text-ink-800 truncate">{member.name}</p>
+                      <p className="text-[10px] text-ink-500 mt-0.5">
                         {member.isOwner ? 'owner' : member.status ?? 'guest'}
-                        {member.id === currentMember?.id ? <span className="font-semibold text-indigo-500"> · you</span> : null}
+                        {member.id === currentMember?.id ? <span className="font-semibold text-accent-600"> · you</span> : null}
                       </p>
                     </div>
                   </div>
@@ -531,18 +546,18 @@ export function GroupDetailPage() {
                     <div className="text-right">
                       {isPositive ? (
                         <>
-                          <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wide">Gets back</p>
-                          <p className="text-[13px] font-extrabold text-emerald-600 tabular-nums">+{formatMoney(net, group.currency)}</p>
+                          <p className="text-[10px] text-receive-text font-bold uppercase tracking-wide">Gets back</p>
+                          <p className="text-[13px] font-extrabold text-receive-text tabular-nums">+{formatMoney(net, group.currency)}</p>
                         </>
                       ) : isNegative ? (
                         <>
-                          <p className="text-[10px] text-red-500 font-bold uppercase tracking-wide">Has to pay</p>
-                          <p className="text-[13px] font-extrabold text-red-500 tabular-nums">-{formatMoney(Math.abs(net), group.currency)}</p>
+                          <p className="text-[10px] text-pay-text font-bold uppercase tracking-wide">Has to pay</p>
+                          <p className="text-[13px] font-extrabold text-pay-text tabular-nums">-{formatMoney(Math.abs(net), group.currency)}</p>
                         </>
                       ) : (
                         <>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Balance</p>
-                          <p className="text-[11px] text-slate-400">{t('group_settled')}</p>
+                          <p className="text-[10px] text-ink-500 font-bold uppercase tracking-wide">Balance</p>
+                          <p className="text-[11px] text-ink-500">{t('group_settled')}</p>
                         </>
                       )}
                     </div>
@@ -556,13 +571,13 @@ export function GroupDetailPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-3">
-                  <div className="rounded-xl bg-slate-50 border border-slate-100/70 px-3 py-2">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Paid total</p>
-                    <p className="text-[12px] font-bold text-slate-700 tabular-nums mt-0.5">{formatMoney(paid, group.currency)}</p>
+                  <div className="rounded-xl bg-cream-soft border border-cream-hairline px-3 py-2">
+                    <p className="text-[9px] font-bold text-ink-500 uppercase tracking-widest">Paid total</p>
+                    <p className="text-[12px] font-bold text-ink-800 tabular-nums mt-0.5">{formatMoney(paid, group.currency)}</p>
                   </div>
-                  <div className="rounded-xl bg-slate-50 border border-slate-100/70 px-3 py-2">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Share total</p>
-                    <p className="text-[12px] font-bold text-slate-700 tabular-nums mt-0.5">{formatMoney(share, group.currency)}</p>
+                  <div className="rounded-xl bg-cream-soft border border-cream-hairline px-3 py-2">
+                    <p className="text-[9px] font-bold text-ink-500 uppercase tracking-widest">Share total</p>
+                    <p className="text-[12px] font-bold text-ink-800 tabular-nums mt-0.5">{formatMoney(share, group.currency)}</p>
                   </div>
                 </div>
               </div>
@@ -572,23 +587,23 @@ export function GroupDetailPage() {
       ) : (
         <div className="px-5 pt-4 space-y-2">
           {events.length === 0 ? (
-            <div className="card-premium p-6 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+            <div className="rounded-[18px] bg-cream-card border border-cream-border p-6 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-cream-soft border border-cream-hairline text-ink-500 mx-auto flex items-center justify-center">
                 <Clock3 size={22} />
               </div>
-              <p className="text-sm font-semibold text-slate-700 mt-3">No shared activity yet</p>
-              <p className="text-[12px] text-slate-400 mt-1">Adds, edits, deletes, joins, and settlements will appear here for everyone.</p>
+              <p className="text-sm font-semibold text-ink-800 mt-3">No shared activity yet</p>
+              <p className="text-[12px] text-ink-500 mt-1">Adds, edits, deletes, joins, and settlements will appear here for everyone.</p>
             </div>
           ) : (
             events.map((event, index) => (
-              <div key={event.id} className="card-premium p-4 animate-fade-in" style={{ animationDelay: `${index * 30}ms` }}>
+              <div key={event.id} className="rounded-[18px] bg-cream-card border border-cream-border p-4 animate-fade-in" style={{ animationDelay: `${index * 30}ms` }}>
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-accent-100 text-accent-600 flex items-center justify-center shrink-0">
                     <Clock3 size={16} />
                   </div>
                   <div className="flex-1">
-                    <p className="text-[13px] font-semibold text-slate-700 leading-snug">{event.summary}</p>
-                    <p className="text-[10px] text-slate-400 mt-1">{new Date(event.createdAt).toLocaleString()}</p>
+                    <p className="text-[13px] font-semibold text-ink-800 leading-snug">{event.summary}</p>
+                    <p className="text-[10px] text-ink-500 mt-1">{new Date(event.createdAt).toLocaleString()}</p>
                   </div>
                 </div>
               </div>
@@ -601,23 +616,25 @@ export function GroupDetailPage() {
         <div className="flex gap-2.5 max-w-[480px] mx-auto">
           <button
             onClick={() => setShowAddExpense(true)}
-            className="flex-1 btn-gradient rounded-2xl py-3 text-sm font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+            className="flex-1 bg-ink-900 text-white rounded-2xl py-3 text-sm font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
           >
             <Plus size={16} /> {t('group_expense_add')}
           </button>
           <button
             onClick={() => setShowSettle(true)}
-            className="px-5 rounded-2xl py-3 text-sm font-bold bg-emerald-500 text-white shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all"
+            className="px-5 rounded-2xl py-3 text-sm font-bold bg-receive-600 text-white flex items-center justify-center gap-2 active:scale-95 transition-all"
           >
             <Handshake size={16} /> {t('group_settle')}
           </button>
         </div>
       </div>
 
+      </div>
+
       <AddGroupExpenseModal open={showAddExpense} group={group} onClose={() => { setShowAddExpense(false); void reload(); }} />
       <EditGroupExpenseModal open={!!editExpense} group={group} expense={editExpense} onClose={() => { setEditExpense(null); void reload(); }} />
       <SettleUpModal open={showSettle} group={group} debts={debts} onClose={() => { setShowSettle(false); void reload(); }} />
       <GroupInviteModal open={showInvite} group={group} onClose={() => { setShowInvite(false); void reload(); }} />
-    </div>
+    </main>
   );
 }

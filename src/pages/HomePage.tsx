@@ -8,6 +8,12 @@ import {
   BarChart3,
   HandCoins,
   Users,
+  Bell,
+  Target,
+  History,
+  ChevronRight,
+  Landmark,
+  Contact,
 } from "lucide-react";
 import { useAccountStore } from "../stores/accountStore";
 import { useTransactionStore } from "../stores/transactionStore";
@@ -16,14 +22,17 @@ import { useGoalStore } from "../stores/goalStore";
 import { useUpcomingExpenseStore } from "../stores/upcomingExpenseStore";
 import { useAppModeStore } from "../stores/appModeStore";
 import { useSplitStore } from "../stores/splitStore";
-import { AccountCard } from "../components/AccountCard";
+import { useLinkedRequestStore } from "../stores/linkedRequestStore";
+import { useSettlementRequestStore } from "../stores/settlementRequestStore";
+import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
 import { TransactionItem } from "../components/TransactionItem";
 import { EmptyState } from "../components/EmptyState";
 import { PageErrorState } from "../components/PageErrorState";
-import { ProgressRing } from "../components/ProgressRing";
 import { UserAvatar } from "../components/UserAvatar";
+import { NavyHero } from "../components/NavyHero";
+import { MoneyDisplay } from "../components/MoneyDisplay";
 import { AddAccountStepper } from "./AddAccountStepper";
-import { formatMoney, formatSignedMoney } from "../lib/constants";
+import { formatMoney } from "../lib/constants";
 import { currencyMeta } from "../lib/design-tokens";
 import { useT } from "../lib/i18n";
 import { useAsyncLoad } from "../hooks/useAsyncLoad";
@@ -41,22 +50,11 @@ function waitForNextPaint(): Promise<void> {
   });
 }
 
-function formatMoneyList(totals: Record<string, number>) {
-  return Object.entries(totals)
-    .filter(([, amount]) => amount > 0)
-    .sort(([currencyA, amountA], [currencyB, amountB]) => {
-      if (amountB !== amountA) return amountB - amountA;
-      return currencyA.localeCompare(currencyB);
-    })
-    .map(([currency, amount]) => formatMoney(amount, currency))
-    .join(" + ");
-}
-
 export function HomePage() {
   const { accounts, loadAccounts } = useAccountStore();
   const { transactions, loadTransactions } = useTransactionStore();
   const { loans, loadLoans } = useLoanStore();
-  const { goals, loadGoals } = useGoalStore();
+  const { loadGoals } = useGoalStore();
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
   const mode = useAppModeStore((s) => s.mode);
   const {
@@ -72,6 +70,28 @@ export function HomePage() {
   const [renderNowMs] = useState(() => Date.now());
 
   const userName = localStorage.getItem("hisaab_user_name") ?? "User";
+  const primaryCurrency = localStorage.getItem("hisaab_primary_currency") ?? "AED";
+
+  // Inbox badge — pending linked + settlement requests touching this user.
+  // Mirrors the count BottomNav shows so the hero bell agrees with the nav.
+  const userId = useSupabaseAuthStore((s) => s.user?.id ?? "");
+  const linkedPending = useLinkedRequestStore(
+    (s) =>
+      s.requests.filter(
+        (r) =>
+          r.status === "pending" &&
+          (r.toUserId === userId || r.fromUserId === userId),
+      ).length,
+  );
+  const settlementPending = useSettlementRequestStore(
+    (s) =>
+      s.requests.filter(
+        (r) =>
+          r.status === "pending" &&
+          (r.toUserId === userId || r.fromUserId === userId),
+      ).length,
+  );
+  const pendingApprovalCount = linkedPending + settlementPending;
 
   // Load account balances first so the mobile dashboard can paint its core
   // money view before supporting widgets compete for network/CPU.
@@ -148,175 +168,6 @@ export function HomePage() {
   const payablesByCurrency = sumLoansByCurrency(
     activeLoans.filter((l) => l.type === "taken"),
   );
-
-  if (mode === "splits_only") {
-    return (
-      <main className="min-h-dvh bg-mesh pb-28">
-        <div className="px-5 pt-safe">
-          <div className="pt-5 flex items-center justify-between">
-            <div>
-              <p className="text-[11px] text-slate-400 font-medium">
-                Good to see you
-              </p>
-              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
-                {userName}
-              </h1>
-            </div>
-            <UserAvatar name={userName} />
-          </div>
-        </div>
-
-        {loadStatus === "error" ? (
-          <PageErrorState
-            message={loadError ?? "Some data failed to load."}
-            onRetry={retryLoad}
-          />
-        ) : (
-          <>
-            <section className="px-5 pt-5">
-              <div className="rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-slate-900 p-5 text-white shadow-lg shadow-indigo-500/20">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center">
-                    <Users size={22} />
-                  </div>
-                  <div>
-                    <p className="text-[11px] uppercase tracking-widest text-white/50 font-bold">
-                      Splits Only
-                    </p>
-                    <p className="text-[13px] text-white/75 mt-1">
-                      Track people and groups without cash wallets or bank
-                      accounts.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="px-5 pt-4 grid grid-cols-1 gap-3">
-              {Object.keys(receivablesByCurrency).length === 0 &&
-              Object.keys(payablesByCurrency).length === 0 ? (
-                <div className="card-premium p-5 text-center">
-                  <HandCoins size={26} className="text-indigo-500 mx-auto" />
-                  <p className="font-bold text-slate-800 mt-2">No IOUs yet</p>
-                  <p className="text-[12px] text-slate-400 mt-1">
-                    Use the + button to record who owes whom.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {Object.entries(receivablesByCurrency).map(
-                    ([currency, amount]) => (
-                      <button
-                        key={`receive-${currency}`}
-                        onClick={() => navigate("/loans")}
-                        className="card-premium p-4 text-left flex items-center justify-between active:scale-[0.98] transition-all"
-                      >
-                        <div>
-                          <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
-                            To Receive · {currency}
-                          </p>
-                          <p className="text-2xl font-extrabold text-slate-800 mt-1 tabular-nums">
-                            {formatMoney(amount, currency)}
-                          </p>
-                        </div>
-                        <ArrowDownLeft size={22} className="text-emerald-500" />
-                      </button>
-                    ),
-                  )}
-                  {Object.entries(payablesByCurrency).map(
-                    ([currency, amount]) => (
-                      <button
-                        key={`pay-${currency}`}
-                        onClick={() => navigate("/loans")}
-                        className="card-premium p-4 text-left flex items-center justify-between active:scale-[0.98] transition-all"
-                      >
-                        <div>
-                          <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">
-                            To Pay · {currency}
-                          </p>
-                          <p className="text-2xl font-extrabold text-slate-800 mt-1 tabular-nums">
-                            {formatMoney(amount, currency)}
-                          </p>
-                        </div>
-                        <ArrowUpRight size={22} className="text-rose-500" />
-                      </button>
-                    ),
-                  )}
-                </>
-              )}
-            </section>
-
-            <section className="px-5 pt-5">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-[15px] font-bold text-slate-800">Groups</h2>
-                <button
-                  onClick={() => navigate("/groups")}
-                  className="text-[11px] font-bold text-indigo-600"
-                >
-                  View all
-                </button>
-              </div>
-              {groups.length === 0 ? (
-                <EmptyState
-                  icon={Users}
-                  title="No groups yet"
-                  description="Create or join a group to split shared expenses."
-                />
-              ) : (
-                <div className="space-y-2.5">
-                  {groups.slice(0, 3).map((group) => {
-                    const balance = groupBalances[group.id] ?? 0;
-                    return (
-                      <button
-                        key={group.id}
-                        onClick={() => navigate(`/group/${group.id}`)}
-                        className="w-full card-premium p-4 flex items-center justify-between text-left active:scale-[0.98] transition-all"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-800 truncate">
-                            {group.emoji} {group.name}
-                          </p>
-                          <p className="text-[11px] text-slate-400 mt-1">
-                            {group.members.length} members
-                          </p>
-                        </div>
-                        <p
-                          className={`text-[13px] font-extrabold tabular-nums ${
-                            balance > 0
-                              ? "text-emerald-600"
-                              : balance < 0
-                              ? "text-rose-500"
-                              : "text-slate-400"
-                          }`}
-                        >
-                          {balance === 0
-                            ? "All settled"
-                            : `${balance > 0 ? "+" : "-"}${formatMoney(
-                                Math.abs(balance),
-                                group.currency,
-                              )}`}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section className="px-5 pt-5">
-              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
-                <p className="text-[12px] text-indigo-800 leading-relaxed">
-                  To notify another person in Hisaab, they must also have the
-                  app and share their code with you. Link them from Settings
-                  &gt; Contacts.
-                </p>
-              </div>
-            </section>
-          </>
-        )}
-      </main>
-    );
-  }
   const receivableEntries = Object.entries(receivablesByCurrency).filter(
     ([, v]) => v > 0,
   );
@@ -325,6 +176,226 @@ export function HomePage() {
   );
   const hasReceivables = receivableEntries.length > 0;
   const hasPayables = payableEntries.length > 0;
+
+  if (mode === "splits_only") {
+    const recvLoanCount = activeLoans.filter((l) => l.type === "given").length;
+    const payLoanCount = activeLoans.filter((l) => l.type === "taken").length;
+    const recvPrimary =
+      receivablesByCurrency[primaryCurrency] ??
+      Object.values(receivablesByCurrency)[0] ??
+      0;
+    const recvPrimaryCur = receivablesByCurrency[primaryCurrency] !== undefined
+      ? primaryCurrency
+      : Object.keys(receivablesByCurrency)[0] ?? primaryCurrency;
+    const payPrimary =
+      payablesByCurrency[primaryCurrency] ??
+      Object.values(payablesByCurrency)[0] ??
+      0;
+    const payPrimaryCur = payablesByCurrency[primaryCurrency] !== undefined
+      ? primaryCurrency
+      : Object.keys(payablesByCurrency)[0] ?? primaryCurrency;
+
+    return (
+      <main className="min-h-dvh bg-cream-bg pb-28">
+        <NavyHero>
+          <div className="flex items-center justify-between px-5 pt-2 pb-3">
+            <button
+              onClick={() => navigate("/settings")}
+              className="flex items-center gap-3 min-w-0 active:opacity-70"
+              aria-label="Open settings"
+            >
+              <UserAvatar name={userName} size={36} />
+              <div className="text-left min-w-0">
+                <p className="text-[11px] text-white/55 truncate">
+                  Good to see you
+                </p>
+                <p className="text-[15px] font-semibold text-white tracking-tight truncate">
+                  {userName}
+                </p>
+              </div>
+            </button>
+            <button
+              onClick={() => navigate("/inbox")}
+              className="relative w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center shrink-0 transition-colors"
+              aria-label="Inbox"
+            >
+              <Bell size={16} className="text-white" />
+              {pendingApprovalCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-navy-800">
+                  {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <div className="px-5 pb-7">
+            <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
+              Splits only
+            </p>
+            <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
+              Track people, not accounts.
+            </p>
+            <p className="text-[12px] text-white/55 mt-2 max-w-[280px] leading-relaxed">
+              Loans and groups. No cash wallets, no bank balances.
+            </p>
+          </div>
+        </NavyHero>
+
+        <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+          {loadStatus === "error" ? (
+            <PageErrorState
+              message={loadError ?? "Some data failed to load."}
+              onRetry={retryLoad}
+            />
+          ) : (
+            <>
+              {receivableEntries.length === 0 && payableEntries.length === 0 ? (
+                <div className="rounded-[18px] bg-cream-card border border-cream-border p-5 text-center">
+                  <HandCoins size={26} className="text-accent-600 mx-auto" />
+                  <p className="font-semibold text-ink-900 mt-2">
+                    No IOUs yet
+                  </p>
+                  <p className="text-[12px] text-ink-500 mt-1">
+                    Use the + button to record who owes whom.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => navigate("/loans")}
+                    className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+                  >
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-receive-100 flex items-center justify-center">
+                        <ArrowDownLeft size={14} className="text-receive-text" />
+                      </div>
+                      <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
+                        To receive
+                      </p>
+                    </div>
+                    {recvLoanCount === 0 ? (
+                      <>
+                        <p className="text-[20px] font-semibold text-ink-300 tabular-nums">—</p>
+                        <p className="text-[11px] text-ink-400 mt-1">no one</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[20px] font-semibold text-receive-text tabular-nums tracking-tight">
+                          {formatMoney(recvPrimary, recvPrimaryCur)}
+                        </p>
+                        <p className="text-[11px] text-ink-500 mt-1">
+                          {recvLoanCount} {recvLoanCount === 1 ? "loan" : "loans"}
+                        </p>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => navigate("/loans")}
+                    className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+                  >
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-pay-100 flex items-center justify-center">
+                        <ArrowUpRight size={14} className="text-pay-text" />
+                      </div>
+                      <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
+                        To pay
+                      </p>
+                    </div>
+                    {payLoanCount === 0 ? (
+                      <>
+                        <p className="text-[20px] font-semibold text-ink-300 tabular-nums">—</p>
+                        <p className="text-[11px] text-ink-400 mt-1">no one</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[20px] font-semibold text-pay-text tabular-nums tracking-tight">
+                          {formatMoney(payPrimary, payPrimaryCur)}
+                        </p>
+                        <p className="text-[11px] text-ink-500 mt-1">
+                          {payLoanCount} {payLoanCount === 1 ? "loan" : "loans"}
+                        </p>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <div className="flex items-center justify-between mb-2.5 px-1">
+                  <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                    Groups
+                  </h2>
+                  <button
+                    onClick={() => navigate("/groups")}
+                    className="text-[11px] font-semibold text-accent-600 active:opacity-70"
+                  >
+                    View all
+                  </button>
+                </div>
+                {groups.length === 0 ? (
+                  <EmptyState
+                    icon={Users}
+                    title="No groups yet"
+                    description="Create or join a group to split shared expenses."
+                  />
+                ) : (
+                  <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+                    {groups.slice(0, 3).map((group) => {
+                      const balance = groupBalances[group.id] ?? 0;
+                      return (
+                        <button
+                          key={group.id}
+                          onClick={() => navigate(`/group/${group.id}`)}
+                          className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-cream-soft transition-colors"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0 text-base">
+                            {group.emoji}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
+                              {group.name}
+                            </p>
+                            <p className="text-[11px] text-ink-500 mt-0.5">
+                              {group.members.length}{" "}
+                              {group.members.length === 1 ? "member" : "members"}
+                            </p>
+                          </div>
+                          <p
+                            className={`text-[13px] font-semibold tabular-nums ${
+                              balance > 0
+                                ? "text-receive-text"
+                                : balance < 0
+                                ? "text-pay-text"
+                                : "text-ink-400"
+                            }`}
+                          >
+                            {balance === 0
+                              ? "Settled"
+                              : `${balance > 0 ? "+" : "−"}${formatMoney(
+                                  Math.abs(balance),
+                                  group.currency,
+                                )}`}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[18px] bg-info-50 border border-cream-border p-4">
+                <p className="text-[12px] text-info-600 leading-relaxed">
+                  To notify another person in Hisaab, they must also have the
+                  app and share their code with you. Link them from Settings
+                  &gt; Contacts.
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   const hour = new Date().getHours();
   const greeting =
@@ -364,527 +435,406 @@ export function HomePage() {
       (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
     );
 
-  return (
-    <div className="page-shell">
-      {/* Header — calm greeting + avatar anchor on the right. Actions moved
-          into their own section headers to keep this row quiet. */}
-      <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-4 z-40">
-        <div className="flex items-center justify-between">
-          <div className="min-w-0">
-            <p className="text-[11px] text-slate-400 font-medium tracking-wide">
-              {greeting}
-            </p>
-            <h1 className="text-[18px] font-extrabold tracking-tight text-slate-800 truncate">
-              {userName}{" "}
-              <span className="inline-block animate-float">
-                {greetingEmoji}
-              </span>
-            </h1>
-          </div>
-          <UserAvatar
-            name={userName}
-            size={40}
-            onClick={() => navigate("/settings")}
-          />
-        </div>
-      </header>
+  const primaryTotal = totals[primaryCurrency] ?? 0;
+  const accountCount = accounts.length;
+  const otherTotals = Object.entries(totals).filter(
+    ([cur, amt]) => cur !== primaryCurrency && amt > 0,
+  );
 
-      {/* Load-failure banner. Stays visible until retry succeeds so the user
-          never has a silently-empty dashboard masquerading as "no data". */}
-      {loadStatus === "error" && (
-        <div className="px-5 pt-3">
+  return (
+    <main className="min-h-dvh bg-cream-bg pb-28">
+      <NavyHero>
+        {/* Greeting row: avatar (-> Settings) + bell (-> Inbox) */}
+        <div className="flex items-center justify-between px-5 pt-2 pb-3">
+          <button
+            onClick={() => navigate("/settings")}
+            className="flex items-center gap-3 min-w-0 active:opacity-70"
+            aria-label="Open settings"
+          >
+            <UserAvatar name={userName} size={36} />
+            <div className="text-left min-w-0">
+              <p className="text-[11px] text-white/55 truncate">
+                {greeting} {greetingEmoji}
+              </p>
+              <p className="text-[15px] font-semibold text-white tracking-tight truncate">
+                {userName}
+              </p>
+            </div>
+          </button>
+          <button
+            onClick={() => navigate("/inbox")}
+            className="relative w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center shrink-0 transition-colors"
+            aria-label="Inbox"
+          >
+            <Bell size={16} className="text-white" />
+            {pendingApprovalCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-navy-800 tabular-nums">
+                {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Net worth display. Tap (when accounts exist) -> /accounts. */}
+        <button
+          onClick={() => accountCount > 0 && navigate('/accounts')}
+          disabled={accountCount === 0}
+          className="block w-full text-left px-5 pb-7 disabled:cursor-default active:opacity-80 transition-opacity"
+        >
+          <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
+            Your money
+          </p>
+          {accountCount === 0 ? (
+            <>
+              <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
+                No accounts yet
+              </p>
+              <p className="text-[12px] text-white/55 mt-1.5 max-w-[260px] leading-relaxed">
+                Add an account to start tracking your balance and spending.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="mt-1.5">
+                <MoneyDisplay
+                  amount={primaryTotal}
+                  currency={primaryCurrency}
+                  size={42}
+                  tone="on-navy"
+                />
+              </div>
+              <p className="text-[12px] text-white/55 mt-2">
+                {accountCount} {accountCount === 1 ? "account" : "accounts"}
+                {otherTotals.length > 0 && (
+                  <>
+                    {" · "}
+                    {otherTotals
+                      .map(([cur, amt]) => `${formatMoney(amt, cur)}`)
+                      .join(" · ")}
+                  </>
+                )}
+              </p>
+            </>
+          )}
+        </button>
+      </NavyHero>
+
+      <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+        {/* Load-failure banner. Stays visible until retry succeeds. */}
+        {loadStatus === "error" && (
           <PageErrorState
             variant="inline"
             title="Couldn't refresh your dashboard"
             message={loadError ?? "Some data failed to load."}
             onRetry={retryLoad}
           />
-        </div>
-      )}
-
-      {/* Smart Insight */}
-      {accounts.length > 0 &&
-        (() => {
-          const now = new Date();
-          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-          const thisMonthTxns = transactions.filter(
-            (t) => new Date(t.createdAt) >= startOfMonth,
-          );
-          const monthExpensesByCurrency = thisMonthTxns
-            .filter((t) => t.type === "expense")
-            .reduce(
-              (acc, t) => {
-                acc[t.currency] = (acc[t.currency] ?? 0) + t.amount;
-                return acc;
-              },
-              {} as Record<string, number>,
-            );
-          const activeGoal = goals.find((g) => g.savedAmount < g.targetAmount);
-          const activePayable = activeLoans.find((l) => l.type === "taken");
-          const upcomingCount = expenses.filter(
-            (e) =>
-              e.status === "upcoming" &&
-              Math.ceil(
-                (new Date(e.dueDate).getTime() - Date.now()) /
-                  (1000 * 60 * 60 * 24),
-              ) <= 7,
-          ).length;
-
-          let insightText = "";
-          let insightIcon = "\u{1F4A1}";
-          const monthExpenseText = formatMoneyList(monthExpensesByCurrency);
-          if (monthExpenseText) {
-            insightText = t("insight_month_spent").replace(
-              "{amount}",
-              monthExpenseText,
-            );
-            insightIcon = "\u{1F4CA}";
-          } else if (activeGoal) {
-            const pct = Math.round(
-              (activeGoal.savedAmount / activeGoal.targetAmount) * 100,
-            );
-            insightText = `${activeGoal.title} ${pct}% complete hai`;
-            insightIcon = "\u{1F3AF}";
-          } else if (activePayable) {
-            insightText = `${activePayable.personName} ko ${formatMoney(
-              activePayable.remainingAmount,
-              activePayable.currency,
-            )} dena baaki hai`;
-            insightIcon = "\u{1F4B0}";
-          } else if (upcomingCount === 0) {
-            insightText = t("insight_no_upcoming");
-            insightIcon = "\u{2728}";
-          }
-
-          if (!insightText) return null;
-          return (
-            <div className="px-5 pt-3">
-              <div className="bg-indigo-50/80 rounded-2xl px-4 py-2.5 flex items-center gap-2.5 border border-indigo-100/60">
-                <span className="text-sm">{insightIcon}</span>
-                <p className="text-[11px] text-indigo-700 font-medium">
-                  {insightText}
-                </p>
-              </div>
-            </div>
-          );
-        })()}
-
-      {/* Upcoming expense reminder banners */}
-      {urgentExpenses.length > 0 && (
-        <div className="px-5 pt-3 space-y-2">
-          {urgentExpenses.slice(0, 2).map((exp) => {
-            const daysLeft = Math.ceil(
-                (new Date(exp.dueDate).getTime() - renderNowMs) /
-                (1000 * 60 * 60 * 24),
-            );
-            return (
-              <div
-                key={exp.id}
-                className="bg-amber-50 border border-amber-200/60 rounded-2xl px-4 py-3 flex items-center gap-3 animate-fade-in"
-              >
-                <span className="text-sm">&#x23f0;</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-semibold text-amber-800 truncate">
-                    Reminder: {exp.title} —{" "}
-                    {formatMoney(exp.amount, exp.currency)}
-                  </p>
-                  <p className="text-[10px] text-amber-600">
-                    {daysLeft <= 0
-                      ? "Overdue!"
-                      : daysLeft === 1
-                      ? "Kal dena hai!"
-                      : `${daysLeft} din baaqi`}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setDismissedReminders((d) => [...d, exp.id])}
-                  className="text-amber-400 text-[10px] font-bold px-2 py-1 rounded-lg active:bg-amber-100 transition-all"
-                >
-                  &#x2715;
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Net Worth — one clean white card per currency. The ring on the right
-          visualises this month's savings rate: (income − expense) / income.
-          Green when saving, rose when net-negative, grey when no activity. */}
-      <div className="px-5 pt-5">
-        {Object.keys(totals).length > 0 ? (
-          <div className="grid grid-cols-1 gap-3">
-            {Object.entries(totals).map(([currency, total]) => {
-              const meta = currencyMeta[currency];
-              const now = new Date();
-              const startOfMonth = new Date(
-                now.getFullYear(),
-                now.getMonth(),
-                1,
-              );
-              const monthTxns = transactions.filter(
-                (tx) =>
-                  new Date(tx.createdAt) >= startOfMonth &&
-                  tx.currency === currency,
-              );
-              const monthIncome = monthTxns
-                .filter(
-                  (tx) =>
-                    tx.type === "income" ||
-                    tx.type === "loan_taken" ||
-                    tx.type === "opening_balance",
-                )
-                .reduce((s, tx) => s + tx.amount, 0);
-              const monthOutflow = monthTxns
-                .filter(
-                  (tx) =>
-                    tx.type === "expense" ||
-                    tx.type === "loan_given" ||
-                    tx.type === "goal_contribution" ||
-                    (tx.type === "repayment" && Boolean(tx.sourceAccountId)),
-                )
-                .reduce((s, tx) => s + tx.amount, 0);
-              const hasActivity = monthIncome > 0 || monthOutflow > 0;
-              const netMonthFlow = monthIncome - monthOutflow;
-              const savingsRate =
-                monthIncome > 0
-                  ? netMonthFlow / monthIncome
-                  : netMonthFlow < 0
-                  ? -1
-                  : 0;
-              const ringProgress = hasActivity
-                ? Math.max(0, Math.min(1, savingsRate))
-                : 0;
-              const ringColor = !hasActivity
-                ? "#cbd5e1"
-                : savingsRate >= 0
-                ? "#10b981"
-                : "#f43f5e";
-              const ringLabel = !hasActivity
-                ? "—"
-                : savingsRate >= 0
-                ? `${Math.round(savingsRate * 100)}%`
-                : "!";
-              const accountCount = accounts.filter(
-                (a) => a.currency === currency,
-              ).length;
-
-              return (
-                <div
-                  key={currency}
-                  className="card-premium p-4 flex items-center gap-4 animate-scale-in"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[14px]">{meta?.flag}</span>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Total {currency}
-                      </p>
-                    </div>
-                    <p className="text-[26px] font-extrabold tracking-tight text-slate-800 mt-1 tabular-nums animate-count-up">
-                      {formatSignedMoney(total, currency)}
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {accountCount}{" "}
-                      {accountCount === 1 ? "account" : "accounts"}
-                      {hasActivity && (
-                        <span
-                          className={`ml-2 font-semibold ${
-                            savingsRate >= 0
-                              ? "text-emerald-600"
-                              : "text-rose-500"
-                          }`}
-                        >
-                          · {savingsRate >= 0 ? "Saving" : "Overspending"} this
-                          month
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <ProgressRing
-                    size={56}
-                    strokeWidth={5}
-                    progress={ringProgress}
-                    color={ringColor}
-                    trackColor="#f1f5f9"
-                  >
-                    <span
-                      className={`text-[11px] font-extrabold tabular-nums ${
-                        !hasActivity
-                          ? "text-slate-400"
-                          : savingsRate >= 0
-                          ? "text-emerald-600"
-                          : "text-rose-500"
-                      }`}
-                    >
-                      {ringLabel}
-                    </span>
-                  </ProgressRing>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyState
-            icon={Wallet}
-            title={t("home_no_accounts")}
-            description={t("home_no_accounts_desc")}
-            actionLabel={t("home_create_account")}
-            onAction={() => setShowAddAccount(true)}
-          />
         )}
-      </div>
 
-      {/* Quick Stats Row — one chip per currency, so AED vs PKR stays clear. */}
-      {(hasReceivables || hasPayables || goals.length > 0) && (
-        <div className="px-5 pt-4 flex gap-2.5 overflow-x-auto no-scrollbar">
-          {receivableEntries.map(([cur, amt]) => (
+        {/* Add-account CTA when the user has zero accounts. */}
+        {accountCount === 0 && (
+          <button
+            onClick={() => setShowAddAccount(true)}
+            className="w-full rounded-[18px] bg-cream-card border border-cream-border p-5 flex items-center gap-3 text-left active:scale-[0.99] transition-transform"
+          >
+            <div className="w-11 h-11 rounded-2xl bg-accent-100 flex items-center justify-center shrink-0">
+              <Wallet size={20} className="text-accent-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[14px] font-semibold text-ink-900 tracking-tight">
+                {t("home_create_account")}
+              </p>
+              <p className="text-[12px] text-ink-500 mt-0.5">
+                {t("home_no_accounts_desc")}
+              </p>
+            </div>
+            <ChevronRight size={16} className="text-ink-400 shrink-0" />
+          </button>
+        )}
+
+        {/* 2-up: To Receive | To Pay */}
+        {accountCount > 0 && (hasReceivables || hasPayables) && (
+          <div className="grid grid-cols-2 gap-3">
             <button
-              key={`recv-${cur}`}
               onClick={() => navigate("/loans")}
-              className="shrink-0 card-premium !rounded-2xl px-4 py-3 flex items-center gap-2.5 !border-emerald-100/60"
+              className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
             >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 flex items-center justify-center">
-                <ArrowDownLeft size={14} className="text-emerald-600" />
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] text-emerald-600 font-semibold tracking-wide">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-7 h-7 rounded-lg bg-receive-100 flex items-center justify-center">
+                  <ArrowDownLeft size={14} className="text-receive-text" />
+                </div>
+                <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
                   {t("loan_receivable")}
                 </p>
-                <p className="text-[13px] font-bold text-emerald-700 tabular-nums">
-                  {formatMoney(amt, cur as (typeof loans)[0]["currency"])}
-                </p>
               </div>
+              {hasReceivables ? (
+                <>
+                  <p className="text-[20px] font-semibold text-receive-text tabular-nums tracking-tight">
+                    {formatMoney(
+                      receivableEntries[0][1],
+                      receivableEntries[0][0],
+                    )}
+                  </p>
+                  <p className="text-[11px] text-ink-500 mt-1">
+                    {receivableEntries.length > 1
+                      ? `+ ${receivableEntries.length - 1} more ccy`
+                      : `${receivableEntries[0][0]}`}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[20px] font-semibold text-ink-300 tabular-nums">
+                    —
+                  </p>
+                  <p className="text-[11px] text-ink-400 mt-1">no one</p>
+                </>
+              )}
             </button>
-          ))}
-          {payableEntries.map(([cur, amt]) => (
             <button
-              key={`pay-${cur}`}
               onClick={() => navigate("/loans")}
-              className="shrink-0 card-premium !rounded-2xl px-4 py-3 flex items-center gap-2.5 !border-red-100/60"
+              className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
             >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-red-50 to-red-100/50 flex items-center justify-center">
-                <ArrowUpRight size={14} className="text-red-500" />
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] text-red-500 font-semibold tracking-wide">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-7 h-7 rounded-lg bg-pay-100 flex items-center justify-center">
+                  <ArrowUpRight size={14} className="text-pay-text" />
+                </div>
+                <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
                   {t("loan_payable")}
                 </p>
-                <p className="text-[13px] font-bold text-red-600 tabular-nums">
-                  {formatMoney(amt, cur as (typeof loans)[0]["currency"])}
-                </p>
               </div>
-            </button>
-          ))}
-          {goals.length > 0 && (
-            <button
-              onClick={() => navigate("/goals")}
-              className="shrink-0 card-premium !rounded-2xl px-4 py-3 flex items-center gap-2.5 !border-purple-100/60"
-            >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100/50 flex items-center justify-center">
-                <span className="text-sm">&#x1f3af;</span>
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] text-purple-600 font-semibold tracking-wide">
-                  {goals.length} Goals
-                </p>
-                <p className="text-[13px] font-bold text-purple-700">Active</p>
-              </div>
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Analytics Banner */}
-      {accounts.length > 0 && transactions.length > 0 && (
-        <div className="px-5 pt-4">
-          <button
-            onClick={() => navigate("/analytics")}
-            className="w-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 rounded-2xl p-4 flex items-center gap-3 text-white active:scale-[0.98] transition-all shadow-md shadow-indigo-500/20"
-          >
-            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center backdrop-blur-sm">
-              <BarChart3 size={20} strokeWidth={2} />
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-[13px] font-bold tracking-tight">
-                {t("analytics_title")}
-              </p>
-              <p className="text-[10px] text-white/70">
-                {t("analytics_banner_desc")}
-              </p>
-            </div>
-            <span className="text-white/60 text-lg">→</span>
-          </button>
-        </div>
-      )}
-
-      {/* Accounts */}
-      {accounts.length > 0 && (
-        <div className="px-5 pt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-              {t("home_accounts")}
-            </h2>
-            <button
-              onClick={() => setShowAddAccount(true)}
-              className="text-[11px] text-indigo-600 font-bold active:opacity-70 tracking-tight flex items-center gap-1"
-              aria-label="Add account"
-            >
-              <Plus size={12} strokeWidth={2.5} /> Add
+              {hasPayables ? (
+                <>
+                  <p className="text-[20px] font-semibold text-pay-text tabular-nums tracking-tight">
+                    {formatMoney(payableEntries[0][1], payableEntries[0][0])}
+                  </p>
+                  <p className="text-[11px] text-ink-500 mt-1">
+                    {payableEntries.length > 1
+                      ? `+ ${payableEntries.length - 1} more ccy`
+                      : `${payableEntries[0][0]}`}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[20px] font-semibold text-ink-300 tabular-nums">
+                    —
+                  </p>
+                  <p className="text-[11px] text-ink-400 mt-1">no one</p>
+                </>
+              )}
             </button>
           </div>
-          <div className="space-y-2.5">
-            {accounts.map((a, i) => {
-              // Find nearest upcoming expense for this account (within 30 days)
-              const upcomingForAccount = expenses
-                .filter((e) => e.accountId === a.id && e.status === "upcoming")
-                .filter(
-                  (e) =>
-                    Math.ceil(
-                      (new Date(e.dueDate).getTime() - Date.now()) /
-                        (1000 * 60 * 60 * 24),
-                    ) <= 30,
-                )
-                .sort(
-                  (x, y) =>
-                    new Date(x.dueDate).getTime() -
-                    new Date(y.dueDate).getTime(),
-                );
-              const nearest = upcomingForAccount[0] ?? null;
+        )}
+
+        {/* Quick-action 4-up tile grid. Maps Sukoon's Log/Send/Request/Split
+            slots to the extras that no longer have a bottom-nav home:
+            Goals · Analytics · Activity · Groups. */}
+        {accountCount > 0 && (
+          <div className="rounded-[18px] bg-cream-card border border-cream-border p-3">
+            <div className="grid grid-cols-4 gap-2">
+              <button
+                onClick={() => navigate("/goals")}
+                className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl active:bg-cream-soft transition-colors"
+              >
+                <div className="w-10 h-10 rounded-xl bg-accent-100 flex items-center justify-center">
+                  <Target size={18} className="text-accent-600" />
+                </div>
+                <span className="text-[10.5px] font-medium text-ink-800">
+                  {t("nav_goals")}
+                </span>
+              </button>
+              <button
+                onClick={() => navigate("/analytics")}
+                className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl active:bg-cream-soft transition-colors"
+              >
+                <div className="w-10 h-10 rounded-xl bg-info-50 flex items-center justify-center">
+                  <BarChart3 size={18} className="text-info-600" />
+                </div>
+                <span className="text-[10.5px] font-medium text-ink-800">
+                  {t("analytics_title")}
+                </span>
+              </button>
+              <button
+                onClick={() => navigate("/activity")}
+                className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl active:bg-cream-soft transition-colors"
+              >
+                <div className="w-10 h-10 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center">
+                  <History size={18} className="text-ink-600" />
+                </div>
+                <span className="text-[10.5px] font-medium text-ink-800">
+                  Activity
+                </span>
+              </button>
+              <button
+                onClick={() => navigate("/contacts")}
+                className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl active:bg-cream-soft transition-colors"
+              >
+                <div className="w-10 h-10 rounded-xl bg-warn-50 flex items-center justify-center">
+                  <Contact size={18} className="text-warn-600" />
+                </div>
+                <span className="text-[10.5px] font-medium text-ink-800">
+                  Contacts
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Pending strip — urgent upcoming expenses. */}
+        {urgentExpenses.length > 0 && (
+          <div className="space-y-2">
+            {urgentExpenses.slice(0, 2).map((exp) => {
+              const daysLeft = Math.ceil(
+                (new Date(exp.dueDate).getTime() - renderNowMs) /
+                  (1000 * 60 * 60 * 24),
+              );
               return (
                 <div
-                  key={a.id}
-                  className="animate-fade-in"
-                  style={{ animationDelay: `${i * 60}ms` }}
+                  key={exp.id}
+                  className="rounded-[18px] bg-warn-50 border border-cream-border p-4 flex items-center gap-3"
                 >
-                  <AccountCard
-                    account={a}
-                    onClick={() => navigate(`/account/${a.id}`)}
-                    nearestExpense={nearest}
-                    monthStats={getMonthStats(a.id)}
-                  />
+                  <div className="w-9 h-9 rounded-xl bg-warn-50 border border-warn-50 flex items-center justify-center shrink-0">
+                    <span className="text-base">&#x23f0;</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-ink-900 truncate">
+                      {exp.title} — {formatMoney(exp.amount, exp.currency)}
+                    </p>
+                    <p className="text-[11px] text-warn-600 mt-0.5">
+                      {daysLeft <= 0
+                        ? "Overdue!"
+                        : daysLeft === 1
+                        ? "Kal dena hai!"
+                        : `${daysLeft} ${t("upcoming_due_in")}`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      setDismissedReminders((d) => [...d, exp.id])
+                    }
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors shrink-0"
+                    aria-label="Dismiss"
+                  >
+                    &#x2715;
+                  </button>
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Upcoming Expenses Dashboard Widget */}
-      {(() => {
-        const upcomingList = expenses
-          .filter((e) => e.status === "upcoming")
-          .sort(
-            (a, b) =>
-              new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
-          )
-          .slice(0, 3);
-        if (upcomingList.length === 0) return null;
-        return (
-          <div className="px-5 pt-6">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                {t("home_upcoming")}
+        {/* Accounts preview — max 3 rows. "See all" wires to /accounts in
+            the next slice; for now the inline Add button is the entry. */}
+        {accountCount > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2.5 px-1">
+              <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                {t("home_accounts")} · {accountCount}
               </h2>
               <button
-                onClick={() => navigate("/goals")}
-                className="text-[11px] text-indigo-600 font-bold active:opacity-70 tracking-tight"
+                onClick={() => setShowAddAccount(true)}
+                className="text-[11px] text-accent-600 font-semibold active:opacity-70 flex items-center gap-1"
+                aria-label="Add account"
               >
-                {t("home_see_all_upcoming")} &#x2192;
+                <Plus size={12} strokeWidth={2.5} /> Add
               </button>
             </div>
-            <div className="card-premium px-4 divide-y divide-slate-100/60">
-              {upcomingList.map((exp) => {
-                const daysLeft = Math.ceil(
-                      (new Date(exp.dueDate).getTime() - renderNowMs) /
-                    (1000 * 60 * 60 * 24),
-                );
+            <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+              {accounts.slice(0, 3).map((a) => {
+                const meta = currencyMeta[a.currency];
+                const monthStats = getMonthStats(a.id);
                 return (
-                  <div key={exp.id} className="flex items-center gap-3 py-3.5">
-                    <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
-                      <span className="text-sm">&#x1f4c5;</span>
+                  <button
+                    key={a.id}
+                    onClick={() => navigate(`/account/${a.id}`)}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-cream-soft transition-colors"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
+                      <Landmark size={16} className="text-ink-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-semibold text-slate-800 truncate tracking-tight">
-                        {exp.title}
+                      <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
+                        {a.name}
                       </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        {exp.category}
+                      <p className="text-[11px] text-ink-500 mt-0.5">
+                        {a.type.replace(/_/g, " ")}
+                        {monthStats && (
+                          <span className="text-receive-text font-medium">
+                            {" · "}+{formatMoney(monthStats.income, a.currency)}{" "}
+                            in
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-[13px] font-bold text-slate-800 tabular-nums">
-                        {formatMoney(exp.amount, exp.currency)}
+                      <p className="text-[13.5px] font-semibold text-ink-900 tabular-nums tracking-tight">
+                        {formatMoney(a.balance, a.currency)}
                       </p>
-                      <p
-                        className={`text-[9px] font-bold mt-0.5 ${
-                          daysLeft <= 0
-                            ? "text-red-500"
-                            : daysLeft <= 7
-                            ? "text-amber-500"
-                            : "text-slate-400"
-                        }`}
-                      >
-                        {daysLeft <= 0
-                          ? "Overdue"
-                          : `${daysLeft} ${t("upcoming_due_in")}`}
+                      <p className="text-[10px] text-ink-400 mt-0.5">
+                        {meta?.flag} {a.currency}
                       </p>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
+            {accounts.length > 3 && (
+              <button
+                onClick={() => setShowAddAccount(true)}
+                className="w-full mt-2 text-center text-[11px] font-semibold text-ink-500 py-2 active:opacity-70"
+              >
+                {accounts.length - 3} more · tap + to manage
+              </button>
+            )}
           </div>
-        );
-      })()}
+        )}
 
-      {/* Empty dashboard guidance — accounts exist but no transactions yet */}
-      {accounts.length > 0 && transactions.length === 0 && (
-        <div className="px-5 pt-8 pb-4 flex flex-col items-center text-center animate-fade-in">
-          <div className="w-14 h-14 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center mb-4 shadow-sm shadow-indigo-500/5">
-            <span className="text-2xl">&#x1f4b8;</span>
+        {/* Empty-dashboard nudge — accounts exist but no transactions yet. */}
+        {accountCount > 0 && transactions.length === 0 && (
+          <div className="rounded-[18px] bg-accent-50 border border-cream-border p-5 flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-2xl bg-accent-100 flex items-center justify-center mb-3">
+              <span className="text-2xl">&#x1f4b8;</span>
+            </div>
+            <p className="text-[14px] font-semibold text-ink-900 tracking-tight">
+              {t("empty_dash_title")}
+            </p>
+            <p className="text-[12px] text-ink-500 mt-1 max-w-[240px] leading-relaxed">
+              {t("empty_dash_desc")}
+            </p>
+            <div className="mt-4 flex items-center gap-1.5 text-accent-600">
+              <span className="text-[11px] font-semibold">
+                {t("empty_dash_tap")}
+              </span>
+              <span className="text-base">&#x2192;</span>
+            </div>
           </div>
-          <p className="text-[14px] font-bold text-slate-700 tracking-tight">
-            {t("empty_dash_title")}
-          </p>
-          <p className="text-[12px] text-slate-400 mt-1 max-w-[240px] leading-relaxed">
-            {t("empty_dash_desc")}
-          </p>
-          <div className="mt-5 flex items-center gap-2 text-indigo-500 animate-bounce">
-            <span className="text-[11px] font-bold tracking-wide">
-              {t("empty_dash_tap")}
-            </span>
-            <span className="text-lg">&#x2192;</span>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Recent Transactions */}
-      {recentTxns.length > 0 && (
-        <div className="px-5 pt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-              {t("home_recent")}
-            </h2>
-            <button
-              onClick={() => navigate("/transactions")}
-              className="text-[11px] text-indigo-600 font-bold active:opacity-70 tracking-tight"
-            >
-              {t("home_see_all")} &#x2192;
-            </button>
+        {/* Recent Transactions */}
+        {recentTxns.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2.5 px-1">
+              <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                {t("home_recent")}
+              </h2>
+              <button
+                onClick={() => navigate("/transactions")}
+                className="text-[11px] text-accent-600 font-semibold active:opacity-70"
+              >
+                {t("home_see_all")} &#x2192;
+              </button>
+            </div>
+            <div className="rounded-[18px] bg-cream-card border border-cream-border px-4 divide-y divide-cream-hairline">
+              {recentTxns.map((txn) => (
+                <TransactionItem key={txn.id} transaction={txn} />
+              ))}
+            </div>
           </div>
-          <div className="card-premium px-4 divide-y divide-slate-100/60">
-            {recentTxns.map((txn) => (
-              <TransactionItem key={txn.id} transaction={txn} />
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <AddAccountStepper
         open={showAddAccount}
         onClose={() => setShowAddAccount(false)}
       />
-    </div>
+    </main>
   );
 }

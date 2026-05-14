@@ -41,15 +41,19 @@ export function Modal({ open, onClose, title, children, footer }: Props) {
         className={`modal-sheet ${show ? 'translate-y-0' : 'translate-y-full'}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Drag handle */}
+        {/* Drag handle — Sukoon grabber: 38 × 4.5 ink-200 */}
         <div className="flex justify-center pt-3 pb-1 shrink-0">
-          <div className="w-9 h-1 rounded-full bg-slate-200/80" />
+          <div className="w-[38px] h-[4.5px] rounded-full bg-ink-200" />
         </div>
         {/* Header */}
         <div className="modal-header">
-          <h2 className="font-bold text-[15px] tracking-tight text-slate-800 truncate flex-1 min-w-0 pr-3">{title}</h2>
-          <button onClick={onClose} className="nav-icon-button shrink-0">
-            <X size={15} className="text-slate-400" />
+          <h2 className="font-semibold text-[15px] tracking-tight text-ink-900 truncate flex-1 min-w-0 pr-3">{title}</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0 active:bg-cream-hairline transition-colors"
+            aria-label="Close"
+          >
+            <X size={15} className="text-ink-500" />
           </button>
         </div>
         {/* Scrollable content */}

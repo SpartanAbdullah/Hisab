@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useSplitStore } from '../stores/splitStore';
-import { PageHeader } from '../components/PageHeader';
+import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
@@ -39,7 +39,7 @@ function sumByCurrency(transactions: Transaction[], type: 'expense' | 'income', 
 }
 
 function MoneyLines({ totals, tone }: { totals: { currency: Currency; amount: number }[]; tone: 'expense' | 'income' }) {
-  const color = tone === 'expense' ? 'text-red-500' : 'text-emerald-600';
+  const color = tone === 'expense' ? 'text-pay-text' : 'text-receive-text';
 
   if (totals.length === 0) {
     return <p className={`text-lg font-bold mt-1 tabular-nums ${color}`}>0.00</p>;
@@ -111,14 +111,21 @@ export function AnalyticsPage() {
   ];
 
   return (
-    <div className="page-shell">
-      <PageHeader title={t('analytics_title')} action={<LanguageToggle />} />
+    <main className="min-h-dvh bg-cream-bg pb-28">
+      <NavyHero>
+        <TopBar title={t('analytics_title')} back action={<LanguageToggle />} />
+        <div className="px-5 pb-7">
+          <p className="text-[10.5px] font-semibold text-white/55 tracking-[0.12em] uppercase">
+            Spend & income trends
+          </p>
+        </div>
+      </NavyHero>
 
-      {/* Period selector */}
-      <div className="px-5 pt-4 flex gap-2 overflow-x-auto no-scrollbar">
+      <div className="sukoon-body min-h-[60dvh] pt-4">
+      <div className="px-5 flex gap-2 overflow-x-auto no-scrollbar">
         {periods.map(p => (
           <button key={p.key} onClick={() => setPeriod(p.key)}
-            className={`shrink-0 px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all ${period === p.key ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200/60 text-slate-500'}`}>
+            className={`shrink-0 px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all ${period === p.key ? 'bg-ink-900 text-white' : 'bg-cream-card border border-cream-border text-ink-500'}`}>
             {p.label}
           </button>
         ))}
@@ -126,12 +133,12 @@ export function AnalyticsPage() {
 
       {/* Summary cards */}
       <div className="px-5 pt-4 grid grid-cols-2 gap-2.5">
-        <div className="card-premium p-4">
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{t('analytics_total_spent')}</p>
+        <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+          <p className="text-[10px] text-ink-500 font-bold uppercase tracking-widest">{t('analytics_total_spent')}</p>
           <MoneyLines totals={spentByCurrency} tone="expense" />
         </div>
-        <div className="card-premium p-4">
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{t('analytics_total_income')}</p>
+        <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+          <p className="text-[10px] text-ink-500 font-bold uppercase tracking-widest">{t('analytics_total_income')}</p>
           <MoneyLines totals={incomeByCurrency} tone="income" />
         </div>
       </div>
@@ -139,7 +146,7 @@ export function AnalyticsPage() {
       {currencies.length > 1 && (
         <div className="px-5 pt-3">
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 shrink-0">{t('analytics_currency')}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-ink-500 shrink-0">{t('analytics_currency')}</span>
             {currencies.map(currency => (
               <button
                 key={currency}
@@ -147,7 +154,7 @@ export function AnalyticsPage() {
                 className={`shrink-0 rounded-xl px-3 py-1.5 text-[11px] font-bold transition-all ${
                   chartCurrency === currency
                     ? 'bg-slate-800 text-white'
-                    : 'bg-white border border-slate-200/60 text-slate-500'
+                    : 'bg-white border border-slate-200/60 text-ink-500'
                 }`}
               >
                 {currency}
@@ -160,7 +167,7 @@ export function AnalyticsPage() {
       {!hasAnyData ? (
         <div className="px-5 pt-12 text-center">
           <p className="text-4xl mb-3">📊</p>
-          <p className="text-slate-400 text-sm">{t('analytics_no_data')}</p>
+          <p className="text-ink-500 text-sm">{t('analytics_no_data')}</p>
         </div>
       ) : (
         <>
@@ -168,10 +175,10 @@ export function AnalyticsPage() {
           {categories.length > 0 && (
             <div className="px-5 pt-6">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('analytics_categories')}</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
+                <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">{t('analytics_categories')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
               </div>
-              <div className="card-premium p-4">
+              <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                 <div className="flex items-center">
                   <ResponsiveContainer width="50%" height={140}>
                     <PieChart>
@@ -185,7 +192,7 @@ export function AnalyticsPage() {
                       <div key={c.category} className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
                         <span className="text-[11px] text-slate-600 truncate flex-1">{c.category}</span>
-                        <span className="text-[11px] font-bold text-slate-700 tabular-nums">{c.percentage}%</span>
+                        <span className="text-[11px] font-bold text-ink-800 tabular-nums">{c.percentage}%</span>
                       </div>
                     ))}
                   </div>
@@ -198,10 +205,10 @@ export function AnalyticsPage() {
           {trend.length > 0 && (
             <div className="px-5 pt-6">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('analytics_trend')}</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
+                <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">{t('analytics_trend')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
               </div>
-              <div className="card-premium p-4">
+              <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                 <ResponsiveContainer width="100%" height={160}>
                   <BarChart data={trend}>
                     <XAxis dataKey="month" tick={{ fontSize: 10 }} />
@@ -219,10 +226,10 @@ export function AnalyticsPage() {
           {daily.some(d => d.amount > 0) && (
             <div className="px-5 pt-6">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('analytics_daily')}</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
+                <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">{t('analytics_daily')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
               </div>
-              <div className="card-premium p-4">
+              <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                 <ResponsiveContainer width="100%" height={120}>
                   <BarChart data={daily}>
                     <XAxis dataKey="day" tick={{ fontSize: 9 }} />
@@ -238,19 +245,19 @@ export function AnalyticsPage() {
           {topExp.length > 0 && (
             <div className="px-5 pt-6">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('analytics_top')}</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{chartCurrency}</span>
+                <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">{t('analytics_top')}</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
               </div>
-              <div className="card-premium divide-y divide-slate-100/60">
+              <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-slate-100/60">
                 {topExp.map(tx => {
                   const subtitle = getTransactionSubtitle(tx);
                   return (
                     <div key={tx.id} className="px-4 py-3 flex items-center justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-semibold text-slate-700 truncate">{tx.category || 'Other'}</p>
-                        {subtitle ? <p className="text-[10px] text-slate-400 truncate">{subtitle}</p> : null}
+                        <p className="text-[12px] font-semibold text-ink-800 truncate">{tx.category || 'Other'}</p>
+                        {subtitle ? <p className="text-[10px] text-ink-500 truncate">{subtitle}</p> : null}
                       </div>
-                      <p className="text-[13px] font-bold text-red-500 tabular-nums shrink-0 ml-2">{formatMoney(tx.amount, tx.currency)}</p>
+                      <p className="text-[13px] font-bold text-pay-text tabular-nums shrink-0 ml-2">{formatMoney(tx.amount, tx.currency)}</p>
                     </div>
                   );
                 })}
@@ -259,6 +266,7 @@ export function AnalyticsPage() {
           )}
         </>
       )}
-    </div>
+      </div>
+    </main>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -164,7 +164,7 @@ export function AddLoanModal({ open, onClose }: Props) {
               className={`flex-1 py-3 rounded-2xl text-[13px] font-bold border-2 transition-all active:scale-[0.97] ${
                 loanType === tp
                   ? tp === 'given' ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white border-transparent shadow-md' : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-transparent shadow-md'
-                  : 'bg-white text-slate-500 border-slate-200/60'
+                  : 'bg-white text-ink-500 border-cream-border'
               }`}
             >{tp === 'given' ? t('loan_i_gave') : t('loan_i_took')}</button>
           ))}
@@ -174,9 +174,9 @@ export function AddLoanModal({ open, onClose }: Props) {
           <label className="form-label">{t('loan_to_whom')}</label>
           <ContactPicker value={contact} onChange={setContact} placeholder="Naam likho..." required className="input-field" />
           {wouldBranchToLinked ? (
-            <p className="text-[11px] text-indigo-600 mt-1.5">{t('ltr_branch_helper')}</p>
+            <p className="text-[11px] text-accent-600 mt-1.5">{t('ltr_branch_helper')}</p>
           ) : (
-            <p className="text-[11px] text-slate-400 mt-1.5">{t('ltr_linked_only_helper')}</p>
+            <p className="text-[11px] text-ink-500 mt-1.5">{t('ltr_linked_only_helper')}</p>
           )}
         </div>
 
@@ -198,10 +198,10 @@ export function AddLoanModal({ open, onClose }: Props) {
                     onClick={() => setLedgerCurrency(currency)}
                     className={ledgerCurrency === currency ? 'selector-base selector-selected' : 'selector-base'}
                   >
-                    <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-1.5">
+                    <span className="text-[13px] font-semibold text-ink-800 flex items-center gap-1.5">
                       <span>{meta?.flag}</span> {currency}
                     </span>
-                    <span className="text-[11px] text-slate-400">{meta?.name}</span>
+                    <span className="text-[11px] text-ink-500">{meta?.name}</span>
                   </button>
                 );
               })}
@@ -217,8 +217,8 @@ export function AddLoanModal({ open, onClose }: Props) {
                   <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
                     className={accountId === a.id ? 'selector-base selector-selected' : 'selector-base'}
                   >
-                    <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-1.5"><span>{meta?.flag}</span> {a.name}</span>
-                    <span className="text-[12px] text-slate-400 tabular-nums">{a.currency}</span>
+                    <span className="text-[13px] font-semibold text-ink-800 flex items-center gap-1.5"><span>{meta?.flag}</span> {a.name}</span>
+                    <span className="text-[12px] text-ink-500 tabular-nums">{a.currency}</span>
                   </button>
                 );
               })}
@@ -234,7 +234,7 @@ export function AddLoanModal({ open, onClose }: Props) {
                 type="button"
                 onClick={() => setCashAdvanceSourceId('')}
                 className={`w-full p-3 rounded-2xl border text-left text-[12px] font-semibold transition-all ${
-                  !cashAdvanceSourceId ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700' : 'border-slate-200/60 bg-white text-slate-500'
+                  !cashAdvanceSourceId ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-white text-ink-500'
                 }`}
               >
                 No credit card
@@ -242,11 +242,11 @@ export function AddLoanModal({ open, onClose }: Props) {
               {availableCashAdvanceCards.map(a => (
                 <button key={a.id} type="button" onClick={() => setCashAdvanceSourceId(a.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    cashAdvanceSourceId === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                    cashAdvanceSourceId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
                   }`}
                 >
-                  <span className="text-[13px] font-semibold text-slate-700">{a.name}</span>
-                  <span className="text-[12px] text-slate-400 tabular-nums">{a.currency}</span>
+                  <span className="text-[13px] font-semibold text-ink-800">{a.name}</span>
+                  <span className="text-[12px] text-ink-500 tabular-nums">{a.currency}</span>
                 </button>
               ))}
             </div>
@@ -258,13 +258,13 @@ export function AddLoanModal({ open, onClose }: Props) {
           <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail..." className="input-field" />
         </div>
 
-        <p className="text-[12px] text-slate-500 bg-slate-50/80 border border-slate-100/70 rounded-2xl p-3 leading-relaxed">
+        <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
           {t('money_not_moved_notice')}
         </p>
 
-        <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-slate-50/80 border border-slate-100/60">
-          <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-indigo-600 accent-indigo-600" />
-          <span className="text-[13px] text-slate-600 font-medium">{t('loan_set_emi')}</span>
+        <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-cream-soft/80 border border-cream-hairline">
+          <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-accent-600 accent-indigo-600" />
+          <span className="text-[13px] text-ink-700 font-medium">{t('loan_set_emi')}</span>
         </label>
 
         {hasEmi && (
@@ -280,7 +280,7 @@ export function AddLoanModal({ open, onClose }: Props) {
           </div>
         )}
 
-        {error && <p className="text-[12px] text-red-500 font-semibold bg-red-50 rounded-xl p-3">{error}</p>}
+        {error && <p className="text-[12px] text-pay-text font-semibold bg-pay-50 rounded-xl p-3">{error}</p>}
       </form>
     </Modal>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
@@ -31,13 +31,13 @@ export function SettleUpModal({ open, group, debts, onClose }: Props) {
     finally { setSaving(false); }
   };
 
-  const inputClass = "w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all";
+  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-white transition-all";
 
   return (
     <Modal open={open} onClose={onClose} title={t('group_settle_title')} footer={
       selectedDebt ? (
         <button onClick={handleSettle} disabled={saving}
-          className="w-full btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
+          className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
           {saving ? t('quick_processing') : t('group_settle_save')}
         </button>
       ) : undefined
@@ -45,38 +45,38 @@ export function SettleUpModal({ open, group, debts, onClose }: Props) {
       <div className="p-5 space-y-4">
         {!selectedDebt ? (
           debts.length === 0 ? (
-            <p className="text-center text-slate-400 text-sm py-4">{t('group_settled')}</p>
+            <p className="text-center text-ink-500 text-sm py-4">{t('group_settled')}</p>
           ) : (
             debts.map((d, i) => (
               <button key={i} onClick={() => { setSelectedDebt(d); setAmount(d.amount.toString()); }}
-                className="w-full card-premium p-4 flex items-center justify-between text-left active:scale-[0.98] transition-all">
+                className="w-full rounded-2xl bg-cream-card border border-cream-border p-4 flex items-center justify-between text-left active:scale-[0.98] transition-all">
                 <div>
-                  <p className="text-[13px] font-semibold text-slate-700">
+                  <p className="text-[13px] font-semibold text-ink-800">
                     {d.fromName} &rarr; {d.toName}
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{t('group_settle').toLowerCase()}</p>
+                  <p className="text-[10px] text-ink-500 mt-0.5">{t('group_settle').toLowerCase()}</p>
                 </div>
-                <p className="text-[14px] font-bold text-slate-800 tabular-nums">{formatMoney(d.amount, group.currency)}</p>
+                <p className="text-[14px] font-bold text-ink-900 tabular-nums">{formatMoney(d.amount, group.currency)}</p>
               </button>
             ))
           )
         ) : (
           <>
-            <div className="bg-indigo-50 rounded-2xl p-4 text-center">
-              <p className="text-[12px] text-indigo-600 font-medium">
+            <div className="bg-accent-100 rounded-2xl p-4 text-center">
+              <p className="text-[12px] text-accent-600 font-medium">
                 {selectedDebt.fromName} &rarr; {selectedDebt.toName}
               </p>
-              <p className="text-xl font-bold text-indigo-700 mt-1">{formatMoney(selectedDebt.amount, group.currency)}</p>
+              <p className="text-xl font-bold text-accent-600 mt-1">{formatMoney(selectedDebt.amount, group.currency)}</p>
             </div>
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_settle_amount')}</label>
+              <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_settle_amount')}</label>
               <input className={inputClass + ' mt-1.5 text-lg font-bold'} type="number" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_settle_note')}</label>
+              <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_settle_note')}</label>
               <input className={inputClass + ' mt-1.5'} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Cash diya" />
             </div>
-            <button onClick={() => setSelectedDebt(null)} className="text-[12px] text-slate-400 font-medium underline">
+            <button onClick={() => setSelectedDebt(null)} className="text-[12px] text-ink-500 font-medium underline">
               &larr; Back
             </button>
           </>

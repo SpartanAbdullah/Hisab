@@ -2,12 +2,83 @@
 
 /* ========== DESIGN TOKENS AS CSS ========== */
 @theme {
-  /* Brand palette */
+  /* Brand palette — legacy, kept aliased for one release while
+   * Sukoon (navy/cream/accent) lands. New surfaces use the
+   * Sukoon tokens below; brand-* stays so the existing 155+
+   * call sites of card-premium / btn-gradient / cta-primary
+   * keep rendering during the migration. */
   --color-brand-50: #eef2ff;
   --color-brand-100: #e0e7ff;
   --color-brand-500: #6366f1;
   --color-brand-600: #4f46e5;
   --color-brand-700: #4338ca;
+
+  /* ========================================================
+   * SUKOON PALETTE — Hisaab 2.0 redesign
+   *
+   * Calm, premium, Wio-inspired: deep navy hero on top,
+   * warm cream body below, single violet accent. Money
+   * semantics use forest green (receive) and warm coral
+   * (pay) — coral, NOT red — to keep the dozens-per-week
+   * "you owe" reads from feeling emotionally taxing.
+   * ======================================================== */
+
+  /* Navy — hero surface. Bloom gradient lives as .bg-navy-bloom
+   * below since it's a multi-radial that can't be a single token. */
+  --color-navy-900: #0B0E2A;
+  --color-navy-800: #11142F;
+  --color-navy-700: #171B3D;
+  --color-navy-600: #222654;
+
+  /* Cream — warm body palette. Softer than slate-50; reads
+   * like Wio's lower half. */
+  --color-cream-bg:       #F4F2EC;
+  --color-cream-card:     #FFFFFF;
+  --color-cream-border:   #EAE5D9;
+  --color-cream-hairline: #EFEBE0;
+  --color-cream-soft:     #F8F6F0;
+
+  /* Accent — primary action. Calmer than indigo-600,
+   * more violet than blue. */
+  --color-accent-50:  #F3F0FF;
+  --color-accent-100: #EBE6FF;
+  --color-accent-500: #7C5CFF;
+  --color-accent-600: #5B47E8;
+
+  /* Receive — money in / positive. Forest green, not lime. */
+  --color-receive-50:   #E6F4EE;
+  --color-receive-100:  #DEF1E7; /* chip fill */
+  --color-receive-600:  #0F9D7B;
+  --color-receive-700:  #076B53;
+  --color-receive-text: #0F8466; /* on cream */
+
+  /* Pay — money out / negative. Warm coral, NOT red. */
+  --color-pay-50:   #FBEDE7;
+  --color-pay-100:  #F7DDD2; /* chip fill */
+  --color-pay-600:  #D9614A;
+  --color-pay-700:  #B4452C;
+  --color-pay-text: #C45339; /* on cream */
+
+  /* Ink — true neutral scale. No slate-bluish cast. */
+  --color-ink-200: #E6E6EF;
+  --color-ink-300: #C9CAD8;
+  --color-ink-400: #A8AABD;
+  --color-ink-500: #7E809A;
+  --color-ink-600: #5A5C72;
+  --color-ink-800: #23253F;
+  --color-ink-900: #0E102B;
+
+  /* Functional */
+  --color-warn-50:  #FBF3DD;
+  --color-warn-600: #C28E1A;
+  --color-info-50:  #E8EEFB;
+  --color-info-600: #3F6BD9;
+
+  /* Font family — Geist. Loaded via Google Fonts in index.html.
+   * Inter kept as the very first fallback so screens that haven't
+   * been re-skinned yet keep their original numeral letterforms
+   * if Geist hasn't loaded. */
+  --font-sukoon: "Geist", "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
   /* Animations */
   --animate-slide-up: slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -102,7 +173,7 @@ html {
 }
 
 body {
-  font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Geist', 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: #f8fafc;
   color: #1e293b;
   max-width: 480px;
@@ -186,6 +257,34 @@ input, select, textarea {
     radial-gradient(at 80% 80%, rgba(168,85,247,0.04) 0%, transparent 50%),
     radial-gradient(at 10% 90%, rgba(16,185,129,0.04) 0%, transparent 50%);
 }
+
+/* ========== SUKOON HERO BLOOM ==========
+ * Overlay-only gradient. Apply on a `.bg-navy-800` (or 900) surface.
+ * Two radials — violet from top-right, warm coral from bottom-left —
+ * prevent the navy hero from feeling clinical. Identical math to
+ * `SukoonTokens.navy.bloom` in the design handoff. */
+.bg-navy-bloom {
+  background-color: var(--color-navy-800);
+  background-image:
+    radial-gradient(120% 90% at 80% 10%, rgba(124,92,255,0.32) 0%, rgba(124,92,255,0) 55%),
+    radial-gradient(80% 70% at 10% 100%, rgba(217,97,74,0.18) 0%, rgba(217,97,74,0) 60%);
+}
+
+/* ========== SUKOON CREAM BODY ==========
+ * The cream half of a navy-hero screen. Pulls up 16px under the
+ * navy hero with a 24px top radius — that's the signature
+ * Sukoon transition. Use on the wrapper that holds the page body. */
+.sukoon-body {
+  background: var(--color-cream-bg);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  margin-top: -16px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ========== TABULAR NUMERALS ========== */
+.tabular-nums { font-variant-numeric: tabular-nums; }
 
 /* ========== SOFT GLOW EFFECT ========== */
 .glow-brand { box-shadow: 0 0 20px rgba(99,102,241,0.2); }
@@ -525,23 +624,21 @@ input, select, textarea {
    * utility classes atop these tokens.
    * ======================================================== */
 
-  /* Backdrop layer inside the modal root. Transitions the opacity
-   * driven externally via `opacity-0` / `opacity-100` utility on
-   * the `show` state. Timing curve matches Tailwind's default
-   * `transition-opacity` so swapping from that utility is
-   * zero-regression. */
+  /* Backdrop layer inside the modal root. The Sukoon redesign deepens
+   * the wash to the navy ink colour so the cream sheet reads as lifted
+   * out of the page rather than floating on slate. */
   .modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(15, 23, 42, 0.4);            /* bg-slate-900/40 */
+    background: rgba(11, 14, 42, 0.5);            /* navy-900 @ 50% */
     backdrop-filter: blur(4px);                   /* backdrop-blur-sm */
     -webkit-backdrop-filter: blur(4px);
     transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* Bottom-sheet card. Max 480px wide, clamps height at 92dvh,
-   * slides up via translate-y utility toggle. Transition timing
-   * matches the inline cubic-bezier the component applies today. */
+  /* Bottom-sheet card. Cream surface matches the Sukoon body palette,
+   * 26px radius per the Sukoon spec, and a deeper drop shadow tinted
+   * with navy so the sheet sits believably above the page. */
   .modal-sheet {
     position: relative;
     display: flex;
@@ -549,47 +646,42 @@ input, select, textarea {
     width: 100%;
     max-width: 480px;
     max-height: 92dvh;
-    background: white;
-    border-top-left-radius: 24px;                 /* rounded-t-3xl */
-    border-top-right-radius: 24px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); /* shadow-2xl */
+    background: var(--color-cream-bg);
+    border-top-left-radius: 26px;
+    border-top-right-radius: 26px;
+    box-shadow: 0 -20px 60px -20px rgba(11, 14, 42, 0.4);
     transition: transform 350ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  /* Sticky top region that holds the title + close button. Uses a
-   * translucent white + blur so body content behind the header
-   * shows faintly during scroll. */
+  /* Sticky top region that holds the title + close button. Translucent
+   * cream + blur so scrolling content shows faintly through the header. */
   .modal-header {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 20px;                           /* py-2.5 px-5 */
-    background: rgba(255, 255, 255, 0.9);         /* bg-white/90 */
-    backdrop-filter: blur(12px);                  /* backdrop-blur-md */
+    padding: 10px 20px;
+    background: rgba(244, 242, 236, 0.9);         /* cream-bg @ 90% */
+    backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(241, 245, 249, 0.6); /* slate-100/60 */
+    border-bottom: 1px solid var(--color-cream-hairline);
     z-index: 10;
   }
 
   /* Scrollable body. flex-1 so it consumes the remaining sheet
    * height; p-5 gives consumers a consistent 20px gutter. */
   .modal-body {
-    flex: 1 1 0%;                                 /* flex-1 */
+    flex: 1 1 0%;
     overflow-y: auto;
-    padding: 20px;                                /* p-5 */
+    padding: 20px;
   }
 
-  /* Pinned footer. shrink-0 keeps it visible while the body
-   * scrolls. Padding is asymmetric (`pt-3 px-5 pb-6`) to match
-   * the existing Modal — safe-area handling is NOT in the token;
-   * the current Modal uses a static 24px bottom and relies on
-   * that to clear most home-indicator geometries. */
+  /* Pinned footer. shrink-0 keeps it visible while the body scrolls. */
   .modal-footer {
     flex-shrink: 0;
-    padding: 12px 20px 24px;                      /* pt-3 px-5 pb-6 */
-    background: white;
-    border-top: 1px solid rgba(241, 245, 249, 0.6); /* slate-100/60 */
+    padding: 12px 20px 24px;
+    background: var(--color-cream-bg);
+    border-top: 1px solid var(--color-cream-hairline);
   }
 
   /* ========================================================

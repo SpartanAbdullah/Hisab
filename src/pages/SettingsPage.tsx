@@ -19,10 +19,12 @@ import {
   Trash2,
   Share2,
   Sparkles,
+  Copy,
 } from "lucide-react";
-import { ContactsModal } from "./ContactsModal";
+import { useNavigate } from "react-router-dom";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
-import { PageHeader } from "../components/PageHeader";
+import { NavyHero, TopBar } from "../components/NavyHero";
+import { UserAvatar } from "../components/UserAvatar";
 import { LanguageToggle } from "../components/LanguageToggle";
 import { useAppModeStore } from "../stores/appModeStore";
 import { useAccountStore } from "../stores/accountStore";
@@ -74,11 +76,11 @@ export function SettingsPage() {
   const { signOut, deleteAccount, user } = useSupabaseAuthStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const navigate = useNavigate();
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [pin1, setPin1] = useState("");
   const [pin2, setPin2] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [showContacts, setShowContacts] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [email] = useState(
     () => user?.email ?? localStorage.getItem("hisaab_email") ?? "",
@@ -260,52 +262,97 @@ export function SettingsPage() {
   };
 
   const sectionClass =
-    "card-premium overflow-hidden divide-y divide-slate-100/60";
+    "rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline";
   const rowClass =
     "row-base row-interactive px-4 py-3.5";
 
-  return (
-    <div className="page-shell">
-      <PageHeader title={t("settings_title")} action={<LanguageToggle />} />
+  const copyUserCode = async () => {
+    if (!publicCode) return;
+    try {
+      await copyShareText(`@${publicCode}`);
+      toast.show({ type: "success", title: "User code copied" });
+    } catch {
+      toast.show({ type: "error", title: "Couldn't copy code" });
+    }
+  };
 
-      <div className="px-5 pt-5 space-y-4">
+  return (
+    <main className="min-h-dvh bg-cream-bg pb-28">
+      <NavyHero>
+        <TopBar
+          title={t("settings_title")}
+          back
+          action={<LanguageToggle />}
+        />
+        <div className="px-5 pb-7">
+          <div className="flex items-center gap-3">
+            <UserAvatar name={userName || email || "User"} size={56} />
+            <div className="min-w-0 flex-1">
+              <p className="text-white text-[16px] font-semibold tracking-tight truncate">
+                {userName || "Hisaab user"}
+              </p>
+              {email && (
+                <p className="text-[11px] text-white/55 truncate mt-0.5">{email}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Copyable user-code chip — Sukoon's identity surface. Stays
+              minimal until the public_code is ready; tap copies @code. */}
+          <button
+            onClick={copyUserCode}
+            disabled={!publicCode}
+            className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/15 px-3 py-1.5 text-[11px] font-semibold text-white active:bg-white/20 transition-colors disabled:opacity-50"
+          >
+            <span className="text-white/55 uppercase tracking-[0.12em] text-[9px]">
+              code HSB
+            </span>
+            <span className="tabular-nums">
+              {publicCode ? `@${publicCode}` : "—"}
+            </span>
+            {publicCode && <Copy size={11} strokeWidth={2.2} />}
+          </button>
+        </div>
+      </NavyHero>
+
+      <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
         {/* My Account */}
         <div className={sectionClass}>
           <button
             onClick={() => setShowProfile(!showProfile)}
             className={rowClass + " w-full text-left"}
           >
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
-              <User size={16} className="text-indigo-500" />
+            <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+              <User size={16} className="text-accent-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-slate-700">
+              <p className="text-[13px] font-semibold text-ink-900">
                 {t("settings_my_account")}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-ink-500">
                 {userName || t("settings_my_account_desc")}
               </p>
             </div>
             <ChevronRight
               size={16}
-              className={`text-slate-300 transition-transform ${showProfile ? "rotate-90" : ""}`}
+              className={`text-ink-300 transition-transform ${showProfile ? "rotate-90" : ""}`}
             />
           </button>
           {showProfile && (
             <div className="p-4 space-y-3 animate-fade-in">
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
+                <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
                   <Mail size={10} /> {t("settings_email")}
                 </label>
                 <input
                   type="email"
                   value={email}
                   readOnly
-                  className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] bg-slate-50 text-slate-600 cursor-not-allowed"
+                  className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] bg-cream-soft text-ink-600 cursor-not-allowed"
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
+                <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
                   <Phone size={10} /> {t("settings_mobile")}
                 </label>
                 <input
@@ -313,11 +360,11 @@ export function SettingsPage() {
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value)}
                   placeholder="+971 50 123 4567"
-                  className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+                  className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
+                <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
                   <User size={10} /> User Code
                 </label>
                 <div className="flex gap-2">
@@ -326,7 +373,7 @@ export function SettingsPage() {
                     value={publicCode ? `@${publicCode}` : ""}
                     readOnly
                     placeholder="Generating..."
-                    className="flex-1 border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] bg-slate-50 text-slate-700"
+                    className="flex-1 border border-cream-border rounded-xl px-4 py-3 text-[13px] bg-cream-soft text-ink-900"
                   />
                   <button
                     onClick={async () => {
@@ -338,45 +385,45 @@ export function SettingsPage() {
                       });
                     }}
                     disabled={!publicCode}
-                    className="px-4 rounded-xl bg-indigo-50 text-indigo-600 text-[12px] font-bold disabled:opacity-40"
+                    className="px-4 rounded-xl bg-accent-100 text-accent-600 text-[12px] font-semibold disabled:opacity-40"
                   >
                     Copy
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">
+                <p className="text-[10px] text-ink-500 mt-1.5">
                   People can use this code to connect with you in shared groups.
                 </p>
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
+                <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
                   <KeyRound size={10} /> {t("settings_password")}
                 </label>
                 <input
                   type="password"
                   value="••••••••"
                   readOnly
-                  className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] bg-slate-50 text-slate-600 cursor-not-allowed"
+                  className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] bg-cream-soft text-ink-600 cursor-not-allowed"
                 />
                 <button
                   onClick={() => setShowPasswordChange(!showPasswordChange)}
-                  className="text-[11px] text-indigo-500 font-semibold mt-1.5"
+                  className="text-[11px] text-accent-600 font-semibold mt-1.5"
                 >
                   {t("settings_reset_password")}
                 </button>
               </div>
               {showPasswordChange && (
-                <div className="space-y-2 animate-fade-in bg-indigo-50/50 rounded-xl p-3 border border-indigo-100/60">
+                <div className="space-y-2 animate-fade-in bg-accent-50 rounded-xl p-3 border border-cream-border">
                   <input
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="New password (min 6 chars)"
-                    className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all bg-white"
+                    className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all bg-white"
                   />
                   <button
                     onClick={handlePasswordReset}
                     disabled={passwordSaving || newPassword.length < 6}
-                    className="w-full py-2.5 rounded-xl btn-gradient text-[12px] font-bold disabled:opacity-30"
+                    className="w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30"
                   >
                     {passwordSaving ? "Updating..." : "Update Password"}
                   </button>
@@ -384,7 +431,7 @@ export function SettingsPage() {
               )}
               <button
                 onClick={handleSaveProfile}
-                className="w-full py-2.5 rounded-xl btn-gradient text-[12px] font-bold"
+                className="w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold"
               >
                 {t("settings_save_profile")}
               </button>
@@ -398,32 +445,32 @@ export function SettingsPage() {
             onClick={() => setLang(lang === "ur" ? "en" : "ur")}
             className={rowClass + " w-full text-left"}
           >
-            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
-              <Globe size={16} className="text-blue-500" />
+            <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center">
+              <Globe size={16} className="text-info-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-slate-700">
+              <p className="text-[13px] font-semibold text-ink-900">
                 {t("settings_language")}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-ink-500">
                 {lang === "ur" ? "Roman Urdu" : "English"}
               </p>
             </div>
-            <ChevronRight size={16} className="text-slate-300" />
+            <ChevronRight size={16} className="text-ink-300" />
           </button>
         </div>
 
         {/* App Mode */}
         <div className={sectionClass}>
           <div className={rowClass}>
-            <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
-              <Smartphone size={16} className="text-purple-500" />
+            <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+              <Smartphone size={16} className="text-accent-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-slate-700">
+              <p className="text-[13px] font-semibold text-ink-900">
                 {t("settings_app_mode")}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-ink-500">
                 {t("settings_mode_current")}:{" "}
                 {mode === "splits_only"
                   ? t("mode_splits_title")
@@ -446,7 +493,7 @@ export function SettingsPage() {
                 setMode("splits_only");
                 void profilesDb.updateCurrent({ app_mode: "splits_only" }).catch(() => {});
               }}
-              className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${mode === "splits_only" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}
+              className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${mode === "splits_only" ? "bg-ink-900 text-white" : "bg-cream-soft text-ink-500"}`}
             >
               {t("mode_splits_title")}
             </button>
@@ -455,7 +502,7 @@ export function SettingsPage() {
                 setMode("full_tracker");
                 void profilesDb.updateCurrent({ app_mode: "full_tracker" }).catch(() => {});
               }}
-              className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${mode === "full_tracker" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}
+              className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${mode === "full_tracker" ? "bg-ink-900 text-white" : "bg-cream-soft text-ink-500"}`}
             >
               {t("mode_full_title")}
             </button>
@@ -465,14 +512,14 @@ export function SettingsPage() {
         {/* Security */}
         <div className={sectionClass}>
           <div className={rowClass}>
-            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
-              <Shield size={16} className="text-amber-500" />
+            <div className="w-9 h-9 rounded-xl bg-warn-50 flex items-center justify-center">
+              <Shield size={16} className="text-warn-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-slate-700">
+              <p className="text-[13px] font-semibold text-ink-900">
                 {t("settings_security")}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-ink-500">
                 {t("settings_pin_desc")}
               </p>
             </div>
@@ -486,7 +533,7 @@ export function SettingsPage() {
                 placeholder={t("pin_set_title")}
                 value={pin1}
                 onChange={(e) => setPin1(e.target.value.replace(/\D/g, ""))}
-                className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-center text-lg tracking-[0.5em] font-bold"
+                className="w-full border border-cream-border rounded-xl px-4 py-3 text-center text-lg tracking-[0.5em] font-bold"
               />
               <input
                 type="password"
@@ -495,7 +542,7 @@ export function SettingsPage() {
                 placeholder={t("pin_confirm")}
                 value={pin2}
                 onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
-                className="w-full border border-slate-200/60 rounded-xl px-4 py-3 text-center text-lg tracking-[0.5em] font-bold"
+                className="w-full border border-cream-border rounded-xl px-4 py-3 text-center text-lg tracking-[0.5em] font-bold"
               />
               <div className="flex gap-2">
                 <button
@@ -504,14 +551,14 @@ export function SettingsPage() {
                     setPin1("");
                     setPin2("");
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-500 text-[12px] font-bold"
+                  className="flex-1 py-2.5 rounded-xl bg-cream-soft text-ink-500 text-[12px] font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSetPin}
                   disabled={pin1.length !== 4 || pin2.length !== 4}
-                  className="flex-1 py-2.5 rounded-xl btn-gradient text-[12px] font-bold disabled:opacity-30"
+                  className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30"
                 >
                   Save
                 </button>
@@ -523,13 +570,13 @@ export function SettingsPage() {
                 <>
                   <button
                     onClick={() => setShowPinSetup(true)}
-                    className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 text-[12px] font-bold flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2.5 rounded-xl bg-cream-soft text-ink-600 text-[12px] font-bold flex items-center justify-center gap-1.5"
                   >
                     <Lock size={12} /> {t("settings_change_pin")}
                   </button>
                   <button
                     onClick={handleRemovePin}
-                    className="flex-1 py-2.5 rounded-xl bg-red-50 text-red-500 text-[12px] font-bold flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold flex items-center justify-center gap-1.5"
                   >
                     <Unlock size={12} /> {t("settings_remove_pin")}
                   </button>
@@ -537,7 +584,7 @@ export function SettingsPage() {
               ) : (
                 <button
                   onClick={() => setShowPinSetup(true)}
-                  className="flex-1 py-2.5 rounded-xl btn-gradient text-[12px] font-bold flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5"
                 >
                   <Lock size={12} /> {t("settings_set_pin")}
                 </button>
@@ -549,49 +596,46 @@ export function SettingsPage() {
         {/* Contacts */}
         <div className={sectionClass}>
           <button
-            onClick={() => setShowContacts(true)}
+            onClick={() => navigate('/contacts')}
             className={rowClass + " w-full text-left"}
           >
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
-              <Users size={16} className="text-indigo-500" />
+            <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+              <Users size={16} className="text-accent-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-slate-700">
+              <p className="text-[13px] font-semibold text-ink-900">
                 {t("settings_contacts_tile")}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-ink-500">
                 {t("settings_contacts_tile_desc")}
               </p>
             </div>
-            <ChevronRight size={16} className="text-slate-300" />
+            <ChevronRight size={16} className="text-ink-300" />
           </button>
           <button
             onClick={handleShareApp}
-            className={
-              rowClass +
-              " w-full text-left bg-gradient-to-r from-rose-50 via-white to-sky-50"
-            }
+            className={rowClass + " w-full text-left"}
           >
-            <div className="relative w-9 h-9 rounded-xl bg-white shadow-sm shadow-rose-200/70 flex items-center justify-center">
-              <Share2 size={16} className="text-rose-500" />
-              <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-sky-100 flex items-center justify-center">
-                <Sparkles size={10} className="text-sky-500" />
+            <div className="relative w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+              <Share2 size={16} className="text-accent-600" />
+              <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-warn-50 border border-warn-50 flex items-center justify-center">
+                <Sparkles size={10} className="text-warn-600" />
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <p className="text-[13px] font-semibold text-slate-700 truncate">
+                <p className="text-[13px] font-semibold text-ink-900 truncate">
                   {t("settings_share_app")}
                 </p>
-                <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-rose-500 shadow-sm">
+                <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-accent-600">
                   {t("settings_share_app_badge")}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
+              <p className="text-[11px] text-ink-500 leading-relaxed">
                 {t("settings_share_app_desc")}
               </p>
             </div>
-            <ChevronRight size={16} className="text-rose-300" />
+            <ChevronRight size={16} className="text-ink-300" />
           </button>
         </div>
 
@@ -602,35 +646,35 @@ export function SettingsPage() {
             disabled={exporting}
             className={rowClass + " w-full text-left"}
           >
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center">
-              <Download size={16} className="text-emerald-500" />
+            <div className="w-9 h-9 rounded-xl bg-receive-50 flex items-center justify-center">
+              <Download size={16} className="text-receive-text" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-slate-700">
+              <p className="text-[13px] font-semibold text-ink-900">
                 {t("settings_export")}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-ink-500">
                 {t("settings_export_desc")}
               </p>
             </div>
-            <ChevronRight size={16} className="text-slate-300" />
+            <ChevronRight size={16} className="text-ink-300" />
           </button>
           <button
             onClick={() => fileRef.current?.click()}
             className={rowClass + " w-full text-left"}
           >
-            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
-              <Upload size={16} className="text-blue-500" />
+            <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center">
+              <Upload size={16} className="text-info-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-slate-700">
+              <p className="text-[13px] font-semibold text-ink-900">
                 {t("settings_import")}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-ink-500">
                 {t("settings_import_desc")}
               </p>
             </div>
-            <ChevronRight size={16} className="text-slate-300" />
+            <ChevronRight size={16} className="text-ink-300" />
           </button>
           <input
             ref={fileRef}
@@ -644,14 +688,14 @@ export function SettingsPage() {
         {/* About */}
         <div className={sectionClass}>
           <div className={rowClass}>
-            <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center">
-              <Info size={16} className="text-slate-400" />
+            <div className="w-9 h-9 rounded-xl bg-cream-soft flex items-center justify-center">
+              <Info size={16} className="text-ink-500" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-slate-700">
+              <p className="text-[13px] font-semibold text-ink-900">
                 {t("settings_about")}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-ink-500">
                 {t("settings_about_desc")}
               </p>
             </div>
@@ -660,55 +704,55 @@ export function SettingsPage() {
 
         {/* Danger Zone */}
         {user && (
-          <div className="card-premium overflow-hidden border border-red-100/80 divide-y divide-red-100/60">
+          <div className="rounded-[18px] bg-cream-card overflow-hidden border border-pay-100 divide-y divide-pay-100/60">
             <button
               onClick={() => setShowDeleteAccount(!showDeleteAccount)}
               className="row-base row-interactive px-4 py-3.5 w-full text-left"
             >
-              <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
-                <AlertTriangle size={16} className="text-red-500" />
+              <div className="w-9 h-9 rounded-xl bg-pay-50 flex items-center justify-center">
+                <AlertTriangle size={16} className="text-pay-text" />
               </div>
               <div className="flex-1">
-                <p className="text-[13px] font-semibold text-red-600">
+                <p className="text-[13px] font-semibold text-pay-text">
                   Delete account
                 </p>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-ink-500">
                   Anonymize your profile and sign out
                 </p>
               </div>
               <ChevronRight
                 size={16}
-                className={`text-red-300 transition-transform ${showDeleteAccount ? "rotate-90" : ""}`}
+                className={`text-pay-text/60 transition-transform ${showDeleteAccount ? "rotate-90" : ""}`}
               />
             </button>
             {showDeleteAccount && (
-              <div className="p-4 space-y-3 bg-red-50/50 animate-fade-in">
-                <div className="rounded-xl border border-red-100 bg-white px-3.5 py-3">
-                  <p className="text-[12px] font-bold text-red-600">
+              <div className="p-4 space-y-3 bg-pay-50 animate-fade-in">
+                <div className="rounded-xl border border-pay-100 bg-cream-card px-3.5 py-3">
+                  <p className="text-[12px] font-bold text-pay-text">
                     This cannot be undone.
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">
                     Your profile will be marked deleted and shown as Deleted User.
                     Shared groups, expenses, settlements, and financial history stay
                     intact so other members keep their accounting records.
                   </p>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1.5 block">
+                  <label className="text-[10px] font-bold text-pay-text uppercase tracking-widest mb-1.5 block">
                     Type DELETE to confirm
                   </label>
                   <input
                     value={deleteConfirm}
                     onChange={(event) => setDeleteConfirm(event.target.value)}
                     disabled={deleteSaving}
-                    className="w-full border border-red-100 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-300 transition-all bg-white"
+                    className="w-full border border-pay-100 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-pay-600/20 focus:border-pay-text transition-all bg-cream-card"
                     placeholder="DELETE"
                   />
                 </div>
                 <button
                   onClick={handleDeleteAccount}
                   disabled={deleteConfirm !== "DELETE" || deleteSaving}
-                  className="w-full py-2.5 rounded-xl bg-red-500 text-white text-[12px] font-bold disabled:opacity-30 flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all"
+                  className="w-full py-2.5 rounded-xl bg-pay-600 text-white text-[12px] font-semibold disabled:opacity-30 flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all"
                 >
                   <Trash2 size={13} />
                   {deleteSaving ? "Deleting..." : "Delete my account"}
@@ -728,12 +772,12 @@ export function SettingsPage() {
               }}
               className={rowClass + " w-full text-left"}
             >
-              <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
-                <LogOut size={16} className="text-red-500" />
+              <div className="w-9 h-9 rounded-xl bg-pay-50 flex items-center justify-center">
+                <LogOut size={16} className="text-pay-text" />
               </div>
               <div className="flex-1">
-                <p className="text-[13px] font-semibold text-red-600">Logout</p>
-                <p className="text-[11px] text-slate-400">{user.email}</p>
+                <p className="text-[13px] font-semibold text-pay-text">Logout</p>
+                <p className="text-[11px] text-ink-500">{user.email}</p>
               </div>
             </button>
           </div>
@@ -741,16 +785,12 @@ export function SettingsPage() {
 
         {/* Footer */}
         <div className="text-center pt-4 pb-2">
-          <p className="text-[11px] text-slate-400">
+          <p className="text-[11px] text-ink-500">
             Made with ❤️ by Shalbandian
           </p>
         </div>
       </div>
 
-      <ContactsModal
-        open={showContacts}
-        onClose={() => setShowContacts(false)}
-      />
-    </div>
+    </main>
   );
 }

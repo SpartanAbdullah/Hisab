@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useGoalStore } from '../stores/goalStore';
 import { useAccountStore } from '../stores/accountStore';
@@ -53,7 +53,7 @@ export function AddGoalModal({ open, onClose }: Props) {
     <Modal open={open} onClose={onClose} title={t('goal_new')}
       footer={
         <button type="submit" form="goal-form" disabled={saving}
-          className="w-full btn-gradient rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
+          className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
         >{saving ? t('goal_creating') : t('goal_create')}</button>
       }
     >
@@ -74,12 +74,12 @@ export function AddGoalModal({ open, onClose }: Props) {
           <div className="flex gap-2.5">
             <button type="button" onClick={() => { setLinkAccount(true); }}
               className={`flex-1 py-3 rounded-2xl text-[13px] font-bold border-2 transition-all active:scale-[0.97] ${
-                linkAccount ? 'bg-gradient-to-r from-purple-500 to-violet-500 text-white border-transparent shadow-md' : 'bg-white text-slate-500 border-slate-200/60'
+                linkAccount ? 'bg-gradient-to-r from-purple-500 to-violet-500 text-white border-transparent shadow-md' : 'bg-white text-ink-500 border-cream-border'
               }`}
             >Yes</button>
             <button type="button" onClick={() => { setLinkAccount(false); setAccountId(''); }}
               className={`flex-1 py-3 rounded-2xl text-[13px] font-bold border-2 transition-all active:scale-[0.97] ${
-                !linkAccount ? 'bg-gradient-to-r from-slate-600 to-slate-700 text-white border-transparent shadow-md' : 'bg-white text-slate-500 border-slate-200/60'
+                !linkAccount ? 'bg-gradient-to-r from-slate-600 to-slate-700 text-white border-transparent shadow-md' : 'bg-white text-ink-500 border-cream-border'
               }`}
             >No</button>
           </div>
@@ -94,11 +94,11 @@ export function AddGoalModal({ open, onClose }: Props) {
                 return (
                   <button key={a.id} type="button" onClick={() => { setAccountId(a.id); setCurrency(a.currency); }}
                     className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                      accountId === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                      accountId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
                     }`}
                   >
-                    <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-1.5"><span>{meta?.flag}</span> {a.name}</span>
-                    <span className="text-[12px] text-slate-400 tabular-nums">{a.currency}</span>
+                    <span className="text-[13px] font-semibold text-ink-800 flex items-center gap-1.5"><span>{meta?.flag}</span> {a.name}</span>
+                    <span className="text-[12px] text-ink-500 tabular-nums">{a.currency}</span>
                   </button>
                 );
               })}
@@ -106,8 +106,8 @@ export function AddGoalModal({ open, onClose }: Props) {
           </div>
         ) : (
           <div className="animate-fade-in">
-            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100/60 text-center">
-              <p className="text-[12px] text-slate-500 font-medium">{t('goal_no_link_desc')}</p>
+            <div className="bg-cream-soft/80 rounded-2xl p-4 border border-cream-hairline text-center">
+              <p className="text-[12px] text-ink-500 font-medium">{t('goal_no_link_desc')}</p>
             </div>
             <div className="mt-3">
               <label className="form-label">Currency</label>
@@ -117,7 +117,7 @@ export function AddGoalModal({ open, onClose }: Props) {
                   return (
                     <button key={c} type="button" onClick={() => setCurrency(c)}
                       className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                        currency === c ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700 shadow-sm' : 'border-slate-200/60 bg-white text-slate-500'
+                        currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm' : 'border-cream-border bg-white text-ink-500'
                       }`}
                     >{meta?.flag} {c}</button>
                   );
@@ -127,7 +127,7 @@ export function AddGoalModal({ open, onClose }: Props) {
           </div>
         )}
 
-        {error && <p className="text-[12px] text-red-500 font-semibold bg-red-50 rounded-xl p-3">{error}</p>}
+        {error && <p className="text-[12px] text-pay-text font-semibold bg-pay-50 rounded-xl p-3">{error}</p>}
       </form>
     </Modal>
   );

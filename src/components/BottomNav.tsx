@@ -1,82 +1,139 @@
 import { NavLink } from 'react-router-dom';
-import { Home, ArrowLeftRight, Users, Target, Settings, Inbox, HandCoins } from 'lucide-react';
+import { Home, ArrowLeftRight, Users, HandCoins, Plus } from 'lucide-react';
 import { useUIStore } from '../stores/uiStore';
 import { useAppModeStore } from '../stores/appModeStore';
-import { useLinkedRequestStore } from '../stores/linkedRequestStore';
-import { useSettlementRequestStore } from '../stores/settlementRequestStore';
-import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { useT } from '../lib/i18n';
 
-export function BottomNav() {
-  const modalCount = useUIStore(s => s.modalCount);
-  const mode = useAppModeStore(s => s.mode);
+interface Props {
+  onQuickEntry: () => void;
+}
+
+// Sukoon bottom nav: 4 tab slots + center FAB for full_tracker (symmetric
+// 2 left / FAB / 2 right). Splits-only collapses to 3 tabs + FAB since its
+// surface set is smaller (no Ledger). Inbox is reachable only from the
+// bell icon in the Home navy hero with its own coral pending-count badge;
+// Settings via the avatar tap. The FAB always opens Quick Entry — the old
+// context-aware fan-out is gone; page-specific add actions live as a "+"
+// chip in each page's TopBar.
+export function BottomNav({ onQuickEntry }: Props) {
+  const modalCount = useUIStore((s) => s.modalCount);
+  const mode = useAppModeStore((s) => s.mode);
   const t = useT();
-  const userId = useSupabaseAuthStore(s => s.user?.id ?? '');
-  const linkedPending = useLinkedRequestStore(
-    s => s.requests.filter(r => r.status === 'pending' && (r.toUserId === userId || r.fromUserId === userId)).length,
-  );
-  const settlementPending = useSettlementRequestStore(
-    s => s.requests.filter(r => r.status === 'pending' && (r.toUserId === userId || r.fromUserId === userId)).length,
-  );
-  const pendingApprovalCount = linkedPending + settlementPending;
 
   if (modalCount > 0) return null;
 
-  const splitsLinks = [
-    { to: '/', icon: Home, label: t('nav_home') },
-    { to: '/loans', icon: HandCoins, label: t('nav_loans') },
-    { to: '/groups', icon: Users, label: t('nav_groups') },
-    { to: '/inbox', icon: Inbox, label: t('nav_inbox'), badge: pendingApprovalCount },
-    { to: '/settings', icon: Settings, label: t('nav_settings') },
-  ];
+  const isSplits = mode === 'splits_only';
+  const leftPair = isSplits
+    ? [
+        { to: '/', icon: Home, label: t('nav_home') },
+        { to: '/loans', icon: HandCoins, label: t('nav_loans') },
+      ]
+    : [
+        { to: '/', icon: Home, label: t('nav_home') },
+        { to: '/transactions', icon: ArrowLeftRight, label: t('nav_transactions') },
+      ];
 
-  const fullLinks = [
-    { to: '/', icon: Home, label: t('nav_home') },
-    { to: '/transactions', icon: ArrowLeftRight, label: t('nav_transactions') },
-    { to: '/groups', icon: Users, label: t('nav_groups') },
-    { to: '/goals', icon: Target, label: t('nav_goals') },
-    { to: '/inbox', icon: Inbox, label: t('nav_inbox'), badge: pendingApprovalCount },
-    { to: '/settings', icon: Settings, label: t('nav_settings') },
-  ];
+  // Right side: full_tracker has both People (Loans) and Groups; splits-only
+  // already has Loans on the left so the right side is just Groups.
+  const rightTabs = isSplits
+    ? [{ to: '/groups', icon: Users, label: t('nav_groups') }]
+    : [
+        { to: '/loans', icon: HandCoins, label: t('nav_loans') },
+        { to: '/groups', icon: Users, label: t('nav_groups') },
+      ];
 
-  const links = mode === 'splits_only' ? splitsLinks : fullLinks;
+  // 5 cols when both sides have 2 tabs, 4 cols for splits-only's 2+1 layout.
+  const gridClass = isSplits ? 'grid-cols-4' : 'grid-cols-5';
 
   return (
-    <div className="fixed bottom-safe left-1/2 -translate-x-1/2 w-[calc(100%-32px)] max-w-[448px] z-50">
-      <nav className="glass border border-white/60 rounded-2xl flex justify-around py-2 px-1 shadow-lg shadow-slate-900/[0.06]">
-        {links.map((link) => {
-          const { to, icon: Icon, label } = link;
-          const badge = 'badge' in link ? link.badge : 0;
-          return (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 text-[10px] px-3 py-1.5 rounded-xl transition-all duration-200 active:scale-90 ${
-                  isActive ? 'text-indigo-600 font-bold' : 'text-slate-400'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <div className={`relative p-1.5 rounded-xl transition-all duration-300 ${
-                    isActive ? 'bg-indigo-50 shadow-sm shadow-indigo-500/10' : ''
-                  }`}>
-                    <Icon size={19} strokeWidth={isActive ? 2.5 : 1.5} />
-                    {badge && badge > 0 ? (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] leading-4 text-center font-extrabold ring-2 ring-white tabular-nums">
-                        {badge > 9 ? '9+' : badge}
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className="tracking-tight truncate">{label}</span>
-                </>
-              )}
-            </NavLink>
-          );
-        })}
-      </nav>
-    </div>
+    <nav
+      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-40"
+      style={{
+        // Tailwind's bg-white/92 doesn't exist; using the exact Sukoon value
+        // keeps the cream body just barely visible through the surface so the
+        // nav doesn't feel detached from the rest of the page.
+        background: 'rgba(255,255,255,0.92)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderTop: '1px solid var(--color-cream-border)',
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+      }}
+    >
+      <div className={`grid ${gridClass} items-center h-[62px]`}>
+        {leftPair.map((link) => (
+          <NavTab key={link.to} {...link} />
+        ))}
+
+        {/* Center FAB. -22px lift puts it above the nav surface; the cream-bg
+            ring matches the body so the FAB reads as floating, not pasted. */}
+        <div className="flex items-center justify-center relative">
+          <button
+            onClick={onQuickEntry}
+            aria-label="Quick entry"
+            className="w-[54px] h-[54px] rounded-full flex items-center justify-center text-white active:scale-95 transition-transform"
+            style={{
+              marginTop: -22,
+              // Accent-violet at the top (carrying the bloom hue from the
+              // navy hero) deepening into navy at the bottom — the FAB reads
+              // as a piece of the hero that's drifted down to the nav.
+              background:
+                'linear-gradient(160deg, var(--color-accent-500) 0%, var(--color-accent-600) 35%, var(--color-navy-800) 100%)',
+              boxShadow:
+                '0 10px 22px -4px rgba(11,14,42,0.45), 0 4px 10px -2px rgba(124,92,255,0.35), 0 0 0 4px var(--color-cream-bg)',
+            }}
+          >
+            <Plus size={22} strokeWidth={2.4} />
+          </button>
+        </div>
+
+        {rightTabs.map((link) => (
+          <NavTab key={link.to} {...link} />
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+interface NavTabProps {
+  to: string;
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
+  label: string;
+  badge?: number;
+}
+
+function NavTab({ to, icon: Icon, label, badge = 0 }: NavTabProps) {
+  return (
+    <NavLink
+      to={to}
+      end={to === '/'}
+      className="flex flex-col items-center gap-0.5 py-1.5 transition-opacity active:opacity-60"
+    >
+      {({ isActive }) => (
+        <>
+          <div className="relative">
+            <Icon
+              size={22}
+              strokeWidth={isActive ? 2.2 : 1.7}
+              className={isActive ? 'text-ink-900' : 'text-ink-500'}
+            />
+            {badge > 0 && (
+              <span
+                className="absolute -top-1.5 -right-2 min-w-[14px] h-3.5 px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center tabular-nums ring-2 ring-white"
+                style={{ background: 'var(--color-pay-600)' }}
+              >
+                {badge > 9 ? '9+' : badge}
+              </span>
+            )}
+          </div>
+          <span
+            className={`text-[10px] tracking-tight ${
+              isActive ? 'text-ink-900 font-semibold' : 'text-ink-500 font-medium'
+            }`}
+          >
+            {label}
+          </span>
+        </>
+      )}
+    </NavLink>
   );
 }

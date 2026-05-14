@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Target, CalendarClock, CheckCircle, XCircle, GraduationCap, HeartPulse, PartyPopper, Plane, Home, Zap, MoreHorizontal } from 'lucide-react';
+import { Target, CalendarClock, CheckCircle, XCircle, GraduationCap, HeartPulse, PartyPopper, Plane, Home, Zap, MoreHorizontal, Plus } from 'lucide-react';
 import { useGoalStore } from '../stores/goalStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
-import { PageHeader } from '../components/PageHeader';
+import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
 import { formatMoney } from '../lib/constants';
@@ -49,17 +49,55 @@ export function GoalsPage() {
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   return (
-    <div className="page-shell">
-      <PageHeader title={t('goals_title')} action={<LanguageToggle />} />
+    <main className="min-h-dvh bg-cream-bg pb-28">
+      <NavyHero>
+        <TopBar
+          title={t('goals_title')}
+          back
+          action={
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAdd(true)}
+                className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[12px] font-semibold text-white transition-colors"
+                aria-label="Add goal"
+              >
+                <Plus size={12} strokeWidth={2.4} /> Goal
+              </button>
+              <button
+                onClick={() => setShowAddExpense(true)}
+                className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[12px] font-semibold text-white transition-colors"
+                aria-label="Add upcoming expense"
+              >
+                <Plus size={12} strokeWidth={2.4} /> Bill
+              </button>
+              <LanguageToggle />
+            </div>
+          }
+        />
+        <div className="px-5 pb-7">
+          <p className="text-[10.5px] font-semibold text-white/55 tracking-[0.12em] uppercase">
+            {goals.length} {goals.length === 1 ? 'goal' : 'goals'}
+            {upcomingExpenses.length > 0 && <> · {upcomingExpenses.length} upcoming</>}
+          </p>
+        </div>
+      </NavyHero>
+
+      <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
 
       {/* Upcoming Expenses Section */}
       {upcomingExpenses.length > 0 && (
         <div className="px-5 pt-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+            <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest flex items-center gap-1.5">
               <CalendarClock size={12} /> {t('upcoming_title')}
             </h2>
-            <span className="text-[10px] font-bold text-slate-300">{upcomingExpenses.length}</span>
+            <button
+              onClick={() => setShowAddExpense(true)}
+              className="text-[11px] font-semibold text-accent-600 flex items-center gap-1 active:opacity-70"
+              aria-label="Add upcoming expense"
+            >
+              <Plus size={11} strokeWidth={2.5} /> Bill
+            </button>
           </div>
           <div className="space-y-2.5">
             {upcomingExpenses.map((exp, i) => {
@@ -72,7 +110,7 @@ export function GoalsPage() {
               const hasInsufficientBalance = account ? exp.amount > account.balance : false;
 
               const CatIcon = categoryIconMap[exp.category] ?? CalendarClock;
-              const catColor = categoryColorMap[exp.category] ?? { bg: 'bg-slate-100', text: 'text-slate-400' };
+              const catColor = categoryColorMap[exp.category] ?? { bg: 'bg-slate-100', text: 'text-ink-500' };
 
               // Color-coded card tint
               const cardTint = isOverdue || isUrgent
@@ -85,7 +123,7 @@ export function GoalsPage() {
 
               return (
                 <div key={exp.id}
-                  className={`card-premium p-4 animate-fade-in ${cardTint}`}
+                  className={`rounded-2xl bg-cream-card border border-cream-border p-4 animate-fade-in ${cardTint}`}
                   style={{ animationDelay: `${i * 60}ms` }}
                 >
                   <div className="flex items-center gap-3">
@@ -93,13 +131,13 @@ export function GoalsPage() {
                       <CatIcon size={18} strokeWidth={1.8} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-[13px] text-slate-800 tracking-tight truncate">{exp.title}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
+                      <p className="font-semibold text-[13px] text-ink-900 tracking-tight truncate">{exp.title}</p>
+                      <p className="text-[10px] text-ink-500 mt-0.5">
                         {account?.name ?? 'Unknown'} — {format(new Date(exp.dueDate), 'dd MMM yyyy')}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-[14px] font-bold tabular-nums text-slate-800">
+                      <p className="text-[14px] font-bold tabular-nums text-ink-900">
                         {formatMoney(exp.amount, exp.currency)}
                       </p>
                       <p className={`text-[10px] font-bold mt-0.5 ${
@@ -149,7 +187,7 @@ export function GoalsPage() {
       {/* Goals Section */}
       <div className="px-5 pt-5 space-y-3">
         {goals.length > 0 && (
-          <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+          <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest flex items-center gap-1.5">
             <Target size={12} /> {t('goals_title')}
           </h2>
         )}
@@ -163,7 +201,7 @@ export function GoalsPage() {
           const isInternal = !g.storedInAccountId;
           return (
             <div key={g.id}
-              className={`card-premium p-5 animate-fade-in ${isComplete ? '!border-emerald-100/60' : ''}`}
+              className={`rounded-2xl bg-cream-card border border-cream-border p-5 animate-fade-in ${isComplete ? '!border-emerald-100/60' : ''}`}
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <div className="flex items-center gap-3.5">
@@ -173,8 +211,8 @@ export function GoalsPage() {
                   {isComplete ? <span className="text-lg">&#x1f389;</span> : <Target size={22} strokeWidth={1.8} />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-[14px] text-slate-800 tracking-tight">{g.title}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
+                  <p className="font-semibold text-[14px] text-ink-900 tracking-tight">{g.title}</p>
+                  <p className="text-[11px] text-ink-500 mt-0.5">
                     {account ? `${account.name} — ${g.currency}` : isInternal ? t('goal_internal') : `${g.currency}`}
                   </p>
                 </div>
@@ -194,7 +232,7 @@ export function GoalsPage() {
                   style={{ width: `${Math.min(100, progress)}%` }}
                 />
               </div>
-              <div className="flex justify-between mt-2 text-[11px] text-slate-400 tabular-nums">
+              <div className="flex justify-between mt-2 text-[11px] text-ink-500 tabular-nums">
                 <span>{t('goal_saved')}: {formatMoney(g.savedAmount, g.currency)}</span>
                 <span>{t('goal_target')}: {formatMoney(g.targetAmount, g.currency)}</span>
               </div>
@@ -209,9 +247,11 @@ export function GoalsPage() {
         })}
       </div>
 
+      </div>
+
       <AddGoalModal open={showAdd} onClose={() => setShowAdd(false)} />
       <AddUpcomingExpenseModal open={showAddExpense} onClose={() => setShowAddExpense(false)} />
       <QuickEntry open={showContribute} onClose={() => setShowContribute(false)} />
-    </div>
+    </main>
   );
 }

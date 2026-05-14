@@ -36,10 +36,10 @@ export function OnboardingPage() {
   );
 
   return (
-    <div className="min-h-dvh relative overflow-y-auto overflow-x-hidden">
-      {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-indigo-600 via-indigo-700 to-slate-900" />
-      <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(circle at 30% 20%, rgba(168,85,247,0.4), transparent 50%), radial-gradient(circle at 70% 80%, rgba(99,102,241,0.3), transparent 50%)' }} />
+    <div className="min-h-dvh relative overflow-y-auto overflow-x-hidden bg-navy-bloom">
+      {/* Background — Sukoon navy + bloom. The .bg-navy-bloom class layers the
+          two-radial gradient (violet from top-right, coral from bottom-left)
+          over a navy-800 base. */}
 
       {/* Language toggle */}
       <LangBtn />
@@ -123,8 +123,8 @@ export function OnboardingPage() {
         {step === 2 && (
           <div className="flex-1 flex flex-col px-8 pt-16 animate-fade-in">
             <div className="flex items-center justify-center mb-6">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-500/15 flex items-center justify-center backdrop-blur-sm border border-emerald-400/20">
-                <Shield size={32} className="text-emerald-300" strokeWidth={1.5} />
+              <div className="w-16 h-16 rounded-3xl bg-receive-600/25 flex items-center justify-center backdrop-blur-sm border border-receive-600/30">
+                <Shield size={32} className="text-receive-50" strokeWidth={1.5} />
               </div>
             </div>
             <h2 className="text-2xl font-bold tracking-tight text-center mb-2 text-white">{t('onboard_safety_title')}</h2>
@@ -138,7 +138,7 @@ export function OnboardingPage() {
                 { text: t('onboard_safety_5'), sub: t('onboard_safety_5_sub') },
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-3 bg-white/8 rounded-2xl px-4 py-3 border border-white/10 backdrop-blur-sm">
-                  <span className="text-emerald-400 mt-0.5 text-sm shrink-0">✓</span>
+                  <span className="text-receive-50 mt-0.5 text-sm shrink-0">✓</span>
                   <div>
                     <p className="text-[13px] text-white/90 font-medium leading-snug">{item.text}</p>
                     <p className="text-[10px] text-white/35 mt-0.5">{item.sub}</p>
@@ -167,14 +167,14 @@ export function OnboardingPage() {
             <div className="space-y-4 flex-1">
               {/* Splits Only */}
               <button onClick={() => setSelectedMode('splits_only')}
-                className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'splits_only' ? 'border-cyan-400/60 bg-cyan-500/15 scale-[1.02] shadow-lg shadow-cyan-400/10 ring-1 ring-cyan-400/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
+                className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'splits_only' ? 'border-accent-500/60 bg-accent-500/20 scale-[1.02] shadow-lg shadow-accent-500/15 ring-1 ring-accent-500/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${selectedMode === 'splits_only' ? 'bg-cyan-400/25' : 'bg-cyan-500/15'}`}>
-                    <Users size={20} className={`transition-colors ${selectedMode === 'splits_only' ? 'text-cyan-200' : 'text-cyan-300'}`} strokeWidth={1.5} />
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${selectedMode === 'splits_only' ? 'bg-accent-500/30' : 'bg-accent-500/20'}`}>
+                    <Users size={20} className={`transition-colors ${selectedMode === 'splits_only' ? 'text-accent-100' : 'text-accent-100'}`} strokeWidth={1.5} />
                   </div>
                   <div>
                     <p className={`font-bold text-[14px] tracking-tight transition-colors ${selectedMode === 'splits_only' ? 'text-white' : 'text-white/80'}`}>{t('mode_splits_title')}</p>
-                    <p className={`text-[11px] transition-colors ${selectedMode === 'splits_only' ? 'text-cyan-200/70' : 'text-white/40'}`}>{t('mode_splits_sub')}</p>
+                    <p className={`text-[11px] transition-colors ${selectedMode === 'splits_only' ? 'text-accent-100/70' : 'text-white/40'}`}>{t('mode_splits_sub')}</p>
                   </div>
                 </div>
                 <div className="space-y-1.5 ml-14">
@@ -186,14 +186,14 @@ export function OnboardingPage() {
 
               {/* Full Tracker */}
               <button onClick={() => setSelectedMode('full_tracker')}
-                className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'full_tracker' ? 'border-amber-400/60 bg-amber-500/15 scale-[1.02] shadow-lg shadow-amber-400/10 ring-1 ring-amber-400/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
+                className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'full_tracker' ? 'border-warn-600/60 bg-warn-600/20 scale-[1.02] shadow-lg shadow-warn-600/15 ring-1 ring-warn-600/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${selectedMode === 'full_tracker' ? 'bg-amber-400/25' : 'bg-amber-500/15'}`}>
-                    <BarChart3 size={20} className={`transition-colors ${selectedMode === 'full_tracker' ? 'text-amber-200' : 'text-amber-300'}`} strokeWidth={1.5} />
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${selectedMode === 'full_tracker' ? 'bg-warn-600/30' : 'bg-warn-600/20'}`}>
+                    <BarChart3 size={20} className={`transition-colors ${selectedMode === 'full_tracker' ? 'text-warn-50' : 'text-warn-50'}`} strokeWidth={1.5} />
                   </div>
                   <div>
                     <p className={`font-bold text-[14px] tracking-tight transition-colors ${selectedMode === 'full_tracker' ? 'text-white' : 'text-white/80'}`}>{t('mode_full_title')}</p>
-                    <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-amber-200/70' : 'text-white/40'}`}>{t('mode_full_sub')}</p>
+                    <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-warn-50/85' : 'text-white/40'}`}>{t('mode_full_sub')}</p>
                   </div>
                 </div>
                 <div className="space-y-1.5 ml-14">
@@ -222,14 +222,14 @@ export function OnboardingPage() {
               <p className="text-white/50 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">STEP 4 {t('onboard_step_of')} 4</p>
               <h2 className="text-2xl font-bold tracking-tight text-white">{name.trim()}, {t('onboard_how_start')}</h2>
               <p className="text-white/60 text-[13px] mt-2">{t('onboard_how_sub')}</p>
-              <p className="text-emerald-200 text-[12px] font-semibold mt-3">{t('onboard_start_instruction')}</p>
+              <p className="text-receive-50 text-[12px] font-semibold mt-3">{t('onboard_start_instruction')}</p>
             </div>
             <div className="space-y-4 flex-1">
               <button onClick={handleStart} disabled={loading}
-                className="w-full bg-white/8 border-2 border-emerald-300/40 rounded-3xl p-6 text-left transition-all active:scale-[0.98] backdrop-blur-sm hover:bg-white/12 shadow-lg shadow-emerald-400/10">
+                className="w-full bg-white/8 border-2 border-receive-600/50 rounded-3xl p-6 text-left transition-all active:scale-[0.98] backdrop-blur-sm hover:bg-white/12 shadow-lg shadow-receive-600/15">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 flex items-center justify-center backdrop-blur-sm">
-                    <Play size={20} className="text-emerald-300" strokeWidth={1.5} />
+                  <div className="w-11 h-11 rounded-2xl bg-receive-600/25 flex items-center justify-center backdrop-blur-sm">
+                    <Play size={20} className="text-receive-50" strokeWidth={1.5} />
                   </div>
                   <div>
                     <p className="font-bold text-[14px] tracking-tight text-white">{t('onboard_fresh_title')}</p>
@@ -255,12 +255,12 @@ export function OnboardingPage() {
                         t('onboard_fresh_tip_transactions'),
                       ]).map((tip) => (
                     <div key={tip} className="flex items-start gap-2.5">
-                      <CheckCircle size={14} className="text-emerald-300 mt-0.5 shrink-0" />
+                      <CheckCircle size={14} className="text-receive-50 mt-0.5 shrink-0" />
                       <p className="text-[11px] text-white/65 leading-snug">{tip}</p>
                     </div>
                   ))}
                 </div>
-                <div className="mt-5 rounded-2xl bg-emerald-400/20 border border-emerald-300/30 py-3 text-center">
+                <div className="mt-5 rounded-2xl bg-receive-600/25 border border-receive-600/30 py-3 text-center">
                   <span className="text-[13px] font-bold text-white">{t('onboard_fresh_cta')}</span>
                 </div>
               </button>

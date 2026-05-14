@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
@@ -143,37 +143,37 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
     }
   };
 
-  const inputClass = 'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
+  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-white transition-all';
 
   return (
     <Modal open={open} onClose={onClose} title="Edit Expense" footer={
       <div className="flex gap-2">
-        <button onClick={handleDelete} className="px-4 py-3.5 rounded-2xl bg-red-50 text-red-500 active:bg-red-100 transition-all">
+        <button onClick={handleDelete} className="px-4 py-3.5 rounded-2xl bg-pay-50 text-pay-text active:bg-pay-100 transition-all">
           <Trash2 size={16} />
         </button>
         <button onClick={handleSave} disabled={saving || !description.trim() || amt <= 0}
-          className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
+          className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
           {saving ? t('quick_processing') : 'Save Changes'}
         </button>
       </div>
     }>
       <div className="space-y-5 p-5">
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_desc')}</label>
+          <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_desc')}</label>
           <input className={`${inputClass} mt-1.5`} value={description} onChange={e => setDescription(e.target.value)} />
         </div>
 
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_amount')}</label>
+          <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_amount')}</label>
           <input className={`${inputClass} mt-1.5 text-lg font-bold`} type="number" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} />
         </div>
 
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_paid_by')}</label>
+          <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_paid_by')}</label>
           <div className="flex flex-wrap gap-2 mt-1.5">
             {group.members.map(member => (
               <button key={member.id} onClick={() => setPaidBy(member.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
                 {member.name}
               </button>
             ))}
@@ -182,29 +182,29 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
 
         {shouldTrackExpense && (
           <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Paid From</label>
+            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Paid From</label>
             <div className="space-y-2 mt-1.5">
               <button
                 onClick={() => setPaidFromAccountId('')}
                 className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                  !paidFromAccountId ? 'border-emerald-300 bg-emerald-50/60 shadow-sm shadow-emerald-500/5' : 'border-slate-200/60 bg-white'
+                  !paidFromAccountId ? 'border-emerald-300 bg-receive-50/60 shadow-sm shadow-emerald-500/5' : 'border-cream-border bg-white'
                 }`}
               >
                 <div>
-                  <p className="text-[13px] font-semibold text-slate-700">Not tracked in my wallet</p>
-                  <p className="text-[10px] text-slate-400">Use this for card/cash paid outside this app.</p>
+                  <p className="text-[13px] font-semibold text-ink-800">Not tracked in my wallet</p>
+                  <p className="text-[10px] text-ink-500">Use this for card/cash paid outside this app.</p>
                 </div>
               </button>
               {accounts.map(account => (
                 <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                    paidFromAccountId === account.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                    paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
                   }`}>
                   <div>
-                    <p className="text-[13px] font-semibold text-slate-700">{account.name}</p>
-                    <p className="text-[10px] text-slate-400 capitalize">{account.type.replace('_', ' ')}</p>
+                    <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
+                    <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
                   </div>
-                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
+                  <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
                 </button>
               ))}
             </div>
@@ -212,11 +212,11 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         )}
 
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_split_between')}</label>
+          <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_split_between')}</label>
           <div className="flex flex-wrap gap-2 mt-1.5">
             {group.members.map(member => (
               <button key={member.id} onClick={() => toggleMember(member.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${selectedMembers.includes(member.id) ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${selectedMembers.includes(member.id) ? 'bg-receive-500 text-white' : 'bg-cream-soft text-ink-500'}`}>
                 {member.name}
               </button>
             ))}
@@ -224,11 +224,11 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         </div>
 
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('group_split_type')}</label>
+          <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_split_type')}</label>
           <div className="grid grid-cols-4 gap-1.5 mt-1.5">
             {(['equal', 'exact'] as SplitType[]).map(split => (
               <button key={split} onClick={() => setSplitType(split)}
-                className={`py-2 rounded-xl text-[11px] font-bold transition-all ${splitType === split ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                className={`py-2 rounded-xl text-[11px] font-bold transition-all ${splitType === split ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-500'}`}>
                 {split === 'equal' ? t('group_split_equal') : t('group_split_exact')}
               </button>
             ))}
@@ -236,25 +236,25 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         </div>
 
         {amt > 0 && selectedMembers.length > 0 && splitType === 'equal' && (
-          <p className="text-[12px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2.5 text-center font-medium">
-            {t('group_each_pays')}: <span className="font-bold text-slate-800">{formatMoney(Math.round((amt / selectedMembers.length) * 100) / 100, group.currency)}</span>
+          <p className="text-[12px] text-ink-500 bg-cream-soft rounded-xl px-3 py-2.5 text-center font-medium">
+            {t('group_each_pays')}: <span className="font-bold text-ink-900">{formatMoney(Math.round((amt / selectedMembers.length) * 100) / 100, group.currency)}</span>
           </p>
         )}
 
         {amt > 0 && splitType === 'exact' && selectedMembers.map(id => (
           <div key={id} className="flex items-center gap-2">
-            <span className="text-[12px] text-slate-600 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
-            <input className="flex-1 border border-slate-200/60 rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
+            <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
+            <input className="flex-1 border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
               value={exactAmounts[id] || ''} onChange={e => setExactAmounts({ ...exactAmounts, [id]: e.target.value })} placeholder="0" />
           </div>
         ))}
 
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('category')}</label>
+          <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('category')}</label>
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {CATEGORIES.map(item => (
               <button key={item} onClick={() => setCategory(item)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${category === item ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${category === item ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-500'}`}>
                 {item}
               </button>
             ))}

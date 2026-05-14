@@ -1,24 +1,31 @@
 import { useEffect, useState } from 'react';
-import { Plus, ChevronRight, Users, HandCoins, Handshake, Bell } from 'lucide-react';
+import { Plus, ChevronRight, Users, Bell, Search, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
-import { PageHeader } from '../components/PageHeader';
+import { NavyHero, TopBar } from '../components/NavyHero';
+import { MoneyDisplay } from '../components/MoneyDisplay';
+import { UserAvatar } from '../components/UserAvatar';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
-import { ProgressRing } from '../components/ProgressRing';
 import { Modal } from '../components/Modal';
 import { TransactionItem } from '../components/TransactionItem';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
-import { getOldestIsoDate, getReminderAge, type PaymentReminderDirection } from '../lib/paymentReminders';
+import {
+  getOldestIsoDate,
+  getReminderAge,
+  type PaymentReminderDirection,
+} from '../lib/paymentReminders';
 import { AddLoanModal } from './AddLoanModal';
+import { format } from 'date-fns';
 import type { Currency, Loan } from '../db';
 
 type LoanDirection = 'given' | 'taken';
+type Tab = 'receivables' | 'payables' | 'settled';
 
 type LoanAggregate = {
   remaining: number;
@@ -32,6 +39,7 @@ type LoanGroup = LoanAggregate & {
   currency: Currency;
   direction: LoanDirection;
   loans: Loan[];
+  status: 'active' | 'settled';
 };
 
 type ReminderTarget = {
@@ -49,10 +57,14 @@ export function LoansPage() {
   const { loadAccounts } = useAccountStore();
   const navigate = useNavigate();
   const t = useT();
+  const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
+
   const [showAdd, setShowAdd] = useState(false);
-  const [tab, setTab] = useState<'active' | 'settled'>('active');
+  const [tab, setTab] = useState<Tab>('receivables');
   const [selectedGroup, setSelectedGroup] = useState<LoanGroup | null>(null);
   const [reminderTarget, setReminderTarget] = useState<ReminderTarget | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     void loadLoans();
@@ -61,21 +73,58 @@ export function LoansPage() {
     void loadAccounts();
   }, [loadAccounts, loadLoans, loadSchedules, loadTransactions]);
 
-  const filtered = loans.filter((loan) => loan.status === tab);
-  const receivables = filtered.filter((loan) => loan.type === 'given');
-  const payables = filtered.filter((loan) => loan.type === 'taken');
+  const activeLoans = loans.filter((l) => l.status === 'active');
+  const settledLoans = loans.filter((l) => l.status === 'settled');
 
-  const aggregateByCurrency = (items: Loan[]): Record<string, LoanAggregate> =>
-    items.reduce((acc, loan) => {
-      const bucket = acc[loan.currency] ?? { remaining: 0, total: 0, count: 0 };
-      bucket.remaining += loan.remainingAmount;
-      bucket.total += loan.totalAmount;
-      bucket.count += 1;
-      acc[loan.currency] = bucket;
-      return acc;
-    }, {} as Record<string, LoanAggregate>);
+  const sumRemaining = (items: Loan[]) =>
+    items.reduce(
+      (acc, l) => {
+        acc[l.currency] = (acc[l.currency] ?? 0) + l.remainingAmount;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
-  const aggregateByPerson = (items: Loan[], direction: LoanDirection): LoanGroup[] => {
+  const activeReceivablesByCurrency = sumRemaining(
+    activeLoans.filter((l) => l.type === 'given'),
+  );
+  const activePayablesByCurrency = sumRemaining(
+    activeLoans.filter((l) => l.type === 'taken'),
+  );
+
+  // Hero net stance — primary currency only. Other currencies surface as a
+  // separate "pocket" section below the main list so the headline number
+  // stays unambiguous.
+  const recvPrimary = activeReceivablesByCurrency[primaryCurrency] ?? 0;
+  const payPrimary = activePayablesByCurrency[primaryCurrency] ?? 0;
+  const netStance = recvPrimary - payPrimary;
+  const totalActivity = recvPrimary + payPrimary;
+  // Segmented bar widths — leave a 4% gap when both sides have value, per
+  // Sukoon's spec. When only one side has activity, drop the gap.
+  const hasBothSides = recvPrimary > 0 && payPrimary > 0;
+  const gapPct = hasBothSides ? 4 : 0;
+  const recvPct = totalActivity > 0 ? (recvPrimary / totalActivity) * (100 - gapPct) : 0;
+  const payPct = totalActivity > 0 ? (payPrimary / totalActivity) * (100 - gapPct) : 0;
+
+  // People counts in the primary currency (for the hero split label)
+  const distinctPeople = (items: Loan[], currency: string) =>
+    new Set(
+      items
+        .filter((l) => l.currency === currency)
+        .map((l) => l.personId ?? l.personName.trim().toLowerCase()),
+    ).size;
+  const recvPeopleCount = distinctPeople(
+    activeLoans.filter((l) => l.type === 'given'),
+    primaryCurrency,
+  );
+  const payPeopleCount = distinctPeople(
+    activeLoans.filter((l) => l.type === 'taken'),
+    primaryCurrency,
+  );
+
+  // Group loans by (direction × currency × person). Used by both the main
+  // list and the "other currencies" pocket section.
+  const groupBy = (items: Loan[], direction: LoanDirection, status: 'active' | 'settled'): LoanGroup[] => {
     const buckets = new Map<string, LoanGroup>();
     for (const loan of items) {
       const personKey = loan.personId ?? loan.personName.trim().toLowerCase();
@@ -85,6 +134,7 @@ export function LoansPage() {
         name: loan.personName,
         currency: loan.currency,
         direction,
+        status,
         remaining: 0,
         total: 0,
         count: 0,
@@ -96,33 +146,78 @@ export function LoansPage() {
       bucket.loans.push(loan);
       buckets.set(key, bucket);
     }
-    return Array.from(buckets.values())
-      .filter((group) => (tab === 'active' ? group.remaining > 0 : group.count > 0))
-      .sort((a, b) => (tab === 'active' ? b.remaining - a.remaining : b.total - a.total));
+    return [...buckets.values()].sort((a, b) => b.remaining - a.remaining || b.total - a.total);
   };
 
-  const receivableAgg = aggregateByCurrency(receivables);
-  const payableAgg = aggregateByCurrency(payables);
-  const receivableEntries = Object.entries(receivableAgg).filter(([, aggregate]) => aggregate.remaining > 0);
-  const payableEntries = Object.entries(payableAgg).filter(([, aggregate]) => aggregate.remaining > 0);
-  const receivableGroups = aggregateByPerson(receivables, 'given');
-  const payableGroups = aggregateByPerson(payables, 'taken');
-  const hasReceivables = receivableEntries.length > 0;
-  const hasPayables = payableEntries.length > 0;
+  const tabCounts = {
+    receivables: distinctPeople(activeLoans.filter((l) => l.type === 'given'), primaryCurrency),
+    payables: distinctPeople(activeLoans.filter((l) => l.type === 'taken'), primaryCurrency),
+    settled: settledLoans.length,
+  };
 
-  const selectedLoanIds = new Set(selectedGroup?.loans.map((loan) => loan.id) ?? []);
+  // Build the visible list for the current tab. Primary-currency groups first;
+  // everything else lands in `otherGroups` as a pocket section below.
+  let primaryGroups: LoanGroup[] = [];
+  let otherGroups: LoanGroup[] = [];
+  if (tab === 'receivables') {
+    const givens = activeLoans.filter((l) => l.type === 'given');
+    const all = groupBy(givens, 'given', 'active');
+    primaryGroups = all.filter((g) => g.currency === primaryCurrency);
+    otherGroups = all.filter((g) => g.currency !== primaryCurrency);
+  } else if (tab === 'payables') {
+    const takens = activeLoans.filter((l) => l.type === 'taken');
+    const all = groupBy(takens, 'taken', 'active');
+    primaryGroups = all.filter((g) => g.currency === primaryCurrency);
+    otherGroups = all.filter((g) => g.currency !== primaryCurrency);
+  } else {
+    // Settled tab: both directions, sorted by total amount (most-impactful first).
+    const givensSettled = groupBy(
+      settledLoans.filter((l) => l.type === 'given'),
+      'given',
+      'settled',
+    );
+    const takensSettled = groupBy(
+      settledLoans.filter((l) => l.type === 'taken'),
+      'taken',
+      'settled',
+    );
+    const all = [...givensSettled, ...takensSettled].sort((a, b) => b.total - a.total);
+    primaryGroups = all.filter((g) => g.currency === primaryCurrency);
+    otherGroups = all.filter((g) => g.currency !== primaryCurrency);
+  }
+
+  // Free-text name filter — applied uniformly across both pockets so a
+  // search like "ali" surfaces matches regardless of which currency the
+  // person's loan is in.
+  const q = searchQuery.trim().toLowerCase();
+  if (q) {
+    primaryGroups = primaryGroups.filter((g) => g.name.toLowerCase().includes(q));
+    otherGroups = otherGroups.filter((g) => g.name.toLowerCase().includes(q));
+  }
+
+  const selectedLoanIds = new Set(selectedGroup?.loans.map((l) => l.id) ?? []);
   const selectedTransactions = transactions
-    .filter((transaction) => transaction.relatedLoanId && selectedLoanIds.has(transaction.relatedLoanId))
+    .filter((tx) => tx.relatedLoanId && selectedLoanIds.has(tx.relatedLoanId))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const getGroupReminderDate = (group: LoanGroup) => {
-    const loanIds = new Set(group.loans.map((loan) => loan.id));
+    const loanIds = new Set(group.loans.map((l) => l.id));
     const overdueScheduleDate = getOldestIsoDate(
       schedules
-        .filter((schedule) => loanIds.has(schedule.loanId) && schedule.status !== 'paid')
-        .map((schedule) => schedule.dueDate),
+        .filter((s) => loanIds.has(s.loanId) && s.status !== 'paid')
+        .map((s) => s.dueDate),
     );
-    return overdueScheduleDate ?? getOldestIsoDate(group.loans.map((loan) => loan.createdAt));
+    return overdueScheduleDate ?? getOldestIsoDate(group.loans.map((l) => l.createdAt));
+  };
+
+  // Find the next unpaid EMI instalment for a person's loans, for the
+  // "Next: 12 Aug · 300 AED" hint in the row.
+  const getNextInstalment = (group: LoanGroup) => {
+    const loanIds = new Set(group.loans.map((l) => l.id));
+    const upcoming = schedules
+      .filter((s) => loanIds.has(s.loanId) && s.status !== 'paid')
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
+    return upcoming ?? null;
   };
 
   const formatReminderMeta = (startedAt: string | null) => {
@@ -143,197 +238,286 @@ export function LoansPage() {
     });
   };
 
-  const renderSummaryCard = (direction: LoanDirection, currency: string, aggregate: LoanAggregate) => {
-    const isGiven = direction === 'given';
-    const progress = aggregate.total > 0 ? (aggregate.total - aggregate.remaining) / aggregate.total : 0;
-    const pct = Math.round(progress * 100);
+  const renderPersonRow = (group: LoanGroup) => {
+    const isGiven = group.direction === 'given';
+    const isSettled = group.status === 'settled';
+    const amount = isSettled ? group.total : group.remaining;
+    const sign = isGiven ? '+' : '−';
+    const amountColor = isSettled
+      ? 'text-ink-500'
+      : isGiven
+      ? 'text-receive-text'
+      : 'text-pay-text';
+
+    const totalLoans = group.count;
+    const nextInst = getNextInstalment(group);
+    const remainingInstalments = nextInst
+      ? schedules.filter(
+          (s) =>
+            group.loans.some((l) => l.id === s.loanId) && s.status !== 'paid',
+        ).length
+      : 0;
+
     return (
-      <div key={`${direction}-${currency}`} className="card-premium p-4 flex items-center gap-4 animate-scale-in">
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isGiven ? 'bg-emerald-50' : 'bg-rose-50'}`}>
-          {isGiven ? (
-            <HandCoins size={16} className="text-emerald-600" strokeWidth={2} />
-          ) : (
-            <Handshake size={16} className="text-rose-500" strokeWidth={2} />
+      <button
+        key={group.key}
+        type="button"
+        onClick={() => setSelectedGroup(group)}
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-cream-soft transition-colors"
+      >
+        <UserAvatar name={group.name} size={44} />
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
+            {group.name}
+          </p>
+          <p className="text-[11px] text-ink-500 mt-0.5">
+            {totalLoans} {totalLoans === 1 ? 'loan' : 'loans'}
+            {remainingInstalments > 0 && (
+              <> · {remainingInstalments} instalments left</>
+            )}
+          </p>
+          {nextInst && !isSettled && (
+            <p className="text-[10.5px] text-ink-400 mt-0.5 tabular-nums">
+              Next: {format(new Date(nextInst.dueDate), 'd MMM')} ·{' '}
+              {formatMoney(nextInst.amount, group.currency)}
+            </p>
           )}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className={`text-[10px] font-bold uppercase tracking-widest ${isGiven ? 'text-emerald-600' : 'text-rose-500'}`}>
-            {isGiven ? t('loan_receivable') : t('loan_payable')} - {currency}
+        <div className="text-right shrink-0">
+          <p className={`text-[14px] font-semibold tabular-nums tracking-tight ${amountColor}`}>
+            {sign}
+            {formatMoney(amount, group.currency)}
           </p>
-          <p className="text-[22px] font-extrabold text-slate-800 tabular-nums tracking-tight mt-0.5 leading-tight">
-            {formatMoney(aggregate.remaining, currency)}
-          </p>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            {formatMoney(aggregate.total - aggregate.remaining, currency)} of {formatMoney(aggregate.total, currency)} {isGiven ? 'received' : 'paid'}
-            <span className="mx-1.5">-</span>{aggregate.count} {aggregate.count === 1 ? 'loan' : 'loans'}
-          </p>
+          <p className="text-[10px] text-ink-400 mt-0.5">{group.currency}</p>
         </div>
-        <ProgressRing size={52} strokeWidth={5} progress={progress} color={isGiven ? '#10b981' : '#f43f5e'} trackColor={isGiven ? '#ecfdf5' : '#fff1f2'}>
-          <span className={`text-[10px] font-extrabold tabular-nums ${isGiven ? 'text-emerald-600' : 'text-rose-500'}`}>{pct}%</span>
-        </ProgressRing>
-      </div>
+      </button>
     );
   };
 
-  const renderGroupCard = (group: LoanGroup, index: number) => {
-    const isGiven = group.direction === 'given';
-    const settledAmount = group.total - group.remaining;
-    const progress = group.total > 0 ? settledAmount / group.total : 0;
-    const primaryAmount = tab === 'active' ? group.remaining : group.total;
-    const reminderStartedAt = getGroupReminderDate(group);
-    const reminderAge = getReminderAge(reminderStartedAt);
-    const showReminder = tab === 'active' && group.remaining > 0 && group.name.trim() && reminderAge.isOverdue;
-
-    return (
-      <div
-        key={group.key}
-        className="w-full card-premium p-4 animate-fade-in"
-        style={{ animationDelay: `${index * 40}ms` }}
-      >
-        <button
-          type="button"
-          onClick={() => setSelectedGroup(group)}
-          className="w-full flex items-center gap-3.5 text-left active:opacity-80 transition-opacity"
-        >
-          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold shrink-0 ${
-            isGiven ? 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 text-emerald-600' : 'bg-gradient-to-br from-red-50 to-red-100/50 text-red-500'
-          }`}>
-            {group.name.charAt(0).toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-semibold text-[13px] text-slate-800 tracking-tight truncate">{group.name}</p>
-                <p className={`text-[10px] font-bold uppercase tracking-wider mt-0.5 ${isGiven ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {isGiven ? t('loan_receivable') : t('loan_payable')} - {group.currency}
-                </p>
-              </div>
-              <p className={`text-[13px] font-extrabold tabular-nums shrink-0 ${isGiven ? 'text-emerald-600' : 'text-red-500'}`}>
-                {formatMoney(primaryAmount, group.currency)}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isGiven ? 'bg-emerald-100' : 'bg-red-100'}`}>
-                <div className={`h-full rounded-full transition-all duration-700 ${isGiven ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${Math.round(progress * 100)}%` }} />
-              </div>
-              <span className="text-[10px] text-slate-400 font-medium tabular-nums">{Math.round(progress * 100)}%</span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">
-              {formatMoney(settledAmount, group.currency)} {isGiven ? 'received' : 'paid'}
-              <span className="mx-1.5">-</span>{group.count} {group.count === 1 ? 'loan' : 'loans'}
-            </p>
-          </div>
-          <ChevronRight size={16} className="text-slate-300 shrink-0" />
-        </button>
-
-        {showReminder ? (
-          <div className={`mt-3 rounded-2xl px-3 py-2.5 flex items-center gap-2 ${isGiven ? 'bg-emerald-50/70' : 'bg-red-50/70'}`}>
-            <Bell size={13} className={isGiven ? 'text-emerald-600' : 'text-red-500'} />
-            <p className="flex-1 text-[11px] text-slate-500 font-medium">{formatReminderMeta(reminderStartedAt)}</p>
-            <button
-              type="button"
-              onClick={() => openReminder(group)}
-              className={`rounded-xl px-3 py-1.5 text-[11px] font-bold active:scale-95 transition-all ${isGiven ? 'bg-white text-emerald-600' : 'bg-white text-red-500'}`}
-            >
-              {t('reminder_cta')}
-            </button>
-          </div>
-        ) : null}
-      </div>
-    );
-  };
+  const tabPills: { value: Tab; label: string; count: number }[] = [
+    { value: 'receivables', label: 'Receivables', count: tabCounts.receivables },
+    { value: 'payables', label: 'Payables', count: tabCounts.payables },
+    { value: 'settled', label: 'Settled', count: tabCounts.settled },
+  ];
 
   return (
-    <div className="page-shell">
-      <PageHeader
-        title={t('loans_title')}
-        action={
-          <div className="flex items-center gap-2">
-            <LanguageToggle />
-            <button onClick={() => setShowAdd(true)} className="bg-indigo-50 text-indigo-600 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/5">
-              <Plus size={13} strokeWidth={2.5} /> {t('naya')}
-            </button>
+    <main className="min-h-dvh bg-cream-bg pb-28">
+      <NavyHero>
+        <TopBar
+          title={t('loans_title')}
+          action={
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowSearch((v) => !v)}
+                className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+                aria-label="Search"
+              >
+                <Search size={15} className="text-white" />
+              </button>
+              <button
+                onClick={() => setShowAdd(true)}
+                className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[12px] font-semibold text-white transition-colors"
+                aria-label="Add loan"
+              >
+                <Plus size={13} strokeWidth={2.4} /> {t('naya')}
+              </button>
+              <LanguageToggle />
+            </div>
+          }
+        />
+
+        <div className="px-5 pb-7">
+          <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
+            Your stance · {primaryCurrency}
+          </p>
+          <div className="mt-1.5">
+            <MoneyDisplay
+              amount={netStance}
+              currency={primaryCurrency}
+              size={36}
+              tone="on-navy"
+              signed
+            />
           </div>
-        }
-      />
+          <p className="text-[12px] text-white/55 mt-2">
+            {netStance > 0
+              ? "You'll receive more than you owe"
+              : netStance < 0
+              ? "You owe more than you'll receive"
+              : 'Balanced'}
+          </p>
 
-      {tab === 'active' && (hasReceivables || hasPayables) ? (
-        <div className="px-5 pt-5 space-y-2.5">
-          {receivableEntries.map(([currency, aggregate]) => renderSummaryCard('given', currency, aggregate))}
-          {payableEntries.map(([currency, aggregate]) => renderSummaryCard('taken', currency, aggregate))}
+          {/* Segmented bar visualisation */}
+          {totalActivity > 0 && (
+            <>
+              <div className="mt-4 h-2 rounded-full bg-white/8 overflow-hidden flex gap-[var(--gap-w)]" style={{ ['--gap-w' as string]: hasBothSides ? `${gapPct}%` : '0%' }}>
+                {recvPct > 0 && (
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${recvPct}%`, background: 'var(--color-receive-600)' }}
+                  />
+                )}
+                {payPct > 0 && (
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${payPct}%`, background: 'var(--color-pay-600)' }}
+                  />
+                )}
+              </div>
+              <div className="flex items-center justify-between mt-2 text-[10.5px]">
+                <span className="text-receive-text/90 tabular-nums" style={{ color: '#7CE3B6' }}>
+                  +{formatMoney(recvPrimary, primaryCurrency)} to receive ·{' '}
+                  {recvPeopleCount} {recvPeopleCount === 1 ? 'pp' : 'ppl'}
+                </span>
+                <span className="tabular-nums" style={{ color: '#F0A496' }}>
+                  −{formatMoney(payPrimary, primaryCurrency)} to pay ·{' '}
+                  {payPeopleCount} {payPeopleCount === 1 ? 'pp' : 'ppl'}
+                </span>
+              </div>
+            </>
+          )}
         </div>
-      ) : null}
+      </NavyHero>
 
-      <div className="px-5 pt-4 flex gap-2">
-        {(['active', 'settled'] as const).map((nextTab) => (
-          <button
-            key={nextTab}
-            onClick={() => {
-              setTab(nextTab);
-              setSelectedGroup(null);
-            }}
-            className={`px-5 py-2 rounded-xl text-[11px] font-bold border-2 capitalize transition-all active:scale-95 ${
-              tab === nextTab ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20' : 'bg-white text-slate-500 border-slate-200/60'
-            }`}
-          >
-            {nextTab === 'active' ? t('loan_tab_active') : t('loan_tab_settled')}
-          </button>
-        ))}
+      <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+        {showSearch && (
+          <div className="relative">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name"
+              className="w-full bg-cream-card border border-cream-border rounded-2xl pl-10 pr-10 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
+              autoFocus
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 active:scale-90"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Tab pills: Receivables / Payables / Settled */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
+          {tabPills.map((p) => {
+            const isActive = tab === p.value;
+            return (
+              <button
+                key={p.value}
+                onClick={() => {
+                  setTab(p.value);
+                  setSelectedGroup(null);
+                }}
+                className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap transition-colors ${
+                  isActive
+                    ? 'bg-ink-900 text-white'
+                    : 'bg-cream-card text-ink-500 border border-cream-border'
+                }`}
+              >
+                {p.label}
+                {p.count > 0 && (
+                  <span className={`ml-1.5 ${isActive ? 'text-white/70' : 'text-ink-400'}`}>
+                    · {p.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Primary-currency people list */}
+        {primaryGroups.length > 0 ? (
+          <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+            {primaryGroups.map(renderPersonRow)}
+          </div>
+        ) : null}
+
+        {/* Other-currency pocket section */}
+        {otherGroups.length > 0 && (
+          <div>
+            <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5 px-1">
+              Other currencies
+            </h2>
+            <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+              {otherGroups.map(renderPersonRow)}
+            </div>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {primaryGroups.length === 0 && otherGroups.length === 0 && (
+          <EmptyState
+            icon={Users}
+            title={
+              tab === 'settled'
+                ? t('loan_none_settled')
+                : t('empty_loans_title')
+            }
+            description={
+              tab === 'settled'
+                ? t('loan_desc_settled')
+                : t('empty_loans_desc')
+            }
+            actionLabel={tab !== 'settled' ? t('empty_loans_cta') : undefined}
+            onAction={tab !== 'settled' ? () => setShowAdd(true) : undefined}
+          />
+        )}
+
       </div>
 
-      {receivableGroups.length > 0 ? (
-        <div className="px-5 pt-4">
-          <h2 className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-            <HandCoins size={11} /> {tab === 'active' ? 'Receivable by person' : 'Settled receivables'}
-          </h2>
-          <div className="space-y-2.5">{receivableGroups.map(renderGroupCard)}</div>
-        </div>
-      ) : null}
-
-      {payableGroups.length > 0 ? (
-        <div className="px-5 pt-4">
-          <h2 className="text-[11px] font-bold text-red-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-            <Handshake size={11} /> {tab === 'active' ? 'Payable by person' : 'Settled payables'}
-          </h2>
-          <div className="space-y-2.5">{payableGroups.map(renderGroupCard)}</div>
-        </div>
-      ) : null}
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title={tab === 'active' ? t('empty_loans_title') : t('loan_none_settled')}
-          description={tab === 'active' ? t('empty_loans_desc') : t('loan_desc_settled')}
-          actionLabel={tab === 'active' ? t('empty_loans_cta') : undefined}
-          onAction={tab === 'active' ? () => setShowAdd(true) : undefined}
-        />
-      ) : null}
-
-      <Modal open={!!selectedGroup} onClose={() => setSelectedGroup(null)} title={selectedGroup?.name ?? ''}>
+      {/* Drill-down modal: per-person loan summary + individual loans + activity */}
+      <Modal
+        open={!!selectedGroup}
+        onClose={() => setSelectedGroup(null)}
+        title={selectedGroup?.name ?? ''}
+      >
         {selectedGroup ? (
           <div className="space-y-5">
-            <LoanGroupSummary group={selectedGroup} tab={tab} onRemind={tab === 'active' && selectedGroup.remaining > 0 ? () => openReminder(selectedGroup) : undefined} reminderMeta={formatReminderMeta(getGroupReminderDate(selectedGroup))} />
+            <LoanGroupSummary
+              group={selectedGroup}
+              onRemind={
+                selectedGroup.status === 'active' && selectedGroup.remaining > 0
+                  ? () => openReminder(selectedGroup)
+                  : undefined
+              }
+              reminderMeta={formatReminderMeta(getGroupReminderDate(selectedGroup))}
+            />
 
             <div>
-              <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Individual loans</h3>
+              <h3 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5">
+                Individual loans
+              </h3>
               <div className="space-y-2">
                 {selectedGroup.loans
                   .slice()
                   .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                   .map((loan) => (
-                    <LoanDrilldownRow key={loan.id} loan={loan} onClick={() => navigate(`/loan/${loan.id}`)} />
+                    <LoanDrilldownRow
+                      key={loan.id}
+                      loan={loan}
+                      onClick={() => navigate(`/loan/${loan.id}`)}
+                    />
                   ))}
               </div>
             </div>
 
             <div>
-              <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Activity</h3>
+              <h3 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5">
+                Activity
+              </h3>
               {selectedTransactions.length === 0 ? (
-                <p className="text-[12px] text-slate-400 text-center py-5">No transaction activity yet.</p>
+                <p className="text-[12px] text-ink-400 text-center py-5">
+                  No transaction activity yet.
+                </p>
               ) : (
-                <div className="rounded-2xl border border-slate-100/70 bg-white px-3 divide-y divide-slate-100/70">
-                  {selectedTransactions.map((transaction) => (
-                    <TransactionItem key={transaction.id} transaction={transaction} />
+                <div className="rounded-[18px] bg-cream-card border border-cream-border px-3 divide-y divide-cream-hairline">
+                  {selectedTransactions.map((tx) => (
+                    <TransactionItem key={tx.id} transaction={tx} />
                   ))}
                 </div>
               )}
@@ -355,39 +539,73 @@ export function LoansPage() {
       ) : null}
 
       <AddLoanModal open={showAdd} onClose={() => setShowAdd(false)} />
-    </div>
+    </main>
   );
 }
 
-function LoanGroupSummary({ group, tab, onRemind, reminderMeta }: { group: LoanGroup; tab: 'active' | 'settled'; onRemind?: () => void; reminderMeta?: string }) {
+function LoanGroupSummary({
+  group,
+  onRemind,
+  reminderMeta,
+}: {
+  group: LoanGroup;
+  onRemind?: () => void;
+  reminderMeta?: string;
+}) {
   const t = useT();
   const isGiven = group.direction === 'given';
   const settledAmount = group.total - group.remaining;
   const progress = group.total > 0 ? settledAmount / group.total : 0;
-  const primaryAmount = tab === 'active' ? group.remaining : group.total;
+  const primaryAmount = group.status === 'active' ? group.remaining : group.total;
+  const tone = isGiven ? 'receive' : 'pay';
+
   return (
-    <div className={`rounded-2xl p-4 border ${isGiven ? 'bg-emerald-50/60 border-emerald-100/70' : 'bg-red-50/60 border-red-100/70'}`}>
-      <p className={`text-[10px] font-bold uppercase tracking-widest ${isGiven ? 'text-emerald-600' : 'text-red-500'}`}>
-        {isGiven ? t('loan_receivable') : t('loan_payable')} - {group.currency}
+    <div
+      className="rounded-[18px] p-4 border border-cream-border"
+      style={{
+        background:
+          tone === 'receive' ? 'var(--color-receive-50)' : 'var(--color-pay-50)',
+      }}
+    >
+      <p
+        className="text-[10.5px] font-semibold uppercase tracking-[0.12em]"
+        style={{
+          color:
+            tone === 'receive'
+              ? 'var(--color-receive-text)'
+              : 'var(--color-pay-text)',
+        }}
+      >
+        {isGiven ? t('loan_receivable') : t('loan_payable')} · {group.currency}
       </p>
-      <p className="text-2xl font-extrabold text-slate-800 tabular-nums tracking-tight mt-1">
+      <p className="text-[22px] font-semibold text-ink-900 tabular-nums tracking-tight mt-1 leading-tight">
         {formatMoney(primaryAmount, group.currency)}
       </p>
-      <p className="text-[11px] text-slate-500 mt-1">
-        {formatMoney(settledAmount, group.currency)} {isGiven ? 'received' : 'paid'} of {formatMoney(group.total, group.currency)}
+      <p className="text-[11px] text-ink-500 mt-1">
+        {formatMoney(settledAmount, group.currency)} {isGiven ? 'received' : 'paid'} of{' '}
+        {formatMoney(group.total, group.currency)}
       </p>
-      <div className={`mt-3 h-2 rounded-full overflow-hidden ${isGiven ? 'bg-emerald-100' : 'bg-red-100'}`}>
-        <div className={`h-full rounded-full ${isGiven ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${Math.round(progress * 100)}%` }} />
+      <div className="mt-3 h-1.5 rounded-full overflow-hidden bg-white/60">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{
+            width: `${Math.round(progress * 100)}%`,
+            background:
+              tone === 'receive' ? 'var(--color-receive-600)' : 'var(--color-pay-600)',
+          }}
+        />
       </div>
       {onRemind ? (
         <div className="mt-3 flex items-center gap-2">
-          {reminderMeta ? <p className="flex-1 text-[11px] text-slate-500">{reminderMeta}</p> : null}
+          {reminderMeta && (
+            <p className="flex-1 text-[11px] text-ink-500">{reminderMeta}</p>
+          )}
           <button
             type="button"
             onClick={onRemind}
-            className={`rounded-xl px-3.5 py-2 text-[11px] font-bold active:scale-95 transition-all ${isGiven ? 'bg-white text-emerald-600' : 'bg-white text-red-500'}`}
+            className="rounded-xl px-3 py-1.5 text-[11px] font-semibold bg-white text-ink-900 active:scale-95 transition-all flex items-center gap-1.5 border border-cream-border"
           >
-            {t('reminder_cta')}
+            <Bell size={11} /> {t('reminder_cta')}
           </button>
         </div>
       ) : null}
@@ -402,26 +620,37 @@ function LoanDrilldownRow({ loan, onClick }: { loan: Loan; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-2xl border border-slate-100/70 bg-white p-3.5 flex items-center gap-3 text-left active:bg-slate-50 transition-colors"
+      className="w-full rounded-[14px] border border-cream-border bg-cream-card p-3.5 flex items-center gap-3 text-left active:bg-cream-soft transition-colors"
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[13px] font-semibold text-slate-700 tabular-nums">
+          <p className="text-[13px] font-semibold text-ink-900 tabular-nums">
             {formatMoney(loan.totalAmount, loan.currency)}
           </p>
-          <span className={`text-[10px] font-bold uppercase rounded-full px-2 py-1 ${loan.status === 'settled' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+          <span
+            className={`text-[10px] font-semibold uppercase rounded-full px-2 py-0.5 ${
+              loan.status === 'settled'
+                ? 'bg-receive-50 text-receive-text'
+                : 'bg-warn-50 text-warn-600'
+            }`}
+          >
             {loan.status}
           </span>
         </div>
-        <p className="text-[10px] text-slate-400 mt-1">
+        <p className="text-[10.5px] text-ink-500 mt-1">
           {t('loan_remaining')}: {formatMoney(loan.remainingAmount, loan.currency)}
         </p>
-        <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-          <div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.round(progress * 100)}%` }} />
+        <div className="mt-2 h-1 rounded-full bg-cream-hairline overflow-hidden">
+          <div
+            className="h-full rounded-full bg-accent-600"
+            style={{ width: `${Math.round(progress * 100)}%` }}
+          />
         </div>
-        {loan.notes ? <p className="text-[10px] text-slate-400 italic mt-1 truncate">"{loan.notes}"</p> : null}
+        {loan.notes ? (
+          <p className="text-[10.5px] text-ink-400 italic mt-1 truncate">"{loan.notes}"</p>
+        ) : null}
       </div>
-      <ChevronRight size={15} className="text-slate-300 shrink-0" />
+      <ChevronRight size={15} className="text-ink-300 shrink-0" />
     </button>
   );
 }

@@ -1,4 +1,4 @@
-import { Modal } from './Modal';
+﻿import { Modal } from './Modal';
 import { AlertTriangle } from 'lucide-react';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -22,12 +22,12 @@ export function SpendingWarningModal({ open, expense, onContinue, onCancel }: Pr
       footer={
         <div className="flex gap-2.5">
           <button onClick={onCancel}
-            className="flex-1 py-3.5 rounded-2xl text-sm font-bold border-2 border-slate-200/60 text-slate-600 active:bg-slate-50 transition-all"
+            className="flex-1 py-3.5 rounded-2xl text-sm font-bold border-2 border-cream-border text-ink-700 active:bg-cream-soft transition-all"
           >
             {t('spend_warning_cancel')}
           </button>
           <button onClick={onContinue}
-            className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-indigo-500/20"
+            className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-indigo-500/20"
           >
             {t('spend_warning_continue')}
           </button>
@@ -35,24 +35,24 @@ export function SpendingWarningModal({ open, expense, onContinue, onCancel }: Pr
       }
     >
       <div className="text-center space-y-4 py-2">
-        <div className="w-16 h-16 rounded-3xl bg-amber-50 flex items-center justify-center mx-auto">
-          <AlertTriangle size={32} className="text-amber-500" />
+        <div className="w-16 h-16 rounded-3xl bg-warn-50 flex items-center justify-center mx-auto">
+          <AlertTriangle size={32} className="text-warn-600" />
         </div>
         <div>
-          <p className="text-[15px] font-bold text-slate-800">
+          <p className="text-[15px] font-bold text-ink-900">
             Yaad rakhein: "{expense.title}"
           </p>
-          <p className="text-[13px] text-slate-600 mt-2">
-            <span className="font-bold text-amber-600">{formatMoney(expense.amount, expense.currency)}</span>
+          <p className="text-[13px] text-ink-700 mt-2">
+            <span className="font-bold text-warn-600">{formatMoney(expense.amount, expense.currency)}</span>
             {' '}{t('spend_warning_msg_suffix')} {expense.title}
           </p>
-          <p className="text-[12px] text-slate-400 mt-1">
+          <p className="text-[12px] text-ink-500 mt-1">
             {new Date(expense.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
             {' — '}
             {daysLeft <= 0 ? 'Overdue!' : `${daysLeft} ${t('upcoming_due_in')}`}
           </p>
         </div>
-        <p className="text-[12px] text-slate-500 bg-amber-50 rounded-xl p-3 border border-amber-100/60">
+        <p className="text-[12px] text-ink-500 bg-warn-50 rounded-xl p-3 border border-warn-50">
           Kya aap phir bhi aage badhna chahte hain?
         </p>
       </div>

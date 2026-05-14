@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { PageHeader } from '../components/PageHeader';
+import { NavyHero, TopBar } from '../components/NavyHero';
+import { LanguageToggle } from '../components/LanguageToggle';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
@@ -156,23 +157,35 @@ export function InboxPage() {
   }
 
   return (
-    <div className="page-shell">
-      <PageHeader title={t('ltr_inbox_title')} />
-
-      <div className="px-5 pt-4">
-        <div className="flex gap-2 mb-3">
-          <TabButton active={tab === 'incoming'} onClick={() => setTab('incoming')}
-            label={t('ltr_tab_incoming')} badge={incomingPendingCount} />
-          <TabButton active={tab === 'outgoing'} onClick={() => setTab('outgoing')}
-            label={t('ltr_tab_outgoing')} badge={outgoingPendingCount} />
+    <main className="min-h-dvh bg-cream-bg pb-28">
+      <NavyHero>
+        <TopBar
+          title={t('ltr_inbox_title')}
+          back
+          action={
+            <div className="flex items-center gap-2">
+              <PillToggle
+                tab={tab}
+                setTab={setTab}
+                incomingCount={incomingPendingCount}
+                outgoingCount={outgoingPendingCount}
+                incomingLabel={t('ltr_tab_incoming')}
+                outgoingLabel={t('ltr_tab_outgoing')}
+              />
+              <LanguageToggle />
+            </div>
+          }
+        />
+        <div className="px-5 pb-7">
+          <p className="text-white text-[16px] font-medium leading-snug max-w-[300px]">
+            {tab === 'incoming' ? t('ltr_incoming_hint') : t('ltr_outgoing_hint')}
+          </p>
         </div>
+      </NavyHero>
 
-        <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
-          {tab === 'incoming' ? t('ltr_incoming_hint') : t('ltr_outgoing_hint')}
-        </p>
-
+      <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-3">
         {visible.length === 0 ? (
-          <p className="text-[13px] text-slate-400 text-center py-10">
+          <p className="text-[13px] text-ink-400 text-center py-10">
             {tab === 'incoming' ? t('ltr_empty_incoming') : t('ltr_empty_outgoing')}
           </p>
         ) : (
@@ -205,38 +218,52 @@ export function InboxPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
 
-function TabButton({
-  active, onClick, label, badge,
-}: { active: boolean; onClick: () => void; label: string; badge?: number }) {
-  const count = badge ?? 0;
-
+function PillToggle({
+  tab,
+  setTab,
+  incomingCount,
+  outgoingCount,
+  incomingLabel,
+  outgoingLabel,
+}: {
+  tab: Tab;
+  setTab: (t: Tab) => void;
+  incomingCount: number;
+  outgoingCount: number;
+  incomingLabel: string;
+  outgoingLabel: string;
+}) {
+  const Pill = ({ value, label, count }: { value: Tab; label: string; count: number }) => {
+    const isActive = tab === value;
+    return (
+      <button
+        onClick={() => setTab(value)}
+        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors flex items-center gap-1 ${
+          isActive ? 'bg-white text-ink-900' : 'text-white/70'
+        }`}
+      >
+        {label}
+        {count > 0 && (
+          <span
+            className={`min-w-[14px] h-3.5 px-1 rounded-full text-[9px] font-bold flex items-center justify-center tabular-nums ${
+              isActive ? 'bg-pay-600 text-white' : 'bg-white/15 text-white'
+            }`}
+          >
+            {count > 9 ? '9+' : count}
+          </span>
+        )}
+      </button>
+    );
+  };
   return (
-    <button
-      onClick={onClick}
-      className={`flex-1 min-h-12 py-2.5 rounded-2xl text-[12px] font-bold transition-all active:scale-[0.97] flex items-center justify-center gap-2 ${
-        active ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'bg-slate-100 text-slate-500'
-      }`}
-    >
-      <span>{label}</span>
-      {count > 0 ? (
-        <span className={`min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] leading-[18px] text-center font-extrabold tabular-nums ${
-          active ? 'bg-white text-rose-600' : 'bg-rose-500 text-white ring-2 ring-white'
-        }`}>
-          {count > 9 ? '9+' : count}
-        </span>
-      ) : (
-        <span
-          className={`h-2.5 w-2.5 rounded-full ${
-            active ? 'bg-emerald-300 ring-2 ring-white/35' : 'bg-emerald-500 ring-2 ring-white'
-          }`}
-          aria-label="No pending items"
-        />
-      )}
-    </button>
+    <div className="bg-white/10 rounded-full p-0.5 flex items-center">
+      <Pill value="incoming" label={incomingLabel} count={incomingCount} />
+      <Pill value="outgoing" label={outgoingLabel} count={outgoingCount} />
+    </div>
   );
 }
 
@@ -260,35 +287,35 @@ function SettlementCard({
   const statusKey = (`stl_status_${request.status}`) as
     | 'stl_status_pending' | 'stl_status_accepted' | 'stl_status_rejected' | 'stl_status_cancelled';
   const statusClasses = {
-    pending:   'bg-amber-50 text-amber-600',
-    accepted:  'bg-emerald-50 text-emerald-600',
-    rejected:  'bg-slate-100 text-slate-500',
-    cancelled: 'bg-slate-100 text-slate-500',
+    pending:   'bg-warn-50 text-warn-600',
+    accepted:  'bg-receive-50 text-receive-text',
+    rejected:  'bg-cream-soft text-ink-500',
+    cancelled: 'bg-cream-soft text-ink-500',
   }[request.status];
 
   return (
-    <div className="card-premium !rounded-2xl p-4 border-l-4 border-l-indigo-200">
+    <div className={`rounded-[18px] bg-cream-card p-4 ${isPending ? 'border-2 border-accent-100' : 'border border-cream-border'}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-slate-800 tracking-tight truncate">{title}</p>
-          <p className="text-[17px] font-bold text-slate-800 tabular-nums mt-0.5">
+          <p className="text-[13px] font-medium text-ink-900 tracking-tight">{title}</p>
+          <p className="text-[18px] font-semibold text-ink-900 tabular-nums mt-1 tracking-tight">
             {formatMoney(request.amount, request.currency)}
           </p>
-          <p className="text-[10px] text-slate-400 mt-1">
+          <p className="text-[10.5px] text-ink-500 mt-1">
             {format(new Date(request.createdAt), 'MMM d, h:mm a')}
           </p>
           {request.note ? (
-            <p className="text-[11px] text-slate-500 italic mt-1.5 truncate">&ldquo;{request.note}&rdquo;</p>
+            <p className="text-[11px] text-ink-500 italic mt-1.5 truncate">&ldquo;{request.note}&rdquo;</p>
           ) : null}
         </div>
-        <span className={`text-[10px] font-bold uppercase tracking-widest rounded-full px-2.5 py-1 ${statusClasses}`}>
+        <span className={`text-[10px] font-semibold uppercase tracking-[0.1em] rounded-full px-2.5 py-1 ${statusClasses}`}>
           {t(statusKey)}
         </span>
       </div>
 
       {isPending ? (
         <>
-          <p className="text-[11px] text-indigo-700 bg-indigo-50/70 rounded-xl p-2.5 mt-3 leading-relaxed">
+          <p className="text-[11px] text-accent-600 bg-accent-50 rounded-xl p-2.5 mt-3 leading-relaxed">
             {t('stl_ledger_only_hint')}
           </p>
           <div className="flex gap-2 mt-2">
@@ -297,14 +324,14 @@ function SettlementCard({
                 <button
                   onClick={onReject}
                   disabled={busy}
-                  className="flex-1 py-2.5 rounded-2xl bg-slate-100 text-slate-500 text-[12px] font-bold active:bg-slate-200 transition-all disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold active:bg-cream-hairline transition-colors disabled:opacity-50"
                 >
                   {busy ? t('ltr_rejecting') : t('ltr_reject')}
                 </button>
                 <button
                   onClick={onAccept}
                   disabled={busy}
-                  className="flex-1 py-2.5 rounded-2xl btn-gradient text-[12px] font-bold shadow-sm shadow-indigo-500/15 disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
                 >
                   {busy ? t('ltr_accepting') : t('ltr_accept')}
                 </button>
@@ -313,7 +340,7 @@ function SettlementCard({
               <button
                 onClick={onCancel}
                 disabled={busy}
-                className="flex-1 py-2.5 rounded-2xl bg-red-50 text-red-500 text-[12px] font-bold active:bg-red-100 transition-all disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
               >
                 {busy ? t('ltr_cancelling') : t('ltr_cancel')}
               </button>
@@ -353,31 +380,31 @@ function RequestCard({
   const statusKey = (`ltr_status_${request.status}`) as
     | 'ltr_status_pending' | 'ltr_status_accepted' | 'ltr_status_rejected' | 'ltr_status_cancelled';
   const statusClasses = {
-    pending:   'bg-amber-50 text-amber-600',
-    accepted:  'bg-emerald-50 text-emerald-600',
-    rejected:  'bg-slate-100 text-slate-500',
-    cancelled: 'bg-slate-100 text-slate-500',
+    pending:   'bg-warn-50 text-warn-600',
+    accepted:  'bg-receive-50 text-receive-text',
+    rejected:  'bg-cream-soft text-ink-500',
+    cancelled: 'bg-cream-soft text-ink-500',
   }[request.status];
 
   return (
-    <div className="card-premium !rounded-2xl p-4">
+    <div className={`rounded-[18px] bg-cream-card p-4 ${isPending ? 'border-2 border-warn-50' : 'border border-cream-border'}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-slate-800 tracking-tight truncate">{title}</p>
-          <p className="text-[17px] font-bold text-slate-800 tabular-nums mt-0.5">
+          <p className="text-[13px] font-medium text-ink-900 tracking-tight">{title}</p>
+          <p className="text-[18px] font-semibold text-ink-900 tabular-nums mt-1 tracking-tight">
             {formatMoney(request.amount, request.currency)}
           </p>
-          <p className="text-[10px] text-slate-400 mt-1">
+          <p className="text-[10.5px] text-ink-500 mt-1">
             {format(new Date(request.createdAt), 'MMM d, h:mm a')}
           </p>
           {request.note ? (
-            <p className="text-[11px] text-slate-500 italic mt-1.5 truncate">&ldquo;{request.note}&rdquo;</p>
+            <p className="text-[11px] text-ink-500 italic mt-1.5 truncate">&ldquo;{request.note}&rdquo;</p>
           ) : null}
           {request.rejectionReason ? (
-            <p className="text-[11px] text-slate-500 mt-1.5">{request.rejectionReason}</p>
+            <p className="text-[11px] text-ink-500 mt-1.5">{request.rejectionReason}</p>
           ) : null}
         </div>
-        <span className={`text-[10px] font-bold uppercase tracking-widest rounded-full px-2.5 py-1 ${statusClasses}`}>
+        <span className={`text-[10px] font-semibold uppercase tracking-[0.1em] rounded-full px-2.5 py-1 ${statusClasses}`}>
           {t(statusKey)}
         </span>
       </div>
@@ -389,14 +416,14 @@ function RequestCard({
               <button
                 onClick={onReject}
                 disabled={busy}
-                className="flex-1 py-2.5 rounded-2xl bg-slate-100 text-slate-500 text-[12px] font-bold active:bg-slate-200 transition-all disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold active:bg-cream-hairline transition-colors disabled:opacity-50"
               >
                 {busy ? t('ltr_rejecting') : t('ltr_reject')}
               </button>
               <button
                 onClick={onAccept}
                 disabled={busy}
-                className="flex-1 py-2.5 rounded-2xl btn-gradient text-[12px] font-bold shadow-sm shadow-indigo-500/15 disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
               >
                 {busy ? t('ltr_accepting') : t('ltr_accept')}
               </button>
@@ -405,7 +432,7 @@ function RequestCard({
             <button
               onClick={onCancel}
               disabled={busy}
-              className="flex-1 py-2.5 rounded-2xl bg-red-50 text-red-500 text-[12px] font-bold active:bg-red-100 transition-all disabled:opacity-50"
+              className="flex-1 py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
             >
               {busy ? t('ltr_cancelling') : t('ltr_cancel')}
             </button>

@@ -33,9 +33,9 @@ export function AuthPage() {
   const inputClass = "w-full bg-white/8 border border-white/15 rounded-2xl px-4 py-4 pl-12 text-white placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30 text-[15px] tracking-tight backdrop-blur-sm transition-all";
 
   return (
-    <div className="min-h-dvh relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-indigo-600 via-indigo-700 to-slate-900" />
-      <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(circle at 30% 20%, rgba(168,85,247,0.4), transparent 50%), radial-gradient(circle at 70% 80%, rgba(99,102,241,0.3), transparent 50%)' }} />
+    <div className="min-h-dvh relative overflow-hidden bg-navy-bloom">
+      {/* Navy + bloom backdrop matches Onboarding so the auth → onboard flow
+          reads as one continuous Sukoon surface. */}
 
       {/* Language toggle */}
       <button
@@ -58,11 +58,11 @@ export function AuthPage() {
         {/* Toggle */}
         <div className="flex bg-white/8 rounded-2xl p-1 mb-6 border border-white/10">
           <button onClick={() => setMode('login')}
-            className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold transition-all ${mode === 'login' ? 'bg-white text-indigo-700 shadow-md' : 'text-white/60'}`}>
+            className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold transition-all ${mode === 'login' ? 'bg-white text-navy-900 shadow-md' : 'text-white/60'}`}>
             Login
           </button>
           <button onClick={() => setMode('signup')}
-            className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold transition-all ${mode === 'signup' ? 'bg-white text-indigo-700 shadow-md' : 'text-white/60'}`}>
+            className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold transition-all ${mode === 'signup' ? 'bg-white text-navy-900 shadow-md' : 'text-white/60'}`}>
             Sign Up
           </button>
         </div>
@@ -87,16 +87,16 @@ export function AuthPage() {
 
         {/* Error / Message */}
         {(error || message) && (
-          <p className={`text-[12px] mt-3 text-center font-medium ${error ? 'text-red-300' : 'text-emerald-300'}`}>
+          <p className={`text-[12px] mt-3 text-center font-medium ${error ? 'text-pay-50' : 'text-receive-50'}`}>
             {error || message}
           </p>
         )}
 
         {/* Submit */}
         <button onClick={handleSubmit} disabled={loading || !email || !password}
-          className="w-full mt-6 bg-white text-indigo-700 rounded-2xl py-4 text-[14px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-30 shadow-lg shadow-white/10">
+          className="w-full mt-6 bg-white text-navy-900 rounded-2xl py-4 text-[14px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-30 shadow-lg shadow-white/10">
           {loading ? (
-            <div className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-700 rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-navy-700 border-t-navy-900 rounded-full animate-spin" />
           ) : (
             <>
               {mode === 'login' ? 'Login' : 'Create Account'}

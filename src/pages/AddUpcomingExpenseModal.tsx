@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
@@ -16,12 +16,12 @@ interface Props {
 
 const CATEGORIES = [
   { value: 'Education', icon: GraduationCap, gradient: 'from-blue-500 to-blue-600', soft: 'bg-blue-50 text-blue-600 border-blue-100' },
-  { value: 'Medical', icon: HeartPulse, gradient: 'from-rose-500 to-rose-600', soft: 'bg-rose-50 text-rose-600 border-rose-100' },
+  { value: 'Medical', icon: HeartPulse, gradient: 'from-rose-500 to-rose-600', soft: 'bg-pay-50 text-pay-text border-rose-100' },
   { value: 'Event', icon: PartyPopper, gradient: 'from-purple-500 to-purple-600', soft: 'bg-purple-50 text-purple-600 border-purple-100' },
   { value: 'Travel', icon: Plane, gradient: 'from-cyan-500 to-cyan-600', soft: 'bg-cyan-50 text-cyan-600 border-cyan-100' },
-  { value: 'Rent', icon: Home, gradient: 'from-amber-500 to-amber-600', soft: 'bg-amber-50 text-amber-600 border-amber-100' },
+  { value: 'Rent', icon: Home, gradient: 'from-amber-500 to-amber-600', soft: 'bg-warn-50 text-warn-600 border-amber-100' },
   { value: 'Utilities', icon: Zap, gradient: 'from-yellow-500 to-yellow-600', soft: 'bg-yellow-50 text-yellow-600 border-yellow-100' },
-  { value: 'Other', icon: MoreHorizontal, gradient: 'from-slate-500 to-slate-600', soft: 'bg-slate-50 text-slate-600 border-slate-100' },
+  { value: 'Other', icon: MoreHorizontal, gradient: 'from-slate-500 to-slate-600', soft: 'bg-cream-soft text-ink-700 border-cream-hairline' },
 ];
 
 const REMINDER_OPTIONS = [
@@ -92,19 +92,19 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
     <button
       onClick={() => setStep(s => s + 1)}
       disabled={!canNext()}
-      className="w-full btn-gradient rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 transition-all"
+      className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 transition-all"
     >
       {t('quick_next')} &rarr;
     </button>
   ) : (
     <div className="flex gap-2.5">
-      <button onClick={() => setStep(s => s - 1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-slate-200/60 text-slate-500 active:bg-slate-50 transition-all">
+      <button onClick={() => setStep(s => s - 1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft transition-all">
         &larr;
       </button>
       <button
         onClick={handleSubmit}
         disabled={saving || !canNext()}
-        className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
+        className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
       >
         {saving ? t('upcoming_creating') : t('upcoming_create')}
       </button>
@@ -116,7 +116,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
       {/* Step progress */}
       <div className="flex gap-1.5 mb-5">
         {[0, 1, 2, 3].map(i => (
-          <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${i <= step ? 'bg-indigo-500' : 'bg-slate-100'}`} />
+          <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${i <= step ? 'bg-accent-1000' : 'bg-cream-soft'}`} />
         ))}
       </div>
 
@@ -160,9 +160,9 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
       {step === 1 && (
         <div className="space-y-4 animate-fade-in">
           <div className="text-center py-2">
-            <div className="inline-flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-1.5 mb-4">
-              <span className="text-[11px] font-bold text-slate-400">{title}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-slate-200/60 text-slate-500 font-semibold">{category}</span>
+            <div className="inline-flex items-center gap-2 bg-cream-soft rounded-xl px-3 py-1.5 mb-4">
+              <span className="text-[11px] font-bold text-ink-500">{title}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-slate-200/60 text-ink-500 font-semibold">{category}</span>
             </div>
           </div>
           <div>
@@ -174,7 +174,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
               className="input-field text-center text-2xl font-bold tabular-nums" autoFocus />
           </div>
           <button onClick={() => setStep(0)}
-            className="w-full text-center text-[12px] text-slate-400 py-1 font-medium">&larr; Back</button>
+            className="w-full text-center text-[12px] text-ink-500 py-1 font-medium">&larr; Back</button>
         </div>
       )}
 
@@ -182,8 +182,8 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
       {step === 2 && (
         <div className="space-y-4 animate-fade-in">
           <div className="text-center py-2">
-            <p className="text-3xl font-bold tabular-nums text-slate-800">{parseFloat(amount || '0').toLocaleString()}</p>
-            <p className="text-[11px] text-slate-400 mt-1">{title} · {category}</p>
+            <p className="text-3xl font-bold tabular-nums text-ink-900">{parseFloat(amount || '0').toLocaleString()}</p>
+            <p className="text-[11px] text-ink-500 mt-1">{title} · {category}</p>
           </div>
           <div>
             <label className="form-label">
@@ -194,7 +194,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
               className="input-field" autoFocus />
           </div>
           <button onClick={() => setStep(1)}
-            className="w-full text-center text-[12px] text-slate-400 py-1 font-medium">&larr; Back</button>
+            className="w-full text-center text-[12px] text-ink-500 py-1 font-medium">&larr; Back</button>
         </div>
       )}
 
@@ -202,12 +202,12 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
       {step === 3 && (
         <div className="space-y-4 animate-fade-in">
           {/* Summary bar */}
-          <div className="bg-slate-50/80 rounded-2xl p-3.5 flex items-center justify-between border border-slate-100/60">
+          <div className="bg-cream-soft/80 rounded-2xl p-3.5 flex items-center justify-between border border-cream-hairline">
             <div>
-              <p className="text-[13px] font-semibold text-slate-700">{title}</p>
-              <p className="text-[10px] text-slate-400">{category} · {dueDate}</p>
+              <p className="text-[13px] font-semibold text-ink-800">{title}</p>
+              <p className="text-[10px] text-ink-500">{category} · {dueDate}</p>
             </div>
-            <span className="font-bold text-[15px] tabular-nums text-slate-800">{parseFloat(amount || '0').toLocaleString()}</span>
+            <span className="font-bold text-[15px] tabular-nums text-ink-900">{parseFloat(amount || '0').toLocaleString()}</span>
           </div>
 
           {/* Account selection */}
@@ -221,17 +221,17 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
                 return (
                   <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
                     className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                      accountId === a.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                      accountId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-sm">{meta?.flag}</span>
                       <div>
-                        <p className="text-[13px] font-semibold text-slate-700">{a.name}</p>
-                        <p className="text-[10px] text-slate-400 capitalize">{a.type.replace('_', ' ')}</p>
+                        <p className="text-[13px] font-semibold text-ink-800">{a.name}</p>
+                        <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
                       </div>
                     </div>
-                    <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                    <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                   </button>
                 );
               })}
@@ -247,7 +247,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
               {REMINDER_OPTIONS.map(opt => (
                 <button key={opt.value} type="button" onClick={() => setReminderDays(opt.value)}
                   className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all active:scale-95 ${
-                    reminderDays === opt.value ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200/60'
+                    reminderDays === opt.value ? 'bg-ink-900 text-white border-ink-900 shadow-sm' : 'bg-white text-ink-500 border-cream-border'
                   }`}
                 >{opt.label}</button>
               ))}

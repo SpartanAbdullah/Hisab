@@ -1,4 +1,4 @@
-import { CheckCircle, ArrowRight } from 'lucide-react';
+﻿import { CheckCircle, ArrowRight } from 'lucide-react';
 import { formatSignedMoney } from '../lib/constants';
 import { Button } from './Button';
 import { useEffect, useState } from 'react';
@@ -61,21 +61,21 @@ export function ConfirmationSheet({ open, onClose, title, description, balanceCh
         {/* Balance changes */}
         {balanceChanges.length > 0 && (
           <div className="px-6 py-5 space-y-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('balance_changes')}</p>
+            <p className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('balance_changes')}</p>
             {balanceChanges.map((change, i) => (
-              <div key={i} className="flex items-center gap-3 bg-slate-50/80 rounded-2xl p-4 border border-slate-100/60">
+              <div key={i} className="flex items-center gap-3 bg-cream-soft/80 rounded-2xl p-4 border border-cream-hairline">
                 <div className="flex-1 text-center">
-                  <p className="text-[10px] text-slate-400 font-medium">{change.accountName}</p>
-                  <p className="text-sm font-bold text-slate-400 line-through mt-1">
+                  <p className="text-[10px] text-ink-500 font-medium">{change.accountName}</p>
+                  <p className="text-sm font-bold text-ink-500 line-through mt-1">
                     {formatSignedMoney(change.before, change.currency)}
                   </p>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center shrink-0">
-                  <ArrowRight size={14} className="text-indigo-500" />
+                <div className="w-8 h-8 rounded-full bg-accent-100 flex items-center justify-center shrink-0">
+                  <ArrowRight size={14} className="text-accent-600" />
                 </div>
                 <div className="flex-1 text-center">
-                  <p className="text-[10px] text-slate-400 font-medium">{t('updated')}</p>
-                  <p className={`text-sm font-bold mt-1 ${change.after >= change.before ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <p className="text-[10px] text-ink-500 font-medium">{t('updated')}</p>
+                  <p className={`text-sm font-bold mt-1 ${change.after >= change.before ? 'text-receive-text' : 'text-pay-text'}`}>
                     {formatSignedMoney(change.after, change.currency)}
                   </p>
                 </div>

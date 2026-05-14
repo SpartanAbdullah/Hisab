@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Copy, Share2 } from 'lucide-react';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
@@ -139,7 +139,7 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
           <button
             onClick={handleCopy}
             disabled={copying}
-            className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-30"
+            className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-30"
           >
             <Copy size={15} /> {copying ? t('quick_processing') : t('reminder_copy')}
           </button>
@@ -147,7 +147,7 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
             <button
               onClick={handleShare}
               disabled={sharing}
-              className="px-4 rounded-2xl py-3.5 text-sm font-bold bg-slate-100 text-slate-600 flex items-center justify-center gap-2 active:bg-slate-200 disabled:opacity-40"
+              className="px-4 rounded-2xl py-3.5 text-sm font-bold bg-cream-soft text-ink-700 flex items-center justify-center gap-2 active:bg-slate-200 disabled:opacity-40"
             >
               <Share2 size={15} /> {t('reminder_share')}
             </button>
@@ -156,12 +156,12 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
       }
     >
       <div className="space-y-4">
-        <div className={`rounded-2xl p-4 border ${direction === 'receivable' ? 'bg-emerald-50/60 border-emerald-100/70' : 'bg-red-50/60 border-red-100/70'}`}>
-          <p className={`text-[10px] font-bold uppercase tracking-widest ${direction === 'receivable' ? 'text-emerald-600' : 'text-red-500'}`}>
+        <div className={`rounded-2xl p-4 border ${direction === 'receivable' ? 'bg-receive-50/60 border-receive-100/70' : 'bg-pay-50/60 border-pay-100/70'}`}>
+          <p className={`text-[10px] font-bold uppercase tracking-widest ${direction === 'receivable' ? 'text-receive-text' : 'text-pay-text'}`}>
             {direction === 'receivable' ? t('reminder_they_owe_me') : t('reminder_i_owe_them')}
           </p>
-          <p className="text-2xl font-extrabold text-slate-800 tabular-nums tracking-tight mt-1">{amountText}</p>
-          <p className="text-[12px] text-slate-500 mt-1">{personName} - {formatMeta(age, t)}</p>
+          <p className="text-2xl font-extrabold text-ink-900 tabular-nums tracking-tight mt-1">{amountText}</p>
+          <p className="text-[12px] text-ink-500 mt-1">{personName} - {formatMeta(age, t)}</p>
         </div>
 
         <div>
@@ -173,7 +173,7 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
                 type="button"
                 onClick={() => setTone(nextTone)}
                 className={`py-2.5 rounded-xl text-[11px] font-bold border transition-all active:scale-95 ${
-                  tone === nextTone ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200/60'
+                  tone === nextTone ? 'bg-ink-900 text-white border-ink-900' : 'bg-white text-ink-500 border-cream-border'
                 }`}
               >
                 {nextTone === 'friendly' ? t('reminder_tone_friendly') : nextTone === 'neutral' ? t('reminder_tone_neutral') : t('reminder_tone_formal')}
@@ -184,10 +184,10 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
 
         <div>
           <p className="form-label">{t('reminder_preview')}</p>
-          <div className="rounded-2xl bg-slate-50 border border-slate-100/70 p-4">
-            <p className="text-[13px] text-slate-700 leading-relaxed whitespace-pre-line">{message}</p>
+          <div className="rounded-2xl bg-cream-soft border border-cream-hairline p-4">
+            <p className="text-[13px] text-ink-800 leading-relaxed whitespace-pre-line">{message}</p>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">{t('reminder_manual_only')}</p>
+          <p className="text-[10px] text-ink-500 mt-2">{t('reminder_manual_only')}</p>
         </div>
       </div>
     </Modal>

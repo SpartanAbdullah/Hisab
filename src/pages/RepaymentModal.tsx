@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -171,24 +171,24 @@ export function RepaymentModal({
         }
       >
         <div className="space-y-4">
-          <div className={`rounded-2xl p-4 border ${isGiven ? 'bg-emerald-50/50 border-emerald-100/60' : 'bg-red-50/50 border-red-100/60'}`}>
+          <div className={`rounded-2xl p-4 border ${isGiven ? 'bg-receive-50/50 border-receive-100' : 'bg-pay-50 border-pay-100'}`}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                <p className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">
                   {isGiven ? t('loan_receivable') : t('loan_payable')}
                 </p>
                 {installmentNumber ? (
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 mt-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500 mt-1">
                     EMI #{installmentNumber}
                   </p>
                 ) : null}
-                <p className="text-lg font-bold tabular-nums tracking-tight mt-1 text-slate-800">
+                <p className="text-lg font-bold tabular-nums tracking-tight mt-1 text-ink-900">
                   {formatMoney(loan.remainingAmount, loan.currency)}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-slate-400">Total</p>
-                <p className="text-[13px] font-semibold text-slate-500 tabular-nums">
+                <p className="text-[10px] text-ink-500">Total</p>
+                <p className="text-[13px] font-semibold text-ink-500 tabular-nums">
                   {formatMoney(loan.totalAmount, loan.currency)}
                 </p>
               </div>
@@ -206,14 +206,14 @@ export function RepaymentModal({
               onChange={(event) => setAmount(event.target.value)}
               placeholder="0.00"
               disabled={lockAmount}
-              className="input-field text-center text-xl font-bold tabular-nums disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
+              className="input-field text-center text-xl font-bold tabular-nums disabled:bg-cream-soft disabled:text-ink-500 disabled:cursor-not-allowed"
               autoFocus
             />
             {!lockAmount ? (
               <button
                 type="button"
                 onClick={() => setAmount(String(loan.remainingAmount))}
-                className="mt-2 text-[11px] text-indigo-600 font-bold active:opacity-70"
+                className="mt-2 text-[11px] text-accent-600 font-bold active:opacity-70"
               >
                 Full amount: {formatMoney(loan.remainingAmount, loan.currency)}
               </button>
@@ -241,11 +241,11 @@ export function RepaymentModal({
                     <div className="flex items-center gap-2">
                       <span className="text-sm">{meta?.flag}</span>
                       <div>
-                        <p className="text-[13px] font-semibold text-slate-700">{account.name}</p>
-                        <p className="text-[10px] text-slate-400 capitalize">{account.type.replace('_', ' ')}</p>
+                        <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
+                        <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
                       </div>
                     </div>
-                    <p className="text-[13px] font-bold text-slate-700 tabular-nums">
+                    <p className="text-[13px] font-bold text-ink-800 tabular-nums">
                       {formatSignedMoney(account.balance, account.currency)}
                     </p>
                   </button>
@@ -258,11 +258,11 @@ export function RepaymentModal({
           {!isLedgerOnlyMode && isCrossCurrency && selectedAccount ? (
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-4 border border-blue-100/60 space-y-3 animate-fade-in">
               <p className="text-[11px] font-bold text-blue-600 uppercase tracking-widest">{t('conv_title')}</p>
-              <p className="text-[12px] text-slate-600">
+              <p className="text-[12px] text-ink-700">
                 Loan: <span className="font-bold">{loan.currency}</span> - Account: <span className="font-bold">{selectedAccount.currency}</span>
               </p>
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1.5">
+                <label className="block text-[11px] font-bold text-ink-500 mb-1.5">
                   {t('conv_rate')} 1 {loan.currency} = ___ {selectedAccount.currency}
                 </label>
                 <input
@@ -276,8 +276,8 @@ export function RepaymentModal({
               </div>
               {conversionRate && parseFloat(conversionRate) > 0 && parseFloat(amount) > 0 ? (
                 <div className="bg-white rounded-xl p-3 text-center border border-blue-100/60 animate-fade-in">
-                  <p className="text-[10px] text-slate-400">{isGiven ? t('conv_will_get') : 'Will deduct'}</p>
-                  <p className="text-lg font-bold text-emerald-600 tabular-nums">
+                  <p className="text-[10px] text-ink-500">{isGiven ? t('conv_will_get') : 'Will deduct'}</p>
+                  <p className="text-lg font-bold text-receive-text tabular-nums">
                     {isGiven
                       ? formatMoney(Math.round(parseFloat(amount) * parseFloat(conversionRate) * 100) / 100, selectedAccount.currency)
                       : formatMoney(Math.round(parseFloat(amount) / parseFloat(conversionRate) * 100) / 100, selectedAccount.currency)}
@@ -299,7 +299,7 @@ export function RepaymentModal({
             />
           </div>
 
-          <p className="text-[12px] text-slate-500 bg-slate-50/80 border border-slate-100/70 rounded-2xl p-3 leading-relaxed">
+          <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
             {t('money_not_moved_notice')}
           </p>
         </div>

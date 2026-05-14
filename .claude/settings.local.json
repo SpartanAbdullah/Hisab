@@ -23,7 +23,10 @@
       "Bash(find /c/Users/MuhammadAbdullah/Desktop/Hisaab-2.0/src -type f \\\\\\( -name \"*.tsx\" -o -name \"*.ts\" \\\\\\) -exec grep -l \"console\\\\.\\\\\\(log\\\\|debug\\\\\\)\" {} \\\\;)",
       "Bash(find /c/Users/MuhammadAbdullah/Desktop/Hisaab-2.0/src/components -name \"*.tsx\" -exec basename {} \\\\;)",
       "Bash(npx eslint *)",
-      "Bash(grep -E \"\\\\.\\(sql|ts\\)$\")"
+      "Bash(grep -E \"\\\\.\\(sql|ts\\)$\")",
+      "Bash(ls \"C:\\\\Users\\\\MuhammadAbdullah\\\\Downloads\\\\Hisab Redesign.zip\")",
+      "Bash(ls -la \"/tmp/hisab_redesign/design_handoff_sukoon/\")",
+      "Bash(awk 'END{print NR}' \"C:\\\\Users\\\\MuhammadAbdullah\\\\Desktop\\\\Hisaab-2.0\\\\src\\\\pages\\\\HomePage.tsx\")"
     ]
   }
 }

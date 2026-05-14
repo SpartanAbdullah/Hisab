@@ -1,7 +1,6 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
-import { GlobalFAB } from './components/GlobalFAB';
 import { ToastContainer } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useOnboardingStore } from './stores/onboardingStore';
@@ -24,6 +23,8 @@ const LoanDetailPage = lazy(() => import('./pages/LoanDetailPage').then(m => ({ 
 const GoalsPage = lazy(() => import('./pages/GoalsPage').then(m => ({ default: m.GoalsPage })));
 const ActivityPage = lazy(() => import('./pages/ActivityPage').then(m => ({ default: m.ActivityPage })));
 const AccountDetailPage = lazy(() => import('./pages/AccountDetailPage').then(m => ({ default: m.AccountDetailPage })));
+const AccountsPage = lazy(() => import('./pages/AccountsPage').then(m => ({ default: m.AccountsPage })));
+const ContactsPage = lazy(() => import('./pages/ContactsPage').then(m => ({ default: m.ContactsPage })));
 const SplitsPage = lazy(() => import('./pages/SplitsPage').then(m => ({ default: m.SplitsPage })));
 const GroupDetailPage = lazy(() => import('./pages/GroupDetailPage').then(m => ({ default: m.GroupDetailPage })));
 const JoinGroupPage = lazy(() => import('./pages/JoinGroupPage').then(m => ({ default: m.JoinGroupPage })));
@@ -31,11 +32,10 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ de
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m.InboxPage })));
 
-// These are modals, not routes — keep eagerly loaded
+// Quick Entry is the only modal launched globally (from the BottomNav FAB).
+// The Add Goal / Add Loan / Add Upcoming Expense modals are owned by their
+// respective pages and triggered by inline "+" buttons there.
 import { QuickEntry } from './pages/QuickEntry';
-import { AddGoalModal } from './pages/AddGoalModal';
-import { AddUpcomingExpenseModal } from './pages/AddUpcomingExpenseModal';
-import { AddLoanModal } from './pages/AddLoanModal';
 
 function PageLoader() {
   return (
@@ -56,9 +56,6 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const [showQuickEntry, setShowQuickEntry] = useState(false);
-  const [showAddGoal, setShowAddGoal] = useState(false);
-  const [showAddExpense, setShowAddExpense] = useState(false);
-  const [showAddLoan, setShowAddLoan] = useState(false);
 
   useEffect(() => {
     initialize();
@@ -184,8 +181,10 @@ function AppContent() {
           <Route path="/join/:token" element={<JoinGroupPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/inbox" element={<InboxPage />} />
+          <Route path="/accounts" element={mode === 'full_tracker' ? <AccountsPage /> : <Navigate to="/" replace />} />
           <Route path="/account/:id" element={mode === 'full_tracker' ? <AccountDetailPage /> : <Navigate to="/" replace />} />
           <Route path="/transactions" element={mode === 'full_tracker' ? <TransactionsPage /> : <Navigate to="/" replace />} />
           <Route path="/loans" element={<LoansPage />} />
@@ -206,17 +205,8 @@ function AppContent() {
         </Routes>
         </ErrorBoundary>
       </Suspense>
-      <BottomNav />
-      <GlobalFAB
-        onQuickEntry={() => setShowQuickEntry(true)}
-        onAddGoal={() => setShowAddGoal(true)}
-        onAddExpense={() => setShowAddExpense(true)}
-        onAddLoan={() => setShowAddLoan(true)}
-      />
+      <BottomNav onQuickEntry={() => setShowQuickEntry(true)} />
       <QuickEntry open={showQuickEntry} onClose={() => setShowQuickEntry(false)} />
-      <AddGoalModal open={showAddGoal} onClose={() => setShowAddGoal(false)} />
-      <AddUpcomingExpenseModal open={showAddExpense} onClose={() => setShowAddExpense(false)} />
-      <AddLoanModal open={showAddLoan} onClose={() => setShowAddLoan(false)} />
     </div>
   );
 }

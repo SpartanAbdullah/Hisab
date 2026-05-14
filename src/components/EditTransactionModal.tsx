@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Modal } from './Modal';
 import { ContactPicker, type ContactValue } from './ContactPicker';
@@ -175,14 +175,14 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           <button
             onClick={handleDelete}
             disabled={saving}
-            className="px-4 py-3.5 rounded-2xl bg-red-50 text-red-500 active:bg-red-100 transition-all disabled:opacity-50"
+            className="px-4 py-3.5 rounded-2xl bg-pay-50 text-pay-text active:bg-pay-100 transition-all disabled:opacity-50"
           >
             <Trash2 size={16} />
           </button>
           <button
             onClick={handleSave}
             disabled={saving || !canSave}
-            className="flex-1 btn-gradient rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
+            className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
           >
             {saving ? t('quick_processing') : 'Save Changes'}
           </button>
@@ -190,11 +190,11 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
       )}
     >
       <div className="space-y-4">
-        <div className="bg-slate-50/80 rounded-2xl p-3.5 border border-slate-100/60">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+        <div className="bg-cream-soft/80 rounded-2xl p-3.5 border border-cream-hairline">
+          <p className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">
             {isExpense ? t('tx_expense') : isLoanGiven ? t('tx_loan_given') : t('tx_loan_taken')}
           </p>
-          <p className="text-lg font-bold text-slate-800 tabular-nums mt-1">
+          <p className="text-lg font-bold text-ink-900 tabular-nums mt-1">
             {formatMoney(transaction.amount, transaction.currency)}
           </p>
         </div>
@@ -227,17 +227,17 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                     if (cashAdvanceCardId === account.id) setCashAdvanceCardId('');
                   }}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    isSelected ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                    isSelected ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm">{meta?.flag}</span>
                     <div>
-                      <p className="text-[13px] font-semibold text-slate-700">{account.name}</p>
-                      <p className="text-[10px] text-slate-400 capitalize">{account.type.replace('_', ' ')}</p>
+                      <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
+                      <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
                     </div>
                   </div>
-                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
+                  <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
                 </button>
               );
             })}
@@ -252,7 +252,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                 type="button"
                 onClick={() => setCashAdvanceCardId('')}
                 className={`w-full p-3 rounded-2xl border text-left text-[12px] font-semibold transition-all ${
-                  !selectedCashAdvanceCard ? 'border-indigo-400 bg-indigo-50/50 text-indigo-700' : 'border-slate-200/60 bg-white text-slate-500'
+                  !selectedCashAdvanceCard ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-white text-ink-500'
                 }`}
               >
                 No credit card
@@ -263,14 +263,14 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                   type="button"
                   onClick={() => setCashAdvanceCardId(account.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    selectedCashAdvanceCard?.id === account.id ? 'border-indigo-400 bg-indigo-50/50 shadow-sm shadow-indigo-500/5' : 'border-slate-200/60 bg-white'
+                    selectedCashAdvanceCard?.id === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
                   }`}
                 >
                   <div>
-                    <p className="text-[13px] font-semibold text-slate-700">{account.name}</p>
-                    <p className="text-[10px] text-slate-400">Credit card</p>
+                    <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
+                    <p className="text-[10px] text-ink-500">Credit card</p>
                   </div>
-                  <p className="text-[13px] font-bold text-slate-700 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
+                  <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
                 </button>
               ))}
             </div>
@@ -287,7 +287,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
               className="input-field"
             />
             {willCreateNewContact && (
-              <p className="text-[11px] text-amber-600 mt-1.5">This will create a new contact.</p>
+              <p className="text-[11px] text-warn-600 mt-1.5">This will create a new contact.</p>
             )}
           </div>
         )}
@@ -302,7 +302,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                   type="button"
                   onClick={() => setCategory(item)}
                   className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all active:scale-95 ${
-                    category === item ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20' : 'bg-white text-slate-500 border-slate-200/60'
+                    category === item ? 'bg-ink-900 text-white border-ink-900 shadow-sm shadow-indigo-500/20' : 'bg-white text-ink-500 border-cream-border'
                   }`}
                 >
                   {item}

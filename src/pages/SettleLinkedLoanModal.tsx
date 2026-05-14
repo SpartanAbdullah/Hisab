@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -152,15 +152,15 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
       }
     >
       <div className="space-y-4">
-        <div className="bg-slate-50/80 rounded-2xl p-3.5 border border-slate-100/60">
-          <p className="text-[13px] text-slate-600">
+        <div className="bg-cream-soft/80 rounded-2xl p-3.5 border border-cream-hairline">
+          <p className="text-[13px] text-ink-700">
             {(isGiven ? t('stl_direction_receiving_from') : t('stl_direction_paying_to'))
               .replace('{name}', counterpartyName)
               .replace('{amount}', formatMoney(parseFloat(amount) || 0, loan.currency))}
           </p>
         </div>
 
-        <p className="text-[12px] text-slate-500 bg-slate-50/80 border border-slate-100/70 rounded-2xl p-3 leading-relaxed">
+        <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
           {t('money_not_moved_notice')}
         </p>
 
@@ -176,7 +176,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
             onChange={(e) => setAmount(e.target.value)}
             className="input-field text-center text-lg font-bold tabular-nums"
           />
-          <p className="text-[11px] text-slate-400 mt-1.5">
+          <p className="text-[11px] text-ink-500 mt-1.5">
             {t('stl_amount_hint').replace('{remaining}', formatMoney(loan.remainingAmount, loan.currency))}
           </p>
         </div>
@@ -198,8 +198,8 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
         {/* Phase 2C-B: sender-side opt-in toggle + account picker. */}
         <label className={`flex items-center gap-2.5 p-3 rounded-2xl border ${
           hasEligibleAccounts
-            ? 'bg-slate-50/80 border-slate-100/60 cursor-pointer'
-            : 'bg-slate-50/50 border-slate-100/60 opacity-60 cursor-not-allowed'
+            ? 'bg-cream-soft/80 border-cream-hairline cursor-pointer'
+            : 'bg-cream-soft/50 border-cream-hairline opacity-60 cursor-not-allowed'
         }`}>
           <input
             type="checkbox"
@@ -209,17 +209,17 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
               setApplyToBalance(e.target.checked);
               if (!e.target.checked) setSelectedAccountId('');
             }}
-            className="w-4 h-4 rounded border-slate-300 text-indigo-600 accent-indigo-600"
+            className="w-4 h-4 rounded border-slate-300 text-accent-600 accent-indigo-600"
           />
-          <span className="text-[13px] text-slate-600 font-medium flex-1">
+          <span className="text-[13px] text-ink-700 font-medium flex-1">
             {t('stl_apply_toggle_label')}
           </span>
         </label>
 
         {hasEligibleAccounts ? (
-          <p className="text-[11px] text-slate-400 -mt-2">{t('stl_apply_toggle_hint')}</p>
+          <p className="text-[11px] text-ink-500 -mt-2">{t('stl_apply_toggle_hint')}</p>
         ) : (
-          <p className="text-[11px] text-amber-600 -mt-2">{t('stl_apply_no_eligible')}</p>
+          <p className="text-[11px] text-warn-600 -mt-2">{t('stl_apply_no_eligible')}</p>
         )}
 
         {applyToBalance && hasEligibleAccounts ? (
@@ -241,11 +241,11 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm">{meta?.flag}</span>
                       <div>
-                        <p className="text-[13px] font-semibold text-slate-700">{a.name}</p>
-                        <p className="text-[10px] text-slate-400 capitalize">{a.type.replace('_', ' ')}</p>
+                        <p className="text-[13px] font-semibold text-ink-800">{a.name}</p>
+                        <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
                       </div>
                     </div>
-                    <p className="text-[13px] font-bold text-slate-700 tabular-nums">
+                    <p className="text-[13px] font-bold text-ink-800 tabular-nums">
                       {formatSignedMoney(a.balance, a.currency)}
                     </p>
                   </button>
@@ -256,11 +256,11 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
         ) : null}
 
         {applyToBalance && selectedAccountId ? (
-          <p className="text-[12px] text-amber-700 bg-amber-50/70 rounded-2xl p-3 leading-relaxed">
+          <p className="text-[12px] text-warn-600 bg-warn-50 rounded-2xl p-3 leading-relaxed">
             {isGiven ? t('stl_apply_increase_hint') : t('stl_apply_reduce_hint')}
           </p>
         ) : (
-          <p className="text-[12px] text-indigo-700 bg-indigo-50/70 rounded-2xl p-3 leading-relaxed">
+          <p className="text-[12px] text-accent-600 bg-accent-50 rounded-2xl p-3 leading-relaxed">
             {t('stl_ledger_only_hint')}
           </p>
         )}
@@ -268,13 +268,13 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
         )}
 
         {appMode === 'splits_only' ? (
-          <p className="text-[12px] text-indigo-700 bg-indigo-50/70 rounded-2xl p-3 leading-relaxed">
+          <p className="text-[12px] text-accent-600 bg-accent-50 rounded-2xl p-3 leading-relaxed">
             {t('stl_ledger_only_hint')}
           </p>
         ) : null}
 
         {error && (
-          <p className="text-[12px] text-red-500 font-semibold bg-red-50 rounded-xl p-3">{error}</p>
+          <p className="text-[12px] text-pay-text font-semibold bg-pay-50 rounded-xl p-3">{error}</p>
         )}
       </div>
     </Modal>

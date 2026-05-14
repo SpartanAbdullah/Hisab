@@ -24,23 +24,30 @@ const iconMap: Record<string, React.ElementType> = {
   opening_balance: Landmark,
 };
 
+// Type-mapped icon chrome. Sukoon collapses the old per-type rainbow into
+// the four semantic buckets that actually carry meaning: money-in (receive
+// green), money-out (pay coral), neutral movement (cream/ink), and "watch"
+// (loan_taken / opening_balance use accent + warn).
 const defaultStyleMap: Record<string, { text: string; bg: string }> = {
-  income:            { text: 'text-emerald-600', bg: 'bg-gradient-to-br from-emerald-50 to-emerald-100/50' },
-  expense:           { text: 'text-red-500', bg: 'bg-gradient-to-br from-red-50 to-red-100/50' },
-  transfer:          { text: 'text-blue-500', bg: 'bg-gradient-to-br from-blue-50 to-blue-100/50' },
-  loan_given:        { text: 'text-blue-600', bg: 'bg-gradient-to-br from-blue-50 to-blue-100/50' },
-  loan_taken:        { text: 'text-amber-500', bg: 'bg-gradient-to-br from-amber-50 to-amber-100/50' },
-  repayment:         { text: 'text-teal-500', bg: 'bg-gradient-to-br from-teal-50 to-teal-100/50' },
-  goal_contribution: { text: 'text-purple-500', bg: 'bg-gradient-to-br from-purple-50 to-purple-100/50' },
-  opening_balance:   { text: 'text-indigo-500', bg: 'bg-gradient-to-br from-indigo-50 to-indigo-100/50' },
+  income:            { text: 'text-receive-text', bg: 'bg-receive-50' },
+  repayment:         { text: 'text-receive-text', bg: 'bg-receive-50' },
+  expense:           { text: 'text-pay-text', bg: 'bg-pay-50' },
+  loan_given:        { text: 'text-pay-text', bg: 'bg-pay-50' },
+  goal_contribution: { text: 'text-accent-600', bg: 'bg-accent-100' },
+  transfer:          { text: 'text-ink-600', bg: 'bg-cream-soft' },
+  loan_taken:        { text: 'text-warn-600', bg: 'bg-warn-50' },
+  opening_balance:   { text: 'text-info-600', bg: 'bg-info-50' },
 };
 
+// When viewing an account-scoped list (AccountDetailPage), colour the row
+// by where the money actually went rather than its abstract type. Cream/ink
+// neutral tones — the account-page hero already conveys identity in colour.
 const accountTypeStyleMap: Record<string, { text: string; bg: string }> = {
-  cash:           { text: 'text-emerald-700', bg: 'bg-gradient-to-br from-emerald-50 to-emerald-100/60' },
-  bank:           { text: 'text-blue-700', bg: 'bg-gradient-to-br from-blue-50 to-blue-100/60' },
-  digital_wallet: { text: 'text-purple-700', bg: 'bg-gradient-to-br from-purple-50 to-purple-100/60' },
-  savings:        { text: 'text-amber-700', bg: 'bg-gradient-to-br from-amber-50 to-amber-100/60' },
-  credit_card:    { text: 'text-slate-700', bg: 'bg-gradient-to-br from-slate-100 to-slate-200/60' },
+  cash:           { text: 'text-ink-600', bg: 'bg-cream-soft' },
+  bank:           { text: 'text-ink-600', bg: 'bg-cream-soft' },
+  digital_wallet: { text: 'text-accent-600', bg: 'bg-accent-100' },
+  savings:        { text: 'text-warn-600', bg: 'bg-warn-50' },
+  credit_card:    { text: 'text-pay-text', bg: 'bg-pay-50' },
 };
 
 interface Props {
@@ -65,7 +72,7 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
 
   const style = primaryAccount && accountTypeStyleMap[primaryAccount.type]
     ? accountTypeStyleMap[primaryAccount.type]
-    : defaultStyleMap[transaction.type] ?? { text: 'text-slate-500', bg: 'bg-slate-50' };
+    : defaultStyleMap[transaction.type] ?? { text: 'text-ink-500', bg: 'bg-cream-soft' };
 
   const typeLabels: Record<string, string> = {
     income: t('tx_income'),
@@ -149,8 +156,8 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
         title={isReconciled ? 'Reconciled' : 'Mark reconciled'}
         className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:opacity-60 ${
           isReconciled
-            ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-500/20'
-            : 'bg-white border-slate-200 text-transparent hover:border-emerald-300'
+            ? 'bg-receive-600 border-receive-600 text-white'
+            : 'bg-white border-cream-border text-transparent hover:border-receive-600'
         }`}
       >
         <Check size={14} strokeWidth={3} />
@@ -159,19 +166,19 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
         <Icon size={17} strokeWidth={1.8} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-semibold text-slate-800 truncate tracking-tight">
+        <p className="text-[13px] font-medium text-ink-900 truncate tracking-tight">
           {title}
           {(() => {
             const name = resolvePersonName({ personId: transaction.personId, fallback: transaction.relatedPerson });
-            return name ? ` - ${name}` : '';
+            return name ? ` · ${name}` : '';
           })()}
         </p>
-        <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-          {detailParts.join(' | ')}
+        <p className="text-[10.5px] text-ink-500 mt-0.5 truncate">
+          {detailParts.join(' · ')}
         </p>
       </div>
-      <p className={`text-[14px] font-bold tabular-nums tracking-tight ${isDebit ? 'text-red-500' : 'text-emerald-600'}`}>
-        {isDebit ? '-' : '+'}{formatMoney(displayMoney.amount, displayMoney.currency)}
+      <p className={`text-[14px] font-semibold tabular-nums tracking-tight ${isDebit ? 'text-pay-text' : 'text-receive-text'}`}>
+        {isDebit ? '−' : '+'}{formatMoney(displayMoney.amount, displayMoney.currency)}
       </p>
     </div>
   );

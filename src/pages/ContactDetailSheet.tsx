@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
 import { resolveProfileByCode } from '../lib/collaboration';
@@ -100,17 +100,17 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     <Modal open={open} onClose={onClose} title={person.name}>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-sm font-bold">
+          <div className="w-11 h-11 rounded-2xl bg-accent-100 text-accent-600 flex items-center justify-center text-sm font-bold">
             {(person.name[0] ?? '?').toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[14px] font-semibold text-slate-800 truncate">{person.name}</p>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[14px] font-semibold text-ink-900 truncate">{person.name}</p>
+            <p className="text-[11px] text-ink-500">
               {isLinked ? 'Linked to a Hisaab user' : 'Not linked to a Hisaab user'}
             </p>
           </div>
           {isLinked && (
-            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-50 rounded-full px-2.5 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-receive-text bg-receive-50 rounded-full px-2.5 py-1">
               Linked
             </span>
           )}
@@ -118,7 +118,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
 
         {isLinked ? (
           <div className="space-y-3">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
+            <p className="text-[11px] text-ink-500 leading-relaxed">
               Linking is private &mdash; the other user is not notified.
             </p>
             <button
@@ -132,7 +132,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
         ) : mode === 'idle' ? (
           <button
             onClick={() => setMode('entering')}
-            className="w-full py-3 rounded-2xl btn-gradient text-[13px] font-bold shadow-md shadow-indigo-500/20"
+            className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold shadow-md shadow-indigo-500/20"
           >
             Link to Hisaab user
           </button>
@@ -158,16 +158,16 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 autoComplete="off"
                 className="input-field"
               />
-              <p className="text-[11px] text-slate-400 mt-1.5">
+              <p className="text-[11px] text-ink-500 mt-1.5">
                 Ask them to copy their code from Settings &rarr; My Account.
               </p>
             </div>
 
             {mode === 'resolved' && resolved ? (
-              <div className="rounded-2xl border border-emerald-100/70 bg-emerald-50/60 p-3">
-                <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-widest">Found</p>
-                <p className="text-[14px] font-semibold text-slate-800 mt-0.5">{resolved.displayName}</p>
-                <p className="text-[11px] text-slate-500 mt-1">
+              <div className="rounded-2xl border border-receive-100/70 bg-receive-50/60 p-3">
+                <p className="text-[11px] font-bold text-receive-text uppercase tracking-widest">Found</p>
+                <p className="text-[14px] font-semibold text-ink-900 mt-0.5">{resolved.displayName}</p>
+                <p className="text-[11px] text-ink-500 mt-1">
                   Confirming will tag this contact with their account. No messages are sent.
                 </p>
               </div>
@@ -175,7 +175,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
               <button
                 onClick={handleResolve}
                 disabled={resolving || !code.trim()}
-                className="w-full py-3 rounded-2xl bg-indigo-50 text-indigo-600 text-[13px] font-bold active:bg-indigo-100 transition-all disabled:opacity-40"
+                className="w-full py-3 rounded-2xl bg-accent-100 text-accent-600 text-[13px] font-bold active:bg-accent-100 transition-all disabled:opacity-40"
               >
                 {resolving ? 'Looking up…' : 'Resolve'}
               </button>
@@ -189,14 +189,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                     setResolved(null);
                   }}
                   disabled={saving}
-                  className="px-4 py-3 rounded-2xl bg-slate-100 text-slate-500 text-[12px] font-bold active:bg-slate-200 transition-all disabled:opacity-50"
+                  className="px-4 py-3 rounded-2xl bg-cream-soft text-ink-500 text-[12px] font-bold active:bg-slate-200 transition-all disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmLink}
                   disabled={saving}
-                  className="flex-1 py-3 rounded-2xl btn-gradient text-[13px] font-bold disabled:opacity-40 shadow-md shadow-indigo-500/20"
+                  className="flex-1 py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40 shadow-md shadow-indigo-500/20"
                 >
                   {saving ? 'Linking…' : 'Confirm link'}
                 </button>
@@ -206,7 +206,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
         )}
 
         {error && (
-          <p className="text-[12px] text-red-500 font-semibold bg-red-50 rounded-xl p-3">{error}</p>
+          <p className="text-[12px] text-pay-text font-semibold bg-pay-50 rounded-xl p-3">{error}</p>
         )}
       </div>
     </Modal>
