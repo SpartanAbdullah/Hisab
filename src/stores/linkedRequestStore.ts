@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { linkedRequestsDb } from '../lib/supabaseDb';
-import type { LinkedRequest, LinkedRequestKind, Currency } from '../db';
+import type { LinkedRequest, LinkedRequestKind, Currency, Loan } from '../db';
 import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
+import { usePersonStore } from './personStore';
 
 interface CreateInput {
   toUserId: string;
@@ -12,6 +13,17 @@ interface CreateInput {
   amount: number;
   currency: Currency;
   note?: string;
+  // Phase 2D: when set, the request references an existing sender-side
+  // loan instead of creating a fresh one on acceptance.
+  preExistingLoanId?: string | null;
+}
+
+export interface SyncPastRecordsResult {
+  // Loans the user has with this person that COULD be synced (active,
+  // remaining > 0, not already linked, not already pending sync).
+  syncable: Loan[];
+  // The N requests we just created — one per loan in `syncable`.
+  created: LinkedRequest[];
 }
 
 interface LinkedRequestState {
@@ -25,6 +37,14 @@ interface LinkedRequestState {
   incomingPending: (myUserId: string) => LinkedRequest[];
   outgoingPending: (myUserId: string) => LinkedRequest[];
   forTab: (tab: 'incoming' | 'outgoing', myUserId: string) => LinkedRequest[];
+  // Returns the set of loans that haven't been synced to the linked
+  // contact yet. UI uses this to decide whether to show the "Sync past
+  // records" card on ContactDetailSheet and to render the count.
+  syncableLoansFor: (personId: string) => Loan[];
+  // Fires N linked-request inserts in parallel — one per syncable loan
+  // tagged to this person. Returns the (synced, created) pair so the
+  // caller can render a confirmation summary.
+  syncPastRecords: (personId: string) => Promise<SyncPastRecordsResult>;
   reset: () => void;
 }
 
@@ -66,6 +86,7 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
       amount: input.amount,
       currency: input.currency,
       note: input.note ?? '',
+      preExistingLoanId: input.preExistingLoanId ?? null,
     });
     // Reload to get the canonical row (status, created_at, etc.).
     await get().loadRequests();
@@ -98,6 +119,58 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
     const updated = await linkedRequestsDb.cancel(requestId);
     set((s) => ({ requests: upsert(s.requests, updated) }));
     return updated;
+  },
+
+  syncableLoansFor: (personId) => {
+    const allRequests = get().requests;
+    // A loan is already syncing (or has been synced) if any non-cancelled
+    // request references it via pre_existing_loan_id. Cancelled requests
+    // free the slot — the user is free to retry. Once accepted the loan
+    // is linked and shouldn't show up either.
+    const blockedLoanIds = new Set(
+      allRequests
+        .filter((r) => r.preExistingLoanId && r.status !== 'cancelled' && r.status !== 'rejected')
+        .map((r) => r.preExistingLoanId as string),
+    );
+    const loans = useLoanStore.getState().loans;
+    return loans.filter(
+      (l) =>
+        l.personId === personId &&
+        l.status === 'active' &&
+        l.remainingAmount > 0.01 &&
+        !blockedLoanIds.has(l.id),
+    );
+  },
+
+  syncPastRecords: async (personId) => {
+    const person = usePersonStore.getState().persons.find((p) => p.id === personId);
+    if (!person) throw new Error('Contact not found');
+    if (!person.linkedProfileId) {
+      throw new Error('Contact is not linked to a Hisaab user yet');
+    }
+    const syncable = get().syncableLoansFor(personId);
+    if (syncable.length === 0) return { syncable, created: [] };
+
+    // Build requests in parallel. We send each loan's CURRENT remaining
+    // amount (not original total) so the receiver sees what's actually
+    // open between them. The local sender-side loan keeps its full
+    // history — the existing accept_linked_request RPC reuses it on
+    // acceptance, no duplicate row created.
+    const created: LinkedRequest[] = await Promise.all(
+      syncable.map((loan) =>
+        get().createRequest({
+          toUserId: person.linkedProfileId!,
+          personId: person.id,
+          kind: loan.type === 'given' ? 'lent' : 'borrowed',
+          amount: loan.remainingAmount,
+          currency: loan.currency,
+          note: loan.notes ?? '',
+          preExistingLoanId: loan.id,
+        }),
+      ),
+    );
+
+    return { syncable, created };
   },
 
   incomingPending: (myUserId) =>

@@ -232,6 +232,11 @@ export const linkedRequestsDb = {
     amount: number;
     currency: Currency;
     note: string;
+    // Phase 2D: when set, marks the request as a "sync past record" rather
+    // than a brand-new loan announcement. The accept RPC enforces the
+    // sender-owns / status-active / person-id-matches invariants on the
+    // referenced loan; we don't re-check them here.
+    preExistingLoanId?: string | null;
   }) {
     const { error } = await supabase.from('linked_transaction_requests').insert({
       id: input.id,
@@ -242,6 +247,7 @@ export const linkedRequestsDb = {
       amount: input.amount,
       currency: input.currency,
       note: input.note,
+      pre_existing_loan_id: input.preExistingLoanId ?? null,
     });
     if (error) throw error;
   },
@@ -288,6 +294,7 @@ function mapLinkedRequest(r: Record<string, unknown>): LinkedRequest {
     requesterTxnId: (r.requester_txn_id as string) ?? null,
     responderTxnId: (r.responder_txn_id as string) ?? null,
     loanPairId: (r.loan_pair_id as string) ?? null,
+    preExistingLoanId: (r.pre_existing_loan_id as string) ?? null,
     createdAt: r.created_at as string,
     respondedAt: (r.responded_at as string) ?? null,
   };

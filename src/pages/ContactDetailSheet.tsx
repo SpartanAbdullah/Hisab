@@ -1,7 +1,11 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
+import { RefreshCw, History } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
+import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useToast } from '../components/Toast';
 import { resolveProfileByCode } from '../lib/collaboration';
+import { formatMoney } from '../lib/constants';
 import type { Person } from '../db';
 
 interface Props {
@@ -17,6 +21,11 @@ type Mode = 'idle' | 'entering' | 'resolved';
 // Resolve button press, never on keystrokes.
 export function ContactDetailSheet({ open, person, onClose }: Props) {
   const { linkToProfile, unlinkFromProfile } = usePersonStore();
+  const syncableLoansFor = useLinkedRequestStore((s) => s.syncableLoansFor);
+  const syncPastRecords = useLinkedRequestStore((s) => s.syncPastRecords);
+  // Subscribe to requests so the syncable count updates after a sync fires.
+  const requests = useLinkedRequestStore((s) => s.requests);
+  const toast = useToast();
 
   const [mode, setMode] = useState<Mode>('idle');
   const [code, setCode] = useState('');
@@ -24,6 +33,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [resolved, setResolved] = useState<{ profileId: string; displayName: string } | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -34,12 +44,50 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       setResolved(null);
       setError('');
       setSaving(false);
+      setSyncing(false);
     }
   }, [open]);
+
+  // Compute syncable loans here so we can show the count + amount preview
+  // before the user taps. Re-runs when requests change so the card hides
+  // itself after a successful sync without needing manual refresh.
+  const syncable = useMemo(
+    () => (person ? syncableLoansFor(person.id) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [person?.id, requests, syncableLoansFor],
+  );
+  const syncableTotal = useMemo(
+    () => syncable.reduce((sum, l) => sum + l.remainingAmount, 0),
+    [syncable],
+  );
+  const syncableCurrency = syncable[0]?.currency;
 
   if (!person) return null;
 
   const isLinked = !!person.linkedProfileId;
+
+  const handleSyncPastRecords = async () => {
+    if (!person) return;
+    setSyncing(true);
+    try {
+      const result = await syncPastRecords(person.id);
+      if (result.created.length > 0) {
+        toast.show({
+          type: 'success',
+          title: `Sent ${result.created.length} ${result.created.length === 1 ? 'record' : 'records'} for confirmation`,
+          subtitle: 'Each one shows up in their Inbox to accept or decline.',
+        });
+      }
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: 'Could not sync past records',
+        subtitle: err instanceof Error ? err.message : 'Try again in a moment.',
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleResolve = async () => {
     setError('');
@@ -118,6 +166,50 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
 
         {isLinked ? (
           <div className="space-y-3">
+            {/* Phase 2D: Sync past records. Surfaces only after linking,
+                only when there's something to share. Each loan becomes one
+                linked request in the recipient's Inbox; the sender's
+                existing loan history (repayments, EMI, notes) stays
+                intact — the RPC reuses it on accept. */}
+            {syncable.length > 0 && (
+              <div className="rounded-2xl bg-accent-50 border border-cream-border p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-accent-100 flex items-center justify-center shrink-0">
+                    <History size={18} className="text-accent-600" strokeWidth={1.8} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
+                      {syncable.length} past{' '}
+                      {syncable.length === 1 ? 'record' : 'records'} with {person.name}
+                    </p>
+                    <p className="text-[11px] text-ink-500 mt-0.5 leading-relaxed">
+                      Send {syncable.length === 1 ? 'it' : 'them'} for confirmation so
+                      both ledgers stay in sync. Each lands in their Inbox to accept
+                      or decline — your repayment history stays intact on your side.
+                    </p>
+                  </div>
+                </div>
+                {syncableCurrency && syncableTotal > 0 && (
+                  <p className="text-[11px] text-ink-500 mt-2.5 pl-[52px] tabular-nums">
+                    Total open balance:{' '}
+                    <span className="font-semibold text-ink-900">
+                      {formatMoney(syncableTotal, syncableCurrency)}
+                    </span>
+                  </p>
+                )}
+                <button
+                  onClick={handleSyncPastRecords}
+                  disabled={syncing}
+                  className="mt-3 w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform disabled:opacity-50"
+                >
+                  <RefreshCw size={12} strokeWidth={2.4} />
+                  {syncing
+                    ? 'Sending…'
+                    : `Sync ${syncable.length === 1 ? 'this record' : `${syncable.length} records`}`}
+                </button>
+              </div>
+            )}
+
             <p className="text-[11px] text-ink-500 leading-relaxed">
               Linking is private &mdash; the other user is not notified.
             </p>

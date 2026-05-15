@@ -390,7 +390,17 @@ function RequestCard({
     <div className={`rounded-[18px] bg-cream-card p-4 ${isPending ? 'border-2 border-warn-50' : 'border border-cream-border'}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-ink-900 tracking-tight">{title}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-[13px] font-medium text-ink-900 tracking-tight">{title}</p>
+            {/* Phase 2D: marks a "sync past record" request so the recipient
+                sees this is historical, not a fresh-loan announcement. Same
+                accept/decline flow underneath. */}
+            {request.preExistingLoanId && (
+              <span className="text-[8.5px] font-semibold uppercase tracking-[0.1em] rounded-full bg-accent-100 text-accent-600 px-1.5 py-0.5 shrink-0">
+                past record
+              </span>
+            )}
+          </div>
           <p className="text-[18px] font-semibold text-ink-900 tabular-nums mt-1 tracking-tight">
             {formatMoney(request.amount, request.currency)}
           </p>

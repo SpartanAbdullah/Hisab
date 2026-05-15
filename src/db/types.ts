@@ -88,6 +88,11 @@ export interface LinkedRequest {
   requesterTxnId: string | null;
   responderTxnId: string | null;
   loanPairId: string | null;
+  // Phase 2D: set when the request references an already-existing sender-side
+  // loan from before the contact got linked. Acceptance reuses that loan
+  // instead of creating a duplicate; the recipient still gets a fresh mirror.
+  // Distinguishes "sync past record" cards from fresh-loan requests in Inbox.
+  preExistingLoanId: string | null;
   createdAt: string;
   respondedAt: string | null;
 }
