@@ -145,7 +145,7 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
           onClick();
         }
       } : undefined}
-      className={`flex items-center gap-3 py-3.5 ${onClick ? 'cursor-pointer active:opacity-80 transition-opacity' : ''}`}
+      className={`flex items-center gap-2.5 py-2.5 ${onClick ? 'cursor-pointer active:opacity-80 transition-opacity' : ''}`}
     >
       <button
         type="button"
@@ -154,16 +154,16 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
         aria-pressed={isReconciled}
         aria-label={isReconciled ? 'Mark transaction unreconciled' : 'Mark transaction reconciled'}
         title={isReconciled ? 'Reconciled' : 'Mark reconciled'}
-        className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:opacity-60 ${
+        className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:opacity-60 ${
           isReconciled
             ? 'bg-receive-600 border-receive-600 text-white'
             : 'bg-white border-cream-border text-transparent hover:border-receive-600'
         }`}
       >
-        <Check size={14} strokeWidth={3} />
+        <Check size={12} strokeWidth={3} />
       </button>
-      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${style.bg} ${style.text}`}>
-        <Icon size={17} strokeWidth={1.8} />
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${style.bg} ${style.text}`}>
+        <Icon size={15} strokeWidth={1.8} />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-medium text-ink-900 truncate tracking-tight">

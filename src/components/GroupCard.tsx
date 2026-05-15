@@ -9,6 +9,11 @@ interface Props {
   settledLabel: string;
   membersLabel: string;
   hasUnreadActivity: boolean;
+  // True when the current user paid for an expense in this group that
+  // isn't reconciled yet. Surfaces as a small coral dot next to the state
+  // label so the user can scan the list for "what needs my attention"
+  // without opening every group.
+  hasUnreconciled?: boolean;
   onClick: () => void;
 }
 
@@ -23,6 +28,7 @@ export function GroupCard({
   settledLabel,
   membersLabel,
   hasUnreadActivity,
+  hasUnreconciled,
   onClick,
 }: Props) {
   const connected = group.members.filter((m) => m.status === 'connected').length;
@@ -68,8 +74,15 @@ export function GroupCard({
       </div>
 
       <div className="mt-3 pt-3 border-t border-cream-hairline flex items-center justify-between">
-        <span className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em]">
+        <span className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] flex items-center gap-1.5">
           {balanceLoaded ? stateLabel : 'Loading…'}
+          {hasUnreconciled && (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-pay-600 shrink-0"
+              aria-label="You have unreconciled expenses in this group"
+              title="You have unreconciled expenses in this group"
+            />
+          )}
         </span>
         {!balanceLoaded ? (
           <div className="h-3.5 w-16 rounded-full bg-cream-hairline animate-pulse" />

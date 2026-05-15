@@ -82,7 +82,7 @@ function GroupsEducationCard() {
 }
 
 export function SplitsPage() {
-  const { groups, loadGroups, balances, balancesLoaded, loadBalances } = useSplitStore();
+  const { groups, loadGroups, balances, balancesLoaded, loadBalances, unreconciledFlags, loadUnreconciledFlags } = useSplitStore();
   const { notifications, loadNotifications } = useNotificationStore();
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
@@ -91,17 +91,22 @@ export function SplitsPage() {
   const navigate = useNavigate();
   const t = useT();
   const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
+  const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
 
   const load = useCallback(async () => {
     await Promise.all([loadGroups(), loadNotifications()]);
     void loadBalances();
-  }, [loadGroups, loadNotifications, loadBalances]);
+    void loadUnreconciledFlags(currentUserId);
+  }, [loadGroups, loadNotifications, loadBalances, loadUnreconciledFlags, currentUserId]);
 
   const { status, error, retry } = useAsyncLoad(load);
 
   useEffect(() => {
-    if (groups.length > 0) void loadBalances();
-  }, [groups, loadBalances]);
+    if (groups.length > 0) {
+      void loadBalances();
+      void loadUnreconciledFlags(currentUserId);
+    }
+  }, [groups, loadBalances, loadUnreconciledFlags, currentUserId]);
 
   useEffect(() => {
     const onFocus = () => {
@@ -284,6 +289,7 @@ export function SplitsPage() {
                       settledLabel={t('group_settled')}
                       membersLabel={t('group_members_count')}
                       hasUnreadActivity={unreadGroupIds.has(g.id)}
+                      hasUnreconciled={Boolean(unreconciledFlags[g.id])}
                       onClick={() => navigate(`/group/${g.id}`)}
                     />
                   ))}

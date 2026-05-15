@@ -745,16 +745,16 @@ export function HomePage() {
                   <button
                     key={a.id}
                     onClick={() => navigate(`/account/${a.id}`)}
-                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-cream-soft transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left active:bg-cream-soft transition-colors"
                   >
-                    <div className="w-9 h-9 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
-                      <Landmark size={16} className="text-ink-600" />
+                    <div className="w-8 h-8 rounded-lg bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
+                      <Landmark size={14} className="text-ink-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
+                      <p className="text-[13px] font-medium text-ink-900 truncate tracking-tight">
                         {a.name}
                       </p>
-                      <p className="text-[11px] text-ink-500 mt-0.5">
+                      <p className="text-[10.5px] text-ink-500 leading-tight">
                         {a.type.replace(/_/g, " ")}
                         {monthStats && (
                           <span className="text-receive-text font-medium">
@@ -765,10 +765,10 @@ export function HomePage() {
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-[13.5px] font-semibold text-ink-900 tabular-nums tracking-tight">
+                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums tracking-tight leading-tight">
                         {formatMoney(a.balance, a.currency)}
                       </p>
-                      <p className="text-[10px] text-ink-400 mt-0.5">
+                      <p className="text-[9.5px] text-ink-400 leading-tight mt-0.5">
                         {meta?.flag} {a.currency}
                       </p>
                     </div>
@@ -778,10 +778,10 @@ export function HomePage() {
             </div>
             {accounts.length > 3 && (
               <button
-                onClick={() => setShowAddAccount(true)}
-                className="w-full mt-2 text-center text-[11px] font-semibold text-ink-500 py-2 active:opacity-70"
+                onClick={() => navigate('/accounts')}
+                className="w-full mt-2 text-center text-[11px] font-semibold text-accent-600 py-2 active:opacity-70"
               >
-                {accounts.length - 3} more · tap + to manage
+                {accounts.length - 3} more · tap to manage
               </button>
             )}
           </div>

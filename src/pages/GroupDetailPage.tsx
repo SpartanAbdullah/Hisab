@@ -447,14 +447,20 @@ export function GroupDetailPage() {
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
                   <div className="flex items-center justify-between gap-3">
+                    {/* Reconcile button. Using `aria-disabled` instead of the
+                        native `disabled` attribute so that even when this
+                        button can't act (non-payer / saving), the onClick
+                        still fires and stopPropagation prevents the outer
+                        card click from opening the edit modal. */}
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (canReconcile) void handleGroupExpenseReconcile(expense);
+                        if (!canReconcile || savingReconciliationId === expense.id) return;
+                        void handleGroupExpenseReconcile(expense);
                       }}
-                      disabled={!canReconcile || savingReconciliationId === expense.id}
                       aria-pressed={isReconciled}
+                      aria-disabled={!canReconcile || savingReconciliationId === expense.id}
                       aria-label={
                         canReconcile
                           ? isReconciled ? 'Mark expense unreconciled' : 'Mark expense reconciled'
@@ -465,12 +471,12 @@ export function GroupDetailPage() {
                           ? isReconciled ? 'Reconciled' : 'Mark reconciled'
                           : isReconciled ? 'Reconciled by payer' : 'Only the payer can reconcile'
                       }
-                      className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:cursor-default ${
+                      className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 ${
                         isReconciled
-                          ? 'bg-receive-600 border-receive-600 text-white disabled:opacity-100'
+                          ? 'bg-receive-600 border-receive-600 text-white'
                           : canReconcile
                             ? 'bg-cream-card border-cream-border text-transparent hover:border-receive-600'
-                            : 'bg-cream-soft border-cream-hairline text-transparent opacity-50'
+                            : 'bg-cream-soft border-cream-hairline text-transparent opacity-50 cursor-default'
                       }`}
                     >
                       <Check size={14} strokeWidth={3} />
@@ -612,19 +618,23 @@ export function GroupDetailPage() {
         </div>
       )}
 
-      <div className="fixed bottom-24 left-0 right-0 px-5 z-30">
-        <div className="flex gap-2.5 max-w-[480px] mx-auto">
+      {/* Floating action bar — sits just above the BottomNav FAB. Sized
+          to match the navy hero TopBar action chips: 36px tall, 12px text,
+          rounded-xl. Two-button layout: Add Expense (primary ink-900,
+          flex-1) and Settle Up (receive-600, content-width). */}
+      <div className="fixed bottom-[92px] left-0 right-0 px-5 z-30 pointer-events-none">
+        <div className="flex gap-2 max-w-[480px] mx-auto pointer-events-auto">
           <button
             onClick={() => setShowAddExpense(true)}
-            className="flex-1 bg-ink-900 text-white rounded-2xl py-3 text-sm font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+            className="flex-1 h-10 bg-ink-900 text-white rounded-xl text-[12.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform shadow-lg shadow-navy-900/20"
           >
-            <Plus size={16} /> {t('group_expense_add')}
+            <Plus size={13} strokeWidth={2.4} /> {t('group_expense_add')}
           </button>
           <button
             onClick={() => setShowSettle(true)}
-            className="px-5 rounded-2xl py-3 text-sm font-bold bg-receive-600 text-white flex items-center justify-center gap-2 active:scale-95 transition-all"
+            className="h-10 px-3.5 rounded-xl text-[12.5px] font-semibold bg-receive-600 text-white flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform shadow-lg shadow-navy-900/20"
           >
-            <Handshake size={16} /> {t('group_settle')}
+            <Handshake size={13} strokeWidth={2.4} /> {t('group_settle')}
           </button>
         </div>
       </div>

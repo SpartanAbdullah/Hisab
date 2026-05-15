@@ -52,9 +52,14 @@ interface SplitState {
   loading: boolean;
   balances: Record<string, number>;
   balancesLoaded: boolean;
+  // Per-group flag: "the current user paid for an expense in this group that
+  // isn't reconciled yet". Drives the small red dot on group cards so the
+  // user knows which groups need their attention without opening each one.
+  unreconciledFlags: Record<string, boolean>;
 
   loadGroups: () => Promise<void>;
   loadBalances: () => Promise<void>;
+  loadUnreconciledFlags: (currentUserId: string) => Promise<void>;
   createGroup: (name: string, emoji: string, members: ResolvedMemberInput[], currency: Currency) => Promise<SplitGroup>;
   deleteGroup: (id: string) => Promise<void>;
   createInvite: (groupId: string, linkedMemberId?: string | null) => Promise<{ url: string; invite: GroupInvite }>;
@@ -98,6 +103,7 @@ const INITIAL_SPLIT_STATE = {
   loading: false,
   balances: {} as Record<string, number>,
   balancesLoaded: false,
+  unreconciledFlags: {} as Record<string, boolean>,
 };
 
 function getCurrentUserId(): string {
@@ -245,6 +251,39 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       console.error('loadBalances failed', err);
       // Keep existing balances; mark loaded so UI doesn't spin forever.
       set({ balancesLoaded: true });
+    }
+  },
+
+  // Returns "this group has at least one expense the current user paid for
+  // that isn't reconciled yet" — only the payer can reconcile their own
+  // expenses, so the indicator is actionable: it tells the user which
+  // groups need their attention, not just which groups have unreconciled
+  // entries by anyone. Piggybacks on getAllVisible() (the same single
+  // query loadBalances already uses) so the network cost is zero when
+  // both run together.
+  loadUnreconciledFlags: async (currentUserId: string) => {
+    if (!currentUserId) {
+      set({ unreconciledFlags: {} });
+      return;
+    }
+    try {
+      const allExpenses = await groupExpensesDb.getAllVisible();
+      const memberIdByGroup = new Map<string, string>();
+      for (const group of get().groups) {
+        const me = group.members.find((m) => m.profileId === currentUserId);
+        if (me) memberIdByGroup.set(group.id, me.id);
+      }
+      const flags: Record<string, boolean> = {};
+      for (const exp of allExpenses) {
+        const myMemberId = memberIdByGroup.get(exp.groupId);
+        if (!myMemberId) continue;
+        if (exp.paidBy !== myMemberId) continue;
+        if (exp.isReconciled) continue;
+        flags[exp.groupId] = true;
+      }
+      set({ unreconciledFlags: flags });
+    } catch (err) {
+      console.error('loadUnreconciledFlags failed', err);
     }
   },
 
