@@ -6,6 +6,18 @@ import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
 import { usePersonStore } from './personStore';
 
+// Currencies the linked_transaction_requests SQL check constraint allows
+// (see supabase-migration-phase2b-linked-requests.sql). The wider
+// SUPPORTED_CURRENCIES set is for the local-only ledger; cross-user
+// linked records are still AED/PKR-only at the DB layer. Keeping this
+// constant local to the store so the client never sends a row the SQL
+// would reject — instead we surface the filtered count to the UI.
+export const LINKED_REQUEST_CURRENCIES = ['AED', 'PKR'] as const;
+export type LinkedRequestCurrency = typeof LINKED_REQUEST_CURRENCIES[number];
+function isLinkedRequestCurrency(c: Currency): c is LinkedRequestCurrency {
+  return (LINKED_REQUEST_CURRENCIES as readonly string[]).includes(c);
+}
+
 interface CreateInput {
   toUserId: string;
   personId: string;
@@ -18,10 +30,19 @@ interface CreateInput {
   preExistingLoanId?: string | null;
 }
 
-export interface SyncPastRecordsResult {
-  // Loans the user has with this person that COULD be synced (active,
-  // remaining > 0, not already linked, not already pending sync).
+export interface SyncableLoansBreakdown {
+  // Loans eligible to sync right now: active, remaining > 0, currency
+  // accepted by linked_transaction_requests, not already in a pending
+  // sync request.
   syncable: Loan[];
+  // Loans that match the person + active state but have a currency
+  // the linked request table doesn't accept yet (everything outside
+  // LINKED_REQUEST_CURRENCIES). Surface the count so the UI can be
+  // honest about what won't be sent.
+  skipped: Loan[];
+}
+
+export interface SyncPastRecordsResult extends SyncableLoansBreakdown {
   // The N requests we just created — one per loan in `syncable`.
   created: LinkedRequest[];
 }
@@ -37,13 +58,13 @@ interface LinkedRequestState {
   incomingPending: (myUserId: string) => LinkedRequest[];
   outgoingPending: (myUserId: string) => LinkedRequest[];
   forTab: (tab: 'incoming' | 'outgoing', myUserId: string) => LinkedRequest[];
-  // Returns the set of loans that haven't been synced to the linked
-  // contact yet. UI uses this to decide whether to show the "Sync past
-  // records" card on ContactDetailSheet and to render the count.
-  syncableLoansFor: (personId: string) => Loan[];
-  // Fires N linked-request inserts in parallel — one per syncable loan
-  // tagged to this person. Returns the (synced, created) pair so the
-  // caller can render a confirmation summary.
+  // Returns the syncable + skipped split for a person. UI uses syncable
+  // to render the per-currency open-balance preview, and skipped to
+  // surface "N loans in unsupported currencies were left as local-only".
+  syncableBreakdownFor: (personId: string) => SyncableLoansBreakdown;
+  // Fires N linked-request inserts in parallel — one per loan in
+  // `syncable`. Returns the breakdown + created list so the caller can
+  // render a confirmation summary.
   syncPastRecords: (personId: string) => Promise<SyncPastRecordsResult>;
   reset: () => void;
 }
@@ -121,25 +142,33 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
     return updated;
   },
 
-  syncableLoansFor: (personId) => {
+  syncableBreakdownFor: (personId) => {
     const allRequests = get().requests;
-    // A loan is already syncing (or has been synced) if any non-cancelled
-    // request references it via pre_existing_loan_id. Cancelled requests
-    // free the slot — the user is free to retry. Once accepted the loan
-    // is linked and shouldn't show up either.
+    // A loan is already syncing (or has been synced) if any
+    // non-cancelled/non-rejected request references it via
+    // pre_existing_loan_id. Cancelled / rejected requests free the slot
+    // — the user can retry. Accepted requests should also block, since
+    // the loan is now linked.
     const blockedLoanIds = new Set(
       allRequests
         .filter((r) => r.preExistingLoanId && r.status !== 'cancelled' && r.status !== 'rejected')
         .map((r) => r.preExistingLoanId as string),
     );
     const loans = useLoanStore.getState().loans;
-    return loans.filter(
+    const candidates = loans.filter(
       (l) =>
         l.personId === personId &&
         l.status === 'active' &&
         l.remainingAmount > 0.01 &&
         !blockedLoanIds.has(l.id),
     );
+    const syncable: Loan[] = [];
+    const skipped: Loan[] = [];
+    for (const loan of candidates) {
+      if (isLinkedRequestCurrency(loan.currency)) syncable.push(loan);
+      else skipped.push(loan);
+    }
+    return { syncable, skipped };
   },
 
   syncPastRecords: async (personId) => {
@@ -148,14 +177,16 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
     if (!person.linkedProfileId) {
       throw new Error('Contact is not linked to a Hisaab user yet');
     }
-    const syncable = get().syncableLoansFor(personId);
-    if (syncable.length === 0) return { syncable, created: [] };
+    const { syncable, skipped } = get().syncableBreakdownFor(personId);
+    if (syncable.length === 0) return { syncable, skipped, created: [] };
 
     // Build requests in parallel. We send each loan's CURRENT remaining
     // amount (not original total) so the receiver sees what's actually
     // open between them. The local sender-side loan keeps its full
-    // history — the existing accept_linked_request RPC reuses it on
-    // acceptance, no duplicate row created.
+    // history — the accept_linked_request RPC reuses it on acceptance,
+    // no duplicate row created. Each request carries its OWN currency
+    // from the underlying loan; mixed-currency contacts produce one
+    // request per currency naturally.
     const created: LinkedRequest[] = await Promise.all(
       syncable.map((loan) =>
         get().createRequest({
@@ -170,7 +201,7 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
       ),
     );
 
-    return { syncable, created };
+    return { syncable, skipped, created };
   },
 
   incomingPending: (myUserId) =>

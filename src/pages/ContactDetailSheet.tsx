@@ -21,7 +21,7 @@ type Mode = 'idle' | 'entering' | 'resolved';
 // Resolve button press, never on keystrokes.
 export function ContactDetailSheet({ open, person, onClose }: Props) {
   const { linkToProfile, unlinkFromProfile } = usePersonStore();
-  const syncableLoansFor = useLinkedRequestStore((s) => s.syncableLoansFor);
+  const syncableBreakdownFor = useLinkedRequestStore((s) => s.syncableBreakdownFor);
   const syncPastRecords = useLinkedRequestStore((s) => s.syncPastRecords);
   // Subscribe to requests so the syncable count updates after a sync fires.
   const requests = useLinkedRequestStore((s) => s.requests);
@@ -48,19 +48,37 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     }
   }, [open]);
 
-  // Compute syncable loans here so we can show the count + amount preview
-  // before the user taps. Re-runs when requests change so the card hides
-  // itself after a successful sync without needing manual refresh.
-  const syncable = useMemo(
-    () => (person ? syncableLoansFor(person.id) : []),
+  // Compute the syncable / skipped split here so the card can show an
+  // honest per-currency preview and surface the count of loans that
+  // can't sync yet (currencies outside what linked_transaction_requests
+  // accepts). Re-runs when requests change so the card hides itself
+  // after a successful sync without needing manual refresh.
+  const { syncable, skipped } = useMemo(
+    () => (person ? syncableBreakdownFor(person.id) : { syncable: [], skipped: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [person?.id, requests, syncableLoansFor],
+    [person?.id, requests, syncableBreakdownFor],
   );
-  const syncableTotal = useMemo(
-    () => syncable.reduce((sum, l) => sum + l.remainingAmount, 0),
-    [syncable],
-  );
-  const syncableCurrency = syncable[0]?.currency;
+  // Bucket the open balance by currency so we never quietly add PKR into
+  // an AED total (different units). The sync action sends each loan as
+  // its own request with its own currency — we just need the preview
+  // to be honest about it.
+  const syncableByCurrency = useMemo(() => {
+    const map = new Map<string, { total: number; count: number }>();
+    for (const loan of syncable) {
+      const bucket = map.get(loan.currency) ?? { total: 0, count: 0 };
+      bucket.total += loan.remainingAmount;
+      bucket.count += 1;
+      map.set(loan.currency, bucket);
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [syncable]);
+  // Same bucketing for the skipped list so the warning chip can list
+  // "1 SAR · 2 OMR" rather than a generic count.
+  const skippedCurrencies = useMemo(() => {
+    const set = new Set<string>();
+    for (const loan of skipped) set.add(loan.currency);
+    return [...set].sort();
+  }, [skipped]);
 
   if (!person) return null;
 
@@ -72,10 +90,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     try {
       const result = await syncPastRecords(person.id);
       if (result.created.length > 0) {
+        const skippedNote =
+          result.skipped.length > 0
+            ? ` ${result.skipped.length} ${result.skipped.length === 1 ? 'loan' : 'loans'} in unsupported currencies stayed local.`
+            : '';
         toast.show({
           type: 'success',
           title: `Sent ${result.created.length} ${result.created.length === 1 ? 'record' : 'records'} for confirmation`,
-          subtitle: 'Each one shows up in their Inbox to accept or decline.',
+          subtitle: `Each one shows up in their Inbox to accept or decline.${skippedNote}`,
         });
       }
     } catch (err) {
@@ -189,13 +211,23 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                     </p>
                   </div>
                 </div>
-                {syncableCurrency && syncableTotal > 0 && (
-                  <p className="text-[11px] text-ink-500 mt-2.5 pl-[52px] tabular-nums">
-                    Total open balance:{' '}
-                    <span className="font-semibold text-ink-900">
-                      {formatMoney(syncableTotal, syncableCurrency)}
-                    </span>
-                  </p>
+                {syncableByCurrency.length > 0 && (
+                  <div className="text-[11px] text-ink-500 mt-2.5 pl-[52px] space-y-0.5">
+                    <p className="text-ink-500">Open balance:</p>
+                    {syncableByCurrency.map(([currency, { total, count }]) => (
+                      <p
+                        key={currency}
+                        className="tabular-nums flex items-baseline justify-between gap-3"
+                      >
+                        <span className="font-semibold text-ink-900">
+                          {formatMoney(total, currency)}
+                        </span>
+                        <span className="text-ink-500 text-[10.5px]">
+                          {count} {count === 1 ? 'loan' : 'loans'}
+                        </span>
+                      </p>
+                    ))}
+                  </div>
                 )}
                 <button
                   onClick={handleSyncPastRecords}
@@ -207,6 +239,29 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                     ? 'Sending…'
                     : `Sync ${syncable.length === 1 ? 'this record' : `${syncable.length} records`}`}
                 </button>
+                {skipped.length > 0 && (
+                  <p className="text-[10.5px] text-ink-500 mt-2 leading-relaxed pl-1">
+                    {skipped.length}{' '}
+                    {skipped.length === 1 ? 'loan' : 'loans'} in{' '}
+                    {skippedCurrencies.join(', ')}{' '}
+                    {skipped.length === 1 ? "can't" : "can't"} be synced yet — linked records support AED &amp; PKR only.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Edge case: every loan with this person is in an unsupported
+                currency. The "sync" card is hidden because syncable is
+                empty, but the user should still know why. */}
+            {syncable.length === 0 && skipped.length > 0 && (
+              <div className="rounded-2xl bg-warn-50 border border-cream-border p-3 flex items-start gap-2.5">
+                <History size={14} className="text-warn-600 mt-0.5 shrink-0" />
+                <p className="text-[11px] text-ink-700 leading-relaxed">
+                  {skipped.length}{' '}
+                  past {skipped.length === 1 ? 'record' : 'records'} with{' '}
+                  {person.name} in {skippedCurrencies.join(', ')} can't be
+                  synced — linked records support AED &amp; PKR only for now.
+                </p>
               </div>
             )}
 
