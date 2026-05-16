@@ -216,7 +216,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
           <div className="flex flex-wrap gap-2 mt-1.5">
             {group.members.map(member => (
               <button key={member.id} onClick={() => toggleMember(member.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${selectedMembers.includes(member.id) ? 'bg-receive-500 text-white' : 'bg-cream-soft text-ink-500'}`}>
+                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
                 {member.name}
               </button>
             ))}

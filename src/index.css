@@ -65,6 +65,10 @@
   --color-ink-400: #A8AABD;
   --color-ink-500: #7E809A;
   --color-ink-600: #5A5C72;
+  --color-ink-700: #3F4156;  /* Interpolated body text — covers callers that
+                                came in via the Phase 4 bulk swap (Tailwind
+                                slate-700 → ink-700). Sits between 600 and
+                                800 on the perceptual scale. */
   --color-ink-800: #23253F;
   --color-ink-900: #0E102B;
 
