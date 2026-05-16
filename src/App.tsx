@@ -8,6 +8,7 @@ import { useAppModeStore } from './stores/appModeStore';
 import { useSupabaseAuthStore } from './stores/supabaseAuthStore';
 import { usePersonStore } from './stores/personStore';
 import { useLinkedRequestStore } from './stores/linkedRequestStore';
+import { useSplitStore } from './stores/splitStore';
 import { useSettlementRequestStore } from './stores/settlementRequestStore';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
@@ -116,6 +117,13 @@ function AppContent() {
     });
     void useSettlementRequestStore.getState().loadRequests().catch((err) => {
       console.error('loadSettlements failed (non-fatal)', err);
+    });
+    // Preload groups on app boot so the QuickEntry "Group expense" picker
+    // is ready the moment the user opens it from any page. Previously
+    // groups only loaded on /groups visit, which made the picker show
+    // "no groups yet" for users who'd never opened the Groups tab.
+    void useSplitStore.getState().loadGroups().catch((err) => {
+      console.error('loadGroups failed (non-fatal)', err);
     });
   }, [user?.id]);
 

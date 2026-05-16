@@ -54,7 +54,9 @@ export function QuickEntry({
   const { goals } = useGoalStore();
   const { generateSchedule } = useEmiStore();
   const { expenses: upcomingExpenses } = useUpcomingExpenseStore();
-  const { groups } = useSplitStore();
+  const groups = useSplitStore((s) => s.groups);
+  const groupsLoading = useSplitStore((s) => s.loading);
+  const loadGroups = useSplitStore((s) => s.loadGroups);
   const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
@@ -83,6 +85,16 @@ export function QuickEntry({
   useEffect(() => {
     if (open && step === 0) setTimeout(() => amountRef.current?.focus(), 300);
   }, [open, step]);
+
+  // Safety-net: kick off a groups load the moment QuickEntry opens. If
+  // App.tsx already preloaded on boot (the common case), this is a no-op
+  // because the store already has the data — the fetch isn't gated on
+  // empty state but `loadGroups` itself returns fast on a warm cache.
+  // Belt-and-braces ensures the picker never shows "no groups" when the
+  // user actually has some.
+  useEffect(() => {
+    if (open) void loadGroups().catch(() => {});
+  }, [open, loadGroups]);
 
   // FIX 4: Rename Transfer to Move
   // Eighth tile (`group_expense`) is a sentinel — not a TransactionType.
@@ -536,7 +548,23 @@ export function QuickEntry({
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
                   Which group?
                 </label>
-                {groups.length === 0 ? (
+                {groupsLoading && groups.length === 0 ? (
+                  // Skeleton — visible only when groups truly haven't
+                  // loaded yet. Avoids the "no groups" flash for users
+                  // who DO have groups but opened QuickEntry before the
+                  // boot-time preload finished.
+                  <div className="rounded-2xl bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="flex items-center gap-3 px-4 py-3 animate-pulse">
+                        <div className="w-9 h-9 rounded-xl bg-cream-soft shrink-0" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="h-3 w-28 rounded-full bg-cream-soft" />
+                          <div className="h-2.5 w-20 rounded-full bg-cream-soft" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : groups.length === 0 ? (
                   <div className="rounded-2xl bg-cream-card border border-cream-border p-4 text-center space-y-2">
                     <p className="text-[12.5px] text-ink-700 font-medium">
                       You don't have any groups yet.
