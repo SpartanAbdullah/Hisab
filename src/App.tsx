@@ -35,7 +35,16 @@ const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m
 // Quick Entry is the only modal launched globally (from the BottomNav FAB).
 // The Add Goal / Add Loan / Add Upcoming Expense modals are owned by their
 // respective pages and triggered by inline "+" buttons there.
+//
+// AddGroupExpenseModal + CreateGroupModal ALSO live here at app level —
+// the FAB-driven "Group expense" path in QuickEntry hands off to them so
+// the user can pick (or create) a group without losing the amount they
+// already typed. GroupDetailPage still uses its own local instance of
+// AddGroupExpenseModal for the inline "+ Add expense" button.
 import { QuickEntry } from './pages/QuickEntry';
+import { AddGroupExpenseModal } from './pages/AddGroupExpenseModal';
+import { CreateGroupModal } from './pages/CreateGroupModal';
+import type { SplitGroup } from './db';
 
 function PageLoader() {
   return (
@@ -56,6 +65,15 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const [showQuickEntry, setShowQuickEntry] = useState(false);
+  // QuickEntry → Group expense bridge: when the user picks a group inside
+  // QuickEntry, we close it and open AddGroupExpenseModal with the
+  // already-typed amount. When they pick "Create new group" instead,
+  // we open CreateGroupModal first and chain into AddGroupExpenseModal
+  // once the new group is created.
+  const [groupExpenseTarget, setGroupExpenseTarget] =
+    useState<{ group: SplitGroup; amount: string } | null>(null);
+  const [createGroupForExpense, setCreateGroupForExpense] =
+    useState<{ amount: string } | null>(null);
 
   useEffect(() => {
     initialize();
@@ -206,7 +224,42 @@ function AppContent() {
         </ErrorBoundary>
       </Suspense>
       <BottomNav onQuickEntry={() => setShowQuickEntry(true)} />
-      <QuickEntry open={showQuickEntry} onClose={() => setShowQuickEntry(false)} />
+      <QuickEntry
+        open={showQuickEntry}
+        onClose={() => setShowQuickEntry(false)}
+        onPickGroupExpense={(group, amount) => {
+          setShowQuickEntry(false);
+          setGroupExpenseTarget({ group, amount });
+        }}
+        onCreateGroupForExpense={(amount) => {
+          setShowQuickEntry(false);
+          setCreateGroupForExpense({ amount });
+        }}
+      />
+      {/* Create-then-expense chain: when CreateGroupModal returns the new
+          group, we immediately open AddGroupExpenseModal with the amount
+          the user originally typed in QuickEntry. */}
+      <CreateGroupModal
+        open={!!createGroupForExpense}
+        onClose={() => setCreateGroupForExpense(null)}
+        onCreated={(group) => {
+          const amount = createGroupForExpense?.amount ?? '';
+          setCreateGroupForExpense(null);
+          setGroupExpenseTarget({ group, amount });
+        }}
+      />
+      {/* AddGroupExpenseModal for the QuickEntry path. GroupDetailPage
+          still mounts its own local instance for the inline button —
+          they don't conflict because both paths set/clear independent
+          state slots and the user can't be on both screens at once. */}
+      {groupExpenseTarget && (
+        <AddGroupExpenseModal
+          open
+          group={groupExpenseTarget.group}
+          prefillAmount={groupExpenseTarget.amount}
+          onClose={() => setGroupExpenseTarget(null)}
+        />
+      )}
     </div>
   );
 }

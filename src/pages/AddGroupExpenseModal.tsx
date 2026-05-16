@@ -8,11 +8,20 @@ import { useT } from '../lib/i18n';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import type { SplitGroup, SplitType, SplitDetail } from '../db';
 
-interface Props { open: boolean; group: SplitGroup; onClose: () => void; }
+interface Props {
+  open: boolean;
+  group: SplitGroup;
+  onClose: () => void;
+  // When opened via the QuickEntry "Group expense" flow we already know
+  // the amount the user typed on the numpad. Pre-fill it so they don't
+  // re-enter; null/undefined keeps the existing "empty form" behaviour
+  // for the GroupDetailPage entry point.
+  prefillAmount?: string;
+}
 
 const CATEGORIES = ['Food', 'Transport', 'Shopping', 'Bills', 'Entertainment', 'Travel', 'Health', 'General'];
 
-export function AddGroupExpenseModal({ open, group, onClose }: Props) {
+export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Props) {
   const t = useT();
   const toast = useToast();
   const { addGroupExpense } = useSplitStore();
@@ -23,7 +32,7 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
     ?? '';
 
   const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(prefillAmount ?? '');
   const [paidBy, setPaidBy] = useState(defaultPayerId);
   const [splitType, setSplitType] = useState<SplitType>('equal');
   const [selectedMembers, setSelectedMembers] = useState<string[]>(group.members.map(m => m.id));
@@ -44,6 +53,13 @@ export function AddGroupExpenseModal({ open, group, onClose }: Props) {
       void loadAccounts();
     }
   }, [appMode, open, loadAccounts]);
+
+  // When prefillAmount arrives (modal opened from QuickEntry flow), seed
+  // the local amount state. Runs on every open transition so consecutive
+  // QuickEntry launches with different amounts don't show stale values.
+  useEffect(() => {
+    if (open && prefillAmount) setAmount(prefillAmount);
+  }, [open, prefillAmount]);
 
   useEffect(() => {
     if (!open) return;

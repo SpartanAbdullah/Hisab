@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  HandCoins, Handshake, RotateCcw, Target, Delete,
+  HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight,
 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore, type TransactionInput } from '../stores/transactionStore';
@@ -12,6 +12,7 @@ import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { usePersonStore } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useAppModeStore } from '../stores/appModeStore';
+import { useSplitStore } from '../stores/splitStore';
 import { Modal } from '../components/Modal';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
@@ -21,28 +22,46 @@ import { useToast } from '../components/Toast';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
-import type { TransactionType } from '../db';
+import type { TransactionType, SplitGroup } from '../db';
 import { AddAccountStepper } from './AddAccountStepper';
+
+// Internal type slot widened to include the "group_expense" sentinel.
+// It's NOT a real `TransactionType` (those map 1:1 to rows in the
+// transactions table); group expenses live in their own table and are
+// authored via AddGroupExpenseModal, so the type guard is "if the user
+// picked this tile, route to the group-picker step and hand off to App."
+type EntryKind = TransactionType | 'group_expense';
 
 interface Props {
   open: boolean;
   onClose: () => void;
+  // QuickEntry → Group expense bridge. App holds the AddGroupExpenseModal
+  // + CreateGroupModal so the user can finish the entry without losing
+  // their typed amount when QuickEntry closes.
+  onPickGroupExpense?: (group: SplitGroup, amount: string) => void;
+  onCreateGroupForExpense?: (amount: string) => void;
 }
 
-export function QuickEntry({ open, onClose }: Props) {
+export function QuickEntry({
+  open,
+  onClose,
+  onPickGroupExpense,
+  onCreateGroupForExpense,
+}: Props) {
   const { accounts } = useAccountStore();
   const { processTransaction } = useTransactionStore();
   const { loans } = useLoanStore();
   const { goals } = useGoalStore();
   const { generateSchedule } = useEmiStore();
   const { expenses: upcomingExpenses } = useUpcomingExpenseStore();
+  const { groups } = useSplitStore();
   const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
 
   const [step, setStep] = useState(0);
   const [amount, setAmount] = useState('');
-  const [type, setType] = useState<TransactionType>('expense');
+  const [type, setType] = useState<EntryKind>('expense');
   const [sourceId, setSourceId] = useState('');
   const [destId, setDestId] = useState('');
   const [category, setCategory] = useState('');
@@ -66,14 +85,19 @@ export function QuickEntry({ open, onClose }: Props) {
   }, [open, step]);
 
   // FIX 4: Rename Transfer to Move
+  // Eighth tile (`group_expense`) is a sentinel — not a TransactionType.
+  // Picking it routes Step 2 to a group picker instead of the normal
+  // details form. The actual save happens in AddGroupExpenseModal which
+  // App.tsx opens once the user picks (or creates) a group.
   const TX_TYPES = [
-    { value: 'expense' as TransactionType, label: t('tx_expense'), sub: t('tx_expense_sub'), icon: ArrowUpRight, gradient: 'from-red-500 to-rose-500', soft: 'bg-red-50 text-red-500 border-red-100' },
-    { value: 'income' as TransactionType, label: t('tx_income'), sub: t('tx_income_sub'), icon: ArrowDownLeft, gradient: 'from-emerald-500 to-teal-500', soft: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
-    { value: 'transfer' as TransactionType, label: t('tx_transfer'), sub: t('tx_transfer_sub'), icon: ArrowLeftRight, gradient: 'from-blue-500 to-cyan-500', soft: 'bg-blue-50 text-blue-600 border-blue-100' },
-    { value: 'loan_given' as TransactionType, label: t('tx_loan_given'), sub: t('tx_loan_given_sub'), icon: HandCoins, gradient: 'from-blue-500 to-indigo-500', soft: 'bg-blue-50 text-blue-600 border-blue-100' },
-    { value: 'loan_taken' as TransactionType, label: t('tx_loan_taken'), sub: t('tx_loan_taken_sub'), icon: Handshake, gradient: 'from-amber-500 to-orange-500', soft: 'bg-amber-50 text-amber-600 border-amber-100' },
-    { value: 'repayment' as TransactionType, label: t('tx_repayment'), sub: t('tx_repayment_sub'), icon: RotateCcw, gradient: 'from-teal-500 to-emerald-500', soft: 'bg-teal-50 text-teal-600 border-teal-100' },
-    { value: 'goal_contribution' as TransactionType, label: t('tx_goal_contribution'), sub: t('tx_goal_contribution_sub'), icon: Target, gradient: 'from-purple-500 to-violet-500', soft: 'bg-purple-50 text-purple-600 border-purple-100' },
+    { value: 'expense' as EntryKind, label: t('tx_expense'), sub: t('tx_expense_sub'), icon: ArrowUpRight, gradient: 'from-red-500 to-rose-500', soft: 'bg-red-50 text-red-500 border-red-100' },
+    { value: 'income' as EntryKind, label: t('tx_income'), sub: t('tx_income_sub'), icon: ArrowDownLeft, gradient: 'from-emerald-500 to-teal-500', soft: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+    { value: 'transfer' as EntryKind, label: t('tx_transfer'), sub: t('tx_transfer_sub'), icon: ArrowLeftRight, gradient: 'from-blue-500 to-cyan-500', soft: 'bg-blue-50 text-blue-600 border-blue-100' },
+    { value: 'loan_given' as EntryKind, label: t('tx_loan_given'), sub: t('tx_loan_given_sub'), icon: HandCoins, gradient: 'from-blue-500 to-indigo-500', soft: 'bg-blue-50 text-blue-600 border-blue-100' },
+    { value: 'loan_taken' as EntryKind, label: t('tx_loan_taken'), sub: t('tx_loan_taken_sub'), icon: Handshake, gradient: 'from-amber-500 to-orange-500', soft: 'bg-amber-50 text-amber-600 border-amber-100' },
+    { value: 'repayment' as EntryKind, label: t('tx_repayment'), sub: t('tx_repayment_sub'), icon: RotateCcw, gradient: 'from-teal-500 to-emerald-500', soft: 'bg-teal-50 text-teal-600 border-teal-100' },
+    { value: 'goal_contribution' as EntryKind, label: t('tx_goal_contribution'), sub: t('tx_goal_contribution_sub'), icon: Target, gradient: 'from-purple-500 to-violet-500', soft: 'bg-purple-50 text-purple-600 border-purple-100' },
+    { value: 'group_expense' as EntryKind, label: 'Group expense', sub: 'Split with a group', icon: Users, gradient: 'from-violet-500 to-purple-500', soft: 'bg-accent-50 text-accent-600 border-accent-100' },
   ];
 
   const reset = () => {
@@ -97,8 +121,20 @@ export function QuickEntry({ open, onClose }: Props) {
   const needsLoan = type === 'repayment';
   const needsGoal = type === 'goal_contribution';
   const showCategory = ['income', 'expense'].includes(type);
+  const isGroupExpense = type === 'group_expense';
   const selectedLoan = loans.find(l => l.id === loanId);
   const hasAccounts = accounts.length > 0;
+
+  // Group-expense handoff. The actual save happens in App's
+  // AddGroupExpenseModal — we just close + relay.
+  const handlePickGroup = (group: SplitGroup) => {
+    onPickGroupExpense?.(group, amount);
+    reset();
+  };
+  const handleCreateNewGroup = () => {
+    onCreateGroupForExpense?.(amount);
+    reset();
+  };
 
   // BATCH6: Universal cross-currency detection for ALL transaction types
   const srcAccount = accounts.find(a => a.id === sourceId);
@@ -345,14 +381,25 @@ export function QuickEntry({ open, onClose }: Props) {
             &#x2190; {t('quick_change_amount')}
           </button>
         ) : step === 2 ? (
-          <div className="flex gap-2.5">
-            <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft transition-colors bg-cream-card">
-              &#x2190;
+          isGroupExpense ? (
+            // Group expense exits via the picker tap, not a Save button.
+            // Just give the user a way back to change the amount or type.
+            <button
+              onClick={() => setStep(1)}
+              className="w-full text-center text-[12px] text-ink-500 py-2 font-medium"
+            >
+              &#x2190; Back
             </button>
-            <button onClick={preSubmit} disabled={saving || !canSubmit()}
-              className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
-            >{saving ? t('quick_processing') : wouldBranchToLinked ? t('ltr_branch_cta') : `${t('quick_save')} \u2713`}</button>
-          </div>
+          ) : (
+            <div className="flex gap-2.5">
+              <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft transition-colors bg-cream-card">
+                &#x2190;
+              </button>
+              <button onClick={preSubmit} disabled={saving || !canSubmit()}
+                className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+              >{saving ? t('quick_processing') : wouldBranchToLinked ? t('ltr_branch_cta') : `${t('quick_save')} \u2713`}</button>
+            </div>
+          )
         ) : undefined}
       >
 
@@ -479,6 +526,65 @@ export function QuickEntry({ open, onClose }: Props) {
               </div>
               <span className="font-semibold text-[15px] tabular-nums text-ink-900">{parseFloat(amount).toLocaleString()}</span>
             </div>
+
+            {/* Group expense branch — pick an existing group OR create a
+                new one. Either path closes QuickEntry; App.tsx then opens
+                AddGroupExpenseModal (with the typed amount prefilled) or
+                CreateGroupModal → AddGroupExpenseModal chained. */}
+            {isGroupExpense && (
+              <div className="space-y-3 animate-fade-in">
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                  Which group?
+                </label>
+                {groups.length === 0 ? (
+                  <div className="rounded-2xl bg-cream-card border border-cream-border p-4 text-center space-y-2">
+                    <p className="text-[12.5px] text-ink-700 font-medium">
+                      You don't have any groups yet.
+                    </p>
+                    <p className="text-[11px] text-ink-500 leading-relaxed">
+                      Create one to split this expense with friends or flatmates.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+                    {groups.map((g) => {
+                      const connected = g.members.filter((m) => m.status === 'connected').length;
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => handlePickGroup(g)}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-cream-soft transition-colors"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center text-base shrink-0">
+                            {g.emoji}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-medium text-ink-900 truncate tracking-tight">
+                              {g.name}
+                            </p>
+                            <p className="text-[10.5px] text-ink-500 mt-0.5">
+                              {connected}/{g.members.length} members · {g.currency}
+                            </p>
+                          </div>
+                          <ChevronRight size={14} className="text-ink-300 shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCreateNewGroup}
+                  className="w-full rounded-2xl border-2 border-dashed border-cream-border bg-transparent text-ink-700 py-3 text-[12.5px] font-semibold active:bg-cream-soft transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus size={13} strokeWidth={2.4} /> Create new group
+                </button>
+                <p className="text-[11px] text-ink-500 leading-relaxed bg-cream-card border border-cream-border rounded-2xl p-3">
+                  Picking a group opens the full expense form — you'll choose who paid, how to split, and the category there. Your amount carries over.
+                </p>
+              </div>
+            )}
 
             {/* Account selectors */}
             {needsSource && (
@@ -677,10 +783,12 @@ export function QuickEntry({ open, onClose }: Props) {
               </div>
             )}
 
-            <div>
-              <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_note')}</label>
-              <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail likho..." className={inputClass} />
-            </div>
+            {!isGroupExpense && (
+              <div>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_note')}</label>
+                <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail likho..." className={inputClass} />
+              </div>
+            )}
 
             {(needsPerson || needsLoan) && (
               <p className="text-[12px] text-ink-600 bg-cream-card border border-cream-border rounded-2xl p-3 leading-relaxed">

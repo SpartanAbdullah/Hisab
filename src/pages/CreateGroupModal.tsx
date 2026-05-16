@@ -5,16 +5,25 @@ import { Modal } from '../components/Modal';
 import { useSplitStore, type ResolvedMemberInput } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
-import { SUPPORTED_CURRENCIES, type Currency } from '../db';
+import { SUPPORTED_CURRENCIES, type Currency, type SplitGroup } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
 import { profilesDb } from '../lib/supabaseDb';
 import { normalizePublicCode } from '../lib/collaboration';
 
 const EMOJIS = ['✈️', '🍕', '🏠', '🎉', '🛒', '💼', '🎓', '🏖️', '⚽', '🎮', '🍔', '☕', '🎬', '🚗', '💊', '🎁', '👨‍👩‍👧‍👦', '🏋️', '📱', '🎵', '🍳', '🧳', '🎃', '❤️'];
 
-interface Props { open: boolean; onClose: () => void; }
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  // Optional override of the post-create behaviour. Default: navigate to
+  // the new group's detail page (so the user lands on the activation
+  // loop). QuickEntry's "Group expense → Create new" flow passes this
+  // to redirect into AddGroupExpenseModal instead, carrying the amount
+  // the user already typed.
+  onCreated?: (group: SplitGroup) => void;
+}
 
-export function CreateGroupModal({ open, onClose }: Props) {
+export function CreateGroupModal({ open, onClose, onCreated }: Props) {
   const t = useT();
   const toast = useToast();
   const navigate = useNavigate();
@@ -83,7 +92,14 @@ export function CreateGroupModal({ open, onClose }: Props) {
       });
       reset();
       onClose();
-      navigate(`/group/${created.id}`);
+      // Caller-provided override (e.g. QuickEntry → AddGroupExpense flow)
+      // wins over the default group-detail navigate. Default keeps the
+      // existing GroupsPage-tap-Create-button behaviour intact.
+      if (onCreated) {
+        onCreated(created);
+      } else {
+        navigate(`/group/${created.id}`);
+      }
     } catch {
       toast.show({ type: 'error', title: t('error') });
     } finally { setSaving(false); }
