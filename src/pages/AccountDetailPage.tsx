@@ -25,7 +25,10 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
+  Calculator,
+  Info,
 } from 'lucide-react';
+import type { Account } from '../db';
 import { QuickEntry } from './QuickEntry';
 import { useToast } from '../components/Toast';
 import {
@@ -143,6 +146,15 @@ export function AccountDetailPage() {
   const hasNoTransactions = accountTxns.length === 0;
   const isZeroBalance = account.balance === 0;
   const showOpeningBalancePrompt = hasNoTransactions && isZeroBalance;
+
+  // Only show the "How this affects Your Money" breakdown when there's
+  // actual math to explain. With zero credit cards in the user's
+  // portfolio, every account contributes its balance one-for-one — the
+  // card would just say "Balance = +Balance" which is noise. The moment
+  // any credit card exists somewhere (this account or elsewhere), the
+  // breakdown earns its space by making the +/− contribution visible
+  // per account.
+  const showMoneyMath = accounts.some((a) => a.type === 'credit_card');
 
   const TIME_FILTERS: { label: string; value: TimeFilter }[] = [
     { label: t('time_all'), value: 'all' },
@@ -364,6 +376,22 @@ export function AccountDetailPage() {
           </div>
         )}
 
+        {/* "How this affects Your Money" breakdown. Only renders when the
+            user actually has at least one credit card in their portfolio
+            — otherwise the math is trivially Balance = Balance and the
+            card is pure noise. Two variants below: credit cards do
+            limit/used/owed math; regular accounts show a single-line
+            "added to your money" so the user can trace the contribution
+            into the dashboard total. */}
+        {showMoneyMath && (
+          <MoneyMathCard
+            account={account}
+            isCreditCard={isCreditCard}
+            creditLimit={creditLimit}
+            used={used}
+          />
+        )}
+
         {/* Opening balance prompt — only when no txns + zero balance */}
         {showOpeningBalancePrompt && (
           <div className="rounded-[18px] bg-accent-50 border border-cream-border p-5 text-center">
@@ -576,4 +604,118 @@ function getOrdinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
   return s[(v - 20) % 10] || s[v] || s[0];
+}
+
+// Inline explainer for what this account contributes to "Your Money" on
+// the home dashboard. Keeps the math out of code-comment territory so
+// users can verify the number themselves. Two variants:
+//   • Regular accounts (cash/bank/wallet/savings) — single +Balance line.
+//   • Credit cards — three-line breakdown (Limit / Used / Available) plus
+//     a clear "subtracted from your money" total. If no limit is set we
+//     show a warning so the user knows the math is incomplete.
+function MoneyMathCard({
+  account,
+  isCreditCard,
+  creditLimit,
+  used,
+}: {
+  account: Account;
+  isCreditCard: boolean;
+  creditLimit: number;
+  used: number;
+}) {
+  const currency = account.currency;
+
+  if (!isCreditCard) {
+    return (
+      <div className="rounded-[18px] bg-cream-card border border-cream-border p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-7 h-7 rounded-lg bg-accent-100 flex items-center justify-center shrink-0">
+            <Calculator size={13} className="text-accent-600" />
+          </div>
+          <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+            How this affects Your Money
+          </p>
+        </div>
+        <div className="flex items-baseline justify-between px-1">
+          <span className="text-[12.5px] text-ink-600">Balance</span>
+          <span className="text-[13px] font-semibold text-ink-900 tabular-nums">
+            {formatMoney(account.balance, currency)}
+          </span>
+        </div>
+        <div className="mt-3 pt-3 border-t border-cream-hairline flex items-baseline justify-between px-1">
+          <span className="text-[11px] font-semibold text-receive-text uppercase tracking-[0.08em]">
+            Added to Your Money
+          </span>
+          <span className="text-[14px] font-semibold text-receive-text tabular-nums">
+            +{formatMoney(account.balance, currency)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Credit-card variant. `used` is computed in the parent as
+  // (creditLimit − balance). When creditLimit is 0 (unset), used is
+  // negative — surface a clear "set a limit" CTA instead of showing
+  // misleading math, since the dashboard will under-report what you owe.
+  const limitMissing = creditLimit <= 0;
+  const available = account.balance;
+
+  return (
+    <div className="rounded-[18px] bg-cream-card border border-cream-border p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-7 h-7 rounded-lg bg-pay-50 flex items-center justify-center shrink-0">
+          <Calculator size={13} className="text-pay-text" />
+        </div>
+        <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+          How this affects Your Money
+        </p>
+      </div>
+
+      {limitMissing ? (
+        <div className="rounded-xl bg-warn-50 border border-cream-border px-3 py-2.5 flex items-start gap-2">
+          <Info size={12} className="text-warn-600 mt-0.5 shrink-0" />
+          <p className="text-[11px] text-ink-700 leading-relaxed">
+            No credit limit set — Hisaab can't tell how much of this card you've
+            used. Open the card details to set the limit so your net worth
+            reflects what you actually owe.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-1.5 px-1">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[12.5px] text-ink-600">Credit limit</span>
+              <span className="text-[13px] font-medium text-ink-900 tabular-nums">
+                {formatMoney(creditLimit, currency)}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[12.5px] text-ink-600">
+                Available (balance)
+              </span>
+              <span className="text-[13px] font-medium text-ink-900 tabular-nums">
+                − {formatMoney(available, currency)}
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 pt-2 border-t border-cream-hairline flex items-baseline justify-between px-1">
+            <span className="text-[12.5px] text-ink-700">You owe (used)</span>
+            <span className="text-[13.5px] font-semibold text-pay-text tabular-nums">
+              {formatMoney(used, currency)}
+            </span>
+          </div>
+          <div className="mt-3 pt-3 border-t border-cream-hairline flex items-baseline justify-between px-1">
+            <span className="text-[11px] font-semibold text-pay-text uppercase tracking-[0.08em]">
+              Subtracted from Your Money
+            </span>
+            <span className="text-[14px] font-semibold text-pay-text tabular-nums">
+              −{formatMoney(used, currency)}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
