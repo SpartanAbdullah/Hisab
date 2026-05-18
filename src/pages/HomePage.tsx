@@ -148,11 +148,21 @@ export function HomePage() {
   // Surface outgoing pending settlements that have been waiting >= 3 days.
   // Snoozable for 24h. Real overdue requests will re-surface — that's
   // intentional: forgetting a settlement is the problem we're solving.
-  const outgoingPendingSettlements = useSettlementRequestStore((s) =>
-    userId ? s.outgoingPending(userId) : [],
-  );
+  //
+  // IMPORTANT: subscribe to the raw `requests` slice and filter inside
+  // a useMemo. Zustand's snapshot getter is invoked twice per render by
+  // useSyncExternalStore; if it returns a fresh array each call (which a
+  // .filter() inside the selector would), React detects an unstable
+  // snapshot and throws #185 "Maximum update depth exceeded."
+  const settlementRequests = useSettlementRequestStore((s) => s.requests);
   const persons = usePersonStore((s) => s.persons);
-  const overdueNudges = getOverdueSettlements(outgoingPendingSettlements, persons, 3);
+  const overdueNudges = useMemo(() => {
+    if (!userId) return [];
+    const outgoing = settlementRequests.filter(
+      (r) => r.status === 'pending' && r.fromUserId === userId,
+    );
+    return getOverdueSettlements(outgoing, persons, 3);
+  }, [settlementRequests, persons, userId]);
 
   // Budget usage banner — surfaces categories that crossed their warn
   // threshold. Cheap to compute; runs every time transactions/budgets
