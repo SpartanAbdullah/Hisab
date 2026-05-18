@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Wallet,
+  Wallet2,
   Plus,
   BarChart3,
   HandCoins,
@@ -14,6 +15,8 @@ import {
   ChevronRight,
   Landmark,
   Contact,
+  Repeat,
+  Send,
 } from "lucide-react";
 import { useAccountStore } from "../stores/accountStore";
 import { useTransactionStore } from "../stores/transactionStore";
@@ -657,56 +660,65 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Quick-action 4-up tile grid. Maps Sukoon's Log/Send/Request/Split
-            slots to the extras that no longer have a bottom-nav home:
-            Goals · Analytics · Activity · Groups. */}
+        {/* Quick-access tile grid — Careem-style compact 4-up with the
+            Phase 3 money tools (Budget · Recurring · Remittances) in the
+            top row, and the legacy quick-actions on the second row.
+            Tile chrome is intentionally compact: 36px icon tile, 9.5px
+            label, 6px gap; gives a 7-tile grid the same vertical footprint
+            as the old 4-tile grid had. Each tone is distinct so the
+            section reads as a palette of capabilities at a glance. */}
         {accountCount > 0 && (
-          <div className="rounded-[18px] bg-cream-card border border-cream-border p-3">
-            <div className="grid grid-cols-4 gap-2">
-              <button
+          <div className="rounded-[18px] bg-cream-card border border-cream-border px-2.5 pt-2.5 pb-2">
+            <div className="grid grid-cols-4 gap-x-1 gap-y-1.5">
+              <QuickTile
+                label={t("nav_goals")}
+                icon={Target}
+                tileBg="bg-accent-100"
+                iconClass="text-accent-600"
                 onClick={() => navigate("/goals")}
-                className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl active:bg-cream-soft transition-colors"
-              >
-                <div className="w-10 h-10 rounded-xl bg-accent-100 flex items-center justify-center">
-                  <Target size={18} className="text-accent-600" />
-                </div>
-                <span className="text-[10.5px] font-medium text-ink-800">
-                  {t("nav_goals")}
-                </span>
-              </button>
-              <button
+              />
+              <QuickTile
+                label="Budget"
+                icon={Wallet2}
+                tileBg="bg-receive-50"
+                iconClass="text-receive-text"
+                onClick={() => navigate("/budgets")}
+              />
+              <QuickTile
+                label="Recurring"
+                icon={Repeat}
+                tileBg="bg-accent-50"
+                iconClass="text-accent-600"
+                onClick={() => navigate("/recurring")}
+              />
+              <QuickTile
+                label="Remit"
+                icon={Send}
+                tileBg="bg-info-50"
+                iconClass="text-info-600"
+                onClick={() => navigate("/remittances")}
+              />
+              <QuickTile
+                label={t("analytics_title")}
+                icon={BarChart3}
+                tileBg="bg-pay-50"
+                iconClass="text-pay-text"
                 onClick={() => navigate("/analytics")}
-                className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl active:bg-cream-soft transition-colors"
-              >
-                <div className="w-10 h-10 rounded-xl bg-info-50 flex items-center justify-center">
-                  <BarChart3 size={18} className="text-info-600" />
-                </div>
-                <span className="text-[10.5px] font-medium text-ink-800">
-                  {t("analytics_title")}
-                </span>
-              </button>
-              <button
+              />
+              <QuickTile
+                label="Activity"
+                icon={History}
+                tileBg="bg-cream-soft border border-cream-hairline"
+                iconClass="text-ink-600"
                 onClick={() => navigate("/activity")}
-                className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl active:bg-cream-soft transition-colors"
-              >
-                <div className="w-10 h-10 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center">
-                  <History size={18} className="text-ink-600" />
-                </div>
-                <span className="text-[10.5px] font-medium text-ink-800">
-                  Activity
-                </span>
-              </button>
-              <button
+              />
+              <QuickTile
+                label="Contacts"
+                icon={Contact}
+                tileBg="bg-warn-50"
+                iconClass="text-warn-600"
                 onClick={() => navigate("/contacts")}
-                className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl active:bg-cream-soft transition-colors"
-              >
-                <div className="w-10 h-10 rounded-xl bg-warn-50 flex items-center justify-center">
-                  <Contact size={18} className="text-warn-600" />
-                </div>
-                <span className="text-[10.5px] font-medium text-ink-800">
-                  Contacts
-                </span>
-              </button>
+              />
             </div>
           </div>
         )}
@@ -877,5 +889,36 @@ export function HomePage() {
         onClose={() => setShowAddAccount(false)}
       />
     </main>
+  );
+}
+
+// Compact quick-access tile used by the home Careem-style grid. Kept inside
+// HomePage to avoid adding another file for a 20-line component; lift to
+// src/components/ if other surfaces start needing the same shape.
+interface QuickTileProps {
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
+  // Tailwind background class for the rounded icon tile. Pass classes that
+  // describe both color + (optional) border so an "outlined neutral" variant
+  // is just another class string.
+  tileBg: string;
+  // Tailwind text-color class for the icon glyph.
+  iconClass: string;
+  onClick: () => void;
+}
+
+function QuickTile({ label, icon: Icon, tileBg, iconClass, onClick }: QuickTileProps) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-1 py-1.5 rounded-xl active:bg-cream-soft transition-colors"
+    >
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${tileBg}`}>
+        <Icon size={15} className={iconClass} strokeWidth={1.9} />
+      </div>
+      <span className="text-[9.5px] font-medium text-ink-800 tracking-tight truncate max-w-full">
+        {label}
+      </span>
+    </button>
   );
 }
