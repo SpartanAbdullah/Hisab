@@ -175,8 +175,10 @@ export function AccountsPage() {
         {accounts.length === 0 ? (
           <EmptyState
             icon={Wallet}
+            tone="accent"
             title={t('home_no_accounts')}
             description={t('home_no_accounts_desc')}
+            subhint={t('home_no_accounts_subhint')}
             actionLabel={t('home_create_account')}
             onAction={() => setShowAdd(true)}
           />

@@ -136,8 +136,10 @@ export function ActivityPage() {
         {!hasAnyItems ? (
           <EmptyState
             icon={Clock}
+            tone="indigo"
             title={t('empty_activity_title')}
             description={t('empty_activity_desc')}
+            subhint={t('empty_activity_subhint')}
           />
         ) : tab === 'shared' ? (
           notifications.length === 0 ? (

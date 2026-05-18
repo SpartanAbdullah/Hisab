@@ -278,10 +278,14 @@ const S = {
   home_accounts: { ur: "Accounts", en: "Accounts" },
   home_recent: { ur: "Recent", en: "Recent" },
   home_see_all: { ur: "See All", en: "See All" },
-  home_no_accounts: { ur: "Koi Account Nahi", en: "No Accounts" },
+  home_no_accounts: { ur: "Pehle ek account banao", en: "Add an account first" },
   home_no_accounts_desc: {
-    ur: "Pehle apna account banao — cash, bank, ya wallet",
-    en: "Create your first account",
+    ur: "Cash, bank, ya wallet — jahan se paisa chalta hai, wahin se shuru karo",
+    en: "Cash, bank, or wallet — anywhere your money lives, start there",
+  },
+  home_no_accounts_subhint: {
+    ur: "Saari currencies support hain — AED, PKR, SAR aur baqi GCC.",
+    en: "All major currencies supported — AED, PKR, SAR and the rest of GCC.",
   },
   home_create_account: { ur: "Account Banao", en: "Create Account" },
 
@@ -305,10 +309,10 @@ const S = {
   balance_changes: { ur: "Paisa Kahan Gaya", en: "Balance Changes" },
   updated: { ur: "Updated", en: "Updated" },
   tx_history: { ur: "Transaction History", en: "Transaction History" },
-  no_tx: { ur: "Koi Transaction Nahi", en: "No Transactions" },
+  no_tx: { ur: "Is account mein abhi kuch nahi", en: "Quiet account" },
   no_tx_desc: {
-    ur: "Is account mein abhi koi transaction nahi hui",
-    en: "No transactions in this account yet",
+    ur: "Jo pehla kharcha ya amdani hogi, woh yahan nazar aayegi",
+    en: "The first transaction on this account will land here",
   },
 
   // Validation
@@ -401,27 +405,43 @@ const S = {
   acct_stat_month: { ur: "Is mahine", en: "This month" },
 
   // Empty state improvements
-  empty_loans_title: { ur: "Koi qarz nahi", en: "No loans" },
+  empty_loans_title: { ur: "Koi qarz nahi", en: "All clear" },
   empty_loans_desc: {
-    ur: "Kisi ko diya ya liya hua qarz yahan track karein",
-    en: "Track loans given or taken here",
+    ur: "Kisi ko diya ya liya — sab yahan track ho jata hai",
+    en: "No money out, none coming in. Add a loan when one starts.",
+  },
+  empty_loans_subhint: {
+    ur: "Sukoon ki baat hai — hisaab barabar hai \u{1F319}",
+    en: "Sukoon. Nothing to chase, nothing chasing you \u{1F319}",
   },
   empty_loans_cta: { ur: "Qarz Add Karein", en: "Add Loan" },
-  empty_goals_title: { ur: "Koi saving goal nahi", en: "No saving goals" },
+  empty_goals_title: { ur: "Koi goal nahi", en: "No goals yet" },
   empty_goals_desc: {
-    ur: "Apna pehla saving target set karein",
-    en: "Set your first savings target",
+    ur: "Hajj, ghar, gaadi — jo bhi target ho, yahan se shuru karo",
+    en: "Hajj, a home, the next trip — name one and watch it grow",
+  },
+  empty_goals_subhint: {
+    ur: "Choti rakam bhi bara goal banati hai. Aaj se shuru karo.",
+    en: "Small amounts compound. Start today, future-you will thank you.",
   },
   empty_goals_cta: { ur: "Goal Banayein", en: "Create Goal" },
-  empty_activity_title: { ur: "Koi activity nahi", en: "No activity" },
+  empty_activity_title: { ur: "Khaali safa", en: "Empty page" },
   empty_activity_desc: {
-    ur: "Transactions karne ke baad sab kuch yahan nazar aayega",
-    en: "Activity will appear after transactions",
+    ur: "Aap kuch karenge, yahan likha jaayega. Saari kahani yahin milegi.",
+    en: "Every move you make lands here. Your full money story — always with a receipt.",
   },
-  empty_tx_title: { ur: "Koi transaction nahi", en: "No transactions" },
+  empty_activity_subhint: {
+    ur: "Yeh aap ka private log hai — kisi ko nazar nahi aata.",
+    en: "Just for you. No one else can see this log.",
+  },
+  empty_tx_title: { ur: "Khaata khaali hai", en: "A clean ledger" },
   empty_tx_desc: {
-    ur: "Aaj ka pehla kharcha ya aamdani yahan add karein",
-    en: "Add your first expense or income here",
+    ur: "Pehla kharcha ya amdani add karo — baqi sab khud chal jayega",
+    en: "Drop in your first expense or income — we'll handle the rest",
+  },
+  empty_tx_subhint: {
+    ur: "+ dabao, paisa likho, hum baqi ka sambhal lete hain.",
+    en: "Tap +, type an amount. We'll ask the smart questions.",
   },
   empty_tx_cta: { ur: "Transaction Add Karein", en: "Add Transaction" },
 
@@ -485,8 +505,8 @@ const S = {
   },
 
   // ── Groups / Splits ──
-  nav_groups: { ur: "Groups", en: "Groups" },
-  groups_title: { ur: "Groups", en: "Groups" },
+  nav_groups: { ur: "Group Splits", en: "Group Splits" },
+  groups_title: { ur: "Group Splits", en: "Group Splits" },
   group_new: { ur: "Naya Group Banao", en: "Create Group" },
   group_name: { ur: "Group Ka Naam", en: "Group Name" },
   group_name_placeholder: {
@@ -790,34 +810,38 @@ const S = {
   // ── Onboarding extras ──
   onboard_step_of: { ur: "ka", en: "of" },
   onboard_tagline: {
-    ur: "Qarz, kharche aur splits ka saaf hisaab.",
-    en: "Clear tracking for loans, expenses, and splits.",
+    ur: "Qarz, kharche, remittance, splits — sab ek jaga, sab clear.",
+    en: "Loans, expenses, remittances, splits — all in one place, all clear.",
+  },
+  onboard_tagline_sub: {
+    ur: "Pakistani expats ke liye banaya — AED ya PKR, dono mein chalta hai.",
+    en: "Built for Pakistani expats — works in AED, PKR, and across GCC.",
   },
   onboard_bullet_1: {
-    ur: "Loans, payables aur receivables track karein",
-    en: "Track loans, payables, and receivables",
+    ur: "Dosto ke saath kharche split karo — koi behes nahi",
+    en: "Split bills with friends — no awkward math at the end",
   },
   onboard_bullet_2: {
-    ur: "Dekhein kisne dena hai aur aapne kisko dena hai",
-    en: "Know who owes you and whom you owe",
+    ur: "Kisne dena hai, kisko dena hai — sab ek nazar mein",
+    en: "Who owes you, who you owe — visible at a glance",
   },
   onboard_bullet_3: {
-    ur: "Polite reminder messages copy/share karein",
-    en: "Copy or share polite reminder messages",
+    ur: "Currency conversion ka rate khud track ho jata hai",
+    en: "Multi-currency that just works — AED, PKR, SAR and more",
   },
   onboard_bullet_4: {
-    ur: "Accounts, expenses aur group splits manage karein",
-    en: "Manage accounts, expenses, and group splits",
+    ur: "Cash, bank, wallet — har account ka sahi balance, har waqt",
+    en: "Cash, bank, wallet — every account stays in sync with reality",
   },
   onboard_start: { ur: "Shuru Karein", en: "Get Started" },
   onboard_footer: {
     ur: "Aapke records ke liye secure sync. Control aapke paas rehta hai.",
     en: "Secure sync for your records. You stay in control of your data.",
   },
-  onboard_your_name: { ur: "Apna naam batayein", en: "What's your name?" },
+  onboard_your_name: { ur: "Pehle apna naam batao", en: "First, your name" },
   onboard_name_sub: {
-    ur: "Hum aapko naam se bulayenge",
-    en: "We'll greet you by name",
+    ur: "Phir hum sab ka hisaab tumhare naam se rakhenge",
+    en: "We'll greet you by name — and keep your ledger personal",
   },
   onboard_name_label: { ur: "Aapka Naam", en: "Your Name" },
   onboard_currency_label: { ur: "Primary Currency", en: "Primary Currency" },
@@ -879,10 +903,10 @@ const S = {
     ur: "Yeh message dobara nahi aayega",
     en: "This message won't appear again",
   },
-  onboard_how_start: { ur: "kaise shuru karein?", en: "how should we begin?" },
+  onboard_how_start: { ur: "ab shuru kahan se?", en: "where do we begin?" },
   onboard_how_sub: {
-    ur: "Aap baad mein sab change kar sakte hain",
-    en: "You can change everything later",
+    ur: "Yeh setup ek dafa hai. Sab kuch baad mein badla ja sakta hai.",
+    en: "One-time setup. Everything is editable later.",
   },
   onboard_start_instruction: {
     ur: "Continue karne ke liye Start Fresh par tap karein.",

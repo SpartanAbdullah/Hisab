@@ -192,7 +192,7 @@ export function GoalsPage() {
           </h2>
         )}
         {goals.length === 0 && upcomingExpenses.length === 0 && (
-          <EmptyState icon={Target} title={t('empty_goals_title')} description={t('empty_goals_desc')} actionLabel={t('empty_goals_cta')} onAction={() => setShowAdd(true)} />
+          <EmptyState icon={Target} tone="receive" title={t('empty_goals_title')} description={t('empty_goals_desc')} subhint={t('empty_goals_subhint')} actionLabel={t('empty_goals_cta')} onAction={() => setShowAdd(true)} />
         )}
         {goals.map((g, i) => {
           const progress = g.targetAmount > 0 ? (g.savedAmount / g.targetAmount) * 100 : 0;

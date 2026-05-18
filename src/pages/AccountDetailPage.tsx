@@ -506,6 +506,8 @@ export function AccountDetailPage() {
           {filteredTxns.length === 0 ? (
             <EmptyState
               icon={ArrowLeftRight}
+              tone="accent"
+              size="compact"
               title={t('no_tx')}
               description={t('no_tx_desc')}
               actionLabel={t('txpage_add')}

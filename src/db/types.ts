@@ -298,5 +298,91 @@ export interface AppNotification {
   createdAt: string;
 }
 
+// ── Budgets ──
+// A monthly spending cap per (category, currency). Multiple budgets per
+// category are NOT supported on purpose — one user, one currency, one
+// monthly cap. If the user wants to track spend across currencies they
+// can create one budget per currency.
+export interface Budget {
+  id: string;
+  category: string;
+  monthlyAmount: number;
+  currency: Currency;
+  // Optional soft-warning threshold as a percentage. Defaults to 80% if
+  // not set; surfaces a non-blocking banner on Home once crossed.
+  warnAtPercent: number;
+  createdAt: string;
+}
+
+// ── Recurring Transactions ──
+export type RecurringCadence = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+// A template that materialises into a real Transaction on its due date.
+// Designed for salary, rent, subscriptions, EMIs the user wants tracked
+// without re-typing. The runner in src/lib/recurringRunner.ts walks the
+// list on app boot and prompts confirmation for any due entries.
+export interface RecurringTransaction {
+  id: string;
+  // The Transaction shape this expands into. Only the leaf fields the user
+  // can edit at template time are kept — generated fields (id, createdAt)
+  // are produced fresh at expansion.
+  type: 'income' | 'expense' | 'transfer';
+  amount: number;
+  currency: Currency;
+  sourceAccountId: string | null;
+  destinationAccountId: string | null;
+  category: string;
+  notes: string;
+  // Scheduling. nextDueDate advances by `cadence` after each expansion.
+  cadence: RecurringCadence;
+  nextDueDate: string; // ISO date (YYYY-MM-DD)
+  // Soft-pause without deleting. Useful for "I quit Netflix this month
+  // but might restart next month" — keeps the template, skips the run.
+  active: boolean;
+  // Display label for the user. Defaults to the category when unset.
+  label: string;
+  createdAt: string;
+}
+
+// ── Remittances ──
+// A first-class money-home record. NOT a Transaction subtype because
+// remittances have their own metadata (channel, fees, effective rate)
+// that doesn't belong on the generic ledger row. The send-side debit
+// and receive-side credit are still represented as transactions on
+// the linked accounts; the Remittance entity is the umbrella that
+// ties them together with the cost-of-conversion context.
+export type RemittanceChannel = 'bank_transfer' | 'wise' | 'remitly' | 'western_union' | 'hundi' | 'other';
+export type RemittanceStatus = 'pending' | 'received' | 'failed';
+
+export interface Remittance {
+  id: string;
+  // Send side — money leaving the source country.
+  sourceAccountId: string;
+  sourceCurrency: Currency;
+  sourceAmount: number;
+  // Receive side — money arriving in the destination country.
+  destinationAccountId: string | null; // null when received in cash / unlinked
+  destinationCurrency: Currency;
+  destinationAmount: number;
+  // Channel + cost transparency.
+  channel: RemittanceChannel;
+  feeAmount: number;
+  feeCurrency: Currency;
+  // Derived: destinationAmount / (sourceAmount - feeAmountInSourceCurrency)
+  // Stored explicitly so the user can compare channels across months
+  // without re-deriving from rates that decay over time.
+  effectiveRate: number;
+  status: RemittanceStatus;
+  recipientName: string;
+  notes: string;
+  // The two transaction IDs we wrote on commit. Kept so reconciling
+  // a remittance can find and reconcile both legs in one shot.
+  sourceTxnId: string | null;
+  destinationTxnId: string | null;
+  sentAt: string;
+  receivedAt: string | null;
+  createdAt: string;
+}
+
 // ── App Mode ──
 export type AppMode = 'splits_only' | 'full_tracker';

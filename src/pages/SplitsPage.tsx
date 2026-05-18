@@ -187,7 +187,7 @@ export function SplitsPage() {
                 />
               </div>
               <p className="text-[12px] text-white/55 mt-2">
-                {groups.length} {groups.length === 1 ? 'group' : 'groups'}
+                {groups.length} {groups.length === 1 ? 'split' : 'splits'}
                 {otherCcyGroups.length > 0 && (
                   <> · +{otherCcyGroups.length} in other currencies</>
                 )}
@@ -196,10 +196,10 @@ export function SplitsPage() {
           ) : (
             <>
               <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
-                No groups yet
+                No splits yet
               </p>
               <p className="text-[12px] text-white/55 mt-1.5 max-w-[260px] leading-relaxed">
-                Create one to split expenses, or join an existing group with a code.
+                Create one to split expenses with friends, or join one with a code.
               </p>
             </>
           )}

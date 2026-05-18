@@ -20,6 +20,9 @@ import {
   Share2,
   Sparkles,
   Copy,
+  Wallet2,
+  Repeat,
+  Send,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
@@ -592,6 +595,52 @@ export function SettingsPage() {
             </div>
           )}
         </div>
+
+        {/* Phase 3: Money tools — only meaningful in full_tracker mode.
+            Each row deep-links to the matching feature page. */}
+        {mode === 'full_tracker' && (
+          <div className={sectionClass}>
+            <button
+              onClick={() => navigate('/budgets')}
+              className={rowClass + " w-full text-left"}
+            >
+              <div className="w-9 h-9 rounded-xl bg-receive-50 flex items-center justify-center">
+                <Wallet2 size={16} className="text-receive-text" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold text-ink-900">Budgets</p>
+                <p className="text-[11px] text-ink-500">Monthly caps per category, soft warnings</p>
+              </div>
+              <ChevronRight size={16} className="text-ink-300" />
+            </button>
+            <button
+              onClick={() => navigate('/recurring')}
+              className={rowClass + " w-full text-left"}
+            >
+              <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+                <Repeat size={16} className="text-accent-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold text-ink-900">Recurring</p>
+                <p className="text-[11px] text-ink-500">Salary, rent, EMIs — one tap each month</p>
+              </div>
+              <ChevronRight size={16} className="text-ink-300" />
+            </button>
+            <button
+              onClick={() => navigate('/remittances')}
+              className={rowClass + " w-full text-left"}
+            >
+              <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center">
+                <Send size={16} className="text-info-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold text-ink-900">Remittances</p>
+                <p className="text-[11px] text-ink-500">Track money sent home, fees, effective rate</p>
+              </div>
+              <ChevronRight size={16} className="text-ink-300" />
+            </button>
+          </div>
+        )}
 
         {/* Contacts */}
         <div className={sectionClass}>

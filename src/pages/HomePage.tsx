@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
@@ -24,7 +24,12 @@ import { useAppModeStore } from "../stores/appModeStore";
 import { useSplitStore } from "../stores/splitStore";
 import { useLinkedRequestStore } from "../stores/linkedRequestStore";
 import { useSettlementRequestStore } from "../stores/settlementRequestStore";
+import { usePersonStore } from "../stores/personStore";
+import { useBudgetStore, computeBudgetUsages } from "../stores/budgetStore";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
+import { SettlementNudgeBanner } from "../components/SettlementNudgeBanner";
+import { BudgetWarningBanner } from "../components/BudgetWarningBanner";
+import { getOverdueSettlements } from "../lib/settlementNudges";
 import { TransactionItem } from "../components/TransactionItem";
 import { EmptyState } from "../components/EmptyState";
 import { PageErrorState } from "../components/PageErrorState";
@@ -139,6 +144,21 @@ export function HomePage() {
   }, {} as Record<string, number>);
 
   const recentTxns = transactions.slice(0, 5);
+
+  // Surface outgoing pending settlements that have been waiting >= 3 days.
+  // Snoozable for 24h. Real overdue requests will re-surface — that's
+  // intentional: forgetting a settlement is the problem we're solving.
+  const outgoingPendingSettlements = useSettlementRequestStore((s) =>
+    userId ? s.outgoingPending(userId) : [],
+  );
+  const persons = usePersonStore((s) => s.persons);
+  const overdueNudges = getOverdueSettlements(outgoingPendingSettlements, persons, 3);
+
+  // Budget usage banner — surfaces categories that crossed their warn
+  // threshold. Cheap to compute; runs every time transactions/budgets
+  // change. Banner self-hides for the session when dismissed.
+  const budgets = useBudgetStore((s) => s.budgets);
+  const budgetUsages = useMemo(() => computeBudgetUsages(budgets, transactions), [budgets, transactions]);
   const getMonthStats = (accountId: string) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -323,7 +343,7 @@ export function HomePage() {
               <div>
                 <div className="flex items-center justify-between mb-2.5 px-1">
                   <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
-                    Groups
+                    Group Splits
                   </h2>
                   <button
                     onClick={() => navigate("/groups")}
@@ -335,8 +355,11 @@ export function HomePage() {
                 {groups.length === 0 ? (
                   <EmptyState
                     icon={Users}
-                    title="No groups yet"
+                    tone="accent"
+                    size="compact"
+                    title="No splits yet"
                     description="Create or join a group to split shared expenses."
+                    subhint="Dinner, rent, trips — har kharcha barabar."
                   />
                 ) : (
                   <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
@@ -807,6 +830,14 @@ export function HomePage() {
             </div>
           </div>
         )}
+
+        {/* Budget warning — most-overspent category surfaces above the
+            settlement nudges so the user sees the money decision first. */}
+        <BudgetWarningBanner usages={budgetUsages} />
+
+        {/* Settlement nudges — surface outgoing requests sitting >= 3 days.
+            Renders nothing on empty so adjacent sections layout normally. */}
+        <SettlementNudgeBanner nudges={overdueNudges} />
 
         {/* Recent Transactions */}
         {recentTxns.length > 0 && (

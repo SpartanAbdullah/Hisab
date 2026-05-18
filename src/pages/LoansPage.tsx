@@ -453,6 +453,7 @@ export function LoansPage() {
         {primaryGroups.length === 0 && otherGroups.length === 0 && (
           <EmptyState
             icon={Users}
+            tone={tab === 'settled' ? 'receive' : 'warn'}
             title={
               tab === 'settled'
                 ? t('loan_none_settled')
@@ -463,6 +464,7 @@ export function LoansPage() {
                 ? t('loan_desc_settled')
                 : t('empty_loans_desc')
             }
+            subhint={tab !== 'settled' ? t('empty_loans_subhint') : undefined}
             actionLabel={tab !== 'settled' ? t('empty_loans_cta') : undefined}
             onAction={tab !== 'settled' ? () => setShowAdd(true) : undefined}
           />

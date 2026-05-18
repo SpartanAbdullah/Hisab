@@ -1,11 +1,14 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, History } from 'lucide-react';
+import { RefreshCw, History, ShieldCheck } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useLoanStore } from '../stores/loanStore';
+import { useTransactionStore } from '../stores/transactionStore';
 import { useToast } from '../components/Toast';
 import { resolveProfileByCode } from '../lib/collaboration';
 import { formatMoney } from '../lib/constants';
+import { computeTrustScore, trustLevelStyle } from '../lib/trustScore';
 import type { Person } from '../db';
 
 interface Props {
@@ -25,6 +28,10 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const syncPastRecords = useLinkedRequestStore((s) => s.syncPastRecords);
   // Subscribe to requests so the syncable count updates after a sync fires.
   const requests = useLinkedRequestStore((s) => s.requests);
+  // Loans + transactions feed the private trust score. Reads stay subscribed
+  // so the score live-updates if a loan settles while this sheet is open.
+  const loans = useLoanStore((s) => s.loans);
+  const transactions = useTransactionStore((s) => s.transactions);
   const toast = useToast();
 
   const [mode, setMode] = useState<Mode>('idle');
@@ -80,9 +87,19 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     return [...set].sort();
   }, [skipped]);
 
+  // Private trust score. Computed only against this person's loans, so the
+  // dependency list is precise — re-runs when their loans or repayments
+  // change but not when unrelated loans mutate. The score is never sent
+  // anywhere: it exists only in the current user's view of this contact.
+  const trustScore = useMemo(
+    () => (person ? computeTrustScore(person.id, person.name, loans, transactions) : null),
+    [person, loans, transactions],
+  );
+
   if (!person) return null;
 
   const isLinked = !!person.linkedProfileId;
+  const trustStyle = trustScore ? trustLevelStyle(trustScore.level) : null;
 
   const handleSyncPastRecords = async () => {
     if (!person) return;
@@ -185,6 +202,64 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             </span>
           )}
         </div>
+
+        {/* Private trust history card. Visible only when there's at least one
+            prior loan with this person — for fresh contacts the score is
+            empty and hiding the card keeps the sheet clean. */}
+        {trustScore && trustStyle && trustScore.totalLoans > 0 && (
+          <div className="rounded-2xl bg-cream-card border border-cream-border p-3.5">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
+                <ShieldCheck size={16} className="text-ink-600" strokeWidth={1.8} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[12.5px] font-semibold text-ink-900 tracking-tight">
+                    Your private history
+                  </p>
+                  <span
+                    className={`text-[10px] font-bold uppercase tracking-widest rounded-full px-2 py-0.5 border ${trustStyle.badgeClass} flex items-center gap-1.5`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${trustStyle.dot}`} />
+                    {trustStyle.label}
+                  </span>
+                </div>
+                <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">
+                  {trustScore.summary}
+                </p>
+                <div className="grid grid-cols-3 gap-2 mt-2.5">
+                  <div className="rounded-xl bg-cream-soft px-2 py-1.5">
+                    <p className="text-[9.5px] text-ink-500 uppercase tracking-widest font-bold">
+                      Total
+                    </p>
+                    <p className="text-[13px] text-ink-900 font-bold tabular-nums">
+                      {trustScore.totalLoans}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-cream-soft px-2 py-1.5">
+                    <p className="text-[9.5px] text-ink-500 uppercase tracking-widest font-bold">
+                      Settled
+                    </p>
+                    <p className="text-[13px] text-receive-text font-bold tabular-nums">
+                      {trustScore.settledLoans}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-cream-soft px-2 py-1.5">
+                    <p className="text-[9.5px] text-ink-500 uppercase tracking-widest font-bold">
+                      Open
+                    </p>
+                    <p className="text-[13px] text-ink-900 font-bold tabular-nums">
+                      {trustScore.activeLoans}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-[10.5px] text-ink-400 mt-2 italic leading-relaxed">
+                  Only you can see this. The other person is never notified.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {isLinked ? (
           <div className="space-y-3">

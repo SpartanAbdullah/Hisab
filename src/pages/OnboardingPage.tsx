@@ -54,8 +54,11 @@ export function OnboardingPage() {
               <Wallet size={36} strokeWidth={1.5} />
             </div>
             <h1 className="text-4xl font-bold tracking-tighter">Hisaab</h1>
-            <p className="text-white/80 text-[15px] leading-relaxed max-w-[260px] mt-4">
+            <p className="text-white/85 text-[15px] leading-relaxed max-w-[280px] mt-4 font-medium">
               {t('onboard_tagline')}
+            </p>
+            <p className="text-white/55 text-[12px] leading-relaxed max-w-[260px] mt-2">
+              {t('onboard_tagline_sub')}
             </p>
             <div className="mt-8 space-y-3 text-left w-full max-w-[280px]">
               {[

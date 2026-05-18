@@ -4,6 +4,7 @@ import type {
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
   GroupMember, GroupInvite, GroupEvent, AppNotification, Person,
   LinkedRequest, LinkedRequestKind, SettlementRequest, Currency,
+  Budget, RecurringTransaction, Remittance,
 } from '../db';
 
 // Helper to get current user ID (cached in localStorage by App.tsx)
@@ -1136,6 +1137,178 @@ function mapNotification(r: Record<string, unknown>): AppNotification {
     title: (r.title as string) ?? '',
     body: (r.body as string) ?? '',
     readAt: (r.read_at as string) ?? null,
+    createdAt: r.created_at as string,
+  };
+}
+
+// ══════════════════════════════════════
+// BUDGETS (Phase 3)
+// ══════════════════════════════════════
+export const budgetsDb = {
+  async getAll(): Promise<Budget[]> {
+    const { data, error } = await supabase
+      .from('budgets').select('*')
+      .eq('user_id', getUserId())
+      .order('category', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapBudget);
+  },
+  async add(b: Budget) {
+    const { error } = await supabase.from('budgets').insert({
+      id: b.id, user_id: getUserId(), category: b.category,
+      monthly_amount: b.monthlyAmount, currency: b.currency,
+      warn_at_percent: b.warnAtPercent, created_at: b.createdAt,
+    });
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<Budget>) {
+    const row: Record<string, unknown> = {};
+    if (changes.category !== undefined) row.category = changes.category;
+    if (changes.monthlyAmount !== undefined) row.monthly_amount = changes.monthlyAmount;
+    if (changes.currency !== undefined) row.currency = changes.currency;
+    if (changes.warnAtPercent !== undefined) row.warn_at_percent = changes.warnAtPercent;
+    const { error } = await supabase.from('budgets').update(row).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    const { error } = await supabase.from('budgets').delete().eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+function mapBudget(r: Record<string, unknown>): Budget {
+  return {
+    id: r.id as string,
+    category: r.category as string,
+    monthlyAmount: Number(r.monthly_amount),
+    currency: r.currency as Currency,
+    warnAtPercent: Number(r.warn_at_percent ?? 80),
+    createdAt: r.created_at as string,
+  };
+}
+
+// ══════════════════════════════════════
+// RECURRING TRANSACTIONS (Phase 3)
+// ══════════════════════════════════════
+export const recurringTransactionsDb = {
+  async getAll(): Promise<RecurringTransaction[]> {
+    const { data, error } = await supabase
+      .from('recurring_transactions').select('*')
+      .eq('user_id', getUserId())
+      .order('next_due_date', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapRecurring);
+  },
+  async add(r: RecurringTransaction) {
+    const { error } = await supabase.from('recurring_transactions').insert({
+      id: r.id, user_id: getUserId(), type: r.type, amount: r.amount, currency: r.currency,
+      source_account_id: r.sourceAccountId, destination_account_id: r.destinationAccountId,
+      category: r.category, notes: r.notes, cadence: r.cadence, next_due_date: r.nextDueDate,
+      active: r.active, label: r.label, created_at: r.createdAt,
+    });
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<RecurringTransaction>) {
+    const row: Record<string, unknown> = {};
+    if (changes.type !== undefined) row.type = changes.type;
+    if (changes.amount !== undefined) row.amount = changes.amount;
+    if (changes.currency !== undefined) row.currency = changes.currency;
+    if (changes.sourceAccountId !== undefined) row.source_account_id = changes.sourceAccountId;
+    if (changes.destinationAccountId !== undefined) row.destination_account_id = changes.destinationAccountId;
+    if (changes.category !== undefined) row.category = changes.category;
+    if (changes.notes !== undefined) row.notes = changes.notes;
+    if (changes.cadence !== undefined) row.cadence = changes.cadence;
+    if (changes.nextDueDate !== undefined) row.next_due_date = changes.nextDueDate;
+    if (changes.active !== undefined) row.active = changes.active;
+    if (changes.label !== undefined) row.label = changes.label;
+    const { error } = await supabase.from('recurring_transactions').update(row).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    const { error } = await supabase.from('recurring_transactions').delete().eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+function mapRecurring(r: Record<string, unknown>): RecurringTransaction {
+  return {
+    id: r.id as string,
+    type: r.type as RecurringTransaction['type'],
+    amount: Number(r.amount),
+    currency: r.currency as Currency,
+    sourceAccountId: (r.source_account_id as string) ?? null,
+    destinationAccountId: (r.destination_account_id as string) ?? null,
+    category: (r.category as string) ?? '',
+    notes: (r.notes as string) ?? '',
+    cadence: r.cadence as RecurringTransaction['cadence'],
+    nextDueDate: r.next_due_date as string,
+    active: r.active as boolean,
+    label: (r.label as string) ?? '',
+    createdAt: r.created_at as string,
+  };
+}
+
+// ══════════════════════════════════════
+// REMITTANCES (Phase 3)
+// ══════════════════════════════════════
+export const remittancesDb = {
+  async getAll(): Promise<Remittance[]> {
+    const { data, error } = await supabase
+      .from('remittances').select('*')
+      .eq('user_id', getUserId())
+      .order('sent_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapRemittance);
+  },
+  async add(r: Remittance) {
+    const { error } = await supabase.from('remittances').insert({
+      id: r.id, user_id: getUserId(),
+      source_account_id: r.sourceAccountId, source_currency: r.sourceCurrency, source_amount: r.sourceAmount,
+      destination_account_id: r.destinationAccountId, destination_currency: r.destinationCurrency,
+      destination_amount: r.destinationAmount,
+      channel: r.channel, fee_amount: r.feeAmount, fee_currency: r.feeCurrency,
+      effective_rate: r.effectiveRate, status: r.status,
+      recipient_name: r.recipientName, notes: r.notes,
+      source_txn_id: r.sourceTxnId, destination_txn_id: r.destinationTxnId,
+      sent_at: r.sentAt, received_at: r.receivedAt, created_at: r.createdAt,
+    });
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<Remittance>) {
+    const row: Record<string, unknown> = {};
+    if (changes.status !== undefined) row.status = changes.status;
+    if (changes.receivedAt !== undefined) row.received_at = changes.receivedAt;
+    if (changes.notes !== undefined) row.notes = changes.notes;
+    if (changes.recipientName !== undefined) row.recipient_name = changes.recipientName;
+    const { error } = await supabase.from('remittances').update(row).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    const { error } = await supabase.from('remittances').delete().eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+function mapRemittance(r: Record<string, unknown>): Remittance {
+  return {
+    id: r.id as string,
+    sourceAccountId: r.source_account_id as string,
+    sourceCurrency: r.source_currency as Currency,
+    sourceAmount: Number(r.source_amount),
+    destinationAccountId: (r.destination_account_id as string) ?? null,
+    destinationCurrency: r.destination_currency as Currency,
+    destinationAmount: Number(r.destination_amount),
+    channel: r.channel as Remittance['channel'],
+    feeAmount: Number(r.fee_amount ?? 0),
+    feeCurrency: r.fee_currency as Currency,
+    effectiveRate: Number(r.effective_rate),
+    status: r.status as Remittance['status'],
+    recipientName: (r.recipient_name as string) ?? '',
+    notes: (r.notes as string) ?? '',
+    sourceTxnId: (r.source_txn_id as string) ?? null,
+    destinationTxnId: (r.destination_txn_id as string) ?? null,
+    sentAt: r.sent_at as string,
+    receivedAt: (r.received_at as string) ?? null,
     createdAt: r.created_at as string,
   };
 }

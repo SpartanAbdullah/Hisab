@@ -371,8 +371,10 @@ export function TransactionsPage() {
         {filtered.length === 0 ? (
           <EmptyState
             icon={ArrowLeftRight}
+            tone="accent"
             title={t('empty_tx_title')}
             description={t('empty_tx_desc')}
+            subhint={t('empty_tx_subhint')}
             actionLabel={t('empty_tx_cta')}
             onAction={() => setShowAdd(true)}
           />

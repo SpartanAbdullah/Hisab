@@ -10,6 +10,10 @@ import { usePersonStore } from './stores/personStore';
 import { useLinkedRequestStore } from './stores/linkedRequestStore';
 import { useSplitStore } from './stores/splitStore';
 import { useSettlementRequestStore } from './stores/settlementRequestStore';
+import { useBudgetStore } from './stores/budgetStore';
+import { useRecurringStore } from './stores/recurringStore';
+import { useRemittanceStore } from './stores/remittanceStore';
+import { runRecurringExpansion } from './lib/recurringRunner';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
@@ -32,6 +36,9 @@ const JoinGroupPage = lazy(() => import('./pages/JoinGroupPage').then(m => ({ de
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m.InboxPage })));
+const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then(m => ({ default: m.BudgetsPage })));
+const RemittancesPage = lazy(() => import('./pages/RemittancesPage').then(m => ({ default: m.RemittancesPage })));
+const RecurringTransactionsPage = lazy(() => import('./pages/RecurringTransactionsPage').then(m => ({ default: m.RecurringTransactionsPage })));
 
 // Quick Entry is the only modal launched globally (from the BottomNav FAB).
 // The Add Goal / Add Loan / Add Upcoming Expense modals are owned by their
@@ -45,6 +52,10 @@ const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m
 import { QuickEntry } from './pages/QuickEntry';
 import { AddGroupExpenseModal } from './pages/AddGroupExpenseModal';
 import { CreateGroupModal } from './pages/CreateGroupModal';
+import { RecurringDuePrompt } from './components/RecurringDuePrompt';
+import { MonthlyWrapModal } from './components/MonthlyWrapModal';
+import { OfflineBanner } from './components/OfflineBanner';
+import { startOutboxRunner, stopOutboxRunner } from './lib/outboxRunner';
 import type { SplitGroup } from './db';
 
 function PageLoader() {
@@ -107,6 +118,19 @@ function AppContent() {
     return () => stopGlobalRealtime();
   }, [user?.id]);
 
+  // Phase 3 offline scaffold: start the outbox runner once the user is
+  // signed in. The runner is currently inert (dispatch handlers throw —
+  // see src/lib/outboxRunner.ts) but the loop, backoff, and lifecycle
+  // are all live so per-store rewires only need to fill in handlers.
+  useEffect(() => {
+    if (!user?.id) {
+      stopOutboxRunner();
+      return;
+    }
+    startOutboxRunner();
+    return () => stopOutboxRunner();
+  }, [user?.id]);
+
   useEffect(() => {
     if (!user?.id) return;
     void usePersonStore.getState().loadPersons().catch((err) => {
@@ -124,6 +148,25 @@ function AppContent() {
     // "no groups yet" for users who'd never opened the Groups tab.
     void useSplitStore.getState().loadGroups().catch((err) => {
       console.error('loadGroups failed (non-fatal)', err);
+    });
+    // Phase 3: load budgets, recurring templates, and remittance history.
+    // Budgets feed the home banner; recurring needs to be loaded BEFORE
+    // the expansion runner can decide which entries are due.
+    void useBudgetStore.getState().loadBudgets().catch((err) => {
+      console.error('loadBudgets failed (non-fatal)', err);
+    });
+    void useRecurringStore.getState().loadTemplates().then(() => {
+      // Defer expansion to next tick so the first paint isn't blocked by
+      // potentially many confirmation prompts. The runner only prompts;
+      // the user still confirms each expansion.
+      void runRecurringExpansion().catch((err) => {
+        console.error('runRecurringExpansion failed (non-fatal)', err);
+      });
+    }).catch((err) => {
+      console.error('loadRecurring failed (non-fatal)', err);
+    });
+    void useRemittanceStore.getState().loadRemittances().catch((err) => {
+      console.error('loadRemittances failed (non-fatal)', err);
     });
   }, [user?.id]);
 
@@ -198,6 +241,8 @@ function AppContent() {
   return (
     <div className="min-h-dvh bg-slate-50">
       <PWAInstallPrompt />
+      {/* Connectivity pill — surfaces when navigator.onLine flips. */}
+      <OfflineBanner />
       <Suspense fallback={<PageLoader />}>
         <ErrorBoundary>
         <Routes>
@@ -215,6 +260,13 @@ function AppContent() {
           <Route path="/transactions" element={mode === 'full_tracker' ? <TransactionsPage /> : <Navigate to="/" replace />} />
           <Route path="/loans" element={<LoansPage />} />
           <Route path="/loan/:id" element={<LoanDetailPage />} />
+          {/* Phase 3 features. Budgets + Recurring stay full_tracker-only
+              because they presuppose accounts; Remittances is available
+              in either mode (the splits-only user might still need to track
+              "I sent X home this month"). */}
+          <Route path="/budgets" element={mode === 'full_tracker' ? <BudgetsPage /> : <Navigate to="/" replace />} />
+          <Route path="/recurring" element={mode === 'full_tracker' ? <RecurringTransactionsPage /> : <Navigate to="/" replace />} />
+          <Route path="/remittances" element={<RemittancesPage />} />
 
           {/* Savings goals stay full-tracker only. Transactions and loans are
               available in both modes so simple users can still record expense
@@ -244,6 +296,12 @@ function AppContent() {
           setCreateGroupForExpense({ amount });
         }}
       />
+      {/* Phase 3: recurring entries due today appear as a single-prompt
+          queue. Mounted at app level so the prompt persists across navigation. */}
+      <RecurringDuePrompt />
+      {/* Phase 3: end-of-month "Hisaab Wrap" — Spotify Wrapped for the
+          user's money. Self-triggers on the first session of a new month. */}
+      <MonthlyWrapModal />
       {/* Create-then-expense chain: when CreateGroupModal returns the new
           group, we immediately open AddGroupExpenseModal with the amount
           the user originally typed in QuickEntry. */}

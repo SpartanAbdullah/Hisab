@@ -1,7 +1,70 @@
 import Dexie, { type Table } from 'dexie';
-import type { Account, Transaction, Loan, EmiSchedule, Goal, ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement, Person } from './types';
+import type {
+  Account,
+  Transaction,
+  Loan,
+  EmiSchedule,
+  Goal,
+  ActivityLog,
+  UpcomingExpense,
+  SplitGroup,
+  GroupExpense,
+  GroupSettlement,
+  Person,
+  Budget,
+  RecurringTransaction,
+  Remittance,
+} from './types';
+
+// ──────────────────────────────────────────────────────────────
+// Phase 3 — Offline-first mirror + outbox
+//
+// The Dexie database now plays a different role than its Hisaab 1.x
+// ancestor: it is a READ MIRROR of authoritative server state plus an
+// outbox of mutations that haven't reached Supabase yet.
+//
+// Direction of trust:
+//   - Supabase remains authoritative for all entity rows.
+//   - Dexie is hydrated from Supabase pulls (`mirror.<table>.bulkPut`).
+//   - User mutations write to BOTH Dexie (immediate visibility) and an
+//     `outbox` table. The outboxRunner drains the outbox to Supabase as
+//     connectivity allows. Successful drains delete the outbox row.
+//
+// Current commit ships ONLY the schema + outbox primitives. The stores
+// are not yet rewired to read from Dexie or write to the outbox — that
+// migration happens incrementally store-by-store. See
+// `src/lib/outboxRunner.ts` and `src/hooks/useOnlineStatus.ts` for the
+// glue that's already wired up.
+// ──────────────────────────────────────────────────────────────
+
+export type OutboxOpKind =
+  | 'transaction.create'
+  | 'transaction.update'
+  | 'transaction.delete'
+  | 'account.update_balance'
+  | 'loan.create'
+  | 'loan.update'
+  | 'budget.create'
+  | 'budget.update'
+  | 'budget.delete'
+  | 'recurring.create'
+  | 'recurring.update'
+  | 'remittance.create';
+
+export interface OutboxEntry {
+  id: string;                  // uuid
+  kind: OutboxOpKind;
+  payload: unknown;            // op-specific. JSON-serialisable.
+  createdAt: string;           // ISO
+  attempts: number;            // bumped on each failed flush
+  lastError: string | null;
+  // After how many seconds since the last attempt we retry. Exponential
+  // backoff lives in the runner; this is the persisted "next try" time.
+  nextAttemptAt: string;       // ISO
+}
 
 export class HisaabDatabase extends Dexie {
+  // Mirrored authoritative state (read-only from the app's perspective)
   accounts!: Table<Account, string>;
   transactions!: Table<Transaction, string>;
   loans!: Table<Loan, string>;
@@ -13,9 +76,20 @@ export class HisaabDatabase extends Dexie {
   groupExpenses!: Table<GroupExpense, string>;
   groupSettlements!: Table<GroupSettlement, string>;
   persons!: Table<Person, string>;
+  budgets!: Table<Budget, string>;
+  recurringTransactions!: Table<RecurringTransaction, string>;
+  remittances!: Table<Remittance, string>;
+
+  // Mutations queued while offline (or before they reach Supabase).
+  outbox!: Table<OutboxEntry, string>;
 
   constructor() {
     super('HisaabDB');
+
+    // Versions 1–5 carried the legacy Hisaab 1.x schema. We keep them
+    // declared so Dexie's upgrade path stays valid for anyone who has the
+    // old DB in their browser, then version 6 reshapes everything as the
+    // offline mirror + outbox.
     this.version(1).stores({
       accounts: 'id, type, currency',
       transactions: 'id, type, sourceAccountId, destinationAccountId, relatedLoanId, relatedGoalId, createdAt',
@@ -70,6 +144,27 @@ export class HisaabDatabase extends Dexie {
       groupExpenses: 'id, groupId, paidBy, createdAt',
       groupSettlements: 'id, groupId, fromMember, toMember',
       persons: 'id, name, linkedProfileId, createdAt',
+    });
+    // Version 6: add Phase 3 entities (budgets, recurring, remittances)
+    // and the outbox. Indices chosen for the lookups the runner needs:
+    // outbox by `nextAttemptAt` (oldest-due-first sweep) and by `kind`
+    // (operational visibility / debug filtering).
+    this.version(6).stores({
+      accounts: 'id, type, currency',
+      transactions: 'id, type, sourceAccountId, destinationAccountId, relatedLoanId, relatedGoalId, personId, createdAt',
+      loans: 'id, personName, personId, type, status',
+      emiSchedules: 'id, loanId, status, dueDate',
+      goals: 'id, storedInAccountId',
+      activityLog: 'id, type, relatedEntityId, timestamp',
+      upcomingExpenses: 'id, accountId, dueDate, isPaid',
+      splitGroups: 'id, createdAt',
+      groupExpenses: 'id, groupId, paidBy, createdAt',
+      groupSettlements: 'id, groupId, fromMember, toMember',
+      persons: 'id, name, linkedProfileId, createdAt',
+      budgets: 'id, category, currency',
+      recurringTransactions: 'id, nextDueDate, active',
+      remittances: 'id, sentAt, status',
+      outbox: 'id, kind, nextAttemptAt, createdAt',
     });
   }
 }
