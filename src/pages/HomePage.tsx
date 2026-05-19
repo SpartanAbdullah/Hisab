@@ -660,62 +660,55 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Quick-access tile grid — Careem-style compact 4-up with the
-            Phase 3 money tools (Budget · Recurring · Remittances) in the
-            top row, and the legacy quick-actions on the second row.
-            Tile chrome is intentionally compact: 36px icon tile, 9.5px
-            label, 6px gap; gives a 7-tile grid the same vertical footprint
-            as the old 4-tile grid had. Each tone is distinct so the
-            section reads as a palette of capabilities at a glance. */}
+        {/* Quick-access tile grid — Careem-inspired layout.
+            Each tile is its OWN filled card (cream-soft bg) with a big
+            colored icon at the top and the label pinned at the bottom.
+            Hierarchy: outer cream-card wrapper → inner cream-soft tile
+            cards, mirroring Careem's "white card with grey tiles nested"
+            pattern. Colors stay in the Sukoon palette — only the icon
+            glyph carries the tone; the tile chrome stays neutral. */}
         {accountCount > 0 && (
-          <div className="rounded-[18px] bg-cream-card border border-cream-border px-2.5 pt-2.5 pb-2">
-            <div className="grid grid-cols-4 gap-x-1 gap-y-1.5">
+          <div className="rounded-[20px] bg-cream-card border border-cream-border p-2.5">
+            <div className="grid grid-cols-4 gap-2">
               <QuickTile
                 label={t("nav_goals")}
                 icon={Target}
-                tileBg="bg-accent-100"
                 iconClass="text-accent-600"
                 onClick={() => navigate("/goals")}
               />
               <QuickTile
                 label="Budget"
                 icon={Wallet2}
-                tileBg="bg-receive-50"
                 iconClass="text-receive-text"
                 onClick={() => navigate("/budgets")}
               />
               <QuickTile
                 label="Recurring"
                 icon={Repeat}
-                tileBg="bg-accent-50"
-                iconClass="text-accent-600"
+                iconClass="text-accent-500"
                 onClick={() => navigate("/recurring")}
               />
               <QuickTile
                 label="Remit"
                 icon={Send}
-                tileBg="bg-info-50"
                 iconClass="text-info-600"
                 onClick={() => navigate("/remittances")}
               />
               <QuickTile
                 label={t("analytics_title")}
                 icon={BarChart3}
-                tileBg="bg-pay-50"
                 iconClass="text-pay-text"
                 onClick={() => navigate("/analytics")}
               />
               <QuickTile
                 label="Activity"
                 icon={History}
-                tileBg="bg-cream-soft border border-cream-hairline"
-                iconClass="text-ink-600"
+                iconClass="text-ink-700"
                 onClick={() => navigate("/activity")}
               />
               <QuickTile
                 label="Contacts"
                 icon={Contact}
-                tileBg="bg-warn-50"
                 iconClass="text-warn-600"
                 onClick={() => navigate("/contacts")}
               />
@@ -892,31 +885,28 @@ export function HomePage() {
   );
 }
 
-// Compact quick-access tile used by the home Careem-style grid. Kept inside
-// HomePage to avoid adding another file for a 20-line component; lift to
-// src/components/ if other surfaces start needing the same shape.
+// Careem-style quick-access tile. Each tile is its own filled card
+// (cream-soft background, soft inset border) with the icon enlarged and
+// the label sitting at the bottom of the card. The icon glyph carries
+// the tile's color identity; the card chrome stays neutral so seven
+// distinct tiles read as a single calm panel rather than a candy bar.
 interface QuickTileProps {
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
-  // Tailwind background class for the rounded icon tile. Pass classes that
-  // describe both color + (optional) border so an "outlined neutral" variant
-  // is just another class string.
-  tileBg: string;
-  // Tailwind text-color class for the icon glyph.
+  // Tailwind text-color class for the icon glyph. Tile background stays
+  // neutral cream-soft across all tiles — only the icon carries the tone.
   iconClass: string;
   onClick: () => void;
 }
 
-function QuickTile({ label, icon: Icon, tileBg, iconClass, onClick }: QuickTileProps) {
+function QuickTile({ label, icon: Icon, iconClass, onClick }: QuickTileProps) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-1 py-1.5 rounded-xl active:bg-cream-soft transition-colors"
+      className="aspect-square rounded-2xl bg-cream-soft border border-cream-hairline flex flex-col items-center justify-center gap-2 px-1.5 active:scale-[0.97] active:bg-cream-bg transition-all"
     >
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${tileBg}`}>
-        <Icon size={15} className={iconClass} strokeWidth={1.9} />
-      </div>
-      <span className="text-[9.5px] font-medium text-ink-800 tracking-tight truncate max-w-full">
+      <Icon size={26} className={iconClass} strokeWidth={1.7} />
+      <span className="text-[10.5px] font-semibold text-ink-800 tracking-tight truncate max-w-full">
         {label}
       </span>
     </button>
