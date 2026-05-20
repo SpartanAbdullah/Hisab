@@ -115,6 +115,15 @@ export function GroupDetailPage() {
   const getMemberName = (memberId: string) => group.members.find(member => member.id === memberId)?.name ?? '?';
   const currentMember = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))
     ?? group.members.find(member => member.isOwner);
+  const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
+  const currentUserName = localStorage.getItem('hisaab_user_name') ?? '';
+  const isPaidByCurrentUser = (expense: GroupExpense) => {
+    const paidByMember = group.members.find(member => member.id === expense.paidBy);
+    if (!paidByMember) return false;
+    if (paidByMember.profileId === currentUserId) return true;
+    if (paidByMember.profileId && paidByMember.profileId !== currentUserId) return false;
+    return paidByMember.name.trim().toLocaleLowerCase() === currentUserName.trim().toLocaleLowerCase();
+  };
   const getSplitTypeLabel = (splitType: GroupExpense['splitType']) => {
     if (splitType === 'equal') return t('group_split_equal');
     if (splitType === 'exact') return t('group_split_exact');
@@ -429,7 +438,7 @@ export function GroupDetailPage() {
           ) : (
             expenses.map((expense, index) => {
               const meta = getExpenseMeta(expense);
-              const canReconcile = expense.paidBy === currentMember?.id;
+              const canReconcile = isPaidByCurrentUser(expense);
               const isReconciled = expense.isReconciled ?? false;
               return (
                 <div

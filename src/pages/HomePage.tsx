@@ -17,6 +17,7 @@ import {
   Contact,
   Repeat,
   Send,
+  Search,
 } from "lucide-react";
 import { useAccountStore } from "../stores/accountStore";
 import { useTransactionStore } from "../stores/transactionStore";
@@ -39,6 +40,7 @@ import { PageErrorState } from "../components/PageErrorState";
 import { UserAvatar } from "../components/UserAvatar";
 import { NavyHero } from "../components/NavyHero";
 import { MoneyDisplay } from "../components/MoneyDisplay";
+import { GlobalSearch } from "../components/GlobalSearch";
 import { AddAccountStepper } from "./AddAccountStepper";
 import { formatMoney } from "../lib/constants";
 import { currencyMeta } from "../lib/design-tokens";
@@ -74,6 +76,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const t = useT();
   const [showAddAccount, setShowAddAccount] = useState(false);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
   const [renderNowMs] = useState(() => Date.now());
 
@@ -247,18 +250,27 @@ export function HomePage() {
                 </p>
               </div>
             </button>
-            <button
-              onClick={() => navigate("/inbox")}
-              className="relative w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center shrink-0 transition-colors"
-              aria-label="Inbox"
-            >
-              <Bell size={16} className="text-white" />
-              {pendingApprovalCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-navy-800">
-                  {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
-                </span>
-              )}
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setShowGlobalSearch(true)}
+                className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+                aria-label="Search"
+              >
+                <Search size={16} className="text-white" />
+              </button>
+              <button
+                onClick={() => navigate("/inbox")}
+                className="relative w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+                aria-label="Inbox"
+              >
+                <Bell size={16} className="text-white" />
+                {pendingApprovalCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-navy-800">
+                    {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="px-5 pb-7">
@@ -429,6 +441,7 @@ export function HomePage() {
             </>
           )}
         </div>
+        <GlobalSearch open={showGlobalSearch} onClose={() => setShowGlobalSearch(false)} />
       </main>
     );
   }
@@ -497,18 +510,27 @@ export function HomePage() {
               </p>
             </div>
           </button>
-          <button
-            onClick={() => navigate("/inbox")}
-            className="relative w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center shrink-0 transition-colors"
-            aria-label="Inbox"
-          >
-            <Bell size={16} className="text-white" />
-            {pendingApprovalCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-navy-800 tabular-nums">
-                {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowGlobalSearch(true)}
+              className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+              aria-label="Search"
+            >
+              <Search size={16} className="text-white" />
+            </button>
+            <button
+              onClick={() => navigate("/inbox")}
+              className="relative w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+              aria-label="Inbox"
+            >
+              <Bell size={16} className="text-white" />
+              {pendingApprovalCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-navy-800 tabular-nums">
+                  {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Net worth display. Tap (when accounts exist) -> /accounts. */}
@@ -881,6 +903,7 @@ export function HomePage() {
         open={showAddAccount}
         onClose={() => setShowAddAccount(false)}
       />
+      <GlobalSearch open={showGlobalSearch} onClose={() => setShowGlobalSearch(false)} />
     </main>
   );
 }

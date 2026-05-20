@@ -116,6 +116,10 @@ function getCurrentUserName(): string {
   return localStorage.getItem('hisaab_user_name') ?? 'You';
 }
 
+function sameDisplayName(a: string | null | undefined, b: string | null | undefined): boolean {
+  return (a ?? '').trim().toLocaleLowerCase() === (b ?? '').trim().toLocaleLowerCase();
+}
+
 async function hydrateGroup(group: SplitGroup | null): Promise<SplitGroup | null> {
   if (!group) return null;
   const members = await groupMembersDb.getByGroup(group.id).catch(() => []);
@@ -269,8 +273,10 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     try {
       const allExpenses = await groupExpensesDb.getAllVisible();
       const memberIdByGroup = new Map<string, string>();
+      const userName = getCurrentUserName();
       for (const group of get().groups) {
-        const me = group.members.find((m) => m.profileId === currentUserId);
+        const me = group.members.find((m) => m.profileId === currentUserId)
+          ?? group.members.find((m) => !m.profileId && sameDisplayName(m.name, userName));
         if (me) memberIdByGroup.set(group.id, me.id);
       }
       const flags: Record<string, boolean> = {};
@@ -742,9 +748,37 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
 
     const currentUserId = getCurrentUserId();
+    const currentUserName = getCurrentUserName();
+    let paidByMember = group.members.find(member => member.id === existing.paidBy);
     const currentMember = group.members.find(member => member.profileId === currentUserId);
-    if (existing.paidBy !== currentMember?.id) {
+
+    if (paidByMember?.profileId && paidByMember.profileId !== currentUserId) {
       throw new Error('Only the member who paid can reconcile this expense');
+    }
+    if (existing.paidBy !== currentMember?.id) {
+      const paidByLooksLikeMe = paidByMember && sameDisplayName(paidByMember.name, currentUserName);
+      if (!paidByLooksLikeMe) {
+        throw new Error('Only the member who paid can reconcile this expense');
+      }
+
+      await groupMembersDb.update(existing.paidBy, {
+        profileId: currentUserId,
+        status: 'connected',
+        joinedAt: paidByMember?.joinedAt ?? new Date().toISOString(),
+      });
+      paidByMember = { ...(paidByMember as GroupMember), profileId: currentUserId, status: 'connected' };
+      set((state) => ({
+        groups: state.groups.map((item) =>
+          item.id === group.id
+            ? {
+                ...item,
+                members: item.members.map((member) =>
+                  member.id === existing.paidBy ? paidByMember as GroupMember : member,
+                ),
+              }
+            : item,
+        ),
+      }));
     }
 
     const changes: Partial<GroupExpense> = {
