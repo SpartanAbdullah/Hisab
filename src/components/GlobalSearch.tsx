@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType } from 'react';
-import { Search, X, Wallet, Receipt, Users, HandCoins, Target, CalendarClock, Repeat, Send, ChevronRight } from 'lucide-react';
+import { Search, X, Receipt, HandCoins, Send, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
-import { useGoalStore } from '../stores/goalStore';
-import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { useSplitStore } from '../stores/splitStore';
-import { useRecurringStore } from '../stores/recurringStore';
 import { useRemittanceStore } from '../stores/remittanceStore';
 import { groupExpensesDb } from '../lib/supabaseDb';
 import { formatMoney } from '../lib/constants';
@@ -41,10 +38,7 @@ export function GlobalSearch({ open, onClose }: Props) {
   const { accounts, loadAccounts } = useAccountStore();
   const { transactions, loadTransactions } = useTransactionStore();
   const { loans, loadLoans } = useLoanStore();
-  const { goals, loadGoals } = useGoalStore();
-  const { expenses: upcomingExpenses, loadExpenses } = useUpcomingExpenseStore();
   const { groups, loadGroups } = useSplitStore();
-  const { templates, loadTemplates } = useRecurringStore();
   const { remittances, loadRemittances } = useRemittanceStore();
 
   useEffect(() => {
@@ -59,13 +53,10 @@ export function GlobalSearch({ open, onClose }: Props) {
       loadAccounts().catch(() => undefined),
       loadTransactions().catch(() => undefined),
       loadLoans().catch(() => undefined),
-      loadGoals().catch(() => undefined),
-      loadExpenses().catch(() => undefined),
       loadGroups().catch(() => undefined),
-      loadTemplates().catch(() => undefined),
       loadRemittances().catch(() => undefined),
       groupExpensesDb.getAllVisible().catch(() => [] as GroupExpense[]),
-    ]).then(([, , , , , , , , visibleGroupExpenses]) => {
+    ]).then(([, , , , , visibleGroupExpenses]) => {
       if (cancelled) return;
       setGroupExpenses(visibleGroupExpenses ?? []);
     }).finally(() => {
@@ -80,10 +71,7 @@ export function GlobalSearch({ open, onClose }: Props) {
     loadAccounts,
     loadTransactions,
     loadLoans,
-    loadGoals,
-    loadExpenses,
     loadGroups,
-    loadTemplates,
     loadRemittances,
   ]);
 
@@ -92,18 +80,6 @@ export function GlobalSearch({ open, onClose }: Props) {
 
   const results = useMemo<SearchResult[]>(() => {
     const rows: SearchResult[] = [];
-
-    for (const account of accounts) {
-      rows.push({
-        id: `account-${account.id}`,
-        title: account.name,
-        meta: `${account.type.replace(/_/g, ' ')} - ${formatMoney(account.balance, account.currency)}`,
-        scope: 'Account',
-        href: `/account/${account.id}`,
-        icon: Wallet,
-        terms: `${account.name} ${account.type} ${account.currency} account wallet balance`,
-      });
-    }
 
     for (const transaction of transactions) {
       const source = transaction.sourceAccountId ? accountById.get(transaction.sourceAccountId)?.name : '';
@@ -132,18 +108,7 @@ export function GlobalSearch({ open, onClose }: Props) {
     }
 
     for (const group of groups) {
-      rows.push({
-        id: `group-${group.id}`,
-        title: `${group.emoji} ${group.name}`,
-        meta: `${group.members.length} members - ${group.currency}`,
-        scope: 'Group',
-        href: `/group/${group.id}`,
-        icon: Users,
-        terms: `${group.name} ${group.emoji} ${group.currency} ${group.members.map((member) => member.name).join(' ')}`,
-      });
-    }
-
-    for (const expense of groupExpenses) {
+      for (const expense of groupExpenses.filter(item => item.groupId === group.id)) {
       const group = groupById.get(expense.groupId);
       const paidBy = group?.members.find((member) => member.id === expense.paidBy)?.name ?? 'Someone';
       const currency = (group?.currency ?? 'AED') as Currency;
@@ -156,42 +121,7 @@ export function GlobalSearch({ open, onClose }: Props) {
         icon: Receipt,
         terms: `${expense.description} ${expense.category} ${expense.notes} ${paidBy} ${group?.name ?? ''} ${expense.amount}`,
       });
-    }
-
-    for (const goal of goals) {
-      rows.push({
-        id: `goal-${goal.id}`,
-        title: goal.title,
-        meta: `${formatMoney(goal.savedAmount, goal.currency)} saved of ${formatMoney(goal.targetAmount, goal.currency)}`,
-        scope: 'Goal',
-        href: '/goals',
-        icon: Target,
-        terms: `${goal.title} goal savings ${goal.savedAmount} ${goal.targetAmount} ${goal.currency}`,
-      });
-    }
-
-    for (const expense of upcomingExpenses) {
-      rows.push({
-        id: `upcoming-${expense.id}`,
-        title: expense.title,
-        meta: `${expense.status} - due ${new Date(expense.dueDate).toLocaleDateString()} - ${formatMoney(expense.amount, expense.currency)}`,
-        scope: 'Upcoming',
-        href: '/activity',
-        icon: CalendarClock,
-        terms: `${expense.title} ${expense.category} ${expense.notes} upcoming due ${expense.amount} ${expense.currency}`,
-      });
-    }
-
-    for (const template of templates) {
-      rows.push({
-        id: `recurring-${template.id}`,
-        title: template.label || template.category,
-        meta: `${template.cadence} - next ${template.nextDueDate} - ${formatMoney(template.amount, template.currency)}`,
-        scope: 'Recurring',
-        href: '/recurring',
-        icon: Repeat,
-        terms: `${template.label} ${template.category} ${template.notes} recurring ${template.cadence} ${template.amount} ${template.currency}`,
-      });
+      }
     }
 
     for (const remittance of remittances) {
@@ -207,7 +137,7 @@ export function GlobalSearch({ open, onClose }: Props) {
     }
 
     return rows;
-  }, [accounts, accountById, transactions, loans, groups, groupExpenses, groupById, goals, upcomingExpenses, templates, remittances]);
+  }, [accountById, transactions, loans, groups, groupExpenses, groupById, remittances]);
 
   const visibleResults = useMemo(() => {
     const needle = normalize(query);
@@ -234,7 +164,7 @@ export function GlobalSearch({ open, onClose }: Props) {
                 ref={inputRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search everything"
+                placeholder="Search transactions"
                 className="w-full h-11 rounded-2xl bg-cream-soft border border-cream-border pl-10 pr-3 text-[14px] font-medium text-ink-900 outline-none focus:border-accent-500"
               />
             </div>
@@ -250,7 +180,7 @@ export function GlobalSearch({ open, onClose }: Props) {
 
           <div className="max-h-[72dvh] overflow-y-auto p-3">
             {loading && results.length === 0 ? (
-              <p className="text-center text-[12px] text-ink-500 py-8">Searching across Hisaab...</p>
+              <p className="text-center text-[12px] text-ink-500 py-8">Searching money activity...</p>
             ) : visibleResults.length === 0 ? (
               <p className="text-center text-[12px] text-ink-500 py-8">No matching results.</p>
             ) : (

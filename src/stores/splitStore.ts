@@ -120,6 +120,54 @@ function sameDisplayName(a: string | null | undefined, b: string | null | undefi
   return (a ?? '').trim().toLocaleLowerCase() === (b ?? '').trim().toLocaleLowerCase();
 }
 
+async function claimPaidByMemberIfMine(
+  group: SplitGroup,
+  paidByMemberId: string,
+  currentUserId: string,
+): Promise<GroupMember | undefined> {
+  const member = group.members.find(item => item.id === paidByMemberId);
+  if (!member) return undefined;
+  if (member.profileId === currentUserId) return member;
+  if (member.profileId && member.profileId !== currentUserId) return undefined;
+  if (!sameDisplayName(member.name, getCurrentUserName())) return undefined;
+
+  const joinedAt = member.joinedAt ?? new Date().toISOString();
+  await groupMembersDb.update(member.id, {
+    profileId: currentUserId,
+    status: 'connected',
+    joinedAt,
+  });
+
+  const claimed: GroupMember = {
+    ...member,
+    profileId: currentUserId,
+    status: 'connected',
+    joinedAt,
+  };
+
+  group.members = group.members.map(item => item.id === claimed.id ? claimed : item);
+  return claimed;
+}
+
+function patchGroupMemberInState(
+  set: (partial: Partial<SplitState> | ((state: SplitState) => Partial<SplitState>)) => void,
+  groupId: string,
+  member: GroupMember,
+) {
+  set((state) => ({
+    groups: state.groups.map((item) =>
+      item.id === groupId
+        ? {
+            ...item,
+            members: item.members.map((existing) =>
+              existing.id === member.id ? member : existing,
+            ),
+          }
+        : item,
+    ),
+  }));
+}
+
 async function hydrateGroup(group: SplitGroup | null): Promise<SplitGroup | null> {
   if (!group) return null;
   const members = await groupMembersDb.getByGroup(group.id).catch(() => []);
@@ -550,8 +598,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
 
     const currentUserId = getCurrentUserId();
-    const currentMember = findCurrentMember(group);
-    if (input.paidFromAccountId && input.paidBy !== currentMember?.id) {
+    const paidByMember = await claimPaidByMemberIfMine(group, input.paidBy, currentUserId);
+    if (paidByMember) patchGroupMemberInState(set, group.id, paidByMember);
+    if (input.paidFromAccountId && !paidByMember) {
       throw new Error('Only your own payments can be linked to a personal account');
     }
 
@@ -597,9 +646,18 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       paidFromAccountId: input.paidFromAccountId,
     });
 
-    await groupExpensesDb.add(expense);
+    try {
+      await groupExpensesDb.add(expense);
+    } catch (err) {
+      if (linkedTransactionId) {
+        await useTransactionStore.getState().deleteTransaction(linkedTransactionId, { allowLinkedGroupExpense: true }).catch((rollbackErr) => {
+          console.error('linked group transaction rollback failed', rollbackErr);
+        });
+      }
+      throw err;
+    }
 
-    const actorName = currentMember?.name ?? getCurrentUserName();
+    const actorName = findCurrentMember(group)?.name ?? getCurrentUserName();
     await fanOutGroupUpdate(
       group,
       {
@@ -639,7 +697,6 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
 
     const currentUserId = getCurrentUserId();
-    const currentMember = findCurrentMember(group);
     const existingMeta = parseInternalNote(existing.notes).meta;
     const nextPaidFromAccountId = changes.paidFromAccountId === undefined
       ? existingMeta.paidFromAccountId
@@ -651,11 +708,15 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       notes: existing.notes,
     };
 
-    if (nextPaidFromAccountId && nextExpense.paidBy !== currentMember?.id) {
+    const paidByMember = await claimPaidByMemberIfMine(group, nextExpense.paidBy, currentUserId);
+    if (paidByMember) patchGroupMemberInState(set, group.id, paidByMember);
+
+    if (nextPaidFromAccountId && !paidByMember) {
       throw new Error('Only your own payments can be linked to a personal account');
     }
 
     let linkedTransactionId = existingMeta.linkedTransactionId;
+    let createdLinkedTransactionId: string | undefined;
 
     if (linkedTransactionId && nextPaidFromAccountId) {
       await useTransactionStore.getState().updateTransaction(
@@ -691,27 +752,37 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         }),
       });
       linkedTransactionId = tx.id;
+      createdLinkedTransactionId = tx.id;
     }
 
-    await groupExpensesDb.update(id, {
-      description: nextExpense.description,
-      amount: nextExpense.amount,
-      paidBy: nextExpense.paidBy,
-      splitType: nextExpense.splitType,
-      splits: nextExpense.splits,
-      category: nextExpense.category,
-      notes: buildInternalNote('', {
-        linkedTransactionId,
-        paidFromAccountId: nextPaidFromAccountId,
-      }),
-      updatedBy: currentUserId,
-      version: (existing.version ?? 1) + 1,
-      isReconciled: existing.paidBy === nextExpense.paidBy ? existing.isReconciled ?? false : false,
-      reconciledAt: existing.paidBy === nextExpense.paidBy ? existing.reconciledAt ?? null : null,
-      reconciledBy: existing.paidBy === nextExpense.paidBy ? existing.reconciledBy ?? null : null,
-    });
+    try {
+      await groupExpensesDb.update(id, {
+        description: nextExpense.description,
+        amount: nextExpense.amount,
+        paidBy: nextExpense.paidBy,
+        splitType: nextExpense.splitType,
+        splits: nextExpense.splits,
+        category: nextExpense.category,
+        notes: buildInternalNote('', {
+          linkedTransactionId,
+          paidFromAccountId: nextPaidFromAccountId,
+        }),
+        updatedBy: currentUserId,
+        version: (existing.version ?? 1) + 1,
+        isReconciled: existing.paidBy === nextExpense.paidBy ? existing.isReconciled ?? false : false,
+        reconciledAt: existing.paidBy === nextExpense.paidBy ? existing.reconciledAt ?? null : null,
+        reconciledBy: existing.paidBy === nextExpense.paidBy ? existing.reconciledBy ?? null : null,
+      });
+    } catch (err) {
+      if (createdLinkedTransactionId) {
+        await useTransactionStore.getState().deleteTransaction(createdLinkedTransactionId, { allowLinkedGroupExpense: true }).catch((rollbackErr) => {
+          console.error('linked group transaction rollback failed', rollbackErr);
+        });
+      }
+      throw err;
+    }
 
-    const actorName = currentMember?.name ?? getCurrentUserName();
+    const actorName = findCurrentMember(group)?.name ?? getCurrentUserName();
     await fanOutGroupUpdate(
       group,
       {
@@ -748,38 +819,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
 
     const currentUserId = getCurrentUserId();
-    const currentUserName = getCurrentUserName();
-    let paidByMember = group.members.find(member => member.id === existing.paidBy);
-    const currentMember = group.members.find(member => member.profileId === currentUserId);
-
-    if (paidByMember?.profileId && paidByMember.profileId !== currentUserId) {
+    const paidByMember = await claimPaidByMemberIfMine(group, existing.paidBy, currentUserId);
+    if (!paidByMember) {
       throw new Error('Only the member who paid can reconcile this expense');
     }
-    if (existing.paidBy !== currentMember?.id) {
-      const paidByLooksLikeMe = paidByMember && sameDisplayName(paidByMember.name, currentUserName);
-      if (!paidByLooksLikeMe) {
-        throw new Error('Only the member who paid can reconcile this expense');
-      }
-
-      await groupMembersDb.update(existing.paidBy, {
-        profileId: currentUserId,
-        status: 'connected',
-        joinedAt: paidByMember?.joinedAt ?? new Date().toISOString(),
-      });
-      paidByMember = { ...(paidByMember as GroupMember), profileId: currentUserId, status: 'connected' };
-      set((state) => ({
-        groups: state.groups.map((item) =>
-          item.id === group.id
-            ? {
-                ...item,
-                members: item.members.map((member) =>
-                  member.id === existing.paidBy ? paidByMember as GroupMember : member,
-                ),
-              }
-            : item,
-        ),
-      }));
-    }
+    patchGroupMemberInState(set, group.id, paidByMember);
 
     const changes: Partial<GroupExpense> = {
       isReconciled,

@@ -21,6 +21,10 @@ interface Props {
 
 const CATEGORIES = ['Food', 'Transport', 'Shopping', 'Bills', 'Entertainment', 'Travel', 'Health', 'General'];
 
+function sameDisplayName(a: string | null | undefined, b: string | null | undefined): boolean {
+  return (a ?? '').trim().toLocaleLowerCase() === (b ?? '').trim().toLocaleLowerCase();
+}
+
 export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Props) {
   const t = useT();
   const toast = useToast();
@@ -45,8 +49,14 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const amt = parseFloat(amount) || 0;
-  const currentMemberId = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id ?? '';
-  const shouldTrackExpense = appMode === 'full_tracker' && paidBy === currentMemberId && accounts.length > 0;
+  const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
+  const currentUserName = localStorage.getItem('hisaab_user_name') ?? '';
+  const paidByMember = group.members.find(member => member.id === paidBy);
+  const isPaidByMe = Boolean(
+    paidByMember?.profileId === currentUserId ||
+    (paidByMember && !paidByMember.profileId && sameDisplayName(paidByMember.name, currentUserName)),
+  );
+  const shouldTrackExpense = appMode === 'full_tracker' && isPaidByMe && accounts.length > 0;
 
   useEffect(() => {
     if (open && appMode === 'full_tracker') {
