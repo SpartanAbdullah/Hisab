@@ -11,7 +11,7 @@ CREATE OR REPLACE FUNCTION public.reconcile_group_expense(
   p_expense_id TEXT,
   p_is_reconciled BOOLEAN
 )
-RETURNS public.group_expenses
+RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -52,10 +52,9 @@ BEGIN
      SET is_reconciled = p_is_reconciled,
          reconciled_by = CASE WHEN p_is_reconciled THEN v_uid ELSE NULL END,
          reconciled_at = CASE WHEN p_is_reconciled THEN now() ELSE NULL END
-   WHERE id = p_expense_id
-   RETURNING * INTO v_expense;
+   WHERE id = p_expense_id;
 
-  RETURN v_expense;
+  RETURN;
 END;
 $$;
 
