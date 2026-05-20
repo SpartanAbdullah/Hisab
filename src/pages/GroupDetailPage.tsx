@@ -116,13 +116,9 @@ export function GroupDetailPage() {
   const currentMember = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))
     ?? group.members.find(member => member.isOwner);
   const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
-  const currentUserName = localStorage.getItem('hisaab_user_name') ?? '';
   const isPaidByCurrentUser = (expense: GroupExpense) => {
     const paidByMember = group.members.find(member => member.id === expense.paidBy);
-    if (!paidByMember) return false;
-    if (paidByMember.profileId === currentUserId) return true;
-    if (paidByMember.profileId && paidByMember.profileId !== currentUserId) return false;
-    return paidByMember.name.trim().toLocaleLowerCase() === currentUserName.trim().toLocaleLowerCase();
+    return paidByMember?.profileId === currentUserId;
   };
   const getSplitTypeLabel = (splitType: GroupExpense['splitType']) => {
     if (splitType === 'equal') return t('group_split_equal');

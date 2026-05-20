@@ -644,6 +644,14 @@ export const groupExpensesDb = {
     const { error } = await supabase.from('group_expenses').update(row).eq('id', id);
     if (error) throw error;
   },
+  async setReconciled(id: string, isReconciled: boolean): Promise<GroupExpense> {
+    const { data, error } = await supabase.rpc('reconcile_group_expense', {
+      p_expense_id: id,
+      p_is_reconciled: isReconciled,
+    });
+    if (error) throw error;
+    return mapGroupExpense(data as Record<string, unknown>);
+  },
   async delete(id: string) {
     const { error } = await supabase
       .from('group_expenses')

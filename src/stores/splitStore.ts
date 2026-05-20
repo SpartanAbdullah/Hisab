@@ -819,19 +819,12 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
 
     const currentUserId = getCurrentUserId();
-    const paidByMember = await claimPaidByMemberIfMine(group, existing.paidBy, currentUserId);
-    if (!paidByMember) {
+    const paidByMember = group.members.find(member => member.id === existing.paidBy);
+    if (paidByMember?.profileId !== currentUserId) {
       throw new Error('Only the member who paid can reconcile this expense');
     }
-    patchGroupMemberInState(set, group.id, paidByMember);
 
-    const changes: Partial<GroupExpense> = {
-      isReconciled,
-      reconciledAt: isReconciled ? new Date().toISOString() : null,
-      reconciledBy: isReconciled ? currentUserId : null,
-    };
-
-    await groupExpensesDb.update(id, changes);
+    await groupExpensesDb.setReconciled(id, isReconciled);
 
     const linkedTransactionId = parseInternalNote(existing.notes).meta.linkedTransactionId;
     if (linkedTransactionId) {
