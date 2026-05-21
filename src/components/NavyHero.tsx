@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { InboxAction } from './InboxAction';
 
 interface NavyHeroProps {
   children: ReactNode;
@@ -30,12 +31,13 @@ interface TopBarProps {
   action?: ReactNode;
   onBack?: () => void;
   tone?: 'on-navy' | 'on-cream';
+  showInbox?: boolean;
 }
 
 // Top header row. On the navy hero the back tile is translucent white;
 // on the cream body it picks up the slate-100/80 chrome that the rest
 // of the codebase already uses (`.nav-icon-button` in index.css).
-export function TopBar({ title, back, action, onBack, tone = 'on-navy' }: TopBarProps) {
+export function TopBar({ title, back, action, onBack, tone = 'on-navy', showInbox = true }: TopBarProps) {
   const navigate = useNavigate();
   const handleBack = onBack ?? (() => navigate(-1));
 
@@ -62,7 +64,10 @@ export function TopBar({ title, back, action, onBack, tone = 'on-navy' }: TopBar
       <h1 className={`flex-1 min-w-0 text-[17px] font-semibold truncate ${titleClass}`}>
         {title}
       </h1>
-      {action}
+      <div className="flex items-center gap-2 shrink-0">
+        {action}
+        {showInbox && <InboxAction tone={tone} />}
+      </div>
     </div>
   );
 }

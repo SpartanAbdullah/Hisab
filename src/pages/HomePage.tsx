@@ -9,7 +9,6 @@ import {
   BarChart3,
   HandCoins,
   Users,
-  Bell,
   Target,
   History,
   ChevronRight,
@@ -26,7 +25,6 @@ import { useGoalStore } from "../stores/goalStore";
 import { useUpcomingExpenseStore } from "../stores/upcomingExpenseStore";
 import { useAppModeStore } from "../stores/appModeStore";
 import { useSplitStore } from "../stores/splitStore";
-import { useLinkedRequestStore } from "../stores/linkedRequestStore";
 import { useSettlementRequestStore } from "../stores/settlementRequestStore";
 import { usePersonStore } from "../stores/personStore";
 import { useBudgetStore, computeBudgetUsages } from "../stores/budgetStore";
@@ -39,6 +37,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageErrorState } from "../components/PageErrorState";
 import { UserAvatar } from "../components/UserAvatar";
 import { NavyHero } from "../components/NavyHero";
+import { InboxAction } from "../components/InboxAction";
 import { MoneyDisplay } from "../components/MoneyDisplay";
 import { GlobalSearch } from "../components/GlobalSearch";
 import { AddAccountStepper } from "./AddAccountStepper";
@@ -82,27 +81,7 @@ export function HomePage() {
 
   const userName = localStorage.getItem("hisaab_user_name") ?? "User";
   const primaryCurrency = localStorage.getItem("hisaab_primary_currency") ?? "AED";
-
-  // Inbox badge — pending linked + settlement requests touching this user.
-  // Mirrors the count BottomNav shows so the hero bell agrees with the nav.
   const userId = useSupabaseAuthStore((s) => s.user?.id ?? "");
-  const linkedPending = useLinkedRequestStore(
-    (s) =>
-      s.requests.filter(
-        (r) =>
-          r.status === "pending" &&
-          (r.toUserId === userId || r.fromUserId === userId),
-      ).length,
-  );
-  const settlementPending = useSettlementRequestStore(
-    (s) =>
-      s.requests.filter(
-        (r) =>
-          r.status === "pending" &&
-          (r.toUserId === userId || r.fromUserId === userId),
-      ).length,
-  );
-  const pendingApprovalCount = linkedPending + settlementPending;
 
   // Load account balances first so the mobile dashboard can paint its core
   // money view before supporting widgets compete for network/CPU.
@@ -258,18 +237,7 @@ export function HomePage() {
               >
                 <Search size={16} className="text-white" />
               </button>
-              <button
-                onClick={() => navigate("/inbox")}
-                className="relative w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Inbox"
-              >
-                <Bell size={16} className="text-white" />
-                {pendingApprovalCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-navy-800">
-                    {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
-                  </span>
-                )}
-              </button>
+              <InboxAction />
             </div>
           </div>
 
@@ -518,18 +486,7 @@ export function HomePage() {
             >
               <Search size={16} className="text-white" />
             </button>
-            <button
-              onClick={() => navigate("/inbox")}
-              className="relative w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-              aria-label="Inbox"
-            >
-              <Bell size={16} className="text-white" />
-              {pendingApprovalCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-navy-800 tabular-nums">
-                  {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
-                </span>
-              )}
-            </button>
+            <InboxAction />
           </div>
         </div>
 

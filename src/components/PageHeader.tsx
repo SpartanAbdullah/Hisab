@@ -1,13 +1,16 @@
 import { ArrowLeft } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { InboxAction } from './InboxAction';
 
 interface Props {
   title: string;
   back?: boolean;
-  action?: React.ReactNode;
+  action?: ReactNode;
+  showInbox?: boolean;
 }
 
-export function PageHeader({ title, back, action }: Props) {
+export function PageHeader({ title, back, action, showInbox = true }: Props) {
   const navigate = useNavigate();
   return (
     <header className="sticky top-0 glass border-b border-slate-100/60 px-5 pt-safe pb-3.5 flex items-center justify-between z-40">
@@ -22,7 +25,10 @@ export function PageHeader({ title, back, action }: Props) {
         )}
         <h1 className="text-[17px] font-bold tracking-tight text-slate-800 truncate min-w-0">{title}</h1>
       </div>
-      {action}
+      <div className="flex items-center gap-2 shrink-0">
+        {action}
+        {showInbox && <InboxAction tone="on-cream" />}
+      </div>
     </header>
   );
 }

@@ -10,8 +10,8 @@ interface Props {
 
 // Sukoon bottom nav: 4 tab slots + center FAB for full_tracker (symmetric
 // 2 left / FAB / 2 right). Splits-only collapses to 3 tabs + FAB since its
-// surface set is smaller (no Ledger). Inbox is reachable only from the
-// bell icon in the Home navy hero with its own coral pending-count badge;
+// surface set is smaller (no Ledger). Inbox lives in the top-right page
+// chrome with its own coral pending-count badge;
 // Settings via the avatar tap. The FAB always opens Quick Entry — the old
 // context-aware fan-out is gone; page-specific add actions live as a "+"
 // chip in each page's TopBar.
