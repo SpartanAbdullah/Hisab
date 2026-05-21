@@ -32,7 +32,7 @@ export function RepaymentModal({
   installmentNumber,
 }: Props) {
   const { accounts } = useAccountStore();
-  const { processTransaction } = useTransactionStore();
+  const { processTransaction, getByLoan } = useTransactionStore();
   const { applyRepayment } = useLoanStore();
   const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
@@ -53,6 +53,12 @@ export function RepaymentModal({
   const isGiven = loan.type === 'given';
   const isLedgerOnlyMode = appMode === 'splits_only';
   const selectedAccount = accounts.find((account) => account.id === accountId);
+  const cashAdvanceTransaction = getByLoan(loan.id).find(
+    (transaction) => transaction.type === 'loan_taken' && Boolean(transaction.sourceAccountId),
+  );
+  const cashAdvanceCard = cashAdvanceTransaction?.sourceAccountId
+    ? accounts.find((account) => account.id === cashAdvanceTransaction.sourceAccountId)
+    : null;
   const isCrossCurrency = selectedAccount ? selectedAccount.currency !== loan.currency : false;
   const isInstallmentPayment = Boolean(emiId);
   const installmentAmount = presetAmount != null ? Math.min(presetAmount, loan.remainingAmount) : undefined;
@@ -122,6 +128,14 @@ export function RepaymentModal({
           before: account.balance,
           after: account.balance - deductedAmount,
         });
+        if (cashAdvanceCard && cashAdvanceCard.currency === loan.currency) {
+          changes.push({
+            accountName: cashAdvanceCard.name,
+            currency: cashAdvanceCard.currency,
+            before: cashAdvanceCard.balance,
+            after: cashAdvanceCard.balance + parsedAmount,
+          });
+        }
         await processTransaction({
           type: 'repayment',
           amount: parsedAmount,

@@ -412,6 +412,23 @@ async function refetchMoneyStores(): Promise<void> {
   }
 }
 
+async function findCashAdvanceCardForLoan(loanId: string): Promise<string | null> {
+  let transactions = useTransactionStore.getState().transactions;
+  if (transactions.length === 0) {
+    transactions = await transactionsDb.getAll();
+    useTransactionStore.setState({ transactions });
+  }
+
+  const cashAdvance = transactions.find(
+    (transaction) =>
+      transaction.type === 'loan_taken' &&
+      transaction.relatedLoanId === loanId &&
+      Boolean(transaction.sourceAccountId),
+  );
+
+  return cashAdvance?.sourceAccountId ?? null;
+}
+
 
 export const useTransactionStore = create<TransactionState>((set, get) => ({
   ...INITIAL_TRANSACTION_STATE,
@@ -595,6 +612,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               if (!input.sourceAccountId) throw new Error('Source account required');
               const src = accountStore.getAccount(input.sourceAccountId);
               if (!src) throw new Error('Source account not found');
+              const cashAdvanceCardId = await findCashAdvanceCardForLoan(input.loanId);
+              const cashAdvanceCard = cashAdvanceCardId ? accountStore.getAccount(cashAdvanceCardId) : null;
+              if (cashAdvanceCard && cashAdvanceCard.currency !== loan.currency) {
+                throw new Error('Cash advance card currency must match the loan currency');
+              }
 
               if (src.currency !== loan.currency) {
                 if (!input.conversionRate) throw new Error('Conversion rate required — different currencies');
@@ -603,12 +625,24 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 checkBalanceForTransaction(src, srcDeduct, input.type);
                 sourceAccountId = input.sourceAccountId;
                 await trackedBalanceDelta(scope, input.sourceAccountId, -srcDeduct);
-                description = `Repaid ${loan.currency} ${input.amount} (deducted ${src.currency} ${srcDeduct}) to ${loan.personName} (rate: ${input.conversionRate})`;
+                if (cashAdvanceCard) {
+                  destinationAccountId = cashAdvanceCard.id;
+                  await trackedBalanceDelta(scope, cashAdvanceCard.id, input.amount);
+                  description = `Repaid ${loan.currency} ${input.amount} to ${cashAdvanceCard.name} from ${src.name} (deducted ${src.currency} ${srcDeduct}, rate: ${input.conversionRate})`;
+                } else {
+                  description = `Repaid ${loan.currency} ${input.amount} (deducted ${src.currency} ${srcDeduct}) to ${loan.personName} (rate: ${input.conversionRate})`;
+                }
               } else {
                 checkBalanceForTransaction(src, input.amount, input.type);
                 sourceAccountId = input.sourceAccountId;
                 await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
-                description = `Repaid ${currency} ${input.amount} to ${loan.personName}`;
+                if (cashAdvanceCard) {
+                  destinationAccountId = cashAdvanceCard.id;
+                  await trackedBalanceDelta(scope, cashAdvanceCard.id, input.amount);
+                  description = `Repaid ${currency} ${input.amount} to ${cashAdvanceCard.name} from ${src.name}`;
+                } else {
+                  description = `Repaid ${currency} ${input.amount} to ${loan.personName}`;
+                }
               }
             }
 
