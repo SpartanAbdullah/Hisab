@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Wallet2, Pencil, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { Modal } from '../components/Modal';
 import { useBudgetStore, computeBudgetUsages } from '../stores/budgetStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { EXPENSE_CATEGORIES, formatMoney } from '../lib/constants';
 import { SUPPORTED_CURRENCIES, type Currency, type Budget } from '../db';
 import { useToast } from '../components/Toast';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 
 export function BudgetsPage() {
   const budgets = useBudgetStore((s) => s.budgets);
@@ -18,10 +21,12 @@ export function BudgetsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Budget | null>(null);
 
-  useEffect(() => {
-    void loadBudgets();
-    if (transactions.length === 0) void loadTransactions();
+  const load = useCallback(async () => {
+    const tasks: Promise<unknown>[] = [loadBudgets()];
+    if (transactions.length === 0) tasks.push(loadTransactions());
+    await Promise.all(tasks);
   }, [loadBudgets, loadTransactions, transactions.length]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   // Recompute every time budgets or transactions change. Cheap; pure pass.
   const usages = useMemo(
@@ -51,16 +56,29 @@ export function BudgetsPage() {
           cross 80% — no shouting, no judgment.
         </p>
 
-        {usages.length === 0 ? (
-          <EmptyState
-            icon={Wallet2}
-            tone="accent"
-            title="No budgets yet"
-            description="Pick a category and a monthly cap. We'll track the rest."
-            subhint="Start with Groceries or Eating Out — easiest wins."
-            actionLabel="Add a budget"
-            onAction={() => setShowAdd(true)}
+        {loadStatus === 'error' && (
+          <PageErrorState
+            variant="inline"
+            title="Couldn't load budgets"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
           />
+        )}
+
+        {loadStatus === 'loading' && usages.length === 0 ? (
+          <ListSkeleton rows={3} />
+        ) : usages.length === 0 ? (
+          loadStatus === 'ready' ? (
+            <EmptyState
+              icon={Wallet2}
+              tone="accent"
+              title="No budgets yet"
+              description="Pick a category and a monthly cap. We'll track the rest."
+              subhint="Start with Groceries or Eating Out — easiest wins."
+              actionLabel="Add a budget"
+              onAction={() => setShowAdd(true)}
+            />
+          ) : null
         ) : (
           <div className="space-y-2.5">
             {usages.map((usage) => (

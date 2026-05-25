@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Link2,
   Search,
@@ -15,6 +15,9 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { useToast } from '../components/Toast';
 import { ContactDetailSheet } from './ContactDetailSheet';
 import { useT } from '../lib/i18n';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { Person } from '../db';
 
 // Sukoon screen 10. Full-screen replacement for the old ContactsModal.
@@ -50,9 +53,10 @@ export function ContactsPage() {
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null);
   const [showLinkHelp, setShowLinkHelp] = useState(false);
 
-  useEffect(() => {
-    void loadPersons();
+  const load = useCallback(async () => {
+    await loadPersons();
   }, [loadPersons]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   // Filter then alphabetise. Search is case-insensitive on name only — link
   // status / external handles aren't part of the visible name so they don't
@@ -367,28 +371,43 @@ export function ContactsPage() {
           </div>
         )}
 
-        {/* Empty state — no contacts at all, or none match the query */}
-        {persons.length === 0 ? (
-          <div className="text-center py-10">
-            <div className="w-14 h-14 rounded-3xl bg-accent-100 flex items-center justify-center mx-auto mb-3">
-              <Sparkles size={22} className="text-accent-600" />
+        {loadStatus === 'error' && (
+          <PageErrorState
+            variant="inline"
+            title="Couldn't load contacts"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
+          />
+        )}
+
+        {/* Empty state — no contacts at all, or none match the query. Gated
+            on loadStatus so we never flash "No contacts yet" before the
+            persons fetch finishes. */}
+        {loadStatus === 'loading' && persons.length === 0 ? (
+          <ListSkeleton rows={4} />
+        ) : persons.length === 0 ? (
+          loadStatus === 'ready' ? (
+            <div className="text-center py-10">
+              <div className="w-14 h-14 rounded-3xl bg-accent-100 flex items-center justify-center mx-auto mb-3">
+                <Sparkles size={22} className="text-accent-600" />
+              </div>
+              <p className="text-[13px] font-semibold text-ink-900">
+                No contacts yet
+              </p>
+              <p className="text-[11px] text-ink-500 mt-1 max-w-[260px] mx-auto leading-relaxed">
+                Add anyone you owe or who owes you. You can link them to Hisaab
+                later when they sign up.
+              </p>
+              {!showAdd && (
+                <button
+                  onClick={() => setShowAdd(true)}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 text-white px-4 py-2.5 text-[12px] font-semibold active:scale-95 transition-transform"
+                >
+                  <UserPlus size={12} /> Add your first contact
+                </button>
+              )}
             </div>
-            <p className="text-[13px] font-semibold text-ink-900">
-              No contacts yet
-            </p>
-            <p className="text-[11px] text-ink-500 mt-1 max-w-[260px] mx-auto leading-relaxed">
-              Add anyone you owe or who owes you. You can link them to Hisaab
-              later when they sign up.
-            </p>
-            {!showAdd && (
-              <button
-                onClick={() => setShowAdd(true)}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 text-white px-4 py-2.5 text-[12px] font-semibold active:scale-95 transition-transform"
-              >
-                <UserPlus size={12} /> Add your first contact
-              </button>
-            )}
-          </div>
+          ) : null
         ) : filtered.length === 0 ? (
           <p className="text-[13px] text-ink-400 text-center py-10">
             No matches for "{query}"

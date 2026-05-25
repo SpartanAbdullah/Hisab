@@ -18,6 +18,10 @@ import {
   normalizeGroupCode,
 } from '../lib/collaboration';
 import type {
+  GroupExpenseBalanceRow,
+  GroupSettlementBalanceRow,
+} from '../lib/supabaseDb';
+import type {
   SplitGroup,
   GroupExpense,
   GroupSettlement,
@@ -118,6 +122,22 @@ function getCurrentUserName(): string {
 
 function sameDisplayName(a: string | null | undefined, b: string | null | undefined): boolean {
   return (a ?? '').trim().toLocaleLowerCase() === (b ?? '').trim().toLocaleLowerCase();
+}
+
+// SplitsPage triggers loadBalances and loadUnreconciledFlags in parallel.
+// Both want the same `group_expenses` rows. Without dedup that's two
+// identical queries on every Groups-tab visit. This single-slot promise
+// cache collapses concurrent reads into one fetch; the slot clears once
+// the promise resolves so the next invocation (e.g. after an expense
+// write) hits the network again.
+let inflightBalanceExpenses: Promise<GroupExpenseBalanceRow[]> | null = null;
+function fetchSharedBalanceExpenses(): Promise<GroupExpenseBalanceRow[]> {
+  if (inflightBalanceExpenses) return inflightBalanceExpenses;
+  const p = groupExpensesDb.getAllVisibleForBalances().finally(() => {
+    if (inflightBalanceExpenses === p) inflightBalanceExpenses = null;
+  });
+  inflightBalanceExpenses = p;
+  return p;
 }
 
 async function claimPaidByMemberIfMine(
@@ -245,8 +265,16 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     set({ loading: true });
     try {
       const groups = await splitGroupsDb.getAll();
-      const hydrated = await Promise.all(groups.map((group) => hydrateGroup(group)));
-      set({ groups: hydrated.filter(Boolean) as SplitGroup[] });
+      // One batched query for ALL members across all visible groups,
+      // bucketed client-side. Replaces the prior N round-trips
+      // (hydrateGroup per group) with 1.
+      const ids = groups.map((g) => g.id);
+      const membersByGroup = await groupMembersDb.getByGroups(ids).catch(() => new Map());
+      const hydrated = groups.map((group) => {
+        const members = membersByGroup.get(group.id);
+        return members && members.length > 0 ? { ...group, members } : group;
+      });
+      set({ groups: hydrated });
     } finally {
       set({ loading: false });
     }
@@ -257,6 +285,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   // they belong to), then a pure in-memory pass. This collapses what used to
   // be 2N round-trips into 2, eliminating the "All settled → real numbers"
   // flash users were seeing on the Groups tab.
+  //
+  // The expenses fetch uses the narrow balance projection — ~5 columns
+  // instead of the full row — and is deduped against any inflight
+  // loadUnreconciledFlags call so the same data isn't downloaded twice
+  // (the splits page kicks both off in parallel).
   loadBalances: async () => {
     const currentUserId = localStorage.getItem('hisaab_supabase_uid');
     if (!currentUserId) {
@@ -265,18 +298,18 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     }
     try {
       const [allExpenses, allSettlements] = await Promise.all([
-        groupExpensesDb.getAllVisible(),
-        groupSettlementsDb.getAllVisible(),
+        fetchSharedBalanceExpenses(),
+        groupSettlementsDb.getAllVisibleForBalances(),
       ]);
 
       // Group the fetches by groupId once so the per-group pass is O(1) lookup.
-      const expensesByGroup = new Map<string, typeof allExpenses>();
+      const expensesByGroup = new Map<string, GroupExpenseBalanceRow[]>();
       for (const e of allExpenses) {
         const bucket = expensesByGroup.get(e.groupId) ?? [];
         bucket.push(e);
         expensesByGroup.set(e.groupId, bucket);
       }
-      const settlementsByGroup = new Map<string, typeof allSettlements>();
+      const settlementsByGroup = new Map<string, GroupSettlementBalanceRow[]>();
       for (const s of allSettlements) {
         const bucket = settlementsByGroup.get(s.groupId) ?? [];
         bucket.push(s);
@@ -310,16 +343,18 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   // that isn't reconciled yet" — only the payer can reconcile their own
   // expenses, so the indicator is actionable: it tells the user which
   // groups need their attention, not just which groups have unreconciled
-  // entries by anyone. Piggybacks on getAllVisible() (the same single
-  // query loadBalances already uses) so the network cost is zero when
-  // both run together.
+  // entries by anyone.
+  //
+  // Shares its expense fetch with loadBalances via fetchSharedBalanceExpenses
+  // so a SplitsPage load that runs both in parallel does a SINGLE round-trip
+  // for the expenses table, not two.
   loadUnreconciledFlags: async (currentUserId: string) => {
     if (!currentUserId) {
       set({ unreconciledFlags: {} });
       return;
     }
     try {
-      const allExpenses = await groupExpensesDb.getAllVisible();
+      const allExpenses = await fetchSharedBalanceExpenses();
       const memberIdByGroup = new Map<string, string>();
       const userName = getCurrentUserName();
       for (const group of get().groups) {

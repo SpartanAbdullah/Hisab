@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Plus, Send, CheckCircle2, ArrowRight } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { Modal } from '../components/Modal';
 import { useRemittanceStore } from '../stores/remittanceStore';
 import { useAccountStore } from '../stores/accountStore';
 import { formatMoney } from '../lib/constants';
 import { SUPPORTED_CURRENCIES, type Currency, type RemittanceChannel } from '../db';
 import { useToast } from '../components/Toast';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 
 const CHANNELS: { id: RemittanceChannel; label: string }[] = [
   { id: 'bank_transfer', label: 'Bank transfer' },
@@ -27,10 +30,12 @@ export function RemittancesPage() {
   const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
 
-  useEffect(() => {
-    void loadRemittances();
-    if (accounts.length === 0) void loadAccounts();
+  const load = useCallback(async () => {
+    const tasks: Promise<unknown>[] = [loadRemittances()];
+    if (accounts.length === 0) tasks.push(loadAccounts());
+    await Promise.all(tasks);
   }, [loadRemittances, loadAccounts, accounts.length]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   // Quick aggregate strip: this month's total sent + avg effective rate.
   // Gives the user one number to brag/wince about per channel.
@@ -78,16 +83,29 @@ export function RemittancesPage() {
       />
 
       <div className="px-5 pt-5 space-y-3">
-        {remittances.length === 0 ? (
-          <EmptyState
-            icon={Send}
-            tone="accent"
-            title="No remittances logged"
-            description="Track money sent home with the channel, fee, and effective rate — so you can compare months."
-            subhint="Pehli baar Wise use ki? Yahan log karo, dekho asli rate kya mila."
-            actionLabel="Log a remittance"
-            onAction={() => setShowAdd(true)}
+        {loadStatus === 'error' && (
+          <PageErrorState
+            variant="inline"
+            title="Couldn't load remittances"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
           />
+        )}
+
+        {loadStatus === 'loading' && remittances.length === 0 ? (
+          <ListSkeleton rows={3} withAvatar={false} />
+        ) : remittances.length === 0 ? (
+          loadStatus === 'ready' ? (
+            <EmptyState
+              icon={Send}
+              tone="accent"
+              title="No remittances logged"
+              description="Track money sent home with the channel, fee, and effective rate — so you can compare months."
+              subhint="Pehli baar Wise use ki? Yahan log karo, dekho asli rate kya mila."
+              actionLabel="Log a remittance"
+              onAction={() => setShowAdd(true)}
+            />
+          ) : null
         ) : (
           <>
             {/* This-month strip */}

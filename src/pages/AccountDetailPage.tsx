@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAccountStore } from '../stores/accountStore';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
+import { PageErrorState } from '../components/PageErrorState';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
@@ -115,14 +117,36 @@ export function AccountDetailPage() {
   const [newName, setNewName] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
-  useEffect(() => {
-    loadAccounts();
-    loadTransactions();
-    loadExpenses();
+  const load = useCallback(async () => {
+    await Promise.all([loadAccounts(), loadTransactions(), loadExpenses()]);
   }, [loadAccounts, loadTransactions, loadExpenses]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const account = accounts.find((a) => a.id === id);
+
+  // Don't render "account not found" until the accounts list has actually
+  // finished loading — otherwise a deep-link to /account/:id flashes the
+  // not-found screen for ~1s while Supabase responds.
   if (!account) {
+    if (loadStatus === 'error') {
+      return (
+        <PageErrorState
+          title="Couldn't load this account"
+          message={loadError ?? 'Account data failed to load.'}
+          onRetry={retryLoad}
+        />
+      );
+    }
+    if (loadStatus === 'loading') {
+      return (
+        <main className="min-h-dvh bg-cream-bg flex items-center justify-center">
+          <div className="flex items-center gap-2 text-ink-500 text-[13px]">
+            <div className="w-3 h-3 rounded-full bg-cream-hairline animate-pulse" />
+            Loading…
+          </div>
+        </main>
+      );
+    }
     return (
       <main className="min-h-dvh bg-cream-bg flex items-center justify-center">
         <p className="text-ink-500 text-[13px]">Account nahi mila</p>

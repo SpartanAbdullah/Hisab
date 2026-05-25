@@ -16,6 +16,7 @@ import { MoneyDisplay } from '../components/MoneyDisplay';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
 import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { AddAccountStepper } from './AddAccountStepper';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
@@ -77,6 +78,13 @@ export function AccountsPage() {
   const primaryAccounts = accounts.filter((a) => a.currency === primaryCurrency);
   const otherAccounts = accounts.filter((a) => a.currency !== primaryCurrency);
 
+  // Until the first load resolves, treat the screen as "we don't know yet" —
+  // don't render the empty state or the hero's "No accounts yet" headline,
+  // since both would flash for ~1s before the real data lands.
+  const hasAccounts = accounts.length > 0;
+  const isInitialLoading = status === 'loading' && !hasAccounts;
+  const showEmptyState = status === 'ready' && !hasAccounts;
+
   const renderRow = (account: typeof accounts[number]) => {
     const Icon = iconForType[account.type] ?? Wallet;
     const meta = currencyMeta[account.currency];
@@ -136,7 +144,9 @@ export function AccountsPage() {
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
             Total balance · {primaryCurrency}
           </p>
-          {accounts.length === 0 ? (
+          {isInitialLoading ? (
+            <div className="mt-1.5 h-10 w-44 rounded-xl bg-white/10 animate-pulse" />
+          ) : showEmptyState ? (
             <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
               No accounts yet
             </p>
@@ -172,7 +182,9 @@ export function AccountsPage() {
           />
         )}
 
-        {accounts.length === 0 ? (
+        {isInitialLoading ? (
+          <ListSkeleton rows={3} />
+        ) : showEmptyState ? (
           <EmptyState
             icon={Wallet}
             tone="accent"

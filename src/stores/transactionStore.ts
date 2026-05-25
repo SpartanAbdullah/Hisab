@@ -399,14 +399,19 @@ async function logActivitySafe(type: ActivityType, description: string, entityId
 }
 
 // If rollback itself partially failed, local state may have drifted from
-// remote. Force-refetch the two stores that carry money-critical data.
+// remote. Force-refetch the stores that carry money-critical data. Runs
+// the five fetches in parallel — these are independent reads and the
+// post-rollback path is exactly where every saved millisecond matters
+// (the user is staring at an error toast).
 async function refetchMoneyStores(): Promise<void> {
   try {
-    await useAccountStore.getState().loadAccounts();
-    await useTransactionStore.getState().loadTransactions();
-    await useLoanStore.getState().loadLoans();
-    await useEmiStore.getState().loadSchedules();
-    await useGoalStore.getState().loadGoals();
+    await Promise.all([
+      useAccountStore.getState().loadAccounts(),
+      useTransactionStore.getState().loadTransactions(),
+      useLoanStore.getState().loadLoans(),
+      useEmiStore.getState().loadSchedules(),
+      useGoalStore.getState().loadGoals(),
+    ]);
   } catch (err) {
     console.error('Post-rollback refetch failed — local state may be stale until next navigation', err);
   }

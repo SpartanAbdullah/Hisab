@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -9,6 +9,9 @@ import { usePersonStore } from '../stores/personStore';
 import { useToast } from '../components/Toast';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { LinkedRequest, SettlementRequest } from '../db';
 
 type Tab = 'incoming' | 'outgoing';
@@ -32,9 +35,12 @@ export function InboxPage() {
   const [tab, setTab] = useState<Tab>('incoming');
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const load = useCallback(async () => {
+    await Promise.all([loadRequests(), loadSettlements()]);
+  }, [loadRequests, loadSettlements]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
+
   useEffect(() => {
-    void loadRequests();
-    void loadSettlements();
     const onFocus = () => { void loadRequests(); void loadSettlements(); };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
@@ -184,10 +190,23 @@ export function InboxPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-3">
-        {visible.length === 0 ? (
-          <p className="text-[13px] text-ink-400 text-center py-10">
-            {tab === 'incoming' ? t('ltr_empty_incoming') : t('ltr_empty_outgoing')}
-          </p>
+        {loadStatus === 'error' && (
+          <PageErrorState
+            variant="inline"
+            title="Couldn't load inbox"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
+          />
+        )}
+
+        {loadStatus === 'loading' && visible.length === 0 ? (
+          <ListSkeleton rows={3} withAvatar={false} />
+        ) : visible.length === 0 ? (
+          loadStatus === 'ready' ? (
+            <p className="text-[13px] text-ink-400 text-center py-10">
+              {tab === 'incoming' ? t('ltr_empty_incoming') : t('ltr_empty_outgoing')}
+            </p>
+          ) : null
         ) : (
           <div className="space-y-2.5">
             {visible.map((entry) =>

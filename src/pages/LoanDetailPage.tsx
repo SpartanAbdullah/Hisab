@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { format, isPast, differenceInDays } from 'date-fns';
 import { AlertCircle, Bell, CheckCircle, Clock, RotateCcw, ChevronRight, Handshake } from 'lucide-react';
@@ -17,6 +17,8 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { TransactionItem } from '../components/TransactionItem';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
+import { PageErrorState } from '../components/PageErrorState';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { RepaymentModal } from './RepaymentModal';
@@ -43,15 +45,37 @@ export function LoanDetailPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedEmi, setSelectedEmi] = useState<(EmiSchedule & { isOverdue: boolean }) | null>(null);
 
-  useEffect(() => {
-    void loadLoans();
-    void loadSchedules();
-    void loadTransactions();
-    void loadAccounts();
+  const load = useCallback(async () => {
+    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts()]);
   }, [loadAccounts, loadLoans, loadSchedules, loadTransactions]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const loan = loans.find((entry) => entry.id === id);
+
+  // Deep-links into /loan/:id need to wait for the loans list to land before
+  // we can decide whether the loan really doesn't exist. Showing the
+  // "not found" copy mid-load creates panic for a record the user knows
+  // exists.
   if (!loan) {
+    if (loadStatus === 'error') {
+      return (
+        <PageErrorState
+          title="Couldn't load this loan"
+          message={loadError ?? 'Loan data failed to load.'}
+          onRetry={retryLoad}
+        />
+      );
+    }
+    if (loadStatus === 'loading') {
+      return (
+        <main className="min-h-dvh bg-cream-bg flex items-center justify-center">
+          <div className="flex items-center gap-2 text-ink-500 text-[13px]">
+            <div className="w-3 h-3 rounded-full bg-cream-hairline animate-pulse" />
+            Loading…
+          </div>
+        </main>
+      );
+    }
     return (
       <main className="min-h-dvh bg-cream-bg flex items-center justify-center">
         <p className="text-ink-500 text-[13px]">{t('loan_not_found')}</p>

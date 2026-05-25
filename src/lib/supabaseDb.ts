@@ -579,6 +579,24 @@ export const splitGroupsDb = {
 // ══════════════════════════════════════
 // GROUP EXPENSES
 // ══════════════════════════════════════
+// Lean projection used by the splits dashboard for balance + unreconciled-flag
+// computation. Includes only the columns those passes actually read, so a
+// 1000-row return on a heavy splitter ships ~4 KB instead of ~40 KB.
+export interface GroupExpenseBalanceRow {
+  groupId: string;
+  paidBy: string;
+  amount: number;
+  splits: GroupExpense['splits'];
+  isReconciled: boolean;
+}
+
+export interface GroupSettlementBalanceRow {
+  groupId: string;
+  fromMember: string;
+  toMember: string;
+  amount: number;
+}
+
 export const groupExpensesDb = {
   async get(id: string): Promise<GroupExpense | null> {
     const { data, error } = await supabase
@@ -609,6 +627,24 @@ export const groupExpensesDb = {
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(mapGroupExpense);
+  },
+  // Same shape as getAllVisible but only the columns the dashboard balance +
+  // unreconciled-flag passes consume. The splits JSONB is still selected
+  // because the per-member-share math needs it; everything else (notes,
+  // payload, audit columns) is dropped.
+  async getAllVisibleForBalances(): Promise<GroupExpenseBalanceRow[]> {
+    const { data, error } = await supabase
+      .from('group_expenses')
+      .select('group_id, paid_by, amount, splits, is_reconciled')
+      .is('deleted_at', null);
+    if (error) throw error;
+    return (data ?? []).map((r) => ({
+      groupId: r.group_id as string,
+      paidBy: r.paid_by as string,
+      amount: Number(r.amount),
+      splits: (r.splits ?? []) as GroupExpense['splits'],
+      isReconciled: Boolean(r.is_reconciled),
+    }));
   },
   async add(e: GroupExpense) {
     const { error } = await supabase.from('group_expenses').insert({
@@ -686,6 +722,21 @@ export const groupSettlementsDb = {
     if (error) throw error;
     return (data ?? []).map(mapGroupSettlement);
   },
+  // Narrow projection for the dashboard balance pass — only the four columns
+  // the running-sum needs. Roughly halves payload on heavy splitters.
+  async getAllVisibleForBalances(): Promise<GroupSettlementBalanceRow[]> {
+    const { data, error } = await supabase
+      .from('group_settlements')
+      .select('group_id, from_member, to_member, amount')
+      .is('deleted_at', null);
+    if (error) throw error;
+    return (data ?? []).map((r) => ({
+      groupId: r.group_id as string,
+      fromMember: r.from_member as string,
+      toMember: r.to_member as string,
+      amount: Number(r.amount),
+    }));
+  },
   async add(s: GroupSettlement) {
     const { error } = await supabase.from('group_settlements').insert({
       id: s.id, user_id: getUserId(), group_id: s.groupId,
@@ -711,6 +762,25 @@ export const groupMembersDb = {
       .order('created_at', { ascending: true });
     if (error) throw error;
     return (data ?? []).map(mapGroupMember);
+  },
+  // Batched fetch for loadGroups: gets every member row for the given groups
+  // in one round-trip and returns them grouped by group_id. Replaces the
+  // N+1 pattern of calling getByGroup() once per group during list-page load.
+  async getByGroups(groupIds: string[]): Promise<Map<string, GroupMember[]>> {
+    const grouped = new Map<string, GroupMember[]>();
+    if (groupIds.length === 0) return grouped;
+    const { data, error } = await supabase
+      .from('group_members').select('*')
+      .in('group_id', groupIds)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const gid = String((row as Record<string, unknown>).group_id);
+      const bucket = grouped.get(gid) ?? [];
+      bucket.push(mapGroupMember(row as Record<string, unknown>));
+      grouped.set(gid, bucket);
+    }
+    return grouped;
   },
   async add(member: GroupMember & { groupId: string; invitedBy?: string | null }) {
     const { error } = await supabase.from('group_members').insert({

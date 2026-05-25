@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Plus, ChevronRight, Users, Bell, Search, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
@@ -13,6 +13,9 @@ import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
 import { TransactionItem } from '../components/TransactionItem';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import {
@@ -66,12 +69,10 @@ export function LoansPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    void loadLoans();
-    void loadSchedules();
-    void loadTransactions();
-    void loadAccounts();
+  const load = useCallback(async () => {
+    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts()]);
   }, [loadAccounts, loadLoans, loadSchedules, loadTransactions]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const activeLoans = loans.filter((l) => l.status === 'active');
   const settledLoans = loans.filter((l) => l.status === 'settled');
@@ -449,8 +450,20 @@ export function LoansPage() {
           </div>
         )}
 
-        {/* Empty state */}
-        {primaryGroups.length === 0 && otherGroups.length === 0 && (
+        {loadStatus === 'error' && (
+          <PageErrorState
+            variant="inline"
+            title="Couldn't load loans"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
+          />
+        )}
+
+        {/* First-load skeleton — gate the empty state on a completed load so
+            we never flash "No receivables" before Supabase returns. */}
+        {loadStatus === 'loading' && loans.length === 0 ? (
+          <ListSkeleton rows={3} />
+        ) : loadStatus === 'ready' && primaryGroups.length === 0 && otherGroups.length === 0 ? (
           <EmptyState
             icon={Users}
             tone={tab === 'settled' ? 'receive' : 'warn'}
@@ -468,7 +481,7 @@ export function LoansPage() {
             actionLabel={tab !== 'settled' ? t('empty_loans_cta') : undefined}
             onAction={tab !== 'settled' ? () => setShowAdd(true) : undefined}
           />
-        )}
+        ) : null}
 
       </div>
 

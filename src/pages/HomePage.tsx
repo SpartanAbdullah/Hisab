@@ -115,6 +115,13 @@ export function HomePage() {
     retry: retryLoad,
   } = useAsyncLoad(loadEverything);
 
+  // Until the first load resolves, anything keyed off "is the user-owned
+  // collection empty?" is unreliable — every store starts with [] before
+  // its Supabase fetch completes. We render placeholder UI (or simply
+  // nothing) for those slots until status === 'ready'.
+  const isInitialLoading = loadStatus === 'loading';
+  const dataReady = loadStatus === 'ready';
+
   // FIX 2: Credit cards are liabilities, not assets
   // Net worth = regular account balances + (credit card balance - limit) for each card
   const totals = accounts.reduce((acc, a) => {
@@ -260,6 +267,14 @@ export function HomePage() {
               message={loadError ?? "Some data failed to load."}
               onRetry={retryLoad}
             />
+          ) : isInitialLoading ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-[18px] bg-cream-card border border-cream-border h-24 animate-pulse" />
+                <div className="rounded-[18px] bg-cream-card border border-cream-border h-24 animate-pulse" />
+              </div>
+              <div className="rounded-[18px] bg-cream-card border border-cream-border h-32 animate-pulse" />
+            </div>
           ) : (
             <>
               {receivableEntries.length === 0 && payableEntries.length === 0 ? (
@@ -499,7 +514,9 @@ export function HomePage() {
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
             Your money
           </p>
-          {accountCount === 0 ? (
+          {isInitialLoading ? (
+            <div className="mt-1.5 h-12 w-48 rounded-xl bg-white/10 animate-pulse" />
+          ) : accountCount === 0 ? (
             <>
               <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
                 No accounts yet
@@ -545,8 +562,21 @@ export function HomePage() {
           />
         )}
 
+        {/* First-load skeleton — never flash "Add an account" / quick tiles
+            empty state before the accounts query finishes. */}
+        {isInitialLoading && (
+          <div className="space-y-4" aria-hidden="true">
+            <div className="rounded-[18px] bg-cream-card border border-cream-border h-20 animate-pulse" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-[18px] bg-cream-card border border-cream-border h-24 animate-pulse" />
+              <div className="rounded-[18px] bg-cream-card border border-cream-border h-24 animate-pulse" />
+            </div>
+            <div className="rounded-[20px] bg-cream-card border border-cream-border h-32 animate-pulse" />
+          </div>
+        )}
+
         {/* Add-account CTA when the user has zero accounts. */}
-        {accountCount === 0 && (
+        {dataReady && accountCount === 0 && (
           <button
             onClick={() => setShowAddAccount(true)}
             className="w-full rounded-[18px] bg-cream-card border border-cream-border p-5 flex items-center gap-3 text-left active:scale-[0.99] transition-transform"
@@ -804,8 +834,10 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Empty-dashboard nudge — accounts exist but no transactions yet. */}
-        {accountCount > 0 && transactions.length === 0 && (
+        {/* Empty-dashboard nudge — accounts exist but no transactions yet.
+            Gated on dataReady so we don't flash this between the accounts
+            load completing and the transactions load completing. */}
+        {dataReady && accountCount > 0 && transactions.length === 0 && (
           <div className="rounded-[18px] bg-accent-50 border border-cream-border p-5 flex flex-col items-center text-center">
             <div className="w-12 h-12 rounded-2xl bg-accent-100 flex items-center justify-center mb-3">
               <span className="text-2xl">&#x1f4b8;</span>

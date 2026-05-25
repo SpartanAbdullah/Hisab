@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Plus, ArrowLeftRight, Search, X } from 'lucide-react';
 import {
   startOfDay,
@@ -26,6 +26,9 @@ import { NavyHero, TopBar } from '../components/NavyHero';
 import { MoneyDisplay } from '../components/MoneyDisplay';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { QuickEntry } from './QuickEntry';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -130,12 +133,10 @@ export function TransactionsPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
-  useEffect(() => {
-    loadTransactions();
-    loadAccounts();
-    loadLoans();
-    loadGoals();
+  const load = useCallback(async () => {
+    await Promise.all([loadTransactions(), loadAccounts(), loadLoans(), loadGoals()]);
   }, [loadTransactions, loadAccounts, loadLoans, loadGoals]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const typeFilters: { label: string; value: TransactionType | 'all' }[] = [
     { label: t('txpage_all'), value: 'all' },
@@ -367,17 +368,32 @@ export function TransactionsPage() {
           </p>
         )}
 
-        {/* Day-grouped list */}
-        {filtered.length === 0 ? (
-          <EmptyState
-            icon={ArrowLeftRight}
-            tone="accent"
-            title={t('empty_tx_title')}
-            description={t('empty_tx_desc')}
-            subhint={t('empty_tx_subhint')}
-            actionLabel={t('empty_tx_cta')}
-            onAction={() => setShowAdd(true)}
+        {loadStatus === 'error' && (
+          <PageErrorState
+            variant="inline"
+            title="Couldn't load transactions"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
           />
+        )}
+
+        {/* Day-grouped list — never show the empty-state until the first
+            load resolves, otherwise users see "no transactions" flash before
+            their real history arrives. */}
+        {loadStatus === 'loading' && transactions.length === 0 ? (
+          <ListSkeleton rows={4} />
+        ) : filtered.length === 0 ? (
+          loadStatus === 'ready' ? (
+            <EmptyState
+              icon={ArrowLeftRight}
+              tone="accent"
+              title={t('empty_tx_title')}
+              description={t('empty_tx_desc')}
+              subhint={t('empty_tx_subhint')}
+              actionLabel={t('empty_tx_cta')}
+              onAction={() => setShowAdd(true)}
+            />
+          ) : null
         ) : (
           <div className="space-y-4">
             {dayGroups.map((group) => (

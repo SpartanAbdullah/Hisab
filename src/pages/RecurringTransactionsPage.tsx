@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Plus, Repeat, Pause, Play, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { Modal } from '../components/Modal';
 import { useRecurringStore } from '../stores/recurringStore';
 import { useAccountStore } from '../stores/accountStore';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { RecurringCadence, RecurringTransaction } from '../db';
 
 export function RecurringTransactionsPage() {
@@ -19,10 +22,12 @@ export function RecurringTransactionsPage() {
   const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
 
-  useEffect(() => {
-    void loadTemplates();
-    if (accounts.length === 0) void loadAccounts();
+  const load = useCallback(async () => {
+    const tasks: Promise<unknown>[] = [loadTemplates()];
+    if (accounts.length === 0) tasks.push(loadAccounts());
+    await Promise.all(tasks);
   }, [loadTemplates, loadAccounts, accounts.length]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const accountName = (id: string | null) =>
     accounts.find((a) => a.id === id)?.name ?? 'Unknown';
@@ -75,16 +80,29 @@ export function RecurringTransactionsPage() {
           ask, you confirm, we post. Pause anytime.
         </p>
 
-        {templates.length === 0 ? (
-          <EmptyState
-            icon={Repeat}
-            tone="accent"
-            title="No recurring entries"
-            description="Set up salary, rent, EMIs once. They'll show up on their date for a one-tap confirm."
-            subhint="Pehle salary add karo — har mahine ek tap kaafi."
-            actionLabel="Add a recurring entry"
-            onAction={() => setShowAdd(true)}
+        {loadStatus === 'error' && (
+          <PageErrorState
+            variant="inline"
+            title="Couldn't load recurring entries"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
           />
+        )}
+
+        {loadStatus === 'loading' && templates.length === 0 ? (
+          <ListSkeleton rows={3} withAvatar={false} />
+        ) : templates.length === 0 ? (
+          loadStatus === 'ready' ? (
+            <EmptyState
+              icon={Repeat}
+              tone="accent"
+              title="No recurring entries"
+              description="Set up salary, rent, EMIs once. They'll show up on their date for a one-tap confirm."
+              subhint="Pehle salary add karo — har mahine ek tap kaafi."
+              actionLabel="Add a recurring entry"
+              onAction={() => setShowAdd(true)}
+            />
+          ) : null
         ) : (
           <div className="space-y-2.5">
             {templates.map((t) => (

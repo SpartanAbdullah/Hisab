@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Target, CalendarClock, CheckCircle, XCircle, GraduationCap, HeartPulse, PartyPopper, Plane, Home, Zap, MoreHorizontal, Plus } from 'lucide-react';
 import { useGoalStore } from '../stores/goalStore';
 import { useAccountStore } from '../stores/accountStore';
@@ -6,6 +6,9 @@ import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { differenceInDays, format } from 'date-fns';
@@ -42,7 +45,10 @@ export function GoalsPage() {
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showContribute, setShowContribute] = useState(false);
 
-  useEffect(() => { loadGoals(); loadAccounts(); loadExpenses(); }, [loadGoals, loadAccounts, loadExpenses]);
+  const load = useCallback(async () => {
+    await Promise.all([loadGoals(), loadAccounts(), loadExpenses()]);
+  }, [loadGoals, loadAccounts, loadExpenses]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const upcomingExpenses = expenses
     .filter(e => e.status === 'upcoming')
@@ -83,6 +89,21 @@ export function GoalsPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+
+      {loadStatus === 'error' && (
+        <PageErrorState
+          variant="inline"
+          title="Couldn't load goals"
+          message={loadError ?? 'Some data failed to load.'}
+          onRetry={retryLoad}
+        />
+      )}
+
+      {/* First-load skeleton — never flash "No goals yet" before the
+          goals + upcoming-expenses queries finish. */}
+      {loadStatus === 'loading' && goals.length === 0 && upcomingExpenses.length === 0 && (
+        <div className="px-5 pt-5"><ListSkeleton rows={3} /></div>
+      )}
 
       {/* Upcoming Expenses Section */}
       {upcomingExpenses.length > 0 && (
@@ -191,7 +212,7 @@ export function GoalsPage() {
             <Target size={12} /> {t('goals_title')}
           </h2>
         )}
-        {goals.length === 0 && upcomingExpenses.length === 0 && (
+        {loadStatus === 'ready' && goals.length === 0 && upcomingExpenses.length === 0 && (
           <EmptyState icon={Target} tone="receive" title={t('empty_goals_title')} description={t('empty_goals_desc')} subhint={t('empty_goals_subhint')} actionLabel={t('empty_goals_cta')} onAction={() => setShowAdd(true)} />
         )}
         {goals.map((g, i) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { format, isToday, isYesterday } from 'date-fns';
 import {
   PlusCircle, ArrowLeftRight, HandCoins, CheckCircle,
@@ -11,6 +11,9 @@ import { useNotificationStore } from '../stores/notificationStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { PageErrorState } from '../components/PageErrorState';
+import { ListSkeleton } from '../components/ListSkeleton';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { useT } from '../lib/i18n';
 
 const iconMap: Record<string, LucideIcon> = {
@@ -63,10 +66,10 @@ export function ActivityPage() {
   // badge expecting to see what's new first.
   const [tab, setTab] = useState<Tab>('shared');
 
-  useEffect(() => {
-    void loadActivities();
-    void loadNotifications();
+  const load = useCallback(async () => {
+    await Promise.all([loadActivities(), loadNotifications()]);
   }, [loadActivities, loadNotifications]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   function getDateLabel(dateStr: string): string {
     const date = new Date(dateStr);
@@ -133,14 +136,27 @@ export function ActivityPage() {
           />
         </div>
 
-        {!hasAnyItems ? (
-          <EmptyState
-            icon={Clock}
-            tone="indigo"
-            title={t('empty_activity_title')}
-            description={t('empty_activity_desc')}
-            subhint={t('empty_activity_subhint')}
+        {loadStatus === 'error' && (
+          <PageErrorState
+            variant="inline"
+            title="Couldn't load activity"
+            message={loadError ?? 'Some data failed to load.'}
+            onRetry={retryLoad}
           />
+        )}
+
+        {loadStatus === 'loading' && !hasAnyItems ? (
+          <ListSkeleton rows={4} withAvatar={false} />
+        ) : !hasAnyItems ? (
+          loadStatus === 'ready' ? (
+            <EmptyState
+              icon={Clock}
+              tone="indigo"
+              title={t('empty_activity_title')}
+              description={t('empty_activity_desc')}
+              subhint={t('empty_activity_subhint')}
+            />
+          ) : null
         ) : tab === 'shared' ? (
           notifications.length === 0 ? (
             <div className="rounded-2xl bg-cream-card border border-cream-border p-4 text-[12px] text-ink-500 text-center">
