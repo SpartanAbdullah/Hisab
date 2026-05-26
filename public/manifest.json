@@ -6,9 +6,10 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#4f46e5",
-  "theme_color": "#4f46e5",
+  "background_color": "#0B0E2A",
+  "theme_color": "#0B0E2A",
   "orientation": "portrait",
+  "lang": "en",
   "categories": ["finance", "productivity"],
   "icons": [
     {

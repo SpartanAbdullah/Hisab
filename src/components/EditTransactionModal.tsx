@@ -6,6 +6,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
+import { confirmDestructive } from './ConfirmDestructiveSheet';
 import { EXPENSE_CATEGORIES, formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { parseInternalNote } from '../lib/internalNotes';
@@ -147,7 +148,12 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Delete this entry?')) return;
+    const ok = await confirmDestructive({
+      title: 'Delete this entry?',
+      description: 'The balance change will be reversed.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
 
     setSaving(true);
     try {

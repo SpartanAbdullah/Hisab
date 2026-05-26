@@ -9,6 +9,7 @@ import { useRecurringStore } from '../stores/recurringStore';
 import { useAccountStore } from '../stores/accountStore';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { RecurringCadence, RecurringTransaction } from '../db';
 
@@ -45,7 +46,12 @@ export function RecurringTransactionsPage() {
   };
 
   const handleDelete = async (t: RecurringTransaction) => {
-    if (!window.confirm(`Delete the "${t.label || t.category}" recurring entry?`)) return;
+    const ok = await confirmDestructive({
+      title: `Delete the "${t.label || t.category}" recurring entry?`,
+      description: 'Future automatic posts will stop.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     try {
       await deleteTemplate(t.id);
       toast.show({ type: 'success', title: 'Deleted' });

@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
 import { registerServiceWorker } from './lib/serviceWorker';
+import { installGlobalErrorHandlers } from './lib/errorReporter';
 
+installGlobalErrorHandlers();
 registerServiceWorker();
 
 createRoot(document.getElementById('root')!).render(

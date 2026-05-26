@@ -100,10 +100,32 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   getAccount: (id) => get().accounts.find((a) => a.id === id),
 
   updateBalance: async (id, delta) => {
+    // Optimistic-locked balance update with retry-on-conflict. The server
+    // performs `balance + delta` atomically and fails with BALANCE_CONFLICT
+    // if our locally-known balance is stale (e.g. another tab moved money).
+    // On conflict we refetch the row and retry once with the fresh expected
+    // balance. Two consecutive conflicts surface to the caller so the upstream
+    // MutationScope can roll back / refetch.
     const account = get().accounts.find((a) => a.id === id);
     if (!account) throw new Error(`Account ${id} not found`);
-    const newBalance = Math.round((account.balance + delta) * 100) / 100;
-    await accountsDb.update(id, { balance: newBalance });
+    const roundedDelta = Math.round(delta * 100) / 100;
+
+    const apply = async (expected: number): Promise<number> =>
+      accountsDb.applyBalanceDelta(id, expected, roundedDelta);
+
+    let newBalance: number;
+    try {
+      newBalance = await apply(account.balance);
+    } catch (err) {
+      if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') throw err;
+      // Refetch the row to learn the true balance, then retry once.
+      const fresh = await accountsDb.getAll();
+      const updated = fresh.find((a) => a.id === id);
+      if (!updated) throw new Error(`Account ${id} not found after refresh`);
+      set({ accounts: fresh });
+      newBalance = await apply(updated.balance);
+    }
+
     set((s) => ({
       accounts: s.accounts.map((a) => (a.id === id ? { ...a, balance: newBalance } : a)),
     }));
@@ -120,7 +142,17 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     const account = get().accounts.find((a) => a.id === id);
     if (!account) throw new Error(`Account ${id} not found`);
     if (account.balance !== 0) throw new Error('Account must have zero balance to delete');
-    await accountsDb.delete(id);
+    try {
+      await accountsDb.delete(id);
+    } catch (err) {
+      // Postgres FK violation (transactions/recurring still reference this
+      // account) surfaces as code 23503. Translate to a user-friendly message.
+      const pgErr = err as { code?: string; message?: string };
+      if (pgErr?.code === '23503' || /foreign key/i.test(pgErr?.message ?? '')) {
+        throw new Error('This account has linked transactions. Delete them first, or archive the account instead.');
+      }
+      throw err;
+    }
     set((s) => ({
       accounts: s.accounts.filter((a) => a.id !== id),
     }));

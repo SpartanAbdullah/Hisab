@@ -11,6 +11,7 @@ import { SettleUpModal } from './SettleUpModal';
 import { GroupInviteModal } from '../components/GroupInviteModal';
 import { ProgressRing } from '../components/ProgressRing';
 import { PageErrorState } from '../components/PageErrorState';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
@@ -196,7 +197,12 @@ export function GroupDetailPage() {
     .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.paid - a.paid || a.member.name.localeCompare(b.member.name));
 
   const handleDelete = async () => {
-    if (confirm(t('group_delete_confirm'))) {
+    const ok = await confirmDestructive({
+      title: t('group_delete_confirm'),
+      description: 'All expenses, settlements, and member links will be removed.',
+      confirmLabel: 'Delete group',
+    });
+    if (ok) {
       await deleteGroup(group.id);
       navigate('/groups');
     }

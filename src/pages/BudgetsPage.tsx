@@ -10,6 +10,7 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { EXPENSE_CATEGORIES, formatMoney } from '../lib/constants';
 import { SUPPORTED_CURRENCIES, type Currency, type Budget } from '../db';
 import { useToast } from '../components/Toast';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 
 export function BudgetsPage() {
@@ -339,7 +340,12 @@ function EditBudgetModal({ budget, onClose }: EditBudgetModalProps) {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(`Delete the ${budget.category} budget?`)) return;
+    const ok = await confirmDestructive({
+      title: `Delete the ${budget.category} budget?`,
+      description: 'You can recreate it any time.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       await deleteBudget(budget.id);

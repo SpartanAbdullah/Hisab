@@ -23,7 +23,13 @@ const BACKOFF_BASE_MS = 5_000; // 5s, 10s, 20s, 40s … capped at 5 min
 let sweepHandle: number | null = null;
 let isRunning = false;
 
+// Feature flag — the runner is a SCAFFOLD (all dispatch handlers throw).
+// Opt in only when the per-store rewire is in place. Until then, starting
+// the runner just wakes up every 30s to do nothing and waste a Dexie txn.
+const ENABLED = import.meta.env.VITE_ENABLE_OUTBOX === 'true';
+
 export function startOutboxRunner(): void {
+  if (!ENABLED) return;
   if (sweepHandle != null) return;
   // Initial sweep on start so any pre-existing outbox rows flush before
   // the user can pile more in.

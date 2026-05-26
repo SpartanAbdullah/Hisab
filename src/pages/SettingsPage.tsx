@@ -33,6 +33,7 @@ import { useAppModeStore } from "../stores/appModeStore";
 import { useAccountStore } from "../stores/accountStore";
 import { useAuthStore } from "../stores/authStore";
 import { useToast } from "../components/Toast";
+import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
 import { useT, useI18nStore } from "../lib/i18n";
 import { exportAllData, importData, downloadJSON } from "../lib/dataExport";
 import { profilesDb } from "../lib/supabaseDb";
@@ -154,7 +155,13 @@ export function SettingsPage() {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!confirm(t("settings_import_warn"))) {
+    const ok = await confirmDestructive({
+      title: t("settings_import_warn"),
+      description: 'Existing data may be overwritten by the imported file.',
+      confirmLabel: 'Import',
+      tone: 'warning',
+    });
+    if (!ok) {
       e.target.value = "";
       return;
     }

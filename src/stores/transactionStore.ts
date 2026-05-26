@@ -95,6 +95,9 @@ interface TransactionState {
   ) => Promise<Transaction>;
   setReconciled: (id: string, isReconciled: boolean) => Promise<void>;
   deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean }) => Promise<void>;
+  // Used by rollback paths that need to re-insert a transaction with its
+  // original id and re-apply the matching balance delta. Not for general use.
+  restoreTransaction: (snapshot: Transaction) => Promise<void>;
   getTransaction: (id: string) => Transaction | undefined;
   getByAccount: (accountId: string) => Transaction[];
   getByLoan: (loanId: string) => Transaction[];
@@ -1090,4 +1093,29 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     ),
 
   getByLoan: (loanId) => get().transactions.filter((t) => t.relatedLoanId === loanId),
+
+  // Re-insert a previously-deleted transaction with its original id and
+  // re-apply the balance delta that the delete had reversed. Used only by
+  // splitStore.updateGroupExpense rollback. Best-effort: failure of the
+  // balance step does NOT abort the row re-insert — we accept a small drift
+  // over leaving the ledger row missing entirely. The mutationScope upstream
+  // will surface drift via refetch.
+  restoreTransaction: async (snapshot) => {
+    const accountStore = useAccountStore.getState();
+    await transactionsDb.add(snapshot);
+    set((s) => ({ transactions: [snapshot, ...s.transactions] }));
+
+    // Re-apply balance deltas matching the snapshot's type. Only the small
+    // subset of types that linked group-expenses can produce is handled —
+    // everything else is left to manual reconciliation.
+    try {
+      if (snapshot.type === 'expense' && snapshot.sourceAccountId) {
+        await accountStore.updateBalance(snapshot.sourceAccountId, -snapshot.amount);
+      } else if (snapshot.type === 'income' && snapshot.destinationAccountId) {
+        await accountStore.updateBalance(snapshot.destinationAccountId, snapshot.amount);
+      }
+    } catch (err) {
+      console.error('[restoreTransaction] balance re-apply failed; row restored but balance may need refetch', err);
+    }
+  },
 }));

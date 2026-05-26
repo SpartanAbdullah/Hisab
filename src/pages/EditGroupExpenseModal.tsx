@@ -5,6 +5,7 @@ import { useSplitStore } from '../stores/splitStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useToast } from '../components/Toast';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useT } from '../lib/i18n';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { parseInternalNote } from '../lib/internalNotes';
@@ -146,7 +147,12 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
 
   const handleDelete = async () => {
     if (!expense) return;
-    if (confirm('Delete this expense?')) {
+    const ok = await confirmDestructive({
+      title: 'Delete this expense?',
+      description: 'It will be removed for everyone in the group.',
+      confirmLabel: 'Delete',
+    });
+    if (ok) {
       await deleteGroupExpense(expense.id);
       toast.show({ type: 'success', title: 'Expense deleted' });
       onClose();

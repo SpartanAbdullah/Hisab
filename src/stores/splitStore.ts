@@ -9,6 +9,7 @@ import {
   groupEventsDb,
   notificationsDb,
   groupsLookupDb,
+  transactionsDb,
 } from '../lib/supabaseDb';
 import {
   buildInviteUrl,
@@ -750,8 +751,17 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       throw new Error('Only your own payments can be linked to a personal account');
     }
 
+    // Snapshot the full linked transaction state BEFORE we touch it, so we
+    // can replay the inverse if groupExpensesDb.update later fails. Without
+    // this, a partial commit leaves the account balance moved (or restored)
+    // while the ledger row still reflects the old amount.
     let linkedTransactionId = existingMeta.linkedTransactionId;
     let createdLinkedTransactionId: string | undefined;
+    const originalLinkedTx = linkedTransactionId
+      ? await transactionsDb.get(linkedTransactionId).catch(() => null)
+      : null;
+    type Rollback = () => Promise<void>;
+    const rollbacks: Rollback[] = [];
 
     if (linkedTransactionId && nextPaidFromAccountId) {
       await useTransactionStore.getState().updateTransaction(
@@ -770,9 +780,38 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         },
         { allowLinkedGroupExpense: true },
       );
+      if (originalLinkedTx && originalLinkedTx.type === 'expense' && originalLinkedTx.sourceAccountId) {
+        // Linked group-expense transactions are always of type 'expense' with
+        // a sourceAccountId. Narrow here so updateTransaction's expense-input
+        // contract is satisfied.
+        const sourceId = originalLinkedTx.sourceAccountId;
+        const origAmount = originalLinkedTx.amount;
+        const origCategory = originalLinkedTx.category ?? '';
+        const origNotes = originalLinkedTx.notes ?? '';
+        rollbacks.push(async () => {
+          await useTransactionStore.getState().updateTransaction(
+            originalLinkedTx.id,
+            {
+              type: 'expense',
+              amount: origAmount,
+              sourceAccountId: sourceId,
+              category: origCategory,
+              notes: origNotes,
+            },
+            { allowLinkedGroupExpense: true },
+          );
+        });
+      }
     } else if (linkedTransactionId && !nextPaidFromAccountId) {
       await useTransactionStore.getState().deleteTransaction(linkedTransactionId, { allowLinkedGroupExpense: true });
       linkedTransactionId = undefined;
+      if (originalLinkedTx) {
+        rollbacks.push(async () => {
+          // processTransaction will create a NEW id, but we need the old id to
+          // preserve any other references. Use the raw transaction store helper.
+          await useTransactionStore.getState().restoreTransaction(originalLinkedTx);
+        });
+      }
     } else if (!linkedTransactionId && nextPaidFromAccountId) {
       const tx = await useTransactionStore.getState().processTransaction({
         type: 'expense',
@@ -788,6 +827,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       });
       linkedTransactionId = tx.id;
       createdLinkedTransactionId = tx.id;
+      rollbacks.push(async () => {
+        await useTransactionStore.getState().deleteTransaction(tx.id, { allowLinkedGroupExpense: true });
+      });
     }
 
     try {
@@ -809,11 +851,15 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         reconciledBy: existing.paidBy === nextExpense.paidBy ? existing.reconciledBy ?? null : null,
       });
     } catch (err) {
-      if (createdLinkedTransactionId) {
-        await useTransactionStore.getState().deleteTransaction(createdLinkedTransactionId, { allowLinkedGroupExpense: true }).catch((rollbackErr) => {
-          console.error('linked group transaction rollback failed', rollbackErr);
+      // Run rollbacks LIFO. Each failure is logged but does not block the
+      // others — we want best-effort recovery.
+      for (let i = rollbacks.length - 1; i >= 0; i -= 1) {
+        await rollbacks[i]().catch((rollbackErr) => {
+          console.error('[updateGroupExpense] rollback step failed', rollbackErr);
         });
       }
+      // createdLinkedTransactionId kept for telemetry parity with older code paths.
+      void createdLinkedTransactionId;
       throw err;
     }
 

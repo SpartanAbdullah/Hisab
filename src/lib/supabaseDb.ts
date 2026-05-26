@@ -34,12 +34,39 @@ export const accountsDb = {
     if (error) throw error;
   },
   async update(id: string, changes: Partial<Account>) {
+    // Balance updates MUST go through applyBalanceDelta (optimistic lock).
+    // Updating balance through this path is permitted only as a last-resort
+    // (e.g. reconciliation), so we leave it in place but log a warning.
+    if (changes.balance !== undefined && import.meta.env.DEV) {
+      console.warn('[accountsDb.update] balance changed without optimistic lock — prefer accountsDb.applyBalanceDelta');
+    }
     const row: Record<string, unknown> = {};
     if (changes.balance !== undefined) row.balance = changes.balance;
     if (changes.name !== undefined) row.name = changes.name;
     if (changes.metadata !== undefined) row.metadata = changes.metadata;
     const { error } = await supabase.from('accounts').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
+  },
+  // Optimistic-locked balance mutation. Calls the apply_account_balance_delta RPC
+  // which performs `UPDATE accounts SET balance = balance + $delta WHERE balance = $expected`.
+  // Throws { code: 'BALANCE_CONFLICT' } if expected_balance didn't match — caller
+  // should refresh the local row and retry.
+  async applyBalanceDelta(id: string, expectedBalance: number, delta: number): Promise<number> {
+    const { data, error } = await supabase.rpc('apply_account_balance_delta', {
+      p_account_id: id,
+      p_delta: delta,
+      p_expected_balance: expectedBalance,
+    });
+    if (error) {
+      const err = error as { message?: string };
+      if (err?.message?.includes('BALANCE_CONFLICT')) {
+        const conflict = new Error('BALANCE_CONFLICT') as Error & { code: string };
+        conflict.code = 'BALANCE_CONFLICT';
+        throw conflict;
+      }
+      throw error;
+    }
+    return typeof data === 'number' ? data : Number(data);
   },
   async delete(id: string) {
     const { error } = await supabase.from('accounts').delete().eq('id', id).eq('user_id', getUserId());

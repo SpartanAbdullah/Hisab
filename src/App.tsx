@@ -2,6 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
 import { ToastContainer } from './components/Toast';
+import { ConfirmDestructiveSheet } from './components/ConfirmDestructiveSheet';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { useAppModeStore } from './stores/appModeStore';
@@ -17,6 +18,7 @@ import { runRecurringExpansion } from './lib/recurringRunner';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
+import { supabase } from './lib/supabase';
 
 // Lazy-loaded pages for code splitting
 const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })));
@@ -60,11 +62,68 @@ import type { SplitGroup } from './db';
 
 function PageLoader() {
   return (
-    <div className="min-h-dvh flex items-center justify-center bg-mesh">
+    <div className="min-h-dvh flex items-center justify-center bg-navy-900">
       <div className="text-center animate-pulse">
-        <p className="text-lg font-bold text-indigo-600">Hisaab</p>
-        <p className="text-[10px] text-slate-400 mt-1">Loading...</p>
+        <p className="text-lg font-bold text-white">Hisaab</p>
+        <p className="text-[10px] text-white/40 mt-1">Loading...</p>
       </div>
+    </div>
+  );
+}
+
+function UnverifiedEmailScreen({ email }: { email: string }) {
+  const { signOut } = useSupabaseAuthStore();
+  const [resending, setResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+
+  const resend = async () => {
+    if (!email) return;
+    setResending(true);
+    setResendMessage('');
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      setResendMessage(error ? error.message : 'Verification email sent. Check your inbox.');
+    } finally {
+      setResending(false);
+    }
+  };
+
+  return (
+    <div className="min-h-dvh flex flex-col items-center justify-center bg-navy-900 text-white px-8">
+      <div className="w-16 h-16 rounded-3xl bg-white/10 flex items-center justify-center mb-6 backdrop-blur-sm border border-white/10">
+        <span className="text-2xl">✉️</span>
+      </div>
+      <h1 className="text-2xl font-bold tracking-tight mb-3">Verify your email</h1>
+      <p className="text-white/60 text-[13px] text-center max-w-xs leading-relaxed mb-1">
+        We sent a verification link to
+      </p>
+      <p className="text-white text-[13px] font-medium mb-6">{email || 'your email address'}</p>
+      <p className="text-white/40 text-[11px] text-center max-w-xs leading-relaxed mb-8">
+        Click the link to activate your account. You can close this and come back after confirming.
+      </p>
+
+      <button
+        onClick={resend}
+        disabled={resending || !email}
+        className="bg-white text-navy-900 rounded-2xl px-6 py-3 text-[13px] font-semibold disabled:opacity-40 mb-3"
+      >
+        {resending ? 'Sending...' : 'Resend verification email'}
+      </button>
+
+      <button onClick={() => signOut()} className="text-white/50 text-[11px] underline">
+        Use a different account
+      </button>
+
+      {resendMessage && (
+        <p className="text-white/70 text-[11px] mt-4 text-center max-w-xs">{resendMessage}</p>
+      )}
+
+      <button
+        onClick={() => window.location.reload()}
+        className="mt-8 text-white/40 text-[11px] underline"
+      >
+        I've verified — refresh
+      </button>
     </div>
   );
 }
@@ -211,7 +270,7 @@ function AppContent() {
 
   if (authLoading || onboardingLoading) {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-indigo-600">
+      <div className="min-h-dvh flex items-center justify-center bg-navy-900">
         <div className="text-center text-white animate-pulse-once">
           <p className="text-2xl font-bold">Hisaab</p>
           <p className="text-xs opacity-60 mt-1">Loading...</p>
@@ -225,6 +284,19 @@ function AppContent() {
     return (
       <Suspense fallback={<PageLoader />}>
         <AuthPage />
+      </Suspense>
+    );
+  }
+
+  // Email-verification gate. Supabase returns a session for unconfirmed users
+  // when "Confirm email" is disabled in the dashboard; even when enabled, a
+  // user who reuses a token can land here without a real verified email. We
+  // hard-block app access until `email_confirmed_at` is set. The user can
+  // resend the verification email or sign out.
+  if (!user.email_confirmed_at) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <UnverifiedEmailScreen email={user.email ?? ''} />
       </Suspense>
     );
   }
@@ -334,6 +406,7 @@ function App() {
   return (
     <BrowserRouter>
       <ToastContainer />
+      <ConfirmDestructiveSheet />
       <AppContent />
     </BrowserRouter>
   );

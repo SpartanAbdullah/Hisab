@@ -12,6 +12,7 @@ import { TransactionItem } from '../components/TransactionItem';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
@@ -274,7 +275,12 @@ export function AccountDetailPage() {
                             });
                             return;
                           }
-                          if (confirm(t('acct_delete_confirm'))) {
+                          const ok = await confirmDestructive({
+                            title: t('acct_delete_confirm'),
+                            description: 'This permanently removes the account.',
+                            confirmLabel: 'Delete account',
+                          });
+                          if (ok) {
                             try {
                               await deleteAccount(account.id);
                               toast.show({ type: 'success', title: t('acct_deleted') });

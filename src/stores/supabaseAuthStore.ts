@@ -16,6 +16,7 @@ interface SupabaseAuthState {
   signIn: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   updateProfile: (data: { name?: string; primary_currency?: string; app_mode?: string; lang?: string }) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
   getProfile: () => Promise<Record<string, unknown> | null>;
@@ -159,6 +160,17 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
   deleteAccount: async () => {
     await accountDeletionDb.softDeleteCurrentUser();
     await get().signOut();
+  },
+
+  requestPasswordReset: async (email) => {
+    if (!email) return { success: false, message: 'Email required' };
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: buildAuthRedirectUrl('/?reset=1'),
+    });
+    if (error) return { success: false, message: error.message };
+    // Always show the same message regardless of whether the email exists —
+    // prevents user-enumeration via the password-reset endpoint.
+    return { success: true, message: 'If an account exists for this email, a reset link has been sent.' };
   },
 
   updateProfile: async (data) => {
