@@ -70,10 +70,7 @@ export function ConfirmDestructiveSheet() {
     <div className="fixed inset-0 z-[70] flex items-end justify-center" onClick={() => answer(false)}>
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity" />
       <div
-        className={`relative bg-white w-full max-w-[480px] rounded-t-3xl overflow-hidden transition-transform duration-300 shadow-2xl ${
-          show ? 'translate-y-0' : 'translate-y-full'
-        }`}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
+        className={`sheet-transient ${show ? 'is-open' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 pt-7 pb-5 text-center">
@@ -86,7 +83,7 @@ export function ConfirmDestructiveSheet() {
           )}
         </div>
 
-        <div className="px-6 pb-7 pt-2 space-y-2 pb-safe">
+        <div className="sheet-actions space-y-2">
           <button
             type="button"
             onClick={() => answer(true)}

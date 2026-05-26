@@ -19,6 +19,7 @@ import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
 import { supabase } from './lib/supabase';
+import { initNativeBridge } from './lib/nativeBridge';
 
 // Lazy-loaded pages for code splitting
 const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })));
@@ -163,6 +164,19 @@ function AppContent() {
       localStorage.setItem('hisaab_pending_invite', location.pathname.replace('/join/', ''));
     }
   }, [location.pathname, user]);
+
+  // Capacitor native bridge — initialised once after the router is available.
+  // No-op on web. Wires status bar, splash, hardware back button, deep links.
+  useEffect(() => {
+    void initNativeBridge({
+      navigate: (to, opts) => navigate(to, opts),
+      // We never want to "exit" while a modal/sheet is open — but Capacitor's
+      // back-button only fires when the system gesture wasn't handled, and
+      // modals are click-outside-to-close already. So canGoBack just checks
+      // router history depth.
+      canGoBack: () => window.history.length > 1,
+    });
+  }, [navigate]);
 
   // Realtime: subscribe when we know who the user is, tear down on signout.
   // Fires loadGroups / loadNotifications on relevant row changes so the user

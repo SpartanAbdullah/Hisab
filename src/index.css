@@ -680,12 +680,42 @@ input, select, textarea {
     padding: 20px;
   }
 
-  /* Pinned footer. shrink-0 keeps it visible while the body scrolls. */
+  /* Pinned footer. shrink-0 keeps it visible while the body scrolls.
+   * Bottom padding uses env(safe-area-inset-bottom) so the save button
+   * does not sit under the Android gesture bar on phones without bottom
+   * safe-area chrome. The max() keeps a minimum 24px gutter on devices
+   * that report 0 inset (e.g. old Android, regular web). */
   .modal-footer {
     flex-shrink: 0;
-    padding: 12px 20px 24px;
+    padding: 12px 20px max(24px, env(safe-area-inset-bottom));
     background: var(--color-cream-bg);
     border-top: 1px solid var(--color-cream-hairline);
+  }
+
+  /* Bottom-sheet action region for transient sheets that don't use the
+   * full .modal-* layout (e.g. ConfirmDestructiveSheet). Same safe-area
+   * rule as .modal-footer; gutters match the sheet's 24px horizontal padding. */
+  .sheet-actions {
+    padding: 8px 24px max(28px, env(safe-area-inset-bottom));
+  }
+
+  /* Animated transient sheet shell — translucent white surface, drops up
+   * from below with a cubic-bezier curve. Used by ConfirmDestructiveSheet
+   * and any other future imperative bottom-sheet. */
+  .sheet-transient {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    background: white;
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 -20px 60px -20px rgba(11, 14, 42, 0.5);
+    transform: translateY(100%);
+    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .sheet-transient.is-open {
+    transform: translateY(0);
   }
 
   /* ========================================================

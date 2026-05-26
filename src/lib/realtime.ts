@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
+import { useAccountStore } from '../stores/accountStore';
+import { useTransactionStore } from '../stores/transactionStore';
+import { useLoanStore } from '../stores/loanStore';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Single long-lived channel per session. Re-initialised when the user changes.
@@ -8,6 +11,31 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 // profile_id server-side to avoid getting events we'd have to ignore anyway.
 let globalChannel: RealtimeChannel | null = null;
 let globalUserId: string | null = null;
+
+// Per-table debounce timers. Each table reload triggers a refetch — multiple
+// rapid changes (e.g. a multi-step balance update from the local client itself)
+// coalesce into a single reload after the trailing edge.
+const RELOAD_DEBOUNCE_MS = 500;
+const reloadTimers: Record<string, number | null> = {};
+
+function scheduleReload(key: string, run: () => Promise<void>): void {
+  if (reloadTimers[key]) window.clearTimeout(reloadTimers[key]!);
+  reloadTimers[key] = window.setTimeout(() => {
+    reloadTimers[key] = null;
+    void run().catch((err) => {
+      console.error(`[realtime] ${key} reload failed`, err);
+    });
+  }, RELOAD_DEBOUNCE_MS);
+}
+
+function clearReloadTimers(): void {
+  for (const key of Object.keys(reloadTimers)) {
+    if (reloadTimers[key]) {
+      window.clearTimeout(reloadTimers[key]!);
+      reloadTimers[key] = null;
+    }
+  }
+}
 
 export function startGlobalRealtime(userId: string) {
   if (globalUserId === userId && globalChannel) return;
@@ -33,10 +61,35 @@ export function startGlobalRealtime(userId: string) {
         void useSplitStore.getState().loadGroups();
       },
     )
+    // Money tables — sync across devices/tabs. Reloads are debounced because
+    // every local write also triggers a self-echo postgres_changes event; we
+    // don't want N transactions in 100ms to produce N reloads.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'accounts', filter: `user_id=eq.${userId}` },
+      () => {
+        scheduleReload('accounts', () => useAccountStore.getState().loadAccounts());
+      },
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${userId}` },
+      () => {
+        scheduleReload('transactions', () => useTransactionStore.getState().loadTransactions());
+      },
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'loans', filter: `user_id=eq.${userId}` },
+      () => {
+        scheduleReload('loans', () => useLoanStore.getState().loadLoans());
+      },
+    )
     .subscribe();
 }
 
 export function stopGlobalRealtime() {
+  clearReloadTimers();
   if (globalChannel) {
     void supabase.removeChannel(globalChannel);
     globalChannel = null;
