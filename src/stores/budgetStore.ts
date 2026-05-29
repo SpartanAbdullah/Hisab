@@ -39,6 +39,9 @@ export const useBudgetStore = create<BudgetState>((set) => ({
         key: 'budgets',
         table: db.budgets,
         fetchRemote: budgetsDb.getAll,
+        fetchUpdatedSince: budgetsDb.getUpdatedSince,
+        fetchDeletedSince: budgetsDb.getDeletedSince,
+        getUpdatedAt: (budget) => budget.updatedAt ?? budget.createdAt,
         sort: (a, b) => a.category.localeCompare(b.category),
       });
       set({ budgets });
@@ -56,6 +59,7 @@ export const useBudgetStore = create<BudgetState>((set) => ({
       warnAtPercent: input.warnAtPercent ?? 80,
       createdAt: new Date().toISOString(),
     };
+    budget.updatedAt = budget.createdAt;
     await budgetsDb.add(budget);
     await mirrorPut(db.budgets, budget);
     markMirrorStale('budgets');
@@ -66,7 +70,9 @@ export const useBudgetStore = create<BudgetState>((set) => ({
   updateBudget: async (id, changes) => {
     await budgetsDb.update(id, changes);
     set((s) => ({
-      budgets: s.budgets.map((b) => (b.id === id ? { ...b, ...changes } : b)),
+      budgets: s.budgets.map((b) =>
+        b.id === id ? { ...b, ...changes, updatedAt: new Date().toISOString() } : b,
+      ),
     }));
     const updated = useBudgetStore.getState().budgets.find((b) => b.id === id);
     if (updated) await mirrorPut(db.budgets, updated);

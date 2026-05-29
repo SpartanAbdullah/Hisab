@@ -195,6 +195,7 @@ async function trackedCreateLoan(scope: MutationScope, input: CreateLoanInput): 
     notes: input.notes ?? '',
     createdAt: new Date().toISOString(),
   };
+  loan.updatedAt = loan.createdAt;
   await loansDb.add(loan);
   await mirrorPut(db.loans, loan);
   markMirrorStale('loans');
@@ -228,15 +229,16 @@ async function trackedApplyRepayment(scope: MutationScope, loanId: string, amoun
   const prevStatus = before.status;
   const newRemaining = Math.max(0, Math.round((before.remainingAmount - amount) * 100) / 100);
   const newStatus: Loan['status'] = newRemaining === 0 ? 'settled' : 'active';
+  const updatedAt = new Date().toISOString();
   await loansDb.update(loanId, { remainingAmount: newRemaining, status: newStatus });
-  await mirrorPut(db.loans, { ...before, remainingAmount: newRemaining, status: newStatus });
+  await mirrorPut(db.loans, { ...before, remainingAmount: newRemaining, status: newStatus, updatedAt });
   markMirrorStale('loans');
   useLoanStore.setState(s => ({
-    loans: s.loans.map(l => (l.id === loanId ? { ...l, remainingAmount: newRemaining, status: newStatus } : l)),
+    loans: s.loans.map(l => (l.id === loanId ? { ...l, remainingAmount: newRemaining, status: newStatus, updatedAt } : l)),
   }));
   scope.register(async () => {
     await loansDb.update(loanId, { remainingAmount: prevRemaining, status: prevStatus });
-    await mirrorPut(db.loans, { ...before, remainingAmount: prevRemaining, status: prevStatus });
+    await mirrorPut(db.loans, { ...before, remainingAmount: prevRemaining, status: prevStatus, updatedAt: new Date().toISOString() });
     markMirrorStale('loans');
     useLoanStore.setState(s => ({
       loans: s.loans.map(l => (l.id === loanId ? { ...l, remainingAmount: prevRemaining, status: prevStatus } : l)),
@@ -474,6 +476,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         key: 'transactions',
         table: db.transactions,
         fetchRemote: transactionsDb.getAll,
+        fetchUpdatedSince: transactionsDb.getUpdatedSince,
+        fetchDeletedSince: transactionsDb.getDeletedSince,
+        getUpdatedAt: (transaction) => transaction.updatedAt ?? transaction.createdAt,
         sort: (a, b) => b.createdAt.localeCompare(a.createdAt),
       });
       set({ transactions });
@@ -775,6 +780,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           reconciledAt: null,
           reconciledBy: null,
         };
+        transaction.updatedAt = transaction.createdAt;
 
         await trackedAddTransaction(scope, transaction);
 
@@ -1000,6 +1006,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           }
         }
 
+        updated = { ...updated, updatedAt: new Date().toISOString() };
         await trackedUpdateTransaction(scope, id, updated, existing);
 
         return { updated, description };
@@ -1021,12 +1028,16 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       isReconciled,
       reconciledAt: isReconciled ? new Date().toISOString() : null,
       reconciledBy: isReconciled ? reconciledBy : null,
+      updatedAt: new Date().toISOString(),
     };
 
     await transactionsDb.update(id, changes);
+    const updated = { ...existing, ...changes };
+    await mirrorPut(db.transactions, updated);
+    markMirrorStale('transactions');
     set(state => ({
       transactions: state.transactions.map(transaction =>
-        transaction.id === id ? { ...transaction, ...changes } : transaction
+        transaction.id === id ? updated : transaction
       ),
     }));
   },

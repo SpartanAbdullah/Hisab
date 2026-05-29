@@ -9,6 +9,7 @@ interface CacheFirstOptions<T> {
   table: Table<T, string>;
   fetchRemote: () => Promise<T[]>;
   fetchUpdatedSince?: (lastSyncedAt: string) => Promise<T[]>;
+  fetchDeletedSince?: (lastSyncedAt: string) => Promise<{ id: string; deletedAt: string }[]>;
   getUpdatedAt?: (row: T) => string | null | undefined;
   sort?: (a: T, b: T) => number;
   freshMs?: number;
@@ -102,10 +103,14 @@ async function replaceMirror<T>(table: Table<T, string>, rows: T[]) {
 function maxSyncedAt<T>(
   rows: T[],
   getUpdatedAt?: (row: T) => string | null | undefined,
+  deletedRows: { deletedAt: string }[] = [],
 ): string {
-  const timestamps = rows
+  const timestamps = [
+    ...rows
     .map((row) => getUpdatedAt?.(row))
-    .filter((value): value is string => Boolean(value));
+    .filter((value): value is string => Boolean(value)),
+    ...deletedRows.map((row) => row.deletedAt).filter(Boolean),
+  ];
   if (timestamps.length === 0) return new Date().toISOString();
   return timestamps.sort().at(-1) ?? new Date().toISOString();
 }
@@ -128,18 +133,24 @@ async function refreshMirrorIncremental<T>({
   key,
   table,
   fetchUpdatedSince,
+  fetchDeletedSince,
   sort,
   getUpdatedAt,
 }: CacheFirstOptions<T> & { fetchUpdatedSince: (lastSyncedAt: string) => Promise<T[]> }): Promise<T[]> {
   const state = await readSyncState(key);
   if (!state.lastSyncedAt) return [];
-  const changed = await fetchUpdatedSince(state.lastSyncedAt);
-  if (changed.length === 0) {
-    await writeSyncState(key, new Date().toISOString());
+  const syncStartedAt = new Date().toISOString();
+  const [changed, deleted] = await Promise.all([
+    fetchUpdatedSince(state.lastSyncedAt),
+    fetchDeletedSince ? fetchDeletedSince(state.lastSyncedAt) : Promise.resolve([]),
+  ]);
+  if (changed.length === 0 && deleted.length === 0) {
+    await writeSyncState(key, syncStartedAt);
     return [];
   }
   await mirrorBulkPut(table, changed);
-  await writeSyncState(key, maxSyncedAt(changed, getUpdatedAt));
+  await Promise.all(deleted.map((row) => mirrorDelete(table, row.id)));
+  await writeSyncState(key, maxSyncedAt(changed, getUpdatedAt, deleted));
   return sortRows(await readMirror(table), sort);
 }
 
@@ -148,6 +159,7 @@ export async function loadCacheFirst<T>({
   table,
   fetchRemote,
   fetchUpdatedSince,
+  fetchDeletedSince,
   getUpdatedAt,
   sort,
   freshMs = DEFAULT_FRESH_MS,
@@ -167,7 +179,7 @@ export async function loadCacheFirst<T>({
 
   if (hasCache) {
     if (fetchUpdatedSince && !needsFullRefresh) {
-      void refreshMirrorIncremental({ key, table, fetchRemote, fetchUpdatedSince, getUpdatedAt, sort }).catch((err) => {
+      void refreshMirrorIncremental({ key, table, fetchRemote, fetchUpdatedSince, fetchDeletedSince, getUpdatedAt, sort }).catch((err) => {
         console.error(`[mirrorCache] background incremental refresh failed for ${key}`, err);
       });
     } else {

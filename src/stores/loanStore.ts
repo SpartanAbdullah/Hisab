@@ -44,6 +44,9 @@ export const useLoanStore = create<LoanState>((set, get) => ({
         key: 'loans',
         table: db.loans,
         fetchRemote: loansDb.getAll,
+        fetchUpdatedSince: loansDb.getUpdatedSince,
+        fetchDeletedSince: loansDb.getDeletedSince,
+        getUpdatedAt: (loan) => loan.updatedAt ?? loan.createdAt,
         sort: (a, b) => b.createdAt.localeCompare(a.createdAt),
       });
       set({ loans });
@@ -65,6 +68,7 @@ export const useLoanStore = create<LoanState>((set, get) => ({
       notes: input.notes ?? '',
       createdAt: new Date().toISOString(),
     };
+    loan.updatedAt = loan.createdAt;
     await loansDb.add(loan);
     await mirrorPut(db.loans, loan);
     markMirrorStale('loans');
@@ -83,7 +87,12 @@ export const useLoanStore = create<LoanState>((set, get) => ({
     if (!loan) throw new Error(`Loan ${loanId} not found`);
     const newRemaining = Math.max(0, loan.remainingAmount - amount);
     const newStatus = newRemaining === 0 ? 'settled' : 'active';
-    const nextLoan = { ...loan, remainingAmount: newRemaining, status: newStatus as Loan['status'] };
+    const nextLoan = {
+      ...loan,
+      remainingAmount: newRemaining,
+      status: newStatus as Loan['status'],
+      updatedAt: new Date().toISOString(),
+    };
     await loansDb.update(loanId, { remainingAmount: newRemaining, status: newStatus as Loan['status'] });
     await mirrorPut(db.loans, nextLoan);
     markMirrorStale('loans');
@@ -109,6 +118,7 @@ export const useLoanStore = create<LoanState>((set, get) => ({
     const nextLoan: Loan = {
       ...loan,
       ...changes,
+      updatedAt: new Date().toISOString(),
     };
 
     await loansDb.update(loanId, changes);

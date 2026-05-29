@@ -44,6 +44,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         table: db.accounts,
         fetchRemote: accountsDb.getAll,
         fetchUpdatedSince: accountsDb.getUpdatedSince,
+        fetchDeletedSince: accountsDb.getDeletedSince,
         getUpdatedAt: (account) => account.updatedAt ?? account.createdAt,
         sort: (a, b) => a.createdAt.localeCompare(b.createdAt),
       });

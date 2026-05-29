@@ -7,6 +7,11 @@ import type {
   Budget, RecurringTransaction, Remittance,
 } from '../db';
 
+export interface DeletedRow {
+  id: string;
+  deletedAt: string;
+}
+
 // Helper to get current user ID (cached in localStorage by App.tsx)
 function getUserId(): string {
   const userId = localStorage.getItem('hisaab_supabase_uid');
@@ -22,6 +27,7 @@ export const accountsDb = {
     const { data, error } = await supabase
       .from('accounts').select('*')
       .eq('user_id', getUserId())
+      .is('deleted_at', null)
       .order('created_at', { ascending: true });
     if (error) throw error;
     return (data ?? []).map(mapAccount);
@@ -30,10 +36,20 @@ export const accountsDb = {
     const { data, error } = await supabase
       .from('accounts').select('*')
       .eq('user_id', getUserId())
+      .is('deleted_at', null)
       .gt('updated_at', updatedAfter)
       .order('updated_at', { ascending: true });
     if (error) throw error;
     return (data ?? []).map(mapAccount);
+  },
+  async getDeletedSince(deletedAfter: string): Promise<DeletedRow[]> {
+    const { data, error } = await supabase
+      .from('accounts').select('id, deleted_at')
+      .eq('user_id', getUserId())
+      .gt('deleted_at', deletedAfter)
+      .order('deleted_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapDeletedRow);
   },
   async add(a: Account) {
     const { error } = await supabase.from('accounts').insert({
@@ -78,13 +94,18 @@ export const accountsDb = {
     return typeof data === 'number' ? data : Number(data);
   },
   async delete(id: string) {
-    const { error } = await supabase.from('accounts').delete().eq('id', id).eq('user_id', getUserId());
+    const { error } = await supabase
+      .from('accounts')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', getUserId());
     if (error) throw error;
   },
   async count(): Promise<number> {
     const { count, error } = await supabase
       .from('accounts').select('id', { count: 'exact', head: true })
-      .eq('user_id', getUserId());
+      .eq('user_id', getUserId())
+      .is('deleted_at', null);
     if (error) throw error;
     return count ?? 0;
   },
@@ -97,7 +118,7 @@ export const transactionsDb = {
   async get(id: string): Promise<Transaction | null> {
     const { data, error } = await supabase
       .from('transactions').select('*')
-      .eq('id', id).eq('user_id', getUserId()).single();
+      .eq('id', id).eq('user_id', getUserId()).is('deleted_at', null).single();
     if (error) return null;
     return data ? mapTransaction(data) : null;
   },
@@ -105,12 +126,32 @@ export const transactionsDb = {
     const { data, error } = await supabase
       .from('transactions').select('*')
       .eq('user_id', getUserId())
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(mapTransaction);
   },
+  async getUpdatedSince(updatedAfter: string): Promise<Transaction[]> {
+    const { data, error } = await supabase
+      .from('transactions').select('*')
+      .eq('user_id', getUserId())
+      .is('deleted_at', null)
+      .gt('updated_at', updatedAfter)
+      .order('updated_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapTransaction);
+  },
+  async getDeletedSince(deletedAfter: string): Promise<DeletedRow[]> {
+    const { data, error } = await supabase
+      .from('transactions').select('id, deleted_at')
+      .eq('user_id', getUserId())
+      .gt('deleted_at', deletedAfter)
+      .order('deleted_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapDeletedRow);
+  },
   async add(t: Transaction) {
-    const { error } = await supabase.from('transactions').insert({
+    const { error } = await supabase.from('transactions').upsert({
       id: t.id, user_id: getUserId(), type: t.type, amount: t.amount, currency: t.currency,
       source_account_id: t.sourceAccountId, destination_account_id: t.destinationAccountId,
       related_person: t.relatedPerson, person_id: t.personId ?? null, related_loan_id: t.relatedLoanId,
@@ -119,6 +160,7 @@ export const transactionsDb = {
       is_reconciled: t.isReconciled ?? false,
       reconciled_at: t.reconciledAt ?? null,
       reconciled_by: t.reconciledBy ?? null,
+      deleted_at: null,
     });
     if (error) throw error;
   },
@@ -143,7 +185,11 @@ export const transactionsDb = {
     if (error) throw error;
   },
   async delete(id: string) {
-    const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', getUserId());
+    const { error } = await supabase
+      .from('transactions')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', getUserId());
     if (error) throw error;
   },
   // Narrow helper used only by the Phase 1B-A backfill. Deliberately separate
@@ -164,15 +210,36 @@ export const loansDb = {
     const { data, error } = await supabase
       .from('loans').select('*')
       .eq('user_id', getUserId())
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(mapLoan);
   },
+  async getUpdatedSince(updatedAfter: string): Promise<Loan[]> {
+    const { data, error } = await supabase
+      .from('loans').select('*')
+      .eq('user_id', getUserId())
+      .is('deleted_at', null)
+      .gt('updated_at', updatedAfter)
+      .order('updated_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapLoan);
+  },
+  async getDeletedSince(deletedAfter: string): Promise<DeletedRow[]> {
+    const { data, error } = await supabase
+      .from('loans').select('id, deleted_at')
+      .eq('user_id', getUserId())
+      .gt('deleted_at', deletedAfter)
+      .order('deleted_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapDeletedRow);
+  },
   async add(l: Loan) {
-    const { error } = await supabase.from('loans').insert({
+    const { error } = await supabase.from('loans').upsert({
       id: l.id, user_id: getUserId(), person_name: l.personName, person_id: l.personId ?? null, type: l.type,
       total_amount: l.totalAmount, remaining_amount: l.remainingAmount,
       currency: l.currency, status: l.status, notes: l.notes, created_at: l.createdAt,
+      deleted_at: null,
     });
     if (error) throw error;
   },
@@ -189,7 +256,11 @@ export const loansDb = {
     if (error) throw error;
   },
   async delete(id: string) {
-    const { error } = await supabase.from('loans').delete().eq('id', id).eq('user_id', getUserId());
+    const { error } = await supabase
+      .from('loans')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', getUserId());
     if (error) throw error;
   },
   // Narrow helper used only by the Phase 1B-A backfill. See transactionsDb.setPersonId.
@@ -1072,6 +1143,14 @@ function mapAccount(r: Record<string, unknown>): Account {
     currency: r.currency as Account['currency'], balance: Number(r.balance),
     metadata: (r.metadata ?? {}) as Record<string, string>, createdAt: r.created_at as string,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
+    deletedAt: (r.deleted_at as string) ?? null,
+  };
+}
+
+function mapDeletedRow(r: Record<string, unknown>): DeletedRow {
+  return {
+    id: r.id as string,
+    deletedAt: r.deleted_at as string,
   };
 }
 
@@ -1091,6 +1170,8 @@ function mapTransaction(r: Record<string, unknown>): Transaction {
     isReconciled: Boolean(r.is_reconciled),
     reconciledAt: (r.reconciled_at as string) ?? null,
     reconciledBy: (r.reconciled_by as string) ?? null,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
+    deletedAt: (r.deleted_at as string) ?? null,
   };
 }
 
@@ -1102,6 +1183,8 @@ function mapLoan(r: Record<string, unknown>): Loan {
     remainingAmount: Number(r.remaining_amount), currency: r.currency as Loan['currency'],
     status: r.status as Loan['status'], notes: (r.notes as string) ?? '',
     createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
+    deletedAt: (r.deleted_at as string) ?? null,
   };
 }
 
@@ -1263,9 +1346,29 @@ export const budgetsDb = {
     const { data, error } = await supabase
       .from('budgets').select('*')
       .eq('user_id', getUserId())
+      .is('deleted_at', null)
       .order('category', { ascending: true });
     if (error) throw error;
     return (data ?? []).map(mapBudget);
+  },
+  async getUpdatedSince(updatedAfter: string): Promise<Budget[]> {
+    const { data, error } = await supabase
+      .from('budgets').select('*')
+      .eq('user_id', getUserId())
+      .is('deleted_at', null)
+      .gt('updated_at', updatedAfter)
+      .order('updated_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapBudget);
+  },
+  async getDeletedSince(deletedAfter: string): Promise<DeletedRow[]> {
+    const { data, error } = await supabase
+      .from('budgets').select('id, deleted_at')
+      .eq('user_id', getUserId())
+      .gt('deleted_at', deletedAfter)
+      .order('deleted_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapDeletedRow);
   },
   async add(b: Budget) {
     const { error } = await supabase.from('budgets').insert({
@@ -1285,7 +1388,11 @@ export const budgetsDb = {
     if (error) throw error;
   },
   async delete(id: string) {
-    const { error } = await supabase.from('budgets').delete().eq('id', id).eq('user_id', getUserId());
+    const { error } = await supabase
+      .from('budgets')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', getUserId());
     if (error) throw error;
   },
 };
@@ -1298,6 +1405,8 @@ function mapBudget(r: Record<string, unknown>): Budget {
     currency: r.currency as Currency,
     warnAtPercent: Number(r.warn_at_percent ?? 80),
     createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
+    deletedAt: (r.deleted_at as string) ?? null,
   };
 }
 

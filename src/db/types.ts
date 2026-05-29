@@ -12,6 +12,7 @@ export interface Account {
   metadata: Record<string, string>;
   createdAt: string;
   updatedAt?: string;
+  deletedAt?: string | null;
 }
 
 export type TransactionType =
@@ -42,6 +43,8 @@ export interface Transaction {
   isReconciled?: boolean;
   reconciledAt?: string | null;
   reconciledBy?: string | null;
+  updatedAt?: string;
+  deletedAt?: string | null;
 }
 
 export type LoanType = 'given' | 'taken';
@@ -58,6 +61,8 @@ export interface Loan {
   status: LoanStatus;
   notes: string;
   createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
 }
 
 export interface Person {
@@ -313,6 +318,8 @@ export interface Budget {
   // not set; surfaces a non-blocking banner on Home once crossed.
   warnAtPercent: number;
   createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
 }
 
 // ── Recurring Transactions ──
