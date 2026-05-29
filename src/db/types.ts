@@ -11,6 +11,7 @@ export interface Account {
   balance: number;
   metadata: Record<string, string>;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export type TransactionType =

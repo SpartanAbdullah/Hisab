@@ -17,6 +17,7 @@ import {
   Repeat,
   Send,
   Search,
+  CheckCircle2,
 } from "lucide-react";
 import { useAccountStore } from "../stores/accountStore";
 import { useTransactionStore } from "../stores/transactionStore";
@@ -40,6 +41,7 @@ import { NavyHero } from "../components/NavyHero";
 import { InboxAction } from "../components/InboxAction";
 import { MoneyDisplay } from "../components/MoneyDisplay";
 import { GlobalSearch } from "../components/GlobalSearch";
+import { NextStepHint } from "../components/NextStepHint";
 import { AddAccountStepper } from "./AddAccountStepper";
 import { formatMoney } from "../lib/constants";
 import { currencyMeta } from "../lib/design-tokens";
@@ -472,6 +474,41 @@ export function HomePage() {
   const otherTotals = Object.entries(totals).filter(
     ([cur, amt]) => cur !== primaryCurrency && amt > 0,
   );
+  const budgetAttentionCount = budgetUsages.filter((usage) => usage.overWarn).length;
+  const homeHint =
+    accountCount === 0
+      ? null
+      : transactions.length === 0
+      ? {
+          icon: Plus,
+          tone: "accent" as const,
+          status: "Accounts are ready, but there is no activity yet.",
+          next: "Add your first income or expense so Hisaab can start showing spending flow, budgets, and recent activity.",
+          actionLabel: "Add transaction",
+          onAction: () => navigate("/transactions"),
+        }
+      : urgentExpenses.length > 0
+      ? {
+          icon: Repeat,
+          tone: "warn" as const,
+          status: `${urgentExpenses.length} upcoming payment ${urgentExpenses.length === 1 ? "needs" : "need"} attention.`,
+          next: "Review the reminder strip below, then dismiss the ones you have already handled.",
+        }
+      : budgetAttentionCount > 0
+      ? {
+          icon: Wallet2,
+          tone: "warn" as const,
+          status: `${budgetAttentionCount} budget ${budgetAttentionCount === 1 ? "is" : "are"} near the warning line.`,
+          next: "Open Budgets to adjust caps or check which categories are driving the month.",
+          actionLabel: "Review budgets",
+          onAction: () => navigate("/budgets"),
+        }
+      : {
+          icon: CheckCircle2,
+          tone: "receive" as const,
+          status: "Your dashboard is up to date.",
+          next: "Keep adding transactions as they happen, or use Search to quickly find an older account, person, or expense.",
+        };
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -726,6 +763,17 @@ export function HomePage() {
         )}
 
         {/* Pending strip — urgent upcoming expenses. */}
+        {dataReady && homeHint && (
+          <NextStepHint
+            icon={homeHint.icon}
+            tone={homeHint.tone}
+            status={homeHint.status}
+            next={homeHint.next}
+            actionLabel={homeHint.actionLabel}
+            onAction={homeHint.onAction}
+          />
+        )}
+
         {urgentExpenses.length > 0 && (
           <div className="space-y-2">
             {urgentExpenses.slice(0, 2).map((exp) => {

@@ -28,6 +28,7 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
+import { NextStepHint } from '../components/NextStepHint';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { QuickEntry } from './QuickEntry';
 import { formatMoney } from '../lib/constants';
@@ -366,6 +367,37 @@ export function TransactionsPage() {
           <p className="text-[10.5px] text-ink-500 font-semibold">
             {filtered.length} {t('time_results')}
           </p>
+        )}
+
+        {loadStatus === 'ready' && transactions.length > 0 && (
+          <NextStepHint
+            icon={ArrowLeftRight}
+            tone={filtersActive ? 'info' : monthFlow.net >= 0 ? 'receive' : 'pay'}
+            status={
+              filtersActive
+                ? `${filtered.length} transaction${filtered.length === 1 ? '' : 's'} match the current view.`
+                : monthFlow.net >= 0
+                ? `This month is positive by ${formatMoney(monthFlow.net, primaryCurrency)}.`
+                : `This month is down by ${formatMoney(Math.abs(monthFlow.net), primaryCurrency)}.`
+            }
+            next={
+              filtersActive
+                ? 'Clear search or switch the chips to get back to your full timeline.'
+                : monthFlow.outflow > monthFlow.inflow
+                ? 'Check the largest recent expenses below, then add a budget if the pattern is repeating.'
+                : 'Keep logging income and expenses here so Home and Analytics stay accurate.'
+            }
+            actionLabel={filtersActive ? 'Clear filters' : 'Add transaction'}
+            onAction={
+              filtersActive
+                ? () => {
+                    setFilter('all');
+                    setTimeFilter('all');
+                    setSearch('');
+                  }
+                : () => setShowAdd(true)
+            }
+          />
         )}
 
         {loadStatus === 'error' && (

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Wallet2, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, Plus, Wallet2, Pencil, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
+import { NextStepHint } from '../components/NextStepHint';
 import { Modal } from '../components/Modal';
 import { useBudgetStore, computeBudgetUsages } from '../stores/budgetStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -34,6 +35,8 @@ export function BudgetsPage() {
     () => computeBudgetUsages(budgets, transactions),
     [budgets, transactions],
   );
+  const overLimitCount = usages.filter((usage) => usage.overLimit).length;
+  const overWarnCount = usages.filter((usage) => usage.overWarn && !usage.overLimit).length;
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -63,6 +66,27 @@ export function BudgetsPage() {
             title="Couldn't load budgets"
             message={loadError ?? 'Some data failed to load.'}
             onRetry={retryLoad}
+          />
+        )}
+
+        {loadStatus === 'ready' && usages.length > 0 && (
+          <NextStepHint
+            icon={overLimitCount > 0 || overWarnCount > 0 ? AlertTriangle : Wallet2}
+            tone={overLimitCount > 0 ? 'pay' : overWarnCount > 0 ? 'warn' : 'receive'}
+            status={
+              overLimitCount > 0
+                ? `${overLimitCount} budget ${overLimitCount === 1 ? 'is' : 'are'} over the monthly cap.`
+                : overWarnCount > 0
+                ? `${overWarnCount} budget ${overWarnCount === 1 ? 'is' : 'are'} past the warning line.`
+                : 'All budgets are currently under their warning lines.'
+            }
+            next={
+              overLimitCount > 0 || overWarnCount > 0
+                ? 'Tap the highlighted category to adjust its cap or check if spending needs attention this month.'
+                : 'Add another budget for any category you want Hisaab to watch quietly in the background.'
+            }
+            actionLabel="Add budget"
+            onAction={() => setShowAdd(true)}
           />
         )}
 

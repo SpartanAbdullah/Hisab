@@ -26,6 +26,15 @@ export const accountsDb = {
     if (error) throw error;
     return (data ?? []).map(mapAccount);
   },
+  async getUpdatedSince(updatedAfter: string): Promise<Account[]> {
+    const { data, error } = await supabase
+      .from('accounts').select('*')
+      .eq('user_id', getUserId())
+      .gt('updated_at', updatedAfter)
+      .order('updated_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapAccount);
+  },
   async add(a: Account) {
     const { error } = await supabase.from('accounts').insert({
       id: a.id, user_id: getUserId(), name: a.name, type: a.type,
@@ -1062,6 +1071,7 @@ function mapAccount(r: Record<string, unknown>): Account {
     id: r.id as string, name: r.name as string, type: r.type as Account['type'],
     currency: r.currency as Account['currency'], balance: Number(r.balance),
     metadata: (r.metadata ?? {}) as Record<string, string>, createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };
 }
 

@@ -8,10 +8,12 @@ import { MoneyDisplay } from '../components/MoneyDisplay';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { GroupCard } from '../components/GroupCard';
 import { PageErrorState } from '../components/PageErrorState';
+import { NextStepHint } from '../components/NextStepHint';
 import { CreateGroupModal } from './CreateGroupModal';
 import { JoinGroupModal } from './JoinGroupModal';
 import { useT } from '../lib/i18n';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
+import { formatMoney } from '../lib/constants';
 
 function GroupsListSkeleton() {
   return (
@@ -137,6 +139,10 @@ export function SplitsPage() {
     .filter((g) => g.currency === primaryCurrency)
     .reduce((acc, g) => acc + (balances[g.id] ?? 0), 0);
   const otherCcyGroups = groups.filter((g) => g.currency !== primaryCurrency);
+  const q = searchQuery.trim().toLowerCase();
+  const visibleGroups = q
+    ? groups.filter((g) => g.name.toLowerCase().includes(q))
+    : groups;
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -257,13 +263,32 @@ export function SplitsPage() {
           </div>
         )}
 
+        {status === 'ready' && hasGroups && (
+          <NextStepHint
+            icon={primaryNet === 0 ? Scale : HandCoins}
+            tone={primaryNet > 0 ? 'receive' : primaryNet < 0 ? 'pay' : 'info'}
+            status={
+              q
+                ? `${visibleGroups.length} group${visibleGroups.length === 1 ? '' : 's'} match your search.`
+                : primaryNet === 0
+                ? 'Your primary-currency groups are settled.'
+                : primaryNet > 0
+                ? `Across groups, you should receive ${formatMoney(primaryNet, primaryCurrency)}.`
+                : `Across groups, you should pay ${formatMoney(Math.abs(primaryNet), primaryCurrency)}.`
+            }
+            next={
+              q
+                ? 'Clear search to see every split again.'
+                : 'Open any group to add an expense, reconcile activity, or settle the balance.'
+            }
+            actionLabel={q ? 'Clear search' : undefined}
+            onAction={q ? () => setSearchQuery('') : undefined}
+          />
+        )}
+
         {isInitialLoading && <GroupsListSkeleton />}
 
         {hasGroups && (() => {
-          const q = searchQuery.trim().toLowerCase();
-          const visibleGroups = q
-            ? groups.filter((g) => g.name.toLowerCase().includes(q))
-            : groups;
           return (
             <div>
               <div className="flex items-center justify-between mb-2.5 px-1">

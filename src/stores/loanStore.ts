@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
+import { db } from '../db';
 import { loansDb } from '../lib/supabaseDb';
+import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
 import type { Loan, LoanType, Currency } from '../db';
 import { useActivityStore } from './activityStore';
 
@@ -38,7 +40,12 @@ export const useLoanStore = create<LoanState>((set, get) => ({
   loadLoans: async () => {
     set({ loading: true });
     try {
-      const loans = await loansDb.getAll();
+      const { rows: loans } = await loadCacheFirst({
+        key: 'loans',
+        table: db.loans,
+        fetchRemote: loansDb.getAll,
+        sort: (a, b) => b.createdAt.localeCompare(a.createdAt),
+      });
       set({ loans });
     } finally {
       set({ loading: false });
@@ -59,6 +66,8 @@ export const useLoanStore = create<LoanState>((set, get) => ({
       createdAt: new Date().toISOString(),
     };
     await loansDb.add(loan);
+    await mirrorPut(db.loans, loan);
+    markMirrorStale('loans');
     set((s) => ({ loans: [...s.loans, loan] }));
     await useActivityStore.getState().logActivity(
       'loan_created',
@@ -74,10 +83,13 @@ export const useLoanStore = create<LoanState>((set, get) => ({
     if (!loan) throw new Error(`Loan ${loanId} not found`);
     const newRemaining = Math.max(0, loan.remainingAmount - amount);
     const newStatus = newRemaining === 0 ? 'settled' : 'active';
+    const nextLoan = { ...loan, remainingAmount: newRemaining, status: newStatus as Loan['status'] };
     await loansDb.update(loanId, { remainingAmount: newRemaining, status: newStatus as Loan['status'] });
+    await mirrorPut(db.loans, nextLoan);
+    markMirrorStale('loans');
     set((s) => ({
       loans: s.loans.map((l) =>
-        l.id === loanId ? { ...l, remainingAmount: newRemaining, status: newStatus as Loan['status'] } : l
+        l.id === loanId ? nextLoan : l
       ),
     }));
     if (newStatus === 'settled') {
@@ -100,6 +112,8 @@ export const useLoanStore = create<LoanState>((set, get) => ({
     };
 
     await loansDb.update(loanId, changes);
+    await mirrorPut(db.loans, nextLoan);
+    markMirrorStale('loans');
     set((s) => ({
       loans: s.loans.map((l) => (l.id === loanId ? nextLoan : l)),
     }));
@@ -107,6 +121,8 @@ export const useLoanStore = create<LoanState>((set, get) => ({
 
   deleteLoan: async (loanId) => {
     await loansDb.delete(loanId);
+    await mirrorDelete(db.loans, loanId);
+    markMirrorStale('loans');
     set((s) => ({
       loans: s.loans.filter((l) => l.id !== loanId),
     }));

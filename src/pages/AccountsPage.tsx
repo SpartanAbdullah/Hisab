@@ -17,6 +17,7 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
+import { NextStepHint } from '../components/NextStepHint';
 import { AddAccountStepper } from './AddAccountStepper';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
@@ -179,6 +180,25 @@ export function AccountsPage() {
             title="Couldn't load accounts"
             message={error ?? 'Some data failed to load.'}
             onRetry={retry}
+          />
+        )}
+
+        {status === 'ready' && hasAccounts && (
+          <NextStepHint
+            icon={primaryAccounts.length > 0 ? Landmark : Wallet}
+            tone={otherAccounts.length > 0 ? 'info' : 'receive'}
+            status={
+              otherAccounts.length > 0
+                ? `${primaryAccounts.length} primary-currency account${primaryAccounts.length === 1 ? '' : 's'} and ${otherAccounts.length} other-currency account${otherAccounts.length === 1 ? '' : 's'} are active.`
+                : `${accounts.length} account${accounts.length === 1 ? '' : 's'} ready in ${primaryCurrency}.`
+            }
+            next={
+              otherAccounts.length > 0
+                ? 'Keep balances separated by currency; tap any account to inspect activity before moving money.'
+                : 'Tap an account to review recent activity, or add another wallet when you start tracking a new cash source.'
+            }
+            actionLabel="Add account"
+            onAction={() => setShowAdd(true)}
           />
         )}
 

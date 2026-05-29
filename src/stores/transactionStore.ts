@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
+import { db } from '../db';
 import { transactionsDb, emiSchedulesDb, loansDb } from '../lib/supabaseDb';
+import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
 import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType } from '../db';
 import { useAccountStore } from './accountStore';
 import { useLoanStore, type CreateLoanInput } from './loanStore';
@@ -194,9 +196,13 @@ async function trackedCreateLoan(scope: MutationScope, input: CreateLoanInput): 
     createdAt: new Date().toISOString(),
   };
   await loansDb.add(loan);
+  await mirrorPut(db.loans, loan);
+  markMirrorStale('loans');
   useLoanStore.setState(s => ({ loans: [...s.loans, loan] }));
   scope.register(async () => {
     await loansDb.delete(loan.id);
+    await mirrorDelete(db.loans, loan.id);
+    markMirrorStale('loans');
     useLoanStore.setState(s => ({ loans: s.loans.filter(l => l.id !== loan.id) }));
   });
   try {
@@ -223,11 +229,15 @@ async function trackedApplyRepayment(scope: MutationScope, loanId: string, amoun
   const newRemaining = Math.max(0, Math.round((before.remainingAmount - amount) * 100) / 100);
   const newStatus: Loan['status'] = newRemaining === 0 ? 'settled' : 'active';
   await loansDb.update(loanId, { remainingAmount: newRemaining, status: newStatus });
+  await mirrorPut(db.loans, { ...before, remainingAmount: newRemaining, status: newStatus });
+  markMirrorStale('loans');
   useLoanStore.setState(s => ({
     loans: s.loans.map(l => (l.id === loanId ? { ...l, remainingAmount: newRemaining, status: newStatus } : l)),
   }));
   scope.register(async () => {
     await loansDb.update(loanId, { remainingAmount: prevRemaining, status: prevStatus });
+    await mirrorPut(db.loans, { ...before, remainingAmount: prevRemaining, status: prevStatus });
+    markMirrorStale('loans');
     useLoanStore.setState(s => ({
       loans: s.loans.map(l => (l.id === loanId ? { ...l, remainingAmount: prevRemaining, status: prevStatus } : l)),
     }));
@@ -336,20 +346,28 @@ async function trackedMarkAllEmisPaid(scope: MutationScope, loanId: string): Pro
 
 async function trackedAddTransaction(scope: MutationScope, tx: Transaction): Promise<void> {
   await transactionsDb.add(tx);
+  await mirrorPut(db.transactions, tx);
+  markMirrorStale('transactions');
   useTransactionStore.setState(s => ({ transactions: [tx, ...s.transactions] }));
   scope.register(async () => {
     await transactionsDb.delete(tx.id);
+    await mirrorDelete(db.transactions, tx.id);
+    markMirrorStale('transactions');
     useTransactionStore.setState(s => ({ transactions: s.transactions.filter(t => t.id !== tx.id) }));
   });
 }
 
 async function trackedUpdateTransaction(scope: MutationScope, id: string, updated: Transaction, snapshot: Transaction): Promise<void> {
   await transactionsDb.update(id, updated);
+  await mirrorPut(db.transactions, updated);
+  markMirrorStale('transactions');
   useTransactionStore.setState(state => ({
     transactions: state.transactions.map(t => (t.id === id ? updated : t)),
   }));
   scope.register(async () => {
     await transactionsDb.update(id, snapshot);
+    await mirrorPut(db.transactions, snapshot);
+    markMirrorStale('transactions');
     useTransactionStore.setState(state => ({
       transactions: state.transactions.map(t => (t.id === id ? snapshot : t)),
     }));
@@ -358,11 +376,15 @@ async function trackedUpdateTransaction(scope: MutationScope, id: string, update
 
 async function trackedDeleteTransaction(scope: MutationScope, tx: Transaction): Promise<void> {
   await transactionsDb.delete(tx.id);
+  await mirrorDelete(db.transactions, tx.id);
+  markMirrorStale('transactions');
   useTransactionStore.setState(state => ({
     transactions: state.transactions.filter(t => t.id !== tx.id),
   }));
   scope.register(async () => {
     await transactionsDb.add(tx);
+    await mirrorPut(db.transactions, tx);
+    markMirrorStale('transactions');
     useTransactionStore.setState(s => ({ transactions: [tx, ...s.transactions] }));
   });
 }
@@ -376,6 +398,8 @@ async function trackedDeleteLoan(scope: MutationScope, loanId: string): Promise<
   await useLoanStore.getState().deleteLoan(loanId);
   scope.register(async () => {
     await loansDb.add(before);
+    await mirrorPut(db.loans, before);
+    markMirrorStale('loans');
     useLoanStore.setState(s => ({ loans: [...s.loans, before] }));
   });
 }
@@ -446,7 +470,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   loadTransactions: async () => {
     set({ loading: true });
     try {
-      const transactions = await transactionsDb.getAll();
+      const { rows: transactions } = await loadCacheFirst({
+        key: 'transactions',
+        table: db.transactions,
+        fetchRemote: transactionsDb.getAll,
+        sort: (a, b) => b.createdAt.localeCompare(a.createdAt),
+      });
       set({ transactions });
     } finally {
       set({ loading: false });
@@ -1103,6 +1132,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   restoreTransaction: async (snapshot) => {
     const accountStore = useAccountStore.getState();
     await transactionsDb.add(snapshot);
+    await mirrorPut(db.transactions, snapshot);
+    markMirrorStale('transactions');
     set((s) => ({ transactions: [snapshot, ...s.transactions] }));
 
     // Re-apply balance deltas matching the snapshot's type. Only the small

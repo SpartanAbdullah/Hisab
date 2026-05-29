@@ -15,6 +15,7 @@ import { TransactionItem } from '../components/TransactionItem';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
+import { NextStepHint } from '../components/NextStepHint';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -430,6 +431,27 @@ export function LoansPage() {
             );
           })}
         </div>
+
+        {loadStatus === 'ready' && activeLoans.length > 0 && (
+          <NextStepHint
+            icon={tab === 'settled' ? Users : Bell}
+            tone={netStance > 0 ? 'receive' : netStance < 0 ? 'pay' : 'info'}
+            status={
+              netStance > 0
+                ? `You are net set to receive ${formatMoney(netStance, primaryCurrency)}.`
+                : netStance < 0
+                ? `You are net due to pay ${formatMoney(Math.abs(netStance), primaryCurrency)}.`
+                : 'Receivables and payables are balanced in your primary currency.'
+            }
+            next={
+              primaryGroups.length > 0
+                ? 'Tap a person to see individual loans, repayment progress, and reminder options.'
+                : otherGroups.length > 0
+                ? 'This tab only has other-currency loans right now; review the pocket section below.'
+                : 'Switch tabs to review the other side of your IOUs.'
+            }
+          />
+        )}
 
         {/* Primary-currency people list */}
         {primaryGroups.length > 0 ? (

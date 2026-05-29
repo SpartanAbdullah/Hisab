@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
+import { db } from '../db';
 import { accountsDb, transactionsDb } from '../lib/supabaseDb';
+import { loadCacheFirst, mirrorDelete, mirrorPut, markMirrorStale } from '../lib/mirrorCache';
 import type { Account, AccountType, Currency, Transaction } from '../db';
 import { useActivityStore } from './activityStore';
 
@@ -37,7 +39,14 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   loadAccounts: async () => {
     set({ loading: true });
     try {
-      const accounts = await accountsDb.getAll();
+      const { rows: accounts } = await loadCacheFirst({
+        key: 'accounts',
+        table: db.accounts,
+        fetchRemote: accountsDb.getAll,
+        fetchUpdatedSince: accountsDb.getUpdatedSince,
+        getUpdatedAt: (account) => account.updatedAt ?? account.createdAt,
+        sort: (a, b) => a.createdAt.localeCompare(b.createdAt),
+      });
       set({ accounts });
     } finally {
       // Always clear loading — error still propagates so page-level
@@ -56,7 +65,10 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       metadata: input.metadata ?? {},
       createdAt: new Date().toISOString(),
     };
+    account.updatedAt = account.createdAt;
     await accountsDb.add(account);
+    await mirrorPut(db.accounts, account);
+    markMirrorStale('accounts');
     set((s) => ({ accounts: [...s.accounts, account] }));
 
     const activityStore = useActivityStore.getState();
@@ -86,6 +98,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         createdAt: account.createdAt,
       };
       await transactionsDb.add(tx);
+      await mirrorPut(db.transactions, tx);
+      markMirrorStale('transactions');
       await activityStore.logActivity(
         'opening_balance',
         `Opening Balance — ${input.currency} ${input.balance} in "${input.name}"`,
@@ -127,15 +141,25 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     }
 
     set((s) => ({
-      accounts: s.accounts.map((a) => (a.id === id ? { ...a, balance: newBalance } : a)),
+      accounts: s.accounts.map((a) =>
+        a.id === id ? { ...a, balance: newBalance, updatedAt: new Date().toISOString() } : a,
+      ),
     }));
+    const updated = get().accounts.find((a) => a.id === id);
+    if (updated) await mirrorPut(db.accounts, updated);
+    markMirrorStale('accounts');
   },
 
   renameAccount: async (id, newName) => {
     await accountsDb.update(id, { name: newName });
     set((s) => ({
-      accounts: s.accounts.map((a) => (a.id === id ? { ...a, name: newName } : a)),
+      accounts: s.accounts.map((a) =>
+        a.id === id ? { ...a, name: newName, updatedAt: new Date().toISOString() } : a,
+      ),
     }));
+    const updated = get().accounts.find((a) => a.id === id);
+    if (updated) await mirrorPut(db.accounts, updated);
+    markMirrorStale('accounts');
   },
 
   deleteAccount: async (id) => {
@@ -156,6 +180,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     set((s) => ({
       accounts: s.accounts.filter((a) => a.id !== id),
     }));
+    await mirrorDelete(db.accounts, id);
+    markMirrorStale('accounts');
     await useActivityStore.getState().logActivity(
       'account_deleted',
       `Deleted account "${account.name}"`,

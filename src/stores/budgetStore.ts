@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
+import { db } from '../db';
 import { budgetsDb } from '../lib/supabaseDb';
+import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
 import type { Budget, Currency, Transaction } from '../db';
 
 interface CreateBudgetInput {
@@ -33,7 +35,12 @@ export const useBudgetStore = create<BudgetState>((set) => ({
   loadBudgets: async () => {
     set({ loading: true });
     try {
-      const budgets = await budgetsDb.getAll();
+      const { rows: budgets } = await loadCacheFirst({
+        key: 'budgets',
+        table: db.budgets,
+        fetchRemote: budgetsDb.getAll,
+        sort: (a, b) => a.category.localeCompare(b.category),
+      });
       set({ budgets });
     } finally {
       set({ loading: false });
@@ -50,6 +57,8 @@ export const useBudgetStore = create<BudgetState>((set) => ({
       createdAt: new Date().toISOString(),
     };
     await budgetsDb.add(budget);
+    await mirrorPut(db.budgets, budget);
+    markMirrorStale('budgets');
     set((s) => ({ budgets: [...s.budgets, budget].sort((a, b) => a.category.localeCompare(b.category)) }));
     return budget;
   },
@@ -59,10 +68,15 @@ export const useBudgetStore = create<BudgetState>((set) => ({
     set((s) => ({
       budgets: s.budgets.map((b) => (b.id === id ? { ...b, ...changes } : b)),
     }));
+    const updated = useBudgetStore.getState().budgets.find((b) => b.id === id);
+    if (updated) await mirrorPut(db.budgets, updated);
+    markMirrorStale('budgets');
   },
 
   deleteBudget: async (id) => {
     await budgetsDb.delete(id);
+    await mirrorDelete(db.budgets, id);
+    markMirrorStale('budgets');
     set((s) => ({ budgets: s.budgets.filter((b) => b.id !== id) }));
   },
 }));

@@ -63,6 +63,12 @@ export interface OutboxEntry {
   nextAttemptAt: string;       // ISO
 }
 
+export interface MirrorSyncState {
+  key: string;
+  lastSyncedAt: string;
+  lastFullRefreshAt: string | null;
+}
+
 export class HisaabDatabase extends Dexie {
   // Mirrored authoritative state (read-only from the app's perspective)
   accounts!: Table<Account, string>;
@@ -82,6 +88,7 @@ export class HisaabDatabase extends Dexie {
 
   // Mutations queued while offline (or before they reach Supabase).
   outbox!: Table<OutboxEntry, string>;
+  mirrorSync!: Table<MirrorSyncState, string>;
 
   constructor() {
     super('HisaabDB');
@@ -165,6 +172,26 @@ export class HisaabDatabase extends Dexie {
       recurringTransactions: 'id, nextDueDate, active',
       remittances: 'id, sentAt, status',
       outbox: 'id, kind, nextAttemptAt, createdAt',
+    });
+    // Version 7: per-table mirror sync metadata. Lets cache-first loaders do
+    // incremental pulls without relying only on localStorage.
+    this.version(7).stores({
+      accounts: 'id, type, currency',
+      transactions: 'id, type, sourceAccountId, destinationAccountId, relatedLoanId, relatedGoalId, personId, createdAt',
+      loans: 'id, personName, personId, type, status',
+      emiSchedules: 'id, loanId, status, dueDate',
+      goals: 'id, storedInAccountId',
+      activityLog: 'id, type, relatedEntityId, timestamp',
+      upcomingExpenses: 'id, accountId, dueDate, isPaid',
+      splitGroups: 'id, createdAt',
+      groupExpenses: 'id, groupId, paidBy, createdAt',
+      groupSettlements: 'id, groupId, fromMember, toMember',
+      persons: 'id, name, linkedProfileId, createdAt',
+      budgets: 'id, category, currency',
+      recurringTransactions: 'id, nextDueDate, active',
+      remittances: 'id, sentAt, status',
+      outbox: 'id, kind, nextAttemptAt, createdAt',
+      mirrorSync: 'key, lastSyncedAt, lastFullRefreshAt',
     });
   }
 }
