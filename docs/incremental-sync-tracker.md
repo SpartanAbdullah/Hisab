@@ -16,7 +16,7 @@ Owner split: Codex implements app code and migration files. Abdullah runs Supaba
 | Incremental loans sync | Done | Codex | Uses `updated_at` incremental merge. Hard deletes still depend on periodic full refresh. |
 | Incremental budgets sync | Done | Codex | Uses `updated_at` incremental merge. Hard deletes still depend on periodic full refresh. |
 | Tombstone migration | Done | Codex | `supabase-migration-incremental-sync-tombstones.sql` adds `deleted_at` and deleted-row indexes. |
-| Apply tombstone migration | Pending | Abdullah | Run the tombstone migration in Supabase before relying on deleted-row incremental sync in production. |
+| Apply tombstone migration | Done | Abdullah | Abdullah confirmed `supabase-migration-incremental-sync-tombstones.sql` was run in Supabase. |
 | Delete/tombstone strategy | Done | Codex | App deletes are now soft deletes for accounts, transactions, loans, and budgets; incremental sync removes tombstones from Dexie. |
 | QA: tests/build | Pending | Codex | Run after each implementation slice. |
 
@@ -26,14 +26,14 @@ Use a hybrid rollout:
 
 - Accounts: true incremental sync now, because `updated_at` is already present.
 - Transactions, loans, budgets: true incremental sync is enabled after Abdullah applied `supabase-migration-incremental-sync-core.sql`.
-- Deletes: tombstone sync is implemented in app code. It becomes active in production after Abdullah applies `supabase-migration-incremental-sync-tombstones.sql`.
+- Deletes: tombstone sync is implemented and the migration has been applied in Supabase.
 
 ## Abdullah Actions
 
 - Review the generated sync migration before production. Done.
 - Apply the migration when ready. Done.
 - Confirm whether hard deletes should become soft deletes for transactions, loans, and budgets.
-- Apply `supabase-migration-incremental-sync-tombstones.sql` in Supabase.
+- Apply `supabase-migration-incremental-sync-tombstones.sql` in Supabase. Done.
 
 ## Codex Actions
 
