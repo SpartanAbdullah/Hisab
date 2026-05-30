@@ -23,6 +23,8 @@ import {
   Wallet2,
   Repeat,
   Send,
+  Database,
+  RefreshCw,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
@@ -37,6 +39,11 @@ import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
 import { useT, useI18nStore } from "../lib/i18n";
 import { exportAllData, importData, downloadJSON } from "../lib/dataExport";
 import { profilesDb } from "../lib/supabaseDb";
+import { db } from "../db";
+import {
+  getCoreMirrorSyncSnapshots,
+  type MirrorSyncSnapshot,
+} from "../lib/mirrorCache";
 import {
   buildAppShareUrl,
   generatePublicCodeCandidate,
@@ -70,6 +77,43 @@ function copyShareText(text: string): Promise<void> {
   return copyWithTextareaFallback(text);
 }
 
+const SYNC_LABELS: Record<MirrorSyncSnapshot["key"], string> = {
+  accounts: "Accounts",
+  transactions: "Transactions",
+  loans: "Loans",
+  budgets: "Budgets",
+};
+
+function formatSyncTime(value: string | null): string {
+  if (!value) return "Not synced yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return date.toLocaleString([], {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function SyncStatusRow({ snapshot }: { snapshot: MirrorSyncSnapshot }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold text-ink-800">
+          {SYNC_LABELS[snapshot.key]}
+        </p>
+        <p className="text-[10px] text-ink-400 mt-0.5">
+          Full refresh: {formatSyncTime(snapshot.lastFullRefreshAt)}
+        </p>
+      </div>
+      <p className={`text-[10.5px] font-semibold text-right tabular-nums ${snapshot.lastSyncedAt ? "text-receive-text" : "text-ink-400"}`}>
+        {formatSyncTime(snapshot.lastSyncedAt)}
+      </p>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const t = useT();
   const toast = useToast();
@@ -99,7 +143,27 @@ export function SettingsPage() {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteSaving, setDeleteSaving] = useState(false);
+  const [syncSnapshots, setSyncSnapshots] = useState<MirrorSyncSnapshot[]>([]);
+  const [syncStatusLoading, setSyncStatusLoading] = useState(true);
+  const [outboxCount, setOutboxCount] = useState(0);
   const userName = localStorage.getItem("hisaab_user_name") ?? "";
+
+  const loadSyncStatus = async () => {
+    setSyncStatusLoading(true);
+    try {
+      const [snapshots, queuedCount] = await Promise.all([
+        getCoreMirrorSyncSnapshots(),
+        db.outbox.count(),
+      ]);
+      setSyncSnapshots(snapshots);
+      setOutboxCount(queuedCount);
+    } catch {
+      setSyncSnapshots([]);
+      setOutboxCount(0);
+    } finally {
+      setSyncStatusLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -133,6 +197,10 @@ export function SettingsPage() {
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    void loadSyncStatus();
+  }, []);
 
   const handleExport = async () => {
     setExporting(true);
@@ -739,6 +807,53 @@ export function SettingsPage() {
             onChange={handleImport}
             className="hidden"
           />
+        </div>
+
+        {/* About */}
+        <div className={sectionClass}>
+          <div className={rowClass}>
+            <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center">
+              <Database size={16} className="text-info-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-ink-900">
+                Sync Status
+              </p>
+              <p className="text-[11px] text-ink-500">
+                {syncStatusLoading
+                  ? "Checking local mirror..."
+                  : outboxCount > 0
+                    ? `${outboxCount} queued change${outboxCount === 1 ? "" : "s"} waiting to sync`
+                    : "Local mirror is ready"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadSyncStatus()}
+              disabled={syncStatusLoading}
+              aria-label="Refresh sync status"
+              className="nav-icon-button shrink-0 disabled:opacity-40"
+            >
+              <RefreshCw size={14} className={`text-ink-500 ${syncStatusLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+          <div className="px-4 py-3 space-y-2.5">
+            {syncSnapshots.length === 0 && !syncStatusLoading ? (
+              <p className="text-[11px] text-ink-500 leading-relaxed">
+                Sync metadata will appear after the first successful data refresh on this device.
+              </p>
+            ) : (
+              syncSnapshots.map((snapshot) => (
+                <SyncStatusRow key={snapshot.key} snapshot={snapshot} />
+              ))
+            )}
+            <div className="pt-2 border-t border-cream-hairline flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold text-ink-700">Queued offline changes</p>
+              <span className={`text-[11px] font-semibold tabular-nums ${outboxCount > 0 ? "text-warn-600" : "text-receive-text"}`}>
+                {outboxCount}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* About */}

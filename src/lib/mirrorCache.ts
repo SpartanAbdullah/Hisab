@@ -3,6 +3,14 @@ import { db } from '../db';
 
 const DEFAULT_FRESH_MS = 2 * 60 * 1000;
 const DEFAULT_FULL_REFRESH_MS = 24 * 60 * 60 * 1000;
+export const CORE_MIRROR_KEYS = ['accounts', 'transactions', 'loans', 'budgets'] as const;
+export type CoreMirrorKey = typeof CORE_MIRROR_KEYS[number];
+
+export interface MirrorSyncSnapshot {
+  key: CoreMirrorKey;
+  lastSyncedAt: string | null;
+  lastFullRefreshAt: string | null;
+}
 
 interface CacheFirstOptions<T> {
   key: string;
@@ -220,4 +228,13 @@ export async function mirrorDelete<T>(table: Table<T, string>, id: string) {
 export function markMirrorStale(key: string) {
   localStorage.removeItem(cacheKey(key));
   void db.mirrorSync.delete(key).catch((error) => reportMirrorError('sync-state delete', error));
+}
+
+export async function getCoreMirrorSyncSnapshots(): Promise<MirrorSyncSnapshot[]> {
+  return Promise.all(
+    CORE_MIRROR_KEYS.map(async (key) => ({
+      key,
+      ...(await readSyncState(key)),
+    })),
+  );
 }
