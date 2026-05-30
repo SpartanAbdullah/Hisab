@@ -42,6 +42,7 @@ const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then(m => ({ default: m.BudgetsPage })));
 const RemittancesPage = lazy(() => import('./pages/RemittancesPage').then(m => ({ default: m.RemittancesPage })));
 const RecurringTransactionsPage = lazy(() => import('./pages/RecurringTransactionsPage').then(m => ({ default: m.RecurringTransactionsPage })));
+const PublicInfoPage = lazy(() => import('./pages/PublicInfoPages').then(m => ({ default: m.PublicInfoPage })));
 
 // Quick Entry is the only modal launched globally (from the BottomNav FAB).
 // The Add Goal / Add Loan / Add Upcoming Expense modals are owned by their
@@ -421,9 +422,28 @@ function App() {
     <BrowserRouter>
       <ToastContainer />
       <ConfirmDestructiveSheet />
-      <AppContent />
+      <PublicRouteSwitch />
     </BrowserRouter>
   );
+}
+
+function PublicRouteSwitch() {
+  const location = useLocation();
+
+  if (location.pathname === '/privacy') {
+    return <Suspense fallback={<PageLoader />}><PublicInfoPage kind="privacy" /></Suspense>;
+  }
+  if (location.pathname === '/terms') {
+    return <Suspense fallback={<PageLoader />}><PublicInfoPage kind="terms" /></Suspense>;
+  }
+  if (location.pathname === '/contact' || location.pathname === '/support') {
+    return <Suspense fallback={<PageLoader />}><PublicInfoPage kind="contact" /></Suspense>;
+  }
+  if (location.pathname === '/delete-account') {
+    return <Suspense fallback={<PageLoader />}><PublicInfoPage kind="delete-account" /></Suspense>;
+  }
+
+  return <AppContent />;
 }
 
 export default App;

@@ -25,6 +25,7 @@ import {
   Send,
   Database,
   RefreshCw,
+  FileText,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
@@ -873,6 +874,62 @@ export function SettingsPage() {
           </div>
         </div>
 
+        {/* Legal and support */}
+        <div className={sectionClass}>
+          <button
+            onClick={() => navigate('/privacy')}
+            className={rowClass + " w-full text-left"}
+          >
+            <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center">
+              <Shield size={16} className="text-info-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">Privacy Policy</p>
+              <p className="text-[11px] text-ink-500">How Hisaab handles your data</p>
+            </div>
+            <ChevronRight size={16} className="text-ink-300" />
+          </button>
+          <button
+            onClick={() => navigate('/terms')}
+            className={rowClass + " w-full text-left"}
+          >
+            <div className="w-9 h-9 rounded-xl bg-cream-soft flex items-center justify-center">
+              <FileText size={16} className="text-ink-500" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">Terms of Use</p>
+              <p className="text-[11px] text-ink-500">Early-release service terms</p>
+            </div>
+            <ChevronRight size={16} className="text-ink-300" />
+          </button>
+          <button
+            onClick={() => navigate('/contact')}
+            className={rowClass + " w-full text-left"}
+          >
+            <div className="w-9 h-9 rounded-xl bg-receive-50 flex items-center justify-center">
+              <Mail size={16} className="text-receive-text" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">Contact & Support</p>
+              <p className="text-[11px] text-ink-500">Privacy, deletion, and bug reports</p>
+            </div>
+            <ChevronRight size={16} className="text-ink-300" />
+          </button>
+          <button
+            onClick={() => navigate('/delete-account')}
+            className={rowClass + " w-full text-left"}
+          >
+            <div className="w-9 h-9 rounded-xl bg-pay-50 flex items-center justify-center">
+              <Trash2 size={16} className="text-pay-text" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">Deletion Instructions</p>
+              <p className="text-[11px] text-ink-500">How to delete your Hisaab account</p>
+            </div>
+            <ChevronRight size={16} className="text-ink-300" />
+          </button>
+        </div>
+
         {/* Danger Zone */}
         {user && (
           <div className="rounded-[18px] bg-cream-card overflow-hidden border border-pay-100 divide-y divide-pay-100/60">
@@ -957,7 +1014,7 @@ export function SettingsPage() {
         {/* Footer */}
         <div className="text-center pt-4 pb-2">
           <p className="text-[11px] text-ink-500">
-            Made with ❤️ by Shalbandian
+            Hisaab by Muhammad Abdullah
           </p>
         </div>
       </div>

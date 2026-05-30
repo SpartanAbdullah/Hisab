@@ -180,7 +180,7 @@ function seedAndLoad(account: { id: string; balance: number; currency?: string; 
         id: account.id,
         name: account.name ?? account.id,
         type: account.type ?? 'cash',
-        currency: (account.currency ?? 'AED') as 'AED' | 'PKR' | 'SAR' | 'QAR' | 'OMR' | 'KWD' | 'BHD',
+        currency: (account.currency ?? 'AED') as 'AED' | 'PKR' | 'PHP' | 'SAR' | 'QAR' | 'OMR' | 'KWD' | 'BHD',
         balance: account.balance,
         metadata: {},
         createdAt: new Date().toISOString(),

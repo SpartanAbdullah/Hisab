@@ -29,6 +29,7 @@ export const INCOME_CATEGORIES = [
 export const CURRENCY_SYMBOLS: Record<string, string> = {
   AED: 'AED',
   PKR: '\u20A8',
+  PHP: '\u20B1',
   SAR: 'SAR',
   QAR: 'QAR',
   OMR: 'OMR',

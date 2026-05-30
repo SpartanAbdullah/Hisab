@@ -243,6 +243,7 @@ export const radii = {
 export const currencyFlags: Record<string, string> = {
   AED: '\u{1F1E6}\u{1F1EA}',
   PKR: '\u{1F1F5}\u{1F1F0}',
+  PHP: '\u{1F1F5}\u{1F1ED}',
   SAR: '\u{1F1F8}\u{1F1E6}',
   QAR: '\u{1F1F6}\u{1F1E6}',
   OMR: '\u{1F1F4}\u{1F1F2}',
@@ -253,6 +254,7 @@ export const currencyFlags: Record<string, string> = {
 export const currencyMeta: Record<string, { flag: string; symbol: string; name: string }> = {
   AED: { flag: '\u{1F1E6}\u{1F1EA}', symbol: 'AED', name: 'UAE Dirham' },
   PKR: { flag: '\u{1F1F5}\u{1F1F0}', symbol: '\u20A8', name: 'Pakistani Rupee' },
+  PHP: { flag: '\u{1F1F5}\u{1F1ED}', symbol: '\u20B1', name: 'Philippine Peso' },
   SAR: { flag: '\u{1F1F8}\u{1F1E6}', symbol: 'SAR', name: 'Saudi Riyal' },
   QAR: { flag: '\u{1F1F6}\u{1F1E6}', symbol: 'QAR', name: 'Qatari Riyal' },
   OMR: { flag: '\u{1F1F4}\u{1F1F2}', symbol: 'OMR', name: 'Omani Rial' },

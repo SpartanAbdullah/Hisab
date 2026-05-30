@@ -14,6 +14,10 @@ describe('formatMoney', () => {
     expect(formatMoney(100, 'SAR')).toBe('SAR 100.00');
   });
 
+  it('formats PHP with the Philippine peso symbol', () => {
+    expect(formatMoney(100, 'PHP')).toBe('₱ 100.00');
+  });
+
   it('falls back to the currency code when no symbol is registered', () => {
     expect(formatMoney(10, 'XYZ')).toBe('XYZ 10.00');
   });
