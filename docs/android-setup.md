@@ -40,12 +40,12 @@ Add this `<intent-filter>` immediately after the launcher one:
     <action android:name="android.intent.action.VIEW" />
     <category android:name="android.intent.category.DEFAULT" />
     <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="https" android:host="hisaab.yourdomain.com" />
+    <data android:scheme="https" android:host="usehisaab.com" />
     <data android:pathPrefix="/join/" />
 </intent-filter>
 ```
 
-Replace `hisaab.yourdomain.com` with your production host. The capacitor.config.ts already wires `appUrlOpen` → react-router so `/join/:token` resolves automatically.
+The capacitor.config.ts already wires `appUrlOpen` → react-router so `/join/:token` resolves automatically.
 
 ### `android/app/src/main/res/values/colors.xml`
 Set the splash/background colour to Sukoon navy:
@@ -61,7 +61,7 @@ Set the splash/background colour to Sukoon navy:
 ```
 
 ### Verify Site URL on Play Store (Digital Asset Links)
-When you publish to Play Store, the `android:autoVerify="true"` on the deep-link filter only works if your domain hosts an `assetlinks.json` file at `https://hisaab.yourdomain.com/.well-known/assetlinks.json`. Use the [Asset Links Tool](https://developers.google.com/digital-asset-links/tools/generator) to generate it. Without this, deep links open in a chooser rather than directly in the app.
+When you publish to Play Store, the `android:autoVerify="true"` on the deep-link filter only works if your domain hosts an `assetlinks.json` file at `https://usehisaab.com/.well-known/assetlinks.json`. Use the [Asset Links Tool](https://developers.google.com/digital-asset-links/tools/generator) to generate it. Without this, deep links open in a chooser rather than directly in the app.
 
 ## Native plugins already wired
 

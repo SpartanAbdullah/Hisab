@@ -53,7 +53,7 @@ export async function initNativeBridge(opts: {
       }
     });
 
-    // Deep links — fired when the OS hands the app an https://hisaab.app/join/XYZ
+    // Deep links — fired when the OS hands the app an https://usehisaab.com/join/XYZ
     // (or capacitor://) URL. We extract the path and route the router.
     CapApp.addListener('appUrlOpen', ({ url }) => {
       try {

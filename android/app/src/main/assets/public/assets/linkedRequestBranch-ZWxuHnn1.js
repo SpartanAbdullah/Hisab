@@ -1,1 +1,0 @@
-function e(e){let{type:t,person:n,requestCurrency:r}=e;return!n||!n.linkedProfileId||!r?{branch:!1}:{branch:!0,kind:t===`loan_given`?`lent`:`borrowed`,toUserId:n.linkedProfileId,personId:n.id,currency:r}}export{e as t};
