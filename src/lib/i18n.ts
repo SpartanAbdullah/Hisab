@@ -1034,6 +1034,9 @@ const S = {
   // PWA install
   pwa_install_title: { ur: "Hisaab Install Karo", en: "Install Hisaab" },
   pwa_install_cta: { ur: "Install", en: "Install" },
+  pwa_install_show_steps: { ur: "Steps Dekho", en: "Show steps" },
+  pwa_install_success_title: { ur: "Mubarak ho! Hisaab add ho gaya", en: "Congratulations! Hisaab is installed" },
+  pwa_install_success_subtitle: { ur: "App ab aap ki home screen par mil jayegi.", en: "The app has been added to your home screen." },
   pwa_install_native_sub: {
     ur: "App ko home screen par add karo",
     en: "Add the app to your home screen",
