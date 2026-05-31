@@ -59,18 +59,12 @@ import { CreateGroupModal } from './pages/CreateGroupModal';
 import { RecurringDuePrompt } from './components/RecurringDuePrompt';
 import { MonthlyWrapModal } from './components/MonthlyWrapModal';
 import { OfflineBanner } from './components/OfflineBanner';
+import { AppLoadingScreen } from './components/AppLoadingScreen';
 import { startOutboxRunner, stopOutboxRunner } from './lib/outboxRunner';
 import type { SplitGroup } from './db';
 
 function PageLoader() {
-  return (
-    <div className="min-h-dvh flex items-center justify-center bg-navy-900">
-      <div className="text-center animate-pulse">
-        <p className="text-lg font-bold text-white">Hisaab</p>
-        <p className="text-[10px] text-white/40 mt-1">Loading...</p>
-      </div>
-    </div>
-  );
+  return <AppLoadingScreen />;
 }
 
 function UnverifiedEmailScreen({ email }: { email: string }) {
@@ -284,14 +278,7 @@ function AppContent() {
   }, [completed, location.pathname, navigate, user]);
 
   if (authLoading || onboardingLoading) {
-    return (
-      <div className="min-h-dvh flex items-center justify-center bg-navy-900">
-        <div className="text-center text-white animate-pulse-once">
-          <p className="text-2xl font-bold">Hisaab</p>
-          <p className="text-xs opacity-60 mt-1">Loading...</p>
-        </div>
-      </div>
-    );
+    return <AppLoadingScreen />;
   }
 
   // Auth gate — must be logged in

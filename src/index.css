@@ -149,6 +149,205 @@
   80% { transform: translateX(6px); }
 }
 
+/* ========== APP LOADING SCREEN ========== */
+.app-loading-screen {
+  background:
+    radial-gradient(80% 55% at 50% 22%, rgba(124, 92, 255, 0.2), transparent 70%),
+    var(--color-navy-900);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: max(28px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  position: relative;
+  text-align: center;
+  width: 100%;
+}
+
+.app-loading-content {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  margin: auto 0;
+  width: 100%;
+}
+
+.app-loading-brand {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.app-loading-brand h1 {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.app-loading-mark {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 13px;
+  box-shadow: 0 10px 28px rgba(3, 5, 22, 0.24);
+  display: flex;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.app-loading-mark span {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.app-loading-visual {
+  height: 146px;
+  margin-top: 36px;
+  position: relative;
+  width: 188px;
+}
+
+.app-loading-wallet {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 22px;
+  bottom: 8px;
+  box-shadow: 0 20px 38px rgba(3, 5, 22, 0.28);
+  color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  height: 88px;
+  justify-content: center;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  width: 112px;
+}
+
+.app-loading-coin {
+  align-items: center;
+  background: #f4c96b;
+  border: 2px solid rgba(255, 242, 182, 0.66);
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(244, 201, 107, 0.16);
+  color: #6d5220;
+  display: flex;
+  font-size: 13px;
+  font-weight: 800;
+  height: 32px;
+  justify-content: center;
+  position: absolute;
+  width: 32px;
+}
+
+.app-loading-coin-one { left: 50px; top: 20px; animation: loading-coin-drop 2.4s ease-in-out infinite; }
+.app-loading-coin-two { left: 79px; top: 8px; animation: loading-coin-drop 2.4s 0.32s ease-in-out infinite; }
+.app-loading-coin-three { left: 108px; top: 22px; animation: loading-coin-drop 2.4s 0.64s ease-in-out infinite; }
+
+.app-loading-spark {
+  color: #d6cbff;
+  font-size: 18px;
+  position: absolute;
+}
+
+.app-loading-spark-one { animation: loading-sparkle 1.9s ease-in-out infinite; left: 18px; top: 54px; }
+.app-loading-spark-two { animation: loading-sparkle 1.9s 0.55s ease-in-out infinite; right: 16px; top: 42px; }
+
+.app-loading-copy {
+  margin-top: 24px;
+  min-height: 66px;
+  width: min(100%, 340px);
+}
+
+.app-loading-message {
+  animation: loading-message-in 0.32s ease-out;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.app-loading-subline {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+.app-loading-progress {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  height: 4px;
+  margin-top: 12px;
+  overflow: hidden;
+  width: min(100%, 240px);
+}
+
+.app-loading-progress span {
+  animation: loading-shimmer 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(205, 193, 255, 0.92), transparent);
+  display: block;
+  height: 100%;
+  width: 48%;
+}
+
+.app-loading-trust {
+  align-items: center;
+  color: rgba(255, 255, 255, 0.48);
+  display: flex;
+  font-size: 10px;
+  font-weight: 600;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.app-loading-tip {
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 10px;
+  line-height: 1.6;
+  margin: 24px auto 0;
+  max-width: 310px;
+}
+
+@keyframes loading-coin-drop {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
+}
+
+@keyframes loading-sparkle {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+
+@keyframes loading-message-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loading-shimmer {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(310%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loading-coin,
+  .app-loading-spark,
+  .app-loading-message,
+  .app-loading-progress span {
+    animation: none;
+  }
+
+  .app-loading-progress span {
+    background: rgba(205, 193, 255, 0.78);
+    width: 64%;
+  }
+}
+
 /* ========== SAFE AREA (iOS PWA) ==========
    iOS with apple-mobile-web-app-status-bar-style=black-translucent overlays
    the status bar on top of the viewport. viewport-fit=cover lets us reach the
