@@ -1095,6 +1095,32 @@ export const accountDeletionDb = {
   },
 };
 
+export interface LeaveGroupResult {
+  success: boolean;
+  reasonCode: string;
+  userMessage: string;
+  payableAmount: number;
+  receivableAmount: number;
+  currency: string | null;
+}
+
+export const groupMembershipDb = {
+  async leave(groupId: string): Promise<LeaveGroupResult> {
+    const { data, error } = await supabase.rpc('leave_group', { p_group_id: groupId });
+    if (error) throw new Error(error.message || 'Could not leave this group');
+
+    const result = (data ?? {}) as Record<string, unknown>;
+    return {
+      success: Boolean(result.success),
+      reasonCode: String(result.reason_code ?? 'UNKNOWN'),
+      userMessage: String(result.user_message ?? 'Could not leave this group.'),
+      payableAmount: Number(result.payable_amount ?? 0),
+      receivableAmount: Number(result.receivable_amount ?? 0),
+      currency: result.currency ? String(result.currency) : null,
+    };
+  },
+};
+
 export const groupsLookupDb = {
   async findByJoinCode(normalizedCode: string): Promise<{ id: string; name: string; emoji: string; currency: string } | null> {
     void normalizedCode;

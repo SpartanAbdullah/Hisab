@@ -199,7 +199,7 @@ export interface GroupMember {
   isOwner: boolean;
   profileId?: string | null;
   role?: 'owner' | 'member';
-  status?: 'guest' | 'invited' | 'connected';
+  status?: 'guest' | 'invited' | 'connected' | 'left';
   joinedAt?: string | null;
 }
 

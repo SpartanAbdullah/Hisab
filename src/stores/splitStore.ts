@@ -9,6 +9,7 @@ import {
   groupEventsDb,
   notificationsDb,
   groupsLookupDb,
+  groupMembershipDb,
   transactionsDb,
 } from '../lib/supabaseDb';
 import {
@@ -37,6 +38,7 @@ import type {
 import { useActivityStore } from './activityStore';
 import { useTransactionStore } from './transactionStore';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
+import { refreshAfterSuccessfulLeave } from '../lib/groupLeave';
 
 interface SimplifiedDebt {
   from: string;
@@ -67,6 +69,7 @@ interface SplitState {
   loadUnreconciledFlags: (currentUserId: string) => Promise<void>;
   createGroup: (name: string, emoji: string, members: ResolvedMemberInput[], currency: Currency) => Promise<SplitGroup>;
   deleteGroup: (id: string) => Promise<void>;
+  leaveGroup: (id: string) => Promise<import('../lib/supabaseDb').LeaveGroupResult>;
   createInvite: (groupId: string, linkedMemberId?: string | null) => Promise<{ url: string; invite: GroupInvite }>;
   acceptInvite: (token: string) => Promise<{ groupId: string }>;
   joinGroupByCode: (rawCode: string) => Promise<{ groupId: string }>;
@@ -517,6 +520,17 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     await groupSettlementsDb.deleteByGroup(id);
     await splitGroupsDb.delete(id);
     await get().loadGroups();
+  },
+
+  leaveGroup: async (id) => {
+    const result = await groupMembershipDb.leave(id);
+    return refreshAfterSuccessfulLeave(result, async () => {
+      await get().loadGroups();
+      await Promise.all([
+        get().loadBalances(),
+        get().loadUnreconciledFlags(getCurrentUserId()),
+      ]);
+    });
   },
 
   createInvite: async (groupId, linkedMemberId = null) => {

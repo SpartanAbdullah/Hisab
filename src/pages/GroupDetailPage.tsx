@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check } from 'lucide-react';
+import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
@@ -35,7 +35,7 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const t = useT();
   const toast = useToast();
-  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, getGroupEvents, getSettlements, loadGroups, setGroupExpenseReconciled } = useSplitStore();
+  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, leaveGroup, getGroupEvents, getSettlements, loadGroups, setGroupExpenseReconciled } = useSplitStore();
   const markGroupRead = useNotificationStore((state) => state.markGroupRead);
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
@@ -49,6 +49,7 @@ export function GroupDetailPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [editExpense, setEditExpense] = useState<GroupExpense | null>(null);
   const [savingReconciliationId, setSavingReconciliationId] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     const nextGroup = groups.find(item => item.id === id);
@@ -208,6 +209,42 @@ export function GroupDetailPage() {
     }
   };
 
+  const handleLeave = async () => {
+    if (leaving) return;
+    const ok = await confirmDestructive({
+      title: 'Leave this group?',
+      description: 'You can leave only after your balances and pending group items are fully resolved.',
+      confirmLabel: 'Leave group',
+      tone: 'warning',
+    });
+    if (!ok) return;
+
+    setLeaving(true);
+    try {
+      const result = await leaveGroup(group.id);
+      if (!result.success) {
+        toast.show({
+          type: 'error',
+          title: 'You cannot leave this group yet',
+          subtitle: result.userMessage,
+          duration: 6000,
+        });
+        return;
+      }
+      navigate('/groups');
+      toast.show({ type: 'success', title: result.userMessage });
+    } catch (err) {
+      console.error('Failed to leave group', err);
+      toast.show({
+        type: 'error',
+        title: 'Could not leave this group',
+        subtitle: err instanceof Error ? err.message : 'Please try again.',
+      });
+    } finally {
+      setLeaving(false);
+    }
+  };
+
   const handleGroupExpenseReconcile = async (expense: GroupExpense) => {
     if (savingReconciliationId) return;
     setSavingReconciliationId(expense.id);
@@ -241,13 +278,26 @@ export function GroupDetailPage() {
               >
                 <Share2 size={14} className="text-white" />
               </button>
-              <button
-                onClick={handleDelete}
-                className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Delete"
-              >
-                <Trash2 size={14} className="text-white" />
-              </button>
+              {currentMember?.profileId === currentUserId ? (
+                <button
+                  onClick={handleLeave}
+                  disabled={leaving}
+                  className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 disabled:opacity-50 flex items-center justify-center transition-colors"
+                  aria-label={leaving ? 'Leaving group' : 'Leave group'}
+                  title="Leave group"
+                >
+                  <LogOut size={14} className={`text-white ${leaving ? 'animate-pulse' : ''}`} />
+                </button>
+              ) : null}
+              {currentMember?.isOwner ? (
+                <button
+                  onClick={handleDelete}
+                  className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+                  aria-label="Delete"
+                >
+                  <Trash2 size={14} className="text-white" />
+                </button>
+              ) : null}
               <LanguageToggle />
             </div>
           }
