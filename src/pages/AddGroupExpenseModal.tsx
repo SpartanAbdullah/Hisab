@@ -7,6 +7,12 @@ import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import type { SplitGroup, SplitType, SplitDetail } from '../db';
+import {
+  friendlyGroupParticipantError,
+  getActiveGroupMembers,
+  getInactiveGroupMembers,
+  NEED_TWO_ACTIVE_MEMBERS_MESSAGE,
+} from '../lib/groupActiveMembers';
 
 interface Props {
   open: boolean;
@@ -31,15 +37,17 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
   const { addGroupExpense } = useSplitStore();
   const { accounts, loadAccounts } = useAccountStore();
   const appMode = useAppModeStore((s) => s.mode);
-  const defaultPayerId = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id
-    ?? group.members.find(member => member.isOwner)?.id
+  const activeMembers = getActiveGroupMembers(group);
+  const inactiveMembers = getInactiveGroupMembers(group);
+  const defaultPayerId = activeMembers.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id
+    ?? activeMembers.find(member => member.isOwner)?.id
     ?? '';
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState(prefillAmount ?? '');
   const [paidBy, setPaidBy] = useState(defaultPayerId);
   const [splitType, setSplitType] = useState<SplitType>('equal');
-  const [selectedMembers, setSelectedMembers] = useState<string[]>(group.members.map(m => m.id));
+  const [selectedMembers, setSelectedMembers] = useState<string[]>(activeMembers.map(m => m.id));
   const [exactAmounts, setExactAmounts] = useState<Record<string, string>>({});
   const [percentages, setPercentages] = useState<Record<string, string>>({});
   const [shares, setShares] = useState<Record<string, string>>({});
@@ -57,6 +65,14 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
     (paidByMember && !paidByMember.profileId && sameDisplayName(paidByMember.name, currentUserName)),
   );
   const shouldTrackExpense = appMode === 'full_tracker' && isPaidByMe && accounts.length > 0;
+  const activeMemberIdsKey = activeMembers.map((member) => member.id).join('|');
+
+  useEffect(() => {
+    if (!open) return;
+    const activeMemberIds = new Set(activeMemberIdsKey ? activeMemberIdsKey.split('|') : []);
+    setSelectedMembers((current) => current.filter((id) => activeMemberIds.has(id)));
+    if (!activeMemberIds.has(paidBy)) setPaidBy(defaultPayerId);
+  }, [activeMemberIdsKey, defaultPayerId, open, paidBy]);
 
   useEffect(() => {
     if (open && appMode === 'full_tracker') {
@@ -138,6 +154,10 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
       setSubmitError(t('fill_all'));
       return;
     }
+    if (activeMembers.length < 2) {
+      setSubmitError(NEED_TWO_ACTIVE_MEMBERS_MESSAGE);
+      return;
+    }
     if (shouldTrackExpense && !paidFromAccountId) {
       setSubmitError('Select the account you paid from.');
       return;
@@ -169,7 +189,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
     } catch (err) {
       // Surface the real message — "error" with no subtitle used to leave
       // the user guessing whether a retry was safe.
-      const message = err instanceof Error && err.message ? err.message : t('error');
+      const message = friendlyGroupParticipantError(err) || t('error');
       setSubmitError(message);
       toast.show({ type: 'error', title: 'Expense not saved', subtitle: message });
     } finally {
@@ -190,13 +210,18 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
             {submitError}
           </p>
         )}
-        <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0}
+        <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0 || activeMembers.length < 2}
           className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
           {saving ? t('quick_processing') : t('group_save_expense')}
         </button>
       </div>
     }>
       <div className="space-y-5 p-5">
+        {activeMembers.length < 2 && (
+          <p role="alert" className="text-[12px] font-medium text-pay-text bg-pay-50 border border-pay-100 rounded-xl px-3 py-2 leading-snug">
+            {NEED_TWO_ACTIVE_MEMBERS_MESSAGE}
+          </p>
+        )}
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_desc')}</label>
           <input className={`${inputClass} mt-1.5`} value={description} onChange={e => setDescription(e.target.value)} placeholder={t('group_desc_placeholder')} />
@@ -210,7 +235,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_paid_by')}</label>
           <div className="flex flex-wrap gap-2 mt-1.5">
-            {group.members.map(member => (
+            {activeMembers.map(member => (
               <button key={member.id} onClick={() => setPaidBy(member.id)}
                 className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
                 {member.name}
@@ -242,7 +267,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_split_between')}</label>
           <div className="flex flex-wrap gap-2 mt-1.5">
-            {group.members.map(member => (
+            {activeMembers.map(member => (
               <button key={member.id} onClick={() => toggleMember(member.id)}
                 className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
                 {member.name}
@@ -250,6 +275,12 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
             ))}
           </div>
         </div>
+
+        {inactiveMembers.length > 0 && (
+          <p className="text-[11px] text-ink-500">
+            Historical members: {inactiveMembers.map((member) => member.name).join(', ')}
+          </p>
+        )}
 
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_split_type')}</label>

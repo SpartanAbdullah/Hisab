@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import type { SplitGroup } from '../db';
+import { friendlyGroupParticipantError, validateNewSettlementParticipants } from '../lib/groupActiveMembers';
 
 interface Debt { from: string; fromName: string; to: string; toName: string; amount: number; }
 interface Props { open: boolean; group: SplitGroup; debts: Debt[]; onClose: () => void; }
@@ -17,6 +18,9 @@ export function SettleUpModal({ open, group, debts, onClose }: Props) {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const activeDebts = debts.filter((debt) =>
+    validateNewSettlementParticipants(group, debt.from, debt.to) === null
+  );
 
   const handleSettle = async () => {
     if (!selectedDebt) return;
@@ -27,7 +31,9 @@ export function SettleUpModal({ open, group, debts, onClose }: Props) {
       toast.show({ type: 'success', title: t('done_btn') });
       setSelectedDebt(null); setAmount(''); setNote('');
       onClose();
-    } catch { toast.show({ type: 'error', title: t('error') }); }
+    } catch (error) {
+      toast.show({ type: 'error', title: friendlyGroupParticipantError(error) || t('error') });
+    }
     finally { setSaving(false); }
   };
 
@@ -44,10 +50,10 @@ export function SettleUpModal({ open, group, debts, onClose }: Props) {
     }>
       <div className="p-5 space-y-4">
         {!selectedDebt ? (
-          debts.length === 0 ? (
+          activeDebts.length === 0 ? (
             <p className="text-center text-ink-500 text-sm py-4">{t('group_settled')}</p>
           ) : (
-            debts.map((d, i) => (
+            activeDebts.map((d, i) => (
               <button key={i} onClick={() => { setSelectedDebt(d); setAmount(d.amount.toString()); }}
                 className="w-full rounded-2xl bg-cream-card border border-cream-border p-4 flex items-center justify-between text-left active:scale-[0.98] transition-all">
                 <div>

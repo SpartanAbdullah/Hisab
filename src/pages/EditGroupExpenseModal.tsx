@@ -10,6 +10,12 @@ import { useT } from '../lib/i18n';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { parseInternalNote } from '../lib/internalNotes';
 import type { SplitGroup, GroupExpense, SplitType, SplitDetail } from '../db';
+import {
+  friendlyGroupParticipantError,
+  getActiveGroupMembers,
+  getInactiveGroupMembers,
+  NEED_TWO_ACTIVE_MEMBERS_MESSAGE,
+} from '../lib/groupActiveMembers';
 
 interface Props {
   open: boolean;
@@ -30,6 +36,8 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const { updateGroupExpense, deleteGroupExpense } = useSplitStore();
   const { accounts, loadAccounts } = useAccountStore();
   const appMode = useAppModeStore((s) => s.mode);
+  const activeMembers = getActiveGroupMembers(group);
+  const inactiveMembers = getInactiveGroupMembers(group);
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -63,7 +71,8 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       setAmount(String(expense.amount));
       setPaidBy(expense.paidBy);
       setSplitType(expense.splitType);
-      setSelectedMembers(expense.splits.map(split => split.memberId));
+      const activeMemberIds = new Set(getActiveGroupMembers(group).map((member) => member.id));
+      setSelectedMembers(expense.splits.map(split => split.memberId).filter((id) => activeMemberIds.has(id)));
       setCategory(expense.category || 'General');
       setPaidFromAccountId(meta.paidFromAccountId ?? '');
       if (expense.splitType === 'exact') {
@@ -72,7 +81,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         setExactAmounts(values);
       }
     }
-  }, [expense, open]);
+  }, [expense, group, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -119,6 +128,10 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       toast.show({ type: 'error', title: t('fill_all') });
       return;
     }
+    if (activeMembers.length < 2) {
+      toast.show({ type: 'error', title: NEED_TWO_ACTIVE_MEMBERS_MESSAGE });
+      return;
+    }
     const { valid, splits, error } = computeSplits();
     if (!valid) {
       toast.show({ type: 'error', title: error || t('error') });
@@ -138,7 +151,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       toast.show({ type: 'success', title: 'Expense updated!' });
       onClose();
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : t('error');
+      const message = friendlyGroupParticipantError(err) || t('error');
       toast.show({ type: 'error', title: 'Expense not updated', subtitle: message });
     } finally {
       setSaving(false);
@@ -187,7 +200,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_paid_by')}</label>
           <div className="flex flex-wrap gap-2 mt-1.5">
-            {group.members.map(member => (
+            {activeMembers.map(member => (
               <button key={member.id} onClick={() => setPaidBy(member.id)}
                 className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
                 {member.name}
@@ -230,7 +243,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_split_between')}</label>
           <div className="flex flex-wrap gap-2 mt-1.5">
-            {group.members.map(member => (
+            {activeMembers.map(member => (
               <button key={member.id} onClick={() => toggleMember(member.id)}
                 className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
                 {member.name}
@@ -238,6 +251,12 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
             ))}
           </div>
         </div>
+
+        {inactiveMembers.length > 0 && (
+          <p className="text-[11px] text-ink-500">
+            Historical members: {inactiveMembers.map((member) => member.name).join(', ')}
+          </p>
+        )}
 
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_split_type')}</label>

@@ -39,6 +39,11 @@ import { useActivityStore } from './activityStore';
 import { useTransactionStore } from './transactionStore';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 import { refreshAfterSuccessfulLeave } from '../lib/groupLeave';
+import {
+  expenseParticipantsChanged,
+  validateNewGroupExpenseParticipants,
+  validateNewSettlementParticipants,
+} from '../lib/groupActiveMembers';
 
 interface SimplifiedDebt {
   from: string;
@@ -151,6 +156,7 @@ async function claimPaidByMemberIfMine(
 ): Promise<GroupMember | undefined> {
   const member = group.members.find(item => item.id === paidByMemberId);
   if (!member) return undefined;
+  if (member.status !== 'connected') return undefined;
   if (member.profileId === currentUserId) return member;
   if (member.profileId && member.profileId !== currentUserId) return undefined;
   if (!sameDisplayName(member.name, getCurrentUserName())) return undefined;
@@ -608,6 +614,8 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
 
     const currentUserId = getCurrentUserId();
+    const participantError = validateNewGroupExpenseParticipants(group, input.paidBy, input.splits);
+    if (participantError) throw new Error(participantError);
     const paidByMember = await claimPaidByMemberIfMine(group, input.paidBy, currentUserId);
     if (paidByMember) patchGroupMemberInState(set, group.id, paidByMember);
     if (input.paidFromAccountId && !paidByMember) {
@@ -717,6 +725,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       ...changes,
       notes: existing.notes,
     };
+
+    if (expenseParticipantsChanged(existing, nextExpense)) {
+      const participantError = validateNewGroupExpenseParticipants(group, nextExpense.paidBy, nextExpense.splits);
+      if (participantError) throw new Error(participantError);
+    }
 
     const paidByMember = await claimPaidByMemberIfMine(group, nextExpense.paidBy, currentUserId);
     if (paidByMember) patchGroupMemberInState(set, group.id, paidByMember);
@@ -943,6 +956,8 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
 
     const currentUserId = getCurrentUserId();
+    const participantError = validateNewSettlementParticipants(group, input.fromMember, input.toMember);
+    if (participantError) throw new Error(participantError);
     const settlement: GroupSettlement = {
       id: uuid(),
       groupId: input.groupId,
