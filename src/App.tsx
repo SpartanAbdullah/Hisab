@@ -60,6 +60,7 @@ import { RecurringDuePrompt } from './components/RecurringDuePrompt';
 import { MonthlyWrapModal } from './components/MonthlyWrapModal';
 import { OfflineBanner } from './components/OfflineBanner';
 import { AppLoadingScreen } from './components/AppLoadingScreen';
+import { GlobalChunkRecoveryOverlay } from './components/GlobalChunkRecoveryOverlay';
 import { startOutboxRunner, stopOutboxRunner } from './lib/outboxRunner';
 import type { SplitGroup } from './db';
 
@@ -318,7 +319,6 @@ function AppContent() {
       {/* Connectivity pill — surfaces when navigator.onLine flips. */}
       <OfflineBanner />
       <Suspense fallback={<PageLoader />}>
-        <ErrorBoundary>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/groups" element={<SplitsPage />} />
@@ -355,7 +355,6 @@ function AppContent() {
             </>
           )}
         </Routes>
-        </ErrorBoundary>
       </Suspense>
       <BottomNav onQuickEntry={() => setShowQuickEntry(true)} />
       <QuickEntry
@@ -409,7 +408,10 @@ function App() {
     <BrowserRouter>
       <ToastContainer />
       <ConfirmDestructiveSheet />
-      <PublicRouteSwitch />
+      <GlobalChunkRecoveryOverlay />
+      <ErrorBoundary>
+        <PublicRouteSwitch />
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

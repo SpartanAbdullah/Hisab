@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react';
 import { PageErrorState } from './PageErrorState';
 import { reportError } from '../lib/errorReporter';
+import { getAppErrorPresentation, recoverFromStaleApp } from '../lib/appRecovery';
 
 interface Props {
   children: ReactNode;
@@ -31,11 +32,18 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.error) {
+      const presentation = getAppErrorPresentation(this.state.error);
       return (
         <PageErrorState
-          title="Something broke"
-          message={this.state.error.message || 'An unexpected error occurred while rendering this page.'}
+          title={presentation.title}
+          message={presentation.message}
+          secondaryText={presentation.secondaryText}
+          actionLabel={presentation.actionLabel}
           onRetry={() => {
+            if (presentation.kind === 'stale-chunk') {
+              void recoverFromStaleApp();
+              return;
+            }
             this.setState({ error: null });
             window.location.reload();
           }}

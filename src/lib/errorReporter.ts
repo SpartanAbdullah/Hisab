@@ -4,6 +4,7 @@
 //
 // The interface is deliberately minimal so the rest of the app can call
 // `reportError(err, context)` without caring which backend is configured.
+import { notifyStaleChunkLoadError } from './appRecovery';
 
 export interface ErrorContext {
   /** Free-form tag for grouping ("transaction.add", "auth.signOut", etc.). */
@@ -58,12 +59,14 @@ export function reportMessage(message: string, context?: ErrorContext): void {
 export function installGlobalErrorHandlers(): void {
   if (typeof window === 'undefined') return;
   window.addEventListener('error', (event) => {
+    notifyStaleChunkLoadError(event.error ?? event.message);
     reportError(event.error ?? event.message, {
       feature: 'window.onerror',
       extra: { filename: event.filename, lineno: event.lineno, colno: event.colno },
     });
   });
   window.addEventListener('unhandledrejection', (event) => {
+    notifyStaleChunkLoadError(event.reason);
     reportError(event.reason, { feature: 'window.unhandledrejection' });
   });
 }

@@ -3,6 +3,8 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 interface Props {
   title?: string;
   message?: string;
+  secondaryText?: string;
+  actionLabel?: string;
   onRetry?: () => void;
   variant?: 'full' | 'inline';
 }
@@ -14,6 +16,8 @@ interface Props {
 export function PageErrorState({
   title = "Couldn't load this",
   message = 'Check your connection and try again.',
+  secondaryText,
+  actionLabel = 'Try again',
   onRetry,
   variant = 'full',
 }: Props) {
@@ -32,7 +36,7 @@ export function PageErrorState({
             onClick={onRetry}
             className="shrink-0 rounded-xl bg-cream-card text-pay-text px-3 py-1.5 text-[11px] font-semibold border border-pay-100 active:scale-95 transition-all flex items-center gap-1.5"
           >
-            <RefreshCw size={11} /> Retry
+            <RefreshCw size={11} /> {actionLabel}
           </button>
         )}
       </div>
@@ -47,12 +51,15 @@ export function PageErrorState({
         </div>
         <h3 className="font-semibold text-[15px] text-ink-900 tracking-tight mt-4">{title}</h3>
         <p className="text-[12px] text-ink-500 mt-2 leading-relaxed">{message}</p>
+        {secondaryText && (
+          <p className="text-[11px] font-medium text-ink-500 mt-3">{secondaryText}</p>
+        )}
         {onRetry && (
           <button
             onClick={onRetry}
             className="mt-5 w-full rounded-2xl py-3 text-sm font-semibold bg-ink-900 text-white active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
           >
-            <RefreshCw size={14} /> Try again
+            <RefreshCw size={14} /> {actionLabel}
           </button>
         )}
       </div>

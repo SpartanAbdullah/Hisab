@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hisaab-v3';
+const CACHE_NAME = 'hisaab-v4';
 const STATIC_ASSETS = [
   '/',
   '/favicon.svg',
@@ -37,11 +37,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Hashed deployment bundles are already immutable in the browser cache.
+  // Do not keep a second service-worker copy: an old open tab should either
+  // fetch its exact bundle or surface the app-update recovery screen.
+  if (new URL(event.request.url).pathname.startsWith('/assets/')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   // For other requests: network first, then cache
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (response.ok && event.request.url.startsWith(self.location.origin)) {
+        if (
+          response.ok &&
+          event.request.method === 'GET' &&
+          event.request.url.startsWith(self.location.origin)
+        ) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
