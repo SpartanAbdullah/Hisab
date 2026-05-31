@@ -945,7 +945,7 @@ export function SettingsPage() {
                   Delete account
                 </p>
                 <p className="text-[11px] text-ink-500">
-                  Anonymize your profile and sign out
+                  Permanently delete your Hisaab account
                 </p>
               </div>
               <ChevronRight
@@ -960,9 +960,8 @@ export function SettingsPage() {
                     This cannot be undone.
                   </p>
                   <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">
-                    Your profile will be marked deleted and shown as Deleted User.
-                    Shared groups, expenses, settlements, and financial history stay
-                    intact so other members keep their accounting records.
+                    Your login identity and personal finance records will be deleted.
+                    Shared groups or records you created may be removed or adjusted.
                   </p>
                 </div>
                 <div>

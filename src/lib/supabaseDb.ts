@@ -1089,20 +1089,16 @@ export const profilesDb = {
 };
 
 export const accountDeletionDb = {
-  async softDeleteCurrentUser() {
-    const { error } = await supabase.rpc('soft_delete_current_user');
+  async deleteCurrentUser() {
+    const { error } = await supabase.rpc('delete_current_user');
     if (error) throw error;
   },
 };
 
 export const groupsLookupDb = {
   async findByJoinCode(normalizedCode: string): Promise<{ id: string; name: string; emoji: string; currency: string } | null> {
-    const { data, error } = await supabase.rpc('lookup_group_by_join_code', {
-      code_normalized: normalizedCode,
-    });
-    if (error || !data || data.length === 0) return null;
-    const row = data[0] as { id: string; name: string; emoji: string; currency: string };
-    return { id: row.id, name: row.name ?? '', emoji: row.emoji ?? '', currency: row.currency ?? 'PKR' };
+    void normalizedCode;
+    throw new Error('Direct group-code lookup is disabled. Join through joinByCode().');
   },
 
   // Atomic join: SECURITY DEFINER RPC resolves the code and upserts the
@@ -1123,6 +1119,23 @@ export const groupsLookupDb = {
       throw new Error(error.message || 'Join failed');
     }
     if (!data || data.length === 0) return null;
+    const row = data[0] as { group_id: string; member_id: string; was_already_connected: boolean };
+    return {
+      groupId: row.group_id,
+      memberId: row.member_id,
+      wasAlreadyConnected: Boolean(row.was_already_connected),
+    };
+  },
+  async acceptInvite(
+    tokenHash: string,
+    displayName: string,
+  ): Promise<{ groupId: string; memberId: string; wasAlreadyConnected: boolean }> {
+    const { data, error } = await supabase.rpc('accept_group_invite', {
+      p_token_hash: tokenHash,
+      p_display_name: displayName,
+    });
+    if (error) throw new Error(error.message || 'Invite acceptance failed');
+    if (!data || data.length === 0) throw new Error('Invite not found');
     const row = data[0] as { group_id: string; member_id: string; was_already_connected: boolean };
     return {
       groupId: row.group_id,

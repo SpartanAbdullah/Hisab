@@ -45,7 +45,7 @@ Users can start deletion in the app:
 3. Open **Delete account**.
 4. Type `DELETE` and confirm.
 
-The client calls the Supabase `soft_delete_current_user` RPC, signs out, clears user stores, clears user-scoped local storage keys, and attempts to wipe local IndexedDB tables. The inspected RPC removes personal money tables, collaboration links, and the user's owned groups, then marks the profile deleted and anonymizes the profile name and public code.
+The client calls the Supabase `delete_current_user` RPC, signs out, clears user stores, clears user-scoped local storage keys, and awaits deletion of the user's IndexedDB database. After `supabase-migration-p0-launch-blockers.sql` is applied, the RPC permanently deletes the matching `auth.users` identity. Existing foreign keys cascade personal money tables and owned groups; shared references configured with `ON DELETE SET NULL` are anonymized. A stale JWT cannot recreate rows because the Auth identity no longer exists and restrictive active-profile RLS policies reject the deleted user.
 
 The public deletion instructions are available at `https://usehisaab.com/delete-account`. Users can also email `support@usehisaab.com`.
 
@@ -68,7 +68,7 @@ Current code review found:
 ## Human Review Before Submission
 
 1. Confirm whether Sentry is enabled in production and document its exact data handling.
-2. Confirm the final Supabase auth retention and backup retention behavior after account deletion.
+2. Apply `supabase-migration-p0-launch-blockers.sql`, run `supabase-p0-security-verification.sql`, and confirm provider backup retention after permanent Auth identity deletion.
 3. Confirm whether the optional phone value in Settings is stored only locally or synced in any production path.
 4. Confirm the final Android manifest permissions after regenerating the complete Android wrapper.
 5. Confirm that the published privacy policy and deletion page match the production RPC deployed in Supabase.

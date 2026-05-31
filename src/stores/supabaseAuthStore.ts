@@ -41,10 +41,11 @@ async function isDeletedProfile(userId: string): Promise<boolean> {
 }
 
 async function blockDeletedSession(set: (state: Partial<SupabaseAuthState>) => void) {
+  const userId = localStorage.getItem('hisaab_supabase_uid');
   try {
     await supabase.auth.signOut();
   } finally {
-    resetAllUserStores();
+    await resetAllUserStores(userId ?? undefined);
     localStorage.removeItem('hisaab_supabase_uid');
     set({
       user: null,
@@ -71,6 +72,10 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
       // Write uid synchronously BEFORE resolving so any DB call that depends on
       // localStorage.hisaab_supabase_uid sees the right value on the first paint.
       if (session?.user?.id) {
+        const previousUserId = localStorage.getItem('hisaab_supabase_uid');
+        if (previousUserId && previousUserId !== session.user.id) {
+          await resetAllUserStores(previousUserId);
+        }
         localStorage.setItem('hisaab_supabase_uid', session.user.id);
       } else {
         localStorage.removeItem('hisaab_supabase_uid');
@@ -79,15 +84,23 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
 
       // Listen for auth changes
       supabase.auth.onAuthStateChange((_event, session) => {
-        if (session?.user?.id) {
-          localStorage.setItem('hisaab_supabase_uid', session.user.id);
-          void isDeletedProfile(session.user.id).then((isDeleted) => {
-            if (isDeleted) void blockDeletedSession(set);
-          });
-        } else {
-          localStorage.removeItem('hisaab_supabase_uid');
-        }
-        set({ session, user: session?.user ?? null });
+        void (async () => {
+          if (session?.user?.id) {
+            const previousUserId = localStorage.getItem('hisaab_supabase_uid');
+            if (previousUserId && previousUserId !== session.user.id) {
+              await resetAllUserStores(previousUserId);
+            }
+            localStorage.setItem('hisaab_supabase_uid', session.user.id);
+            void isDeletedProfile(session.user.id).then((isDeleted) => {
+              if (isDeleted) void blockDeletedSession(set);
+            });
+          } else {
+            const previousUserId = localStorage.getItem('hisaab_supabase_uid');
+            await resetAllUserStores(previousUserId ?? undefined);
+            localStorage.removeItem('hisaab_supabase_uid');
+          }
+          set({ session, user: session?.user ?? null });
+        })();
       });
     } catch {
       set({ loading: false });
@@ -110,6 +123,11 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     }
 
     if (data.user) {
+      const previousUserId = localStorage.getItem('hisaab_supabase_uid');
+      if (previousUserId && previousUserId !== data.user.id) {
+        await resetAllUserStores(previousUserId);
+      }
+      localStorage.setItem('hisaab_supabase_uid', data.user.id);
       // Name is collected during onboarding, not signup. Seed the public_code
       // here so it's ready when the user wants to share group invites.
       const publicCode = generatePublicCodeCandidate();
@@ -141,6 +159,11 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
       };
     }
 
+    const previousUserId = localStorage.getItem('hisaab_supabase_uid');
+    if (previousUserId && previousUserId !== data.user.id) {
+      await resetAllUserStores(previousUserId);
+    }
+    localStorage.setItem('hisaab_supabase_uid', data.user.id);
     set({ user: data.user, session: data.session });
     return { success: true, message: 'Logged in!' };
   },
@@ -149,16 +172,18 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     // Clear local user-owned state unconditionally, even if the network
     // signOut fails. Intent is explicit; we must not leave the previous
     // user's accounts/loans/groups visible for a second user on this device.
+    const userId = localStorage.getItem('hisaab_supabase_uid');
     try {
       await supabase.auth.signOut();
     } finally {
-      resetAllUserStores();
+      await resetAllUserStores(userId ?? undefined);
+      localStorage.removeItem('hisaab_supabase_uid');
       set({ user: null, session: null, error: null });
     }
   },
 
   deleteAccount: async () => {
-    await accountDeletionDb.softDeleteCurrentUser();
+    await accountDeletionDb.deleteCurrentUser();
     await get().signOut();
   },
 

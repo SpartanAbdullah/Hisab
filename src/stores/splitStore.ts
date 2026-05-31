@@ -551,50 +551,10 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   acceptInvite: async (token) => {
     const currentUserId = getCurrentUserId();
     const tokenHash = await sha256Hex(token);
-    const invite = await groupInvitesDb.getByTokenHash(tokenHash);
-    if (!invite) throw new Error('Invite not found');
-    if (invite.acceptedAt) {
-      return { groupId: invite.groupId };
-    }
-    if (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) {
-      throw new Error('Invite expired');
-    }
-
-    const group = await hydrateGroup(await splitGroupsDb.get(invite.groupId));
-    if (!group) throw new Error('Group not found');
-
+    const result = await groupsLookupDb.acceptInvite(tokenHash, getCurrentUserName());
     const now = new Date().toISOString();
-    const existingMember = group.members.find(member => member.profileId === currentUserId);
-    let joinedMemberId = existingMember?.id ?? invite.linkedMemberId ?? null;
-
-    if (invite.linkedMemberId) {
-      await groupMembersDb.update(invite.linkedMemberId, {
-        profileId: currentUserId,
-        status: 'connected',
-        joinedAt: now,
-      });
-      joinedMemberId = invite.linkedMemberId;
-    } else if (!existingMember) {
-      const newMember: GroupMember = {
-        id: uuid(),
-        name: getCurrentUserName(),
-        isOwner: false,
-        profileId: currentUserId,
-        role: 'member',
-        status: 'connected',
-        joinedAt: now,
-      };
-      await groupMembersDb.add({ ...newMember, groupId: group.id });
-      joinedMemberId = newMember.id;
-    }
-
-    await groupInvitesDb.update(invite.id, {
-      acceptedBy: currentUserId,
-      acceptedAt: now,
-    });
-
-    const nextGroup = await hydrateGroup(await splitGroupsDb.get(group.id));
-    if (nextGroup) {
+    const nextGroup = await hydrateGroup(await splitGroupsDb.get(result.groupId));
+    if (nextGroup && !result.wasAlreadyConnected) {
       await fanOutGroupUpdate(
         nextGroup,
         {
@@ -603,9 +563,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
           actorProfileId: currentUserId,
           eventType: 'member_joined',
           entityType: 'member',
-          entityId: joinedMemberId ?? currentUserId,
+          entityId: result.memberId,
           summary: `${getCurrentUserName()} joined ${nextGroup.name}`,
-          payload: { memberId: joinedMemberId, groupName: nextGroup.name },
+          payload: { memberId: result.memberId, groupName: nextGroup.name },
           createdAt: now,
         },
         `${getCurrentUserName()} joined ${nextGroup.name}`,
@@ -614,7 +574,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     }
 
     await get().loadGroups();
-    return { groupId: invite.groupId };
+    return { groupId: result.groupId };
   },
 
   getGroupInvites: async (groupId) => {

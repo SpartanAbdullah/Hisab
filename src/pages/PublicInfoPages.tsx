@@ -144,7 +144,7 @@ function PrivacyPolicy() {
           <a className="font-semibold text-accent-600" href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
           </a>
-          . The in-app flow disables account access, removes personal finance records, and anonymizes your profile. Some shared records or limited provider backups and security logs may remain for a reasonable period when needed for other users&apos; accounting history, security, legal, or operational purposes.
+          . The in-app flow permanently deletes your Hisaab login identity and personal finance records. Shared records that you created may be removed or anonymized where necessary. Limited provider backups and security logs may remain for a reasonable period when needed for security, legal, or operational purposes.
         </p>
         <p>
           Read the <Link className="font-semibold text-accent-600" to="/delete-account">delete-account instructions</Link> for the current process.
@@ -306,7 +306,7 @@ function DeleteAccountInstructions() {
 
       <Section title="What deletion does">
         <p>
-          The current in-app deletion flow disables access to the account, removes personal finance records, and anonymizes the profile. Collaboration links are removed or anonymized. Some shared records may remain or be adjusted where necessary so other users can retain their accounting history.
+          The in-app deletion flow permanently deletes your Hisaab login identity and personal finance records. Collaboration links are removed or anonymized. Shared records that you created may be removed or adjusted where necessary.
         </p>
         <p>
           Limited provider backups, security logs, or records required for legal or operational reasons may remain for a reasonable period before deletion or anonymization.

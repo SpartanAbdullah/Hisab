@@ -1,1 +1,0 @@
-var e={AED:{flag:`🇦🇪`,symbol:`AED`,name:`UAE Dirham`},PKR:{flag:`🇵🇰`,symbol:`₨`,name:`Pakistani Rupee`}};export{e as t};

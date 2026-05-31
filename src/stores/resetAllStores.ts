@@ -24,7 +24,7 @@ import { useUIStore } from './uiStore';
 import { usePersonStore } from './personStore';
 import { useLinkedRequestStore } from './linkedRequestStore';
 import { useSettlementRequestStore } from './settlementRequestStore';
-import { db as dexieDb } from '../db/database';
+import { clearLegacyDatabase, clearUserDatabase, getCurrentDatabaseUserId } from '../db/database';
 
 // hisaab_supabase_uid is NOT listed here — it's owned by supabaseAuthStore's
 // onAuthStateChange handler, which clears it when the Supabase session ends.
@@ -37,11 +37,12 @@ const USER_SCOPED_LOCALSTORAGE_KEYS = [
   'hisaab_app_mode',
   'hisaab_pin_hash',
   'hisaab_identifier',
+  'hisaab_mobile',
   'hisaab_backfill_persons_v1',
   'hisaab_backfill_persons_v1:lock',
 ];
 
-export function resetAllUserStores(): void {
+export async function resetAllUserStores(userId = getCurrentDatabaseUserId()): Promise<void> {
   useAccountStore.getState().reset();
   useTransactionStore.getState().reset();
   useLoanStore.getState().reset();
@@ -67,24 +68,18 @@ export function resetAllUserStores(): void {
   // (not Dexie), the outbox table and the mirror schema can hold payloads
   // that include user PII (account ids, person names, amounts). Leaving them
   // on a shared device would expose the previous user's state to the next.
-  // Fire-and-forget — failure here must not block sign-out.
-  void Promise.allSettled([
-    dexieDb.outbox.clear(),
-    dexieDb.accounts.clear(),
-    dexieDb.transactions.clear(),
-    dexieDb.loans.clear(),
-    dexieDb.emiSchedules.clear(),
-    dexieDb.goals.clear(),
-    dexieDb.activityLog.clear(),
-    dexieDb.upcomingExpenses.clear(),
-    dexieDb.splitGroups.clear(),
-    dexieDb.groupExpenses.clear(),
-    dexieDb.groupSettlements.clear(),
-    dexieDb.persons.clear(),
-    dexieDb.budgets.clear(),
-    dexieDb.recurringTransactions.clear(),
-    dexieDb.remittances.clear(),
-  ]).catch((err) => {
-    console.error('[resetAllUserStores] Dexie wipe failed (non-fatal)', err);
-  });
+  // Await partition deletion before another account can hydrate.
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith(`hisaab:mirror:${userId}:`)) localStorage.removeItem(key);
+  }
+
+  const results = await Promise.allSettled([
+    clearUserDatabase(userId),
+    clearLegacyDatabase(),
+  ]);
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.error('[resetAllUserStores] Dexie wipe failed (non-fatal)', result.reason);
+    }
+  }
 }

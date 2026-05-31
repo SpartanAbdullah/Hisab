@@ -1,5 +1,6 @@
 import type { Table } from 'dexie';
 import { db } from '../db';
+import { getCurrentDatabaseUserId } from '../db/database';
 
 const DEFAULT_FRESH_MS = 2 * 60 * 1000;
 const DEFAULT_FULL_REFRESH_MS = 24 * 60 * 60 * 1000;
@@ -24,8 +25,11 @@ interface CacheFirstOptions<T> {
   fullRefreshMs?: number;
 }
 
-function cacheKey(key: string): string {
-  const userId = localStorage.getItem('hisaab_supabase_uid') ?? 'anonymous';
+export function mirrorSyncKey(key: string, userId = getCurrentDatabaseUserId()): string {
+  return `${userId}:${key}`;
+}
+
+export function cacheKey(key: string, userId = getCurrentDatabaseUserId()): string {
   return `hisaab:mirror:${userId}:${key}:syncedAt`;
 }
 
@@ -34,7 +38,7 @@ async function readSyncState(key: string): Promise<{
   lastFullRefreshAt: string | null;
 }> {
   try {
-    const state = await db.mirrorSync.get(key);
+    const state = await db.mirrorSync.get(mirrorSyncKey(key));
     if (state) {
       return {
         lastSyncedAt: state.lastSyncedAt,
@@ -59,9 +63,10 @@ async function writeSyncState(
   lastFullRefreshAt?: string | null,
 ) {
   try {
-    const previous = await db.mirrorSync.get(key);
+    const scopedKey = mirrorSyncKey(key);
+    const previous = await db.mirrorSync.get(scopedKey);
     await db.mirrorSync.put({
-      key,
+      key: scopedKey,
       lastSyncedAt,
       lastFullRefreshAt: lastFullRefreshAt ?? previous?.lastFullRefreshAt ?? null,
     });
@@ -227,7 +232,7 @@ export async function mirrorDelete<T>(table: Table<T, string>, id: string) {
 
 export function markMirrorStale(key: string) {
   localStorage.removeItem(cacheKey(key));
-  void db.mirrorSync.delete(key).catch((error) => reportMirrorError('sync-state delete', error));
+  void db.mirrorSync.delete(mirrorSyncKey(key)).catch((error) => reportMirrorError('sync-state delete', error));
 }
 
 export async function getCoreMirrorSyncSnapshots(): Promise<MirrorSyncSnapshot[]> {

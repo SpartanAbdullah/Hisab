@@ -26,3 +26,14 @@ dist-ssr
 
 # Claude Code per-developer config (local permissions, machine paths)
 .claude/
+
+# Capacitor Android local/build output
+android/.gradle/
+android/.idea/
+android/local.properties
+android/**/build/
+android/*.iml
+*.apk
+*.aab
+*.jks
+*.keystore

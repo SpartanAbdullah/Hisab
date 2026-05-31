@@ -1,25 +1,32 @@
 # Android (Capacitor) Setup
 
-The existing `android/` folder is a partial stub from an earlier scaffold attempt and is missing key files (`AndroidManifest.xml`, Java sources, gradle wrappers). Regenerate it cleanly before building.
+The checked-in `android/` project is a reproducible Capacitor wrapper for package
+ID `com.hisaab.app`. Do not commit `local.properties`, Gradle caches, copied web
+assets, APKs, AABs, or signing keystores.
 
-## One-time setup
+## Build setup
 
 ```powershell
-# 1. Close Android Studio + any process holding the android/ folder.
-# 2. Wipe the stub and regenerate via Capacitor:
-Remove-Item -Recurse -Force android
-npx cap add android
+$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:Path="$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:Path"
 
-# 3. Build the web bundle + copy it into the Android project:
+# Build the web bundle and copy it into the ignored Android asset folder.
 npm run cap:sync
 
-# 4. (Optional) Open in Android Studio to inspect / run on a device:
-npm run cap:open:android
+# Produce an ignored release bundle for local verification.
+cd android
+.\gradlew.bat bundleRelease
 ```
 
-## Required AndroidManifest.xml patches
+The local release bundle is written to
+`android/app/build/outputs/bundle/release/app-release.aab`.
 
-After `cap add android`, edit `android/app/src/main/AndroidManifest.xml` and:
+## Optional App Links patch
+
+Add this only after `https://usehisaab.com/.well-known/assetlinks.json` is
+published as JSON without redirects. App Links are not required for the base
+Capacitor wrapper to build.
 
 ### Inside the `<application>` tag — set the launch background
 ```xml

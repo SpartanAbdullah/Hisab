@@ -90,8 +90,8 @@ export class HisaabDatabase extends Dexie {
   outbox!: Table<OutboxEntry, string>;
   mirrorSync!: Table<MirrorSyncState, string>;
 
-  constructor() {
-    super('HisaabDB');
+  constructor(databaseName = 'HisaabDB') {
+    super(databaseName);
 
     // Versions 1–5 carried the legacy Hisaab 1.x schema. We keep them
     // declared so Dexie's upgrade path stays valid for anyone who has the
@@ -196,4 +196,54 @@ export class HisaabDatabase extends Dexie {
   }
 }
 
-export const db = new HisaabDatabase();
+const LEGACY_DATABASE_NAME = 'HisaabDB';
+const DATABASE_PREFIX = 'HisaabDB:user:';
+const databases = new Map<string, HisaabDatabase>();
+
+function normalizeUserId(userId: string | null | undefined): string {
+  return userId?.trim() || 'anonymous';
+}
+
+export function getCurrentDatabaseUserId(): string {
+  if (typeof localStorage === 'undefined') return 'anonymous';
+  return normalizeUserId(localStorage.getItem('hisaab_supabase_uid'));
+}
+
+export function databaseNameForUser(userId: string | null | undefined): string {
+  return `${DATABASE_PREFIX}${encodeURIComponent(normalizeUserId(userId))}`;
+}
+
+export function getDatabaseForUser(userId: string | null | undefined): HisaabDatabase {
+  const databaseName = databaseNameForUser(userId);
+  const existing = databases.get(databaseName);
+  if (existing) return existing;
+  const created = new HisaabDatabase(databaseName);
+  databases.set(databaseName, created);
+  return created;
+}
+
+export function getDb(): HisaabDatabase {
+  return getDatabaseForUser(getCurrentDatabaseUserId());
+}
+
+export async function clearUserDatabase(userId: string | null | undefined): Promise<void> {
+  const databaseName = databaseNameForUser(userId);
+  databases.get(databaseName)?.close();
+  databases.delete(databaseName);
+  await Dexie.delete(databaseName);
+}
+
+export async function clearLegacyDatabase(): Promise<void> {
+  await Dexie.delete(LEGACY_DATABASE_NAME);
+}
+
+// Existing stores access `db.accounts`, `db.transactions`, etc. Resolve each
+// property against the active user's database so accounts cannot share a
+// mirror, sync cursor, or outbox.
+export const db = new Proxy({} as HisaabDatabase, {
+  get(_target, property) {
+    const activeDb = getDb();
+    const value = Reflect.get(activeDb, property);
+    return typeof value === 'function' ? value.bind(activeDb) : value;
+  },
+});
