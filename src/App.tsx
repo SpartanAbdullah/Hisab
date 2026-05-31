@@ -62,6 +62,7 @@ import { OfflineBanner } from './components/OfflineBanner';
 import { AppLoadingScreen } from './components/AppLoadingScreen';
 import { GlobalChunkRecoveryOverlay } from './components/GlobalChunkRecoveryOverlay';
 import { startOutboxRunner, stopOutboxRunner } from './lib/outboxRunner';
+import { getPendingInviteResumePath, savePendingInvite } from './lib/pendingInvite';
 import type { SplitGroup } from './db';
 
 function PageLoader() {
@@ -157,7 +158,7 @@ function AppContent() {
 
   useEffect(() => {
     if (!user && location.pathname.startsWith('/join/')) {
-      localStorage.setItem('hisaab_pending_invite', location.pathname.replace('/join/', ''));
+      savePendingInvite(location.pathname.replace('/join/', ''));
     }
   }, [location.pathname, user]);
 
@@ -271,11 +272,12 @@ function AppContent() {
 
   useEffect(() => {
     if (!user || !completed) return;
-    const pendingInvite = localStorage.getItem('hisaab_pending_invite');
-    if (!pendingInvite) return;
-    if (location.pathname !== `/join/${pendingInvite}`) {
-      navigate(`/join/${pendingInvite}`, { replace: true });
-    }
+    const resumePath = getPendingInviteResumePath({
+      completed,
+      currentPath: location.pathname,
+      hasUser: Boolean(user),
+    });
+    if (resumePath) navigate(resumePath, { replace: true });
   }, [completed, location.pathname, navigate, user]);
 
   if (authLoading || onboardingLoading) {

@@ -1157,7 +1157,7 @@ export const groupsLookupDb = {
     displayName: string,
   ): Promise<{ groupId: string; memberId: string; wasAlreadyConnected: boolean }> {
     const { data, error } = await supabase.rpc('accept_group_invite', {
-      p_token_hash: tokenHash,
+      p_invite_token_hash: tokenHash,
       p_display_name: displayName,
     });
     if (error) throw new Error(error.message || 'Invite acceptance failed');

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Link2, Users } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
+import { clearPendingInvite } from '../lib/pendingInvite';
 
 type InviteFailureKind = 'not_found' | 'expired' | 'group_gone' | 'auth' | 'network' | 'unknown';
 
@@ -19,7 +20,7 @@ function classifyInviteError(err: unknown): InviteFailure {
   const raw = err instanceof Error ? err.message : '';
   const lower = raw.toLowerCase();
 
-  if (lower.includes('invite not found')) {
+  if (lower.includes('invite not found') || lower.includes('invite_not_found_or_expired')) {
     return {
       kind: 'not_found',
       title: 'Invite link not valid',
@@ -62,7 +63,7 @@ function classifyInviteError(err: unknown): InviteFailure {
   return {
     kind: 'unknown',
     title: 'Could not join this group',
-    message: raw || "Something unexpected went wrong. You can try again or ask for a new invite.",
+    message: "Something unexpected went wrong. You can try again or ask for a new invite.",
     canRetry: true,
   };
 }
@@ -82,13 +83,14 @@ export function JoinGroupPage() {
     setFailure(null);
     try {
       const result = await acceptInvite(token);
-      localStorage.removeItem('hisaab_pending_invite');
+      clearPendingInvite(token);
       setJoined(true);
       toast.show({ type: 'success', title: 'Group joined', subtitle: 'You can now see shared updates.' });
       setTimeout(() => navigate(`/group/${result.groupId}`, { replace: true }), 450);
     } catch (error) {
       const classified = classifyInviteError(error);
       setFailure(classified);
+      if (!classified.canRetry) clearPendingInvite(token);
       // Only toast for retry-able cases; persistent failures are shown inline
       // and would otherwise produce duplicate messaging that vanishes mid-read.
       if (classified.canRetry) {
@@ -97,6 +99,11 @@ export function JoinGroupPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const dismissInvite = () => {
+    clearPendingInvite(token);
+    navigate(failure && !failure.canRetry ? '/' : '/groups', { replace: true });
   };
 
   return (
@@ -145,10 +152,10 @@ export function JoinGroupPage() {
 
         <div className="mt-6 flex gap-2">
           <button
-            onClick={() => navigate('/groups')}
+            onClick={dismissInvite}
             className="flex-1 rounded-2xl py-3 text-sm font-semibold bg-cream-soft text-ink-700"
           >
-            {failure && !failure.canRetry ? 'Back to groups' : 'Not now'}
+            {failure && !failure.canRetry ? 'Go home' : 'Not now'}
           </button>
           {(!failure || failure.canRetry) && (
             <button

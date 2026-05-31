@@ -47,7 +47,12 @@ function parseInput(raw: string): ParsedInput {
 function classifyJoinError(err: unknown, tFn: TFunction): string {
   const raw = err instanceof Error ? err.message : '';
   const lower = raw.toLowerCase();
-  if (lower.includes('group code not found') || lower.includes('invite not found')) {
+  if (
+    lower.includes('group code not found') ||
+    lower.includes('invite not found') ||
+    lower.includes('invite_not_found_or_expired') ||
+    lower.includes('invalid_or_expired_code')
+  ) {
     return tFn('join_error_not_found');
   }
   if (lower.includes('invite expired')) {
