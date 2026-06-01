@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { AlertTriangle } from 'lucide-react';
+import { Button } from './Button';
 
 // Imperative replacement for window.confirm() for destructive actions.
 // Native confirm() does not render reliably inside iOS standalone PWA / Capacitor
@@ -20,6 +21,41 @@ interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: 'destructive' | 'warning';
+}
+
+interface ConfirmationActionsProps {
+  confirmLabel: string;
+  cancelLabel?: string;
+  tone?: 'destructive' | 'warning';
+  loading?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+export function ConfirmationActions({
+  confirmLabel,
+  cancelLabel = 'Cancel',
+  tone = 'destructive',
+  loading = false,
+  onCancel,
+  onConfirm,
+}: ConfirmationActionsProps) {
+  return (
+    <div className="sheet-actions space-y-2">
+      <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={loading}>
+        {cancelLabel}
+      </Button>
+      <Button
+        type="button"
+        variant={tone === 'destructive' ? 'danger' : 'warning'}
+        size="lg"
+        onClick={onConfirm}
+        loading={loading}
+      >
+        {loading ? `${confirmLabel}...` : confirmLabel}
+      </Button>
+    </div>
+  );
 }
 
 interface ConfirmState {
@@ -64,7 +100,6 @@ export function ConfirmDestructiveSheet() {
 
   const tone = options.tone ?? 'destructive';
   const accent = tone === 'destructive' ? 'text-pay-text' : 'text-amber-600';
-  const confirmBg = tone === 'destructive' ? 'bg-pay-500' : 'bg-amber-500';
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center" onClick={() => answer(false)}>
@@ -83,22 +118,13 @@ export function ConfirmDestructiveSheet() {
           )}
         </div>
 
-        <div className="sheet-actions space-y-2">
-          <button
-            type="button"
-            onClick={() => answer(true)}
-            className={`w-full ${confirmBg} text-white rounded-2xl py-3.5 text-[14px] font-semibold active:scale-[0.98] transition-transform`}
-          >
-            {options.confirmLabel ?? 'Confirm'}
-          </button>
-          <button
-            type="button"
-            onClick={() => answer(false)}
-            className="w-full bg-cream-soft text-ink-700 rounded-2xl py-3.5 text-[14px] font-semibold active:scale-[0.98] transition-transform"
-          >
-            {options.cancelLabel ?? 'Cancel'}
-          </button>
-        </div>
+        <ConfirmationActions
+          confirmLabel={options.confirmLabel ?? 'Confirm'}
+          cancelLabel={options.cancelLabel}
+          tone={tone}
+          onCancel={() => answer(false)}
+          onConfirm={() => answer(true)}
+        />
       </div>
     </div>
   );

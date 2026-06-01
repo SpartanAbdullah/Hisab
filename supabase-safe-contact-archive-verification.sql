@@ -4,7 +4,7 @@
 DO $$
 BEGIN
   IF to_regprocedure('public.archive_contact_if_settled(text)') IS NULL THEN
-    RAISE EXCEPTION 'archive_contact_if_settled(text) is missing';
+    RAISE EXCEPTION 'archive_contact_if_settled(text) is missing. Apply supabase-migration-safe-contact-archive.sql before running this verification script.';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger

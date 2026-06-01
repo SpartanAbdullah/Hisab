@@ -1,5 +1,9 @@
 -- Safe contact removal: archive settled local contacts without destroying history.
--- Apply after supabase-migration-p0-launch-blockers.sql.
+-- Apply after:
+--   supabase-migration-phase1-persons.sql
+--   supabase-migration-phase2a-linked-profile.sql
+--   supabase-migration-incremental-sync-tombstones.sql
+--   supabase-migration-p0-launch-blockers.sql
 
 BEGIN;
 
