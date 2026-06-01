@@ -42,6 +42,15 @@ describe('decideLinkedBranch', () => {
     expect(result.branch).toBe(false);
   });
 
+  it('does not branch when a stale archived contact is supplied', () => {
+    const result = decideLinkedBranch({
+      type: 'loan_given',
+      person: makePerson({ linkedProfileId: 'profile-2', archivedAt: '2026-05-01T00:00:00Z' }),
+      requestCurrency: 'AED',
+    });
+    expect(result.branch).toBe(false);
+  });
+
   it('branches loan_given → lent', () => {
     const result = decideLinkedBranch({
       type: 'loan_given',

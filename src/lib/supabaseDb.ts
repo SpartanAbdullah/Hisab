@@ -280,6 +280,7 @@ export const personsDb = {
     const { data, error } = await supabase
       .from('persons').select('*')
       .eq('user_id', getUserId())
+      .is('archived_at', null)
       .order('name', { ascending: true });
     if (error) throw error;
     return (data ?? []).map(mapPerson);
@@ -300,6 +301,20 @@ export const personsDb = {
       .from('persons').update({ linked_profile_id: linkedProfileId })
       .eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
+  },
+  async archiveIfSettled(id: string): Promise<ArchiveContactResult> {
+    const { data, error } = await supabase.rpc('archive_contact_if_settled', {
+      p_contact_id: id,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      success: Boolean(row?.success),
+      reasonCode: (row?.reason_code as ArchiveContactResult['reasonCode']) ?? 'CONTACT_NOT_FOUND',
+      userMessage: (row?.user_message as string) ?? 'This contact could not be removed.',
+      payableAmount: (row?.payable_amount as Record<string, number>) ?? {},
+      receivableAmount: (row?.receivable_amount as Record<string, number>) ?? {},
+    };
   },
   // Phase 2A: SECURITY DEFINER RPC. Caller must pass the already-normalised
   // code (same rules as collaboration.normalizePublicCode). Returns null if
@@ -1233,6 +1248,7 @@ function mapPerson(r: Record<string, unknown>): Person {
     name: r.name as string,
     phone: (r.phone as string) ?? null,
     linkedProfileId: (r.linked_profile_id as string) ?? null,
+    archivedAt: (r.archived_at as string) ?? null,
     createdAt: r.created_at as string,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };
@@ -1447,6 +1463,14 @@ function mapBudget(r: Record<string, unknown>): Budget {
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
     deletedAt: (r.deleted_at as string) ?? null,
   };
+}
+
+export interface ArchiveContactResult {
+  success: boolean;
+  reasonCode: 'ARCHIVED' | 'CONTACT_NOT_FOUND' | 'LINKED_CONTACT' | 'BALANCE_NOT_SETTLED';
+  userMessage: string;
+  payableAmount: Record<string, number>;
+  receivableAmount: Record<string, number>;
 }
 
 // ══════════════════════════════════════

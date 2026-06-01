@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, History, ShieldCheck } from 'lucide-react';
+import { RefreshCw, History, ShieldCheck, Trash2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -9,6 +9,7 @@ import { useToast } from '../components/Toast';
 import { resolveProfileByCode } from '../lib/collaboration';
 import { formatMoney } from '../lib/constants';
 import { computeTrustScore, trustLevelStyle } from '../lib/trustScore';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import type { Person } from '../db';
 
 interface Props {
@@ -23,7 +24,7 @@ type Mode = 'idle' | 'entering' | 'resolved';
 // "Link to Hisaab user" or "Unlink". The code lookup only runs on explicit
 // Resolve button press, never on keystrokes.
 export function ContactDetailSheet({ open, person, onClose }: Props) {
-  const { linkToProfile, unlinkFromProfile } = usePersonStore();
+  const { linkToProfile, unlinkFromProfile, archiveIfSettled } = usePersonStore();
   const syncableBreakdownFor = useLinkedRequestStore((s) => s.syncableBreakdownFor);
   const syncPastRecords = useLinkedRequestStore((s) => s.syncPastRecords);
   // Subscribe to requests so the syncable count updates after a sync fires.
@@ -41,6 +42,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -52,6 +54,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       setError('');
       setSaving(false);
       setSyncing(false);
+      setArchiving(false);
     }
   }, [open]);
 
@@ -180,6 +183,35 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       setError('Could not unlink this contact. Try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    const confirmed = await confirmDestructive({
+      title: 'Remove this contact?',
+      description: 'This hides the contact from new entries. Settled history will keep showing their name.',
+      confirmLabel: 'Remove contact',
+    });
+    if (!confirmed) return;
+
+    setArchiving(true);
+    setError('');
+    try {
+      const result = await archiveIfSettled(person.id);
+      if (!result.success) {
+        setError(result.userMessage);
+        return;
+      }
+      toast.show({
+        type: 'success',
+        title: 'Contact removed',
+        subtitle: 'Past settled records still keep the contact name.',
+      });
+      onClose();
+    } catch {
+      setError('Could not remove this contact. Try again.');
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -429,6 +461,23 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
 
         {error && (
           <p className="text-[12px] text-pay-text font-semibold bg-pay-50 rounded-xl p-3">{error}</p>
+        )}
+
+        {!isLinked && (
+          <div className="pt-1 border-t border-cream-hairline">
+            <button
+              type="button"
+              onClick={handleArchive}
+              disabled={archiving || saving}
+              className="w-full mt-3 py-3 rounded-2xl bg-pay-50 text-pay-text text-[12.5px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <Trash2 size={13} strokeWidth={2.2} />
+              {archiving ? 'Removing…' : 'Remove local contact'}
+            </button>
+            <p className="text-[10.5px] text-ink-400 mt-1.5 text-center leading-relaxed">
+              Available after your balance with this contact is settled.
+            </p>
+          </div>
         )}
       </div>
     </Modal>

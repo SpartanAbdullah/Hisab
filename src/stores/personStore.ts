@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { personsDb } from '../lib/supabaseDb';
+import type { ArchiveContactResult } from '../lib/supabaseDb';
 import type { Person } from '../db';
 
 interface PersonState {
@@ -12,6 +13,7 @@ interface PersonState {
   findOrCreateByName: (name: string) => Promise<Person>;
   linkToProfile: (personId: string, profileId: string) => Promise<void>;
   unlinkFromProfile: (personId: string) => Promise<void>;
+  archiveIfSettled: (personId: string) => Promise<ArchiveContactResult>;
   reset: () => void;
 }
 
@@ -99,6 +101,14 @@ export const usePersonStore = create<PersonState>((set, get) => ({
     set((s) => ({
       persons: s.persons.map((p) => (p.id === personId ? { ...p, linkedProfileId: null } : p)),
     }));
+  },
+
+  archiveIfSettled: async (personId) => {
+    const result = await personsDb.archiveIfSettled(personId);
+    if (result.success) {
+      set((s) => ({ persons: s.persons.filter((p) => p.id !== personId) }));
+    }
+    return result;
   },
 
   findOrCreateByName: async (name) => {

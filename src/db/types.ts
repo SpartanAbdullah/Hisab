@@ -70,6 +70,7 @@ export interface Person {
   name: string;
   phone?: string | null;
   linkedProfileId?: string | null;
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

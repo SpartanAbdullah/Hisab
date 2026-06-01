@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersonStore } from '../stores/personStore';
+import type { Person } from '../db';
 
 export interface ContactValue {
   id: string | null;
   name: string;
+}
+
+export function getContactTypeLabel(person: Pick<Person, 'linkedProfileId'>): 'Linked' | 'Local' {
+  return person.linkedProfileId ? 'Linked' : 'Local';
+}
+
+export function getContactSecondaryText(person: Pick<Person, 'linkedProfileId' | 'phone'>): string {
+  const typeText = person.linkedProfileId ? 'Hisaab user' : 'Saved locally';
+  return person.phone ? `${typeText} · ${person.phone}` : typeText;
 }
 
 interface Props {
@@ -30,6 +40,7 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
   const matches = useMemo(() => {
     if (!queryLower) return [];
     return persons
+      .filter((p) => !p.archivedAt)
       .filter((p) => p.name.toLocaleLowerCase().includes(queryLower))
       .slice(0, 6);
   }, [persons, queryLower]);
@@ -81,9 +92,21 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
                 onChange({ id: p.id, name: p.name });
                 setOpen(false);
               }}
-              className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-indigo-50/60 active:bg-indigo-100/60 transition-colors border-b border-slate-100/60 last:border-0"
+              className="w-full text-left px-4 py-2.5 hover:bg-indigo-50/60 active:bg-indigo-100/60 transition-colors border-b border-slate-100/60 last:border-0"
             >
-              {p.name}
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="text-[13px] font-medium text-slate-700 truncate">{p.name}</span>
+                <span className={`text-[9px] font-bold uppercase tracking-wider rounded-full px-1.5 py-0.5 shrink-0 ${
+                  p.linkedProfileId
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {getContactTypeLabel(p)}
+                </span>
+              </span>
+              <span className="block text-[10.5px] text-slate-500 mt-0.5 truncate">
+                {getContactSecondaryText(p)}
+              </span>
             </button>
           ))}
           {!exactMatch && (

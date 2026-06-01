@@ -20,7 +20,7 @@ export function decideLinkedBranch(input: {
   requestCurrency: Currency | null | undefined;
 }): BranchDecision {
   const { type, person, requestCurrency } = input;
-  if (!person || !person.linkedProfileId) return { branch: false };
+  if (!person || person.archivedAt || !person.linkedProfileId) return { branch: false };
   if (!requestCurrency) return { branch: false };
 
   return {
