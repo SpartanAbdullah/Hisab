@@ -40,7 +40,6 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
   const activeMembers = getActiveGroupMembers(group);
   const inactiveMembers = getInactiveGroupMembers(group);
   const defaultPayerId = activeMembers.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))?.id
-    ?? activeMembers.find(member => member.isOwner)?.id
     ?? '';
 
   const [description, setDescription] = useState('');
@@ -93,8 +92,8 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
       setPaidFromAccountId('');
       return;
     }
-    if (!paidFromAccountId || !accounts.some(account => account.id === paidFromAccountId)) {
-      setPaidFromAccountId(accounts[0]?.id ?? '');
+    if (paidFromAccountId && !accounts.some(account => account.id === paidFromAccountId)) {
+      setPaidFromAccountId('');
     }
   }, [open, shouldTrackExpense, paidFromAccountId, accounts]);
 
@@ -150,6 +149,10 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
   const handleSubmit = async () => {
     setSubmitError(null);
 
+    if (!defaultPayerId) {
+      setSubmitError('Your group membership could not be matched. Reopen the group or ask the owner to reconnect you before adding an expense.');
+      return;
+    }
     if (!description.trim() || amt <= 0 || !paidBy) {
       setSubmitError(t('fill_all'));
       return;
@@ -181,7 +184,13 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
         category,
         paidFromAccountId: shouldTrackExpense ? paidFromAccountId : undefined,
       });
-      toast.show({ type: 'success', title: 'Expense saved', subtitle: description });
+      const payerName = activeMembers.find((member) => member.id === paidBy)?.name ?? 'Someone';
+      const paidFrom = paidFromAccountId ? accounts.find((account) => account.id === paidFromAccountId)?.name : null;
+      toast.show({
+        type: 'success',
+        title: 'Group expense saved',
+        subtitle: `${payerName} paid ${formatMoney(amt, group.currency)}${paidFrom ? ` from ${paidFrom}` : ''} and split it between ${splits.length} people.`,
+      });
       setDescription('');
       setAmount('');
       setSubmitError(null);
@@ -210,13 +219,18 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
             {submitError}
           </p>
         )}
-        <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0 || activeMembers.length < 2}
+        <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0 || activeMembers.length < 2 || !defaultPayerId || (shouldTrackExpense && !paidFromAccountId)}
           className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
           {saving ? t('quick_processing') : t('group_save_expense')}
         </button>
       </div>
     }>
       <div className="space-y-5 p-5">
+        {!defaultPayerId && (
+          <p role="alert" className="text-[12px] font-medium text-pay-text bg-pay-50 border border-pay-100 rounded-xl px-3 py-2 leading-snug">
+            Your group membership could not be matched. Reopen the group or ask the owner to reconnect you before adding an expense.
+          </p>
+        )}
         {activeMembers.length < 2 && (
           <p role="alert" className="text-[12px] font-medium text-pay-text bg-pay-50 border border-pay-100 rounded-xl px-3 py-2 leading-snug">
             {NEED_TWO_ACTIVE_MEMBERS_MESSAGE}
@@ -246,7 +260,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
 
         {shouldTrackExpense && (
           <div>
-            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Paid From</label>
+            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('paid_from')}</label>
             <div className="space-y-2 mt-1.5">
               {accounts.map(account => (
                 <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}

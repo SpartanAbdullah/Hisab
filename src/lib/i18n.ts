@@ -20,6 +20,37 @@ const S = {
   tx_goal_contribution: { ur: "Bachat", en: "Savings" },
   tx_opening_balance: { ur: "Opening Balance", en: "Opening Balance" },
 
+  // Plain-language entry intents
+  intent_spend: { ur: "Paisay Kharch Kiye", en: "Spend Money" },
+  intent_spend_sub: { ur: "Account se paisay niklay", en: "Money leaves an account" },
+  intent_receive: { ur: "Paisay Milay", en: "Receive Money" },
+  intent_receive_sub: { ur: "Account mein paisay aaye", en: "Money enters an account" },
+  intent_move: { ur: "Paisay Move Karein", en: "Move Money" },
+  intent_move_sub: { ur: "Apne accounts ke darmiyan", en: "Between your accounts" },
+  intent_person: { ur: "Kisi Ke Sath Paisay", en: "Money With Someone" },
+  intent_person_sub: { ur: "Diya, liya ya wapsi", en: "Give, borrow, or pay back" },
+  intent_group: { ur: "Group Kharcha", en: "Group Expense" },
+  intent_group_sub: { ur: "Group mein split karein", en: "Split with a group" },
+  intent_person_prompt: { ur: "Kya hua?", en: "What happened?" },
+  person_gave: { ur: "Maine Paisay Diye", en: "I gave money" },
+  person_gave_sub: { ur: "Ab woh mujhe wapas denge", en: "They will owe you" },
+  person_borrowed: { ur: "Maine Paisay Liye", en: "I borrowed money" },
+  person_borrowed_sub: { ur: "Ab main wapas dunga", en: "You will owe them" },
+  person_paid_me_back: { ur: "Unhon Ne Wapas Diye", en: "They paid me back" },
+  person_paid_me_back_sub: { ur: "Mera paisa wapas aya", en: "Reduce what they owe you" },
+  person_i_paid_back: { ur: "Maine Wapas Diye", en: "I paid them back" },
+  person_i_paid_back_sub: { ur: "Mera qarz kam hoga", en: "Reduce what you owe them" },
+  confirm_loan_saved: { ur: "Qarz Save Ho Gaya", en: "Loan recorded" },
+  confirm_repayment_saved: { ur: "Wapsi Save Ho Gayi", en: "Repayment recorded" },
+  back: { ur: "Wapas", en: "Back" },
+  add_entry: { ur: "Entry Add Karein", en: "Add Entry" },
+  current_balance: { ur: "Mojooda Balance", en: "Current Balance" },
+  add_money_entry: { ur: "Paisay Ki Entry Add Karein", en: "Add Money Entry" },
+  recent_money_history: { ur: "Haal Ki Paisay Ki History", en: "Recent Money History" },
+  settled: { ur: "Hisaab Barabar", en: "Settled" },
+  cash_advance_source: { ur: "Credit Card Cash Advance", en: "Cash Advance Source" },
+  paid_from: { ur: "Kis Account Se Pay Kia?", en: "Paid From" },
+
   // Transaction type sub-labels
   tx_income_sub: { ur: "Money in", en: "Money in" },
   tx_expense_sub: { ur: "Money out", en: "Money out" },
@@ -298,7 +329,7 @@ const S = {
     ur: "Apni pehli transaction add karo",
     en: "Add your first transaction",
   },
-  txpage_add: { ur: "Transaction Daalo", en: "Add Transaction" },
+  txpage_add: { ur: "Entry Daalo", en: "Add Entry" },
 
   // Common
   fill_all: { ur: "Kuch missing hay, check kro", en: "Please fill all fields" },
@@ -443,7 +474,7 @@ const S = {
     ur: "+ dabao, paisa likho, hum baqi ka sambhal lete hain.",
     en: "Tap +, type an amount. We'll ask the smart questions.",
   },
-  empty_tx_cta: { ur: "Transaction Add Karein", en: "Add Transaction" },
+  empty_tx_cta: { ur: "Entry Add Karein", en: "Add Entry" },
 
   // Empty dashboard guidance
   empty_dash_title: { ur: "Sab set hai!", en: "All set!" },

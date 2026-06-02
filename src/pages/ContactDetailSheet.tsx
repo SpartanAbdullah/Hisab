@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, History, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -11,6 +11,8 @@ import { formatMoney } from '../lib/constants';
 import { computeTrustScore, trustLevelStyle } from '../lib/trustScore';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import type { Person } from '../db';
+import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
+import { useT } from '../lib/i18n';
 
 interface Props {
   open: boolean;
@@ -34,6 +36,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const loans = useLoanStore((s) => s.loans);
   const transactions = useTransactionStore((s) => s.transactions);
   const toast = useToast();
+  const t = useT();
 
   const [mode, setMode] = useState<Mode>('idle');
   const [code, setCode] = useState('');
@@ -43,6 +46,8 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [showMoneyEntry, setShowMoneyEntry] = useState(false);
+  const [moneyPreset, setMoneyPreset] = useState<QuickEntryPreset | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -103,6 +108,26 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
 
   const isLinked = !!person.linkedProfileId;
   const trustStyle = trustScore ? trustLevelStyle(trustScore.level) : null;
+  const relationshipBalances = (() => {
+    const byCurrency = new Map<string, number>();
+    for (const loan of loans.filter((entry) => entry.personId === person.id && entry.status === 'active')) {
+      const delta = loan.type === 'given' ? loan.remainingAmount : -loan.remainingAmount;
+      byCurrency.set(loan.currency, (byCurrency.get(loan.currency) ?? 0) + delta);
+    }
+    return [...byCurrency.entries()].filter(([, value]) => Math.abs(value) > 0.00001);
+  })();
+  const recentEntries = transactions
+    .filter((transaction) => transaction.personId === person.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 4);
+  const openMoneyEntry = (entryPreset: QuickEntryPreset) => {
+    setMoneyPreset({
+      ...entryPreset,
+      contact: { id: person.id, name: person.name },
+      lockContact: true,
+    });
+    setShowMoneyEntry(true);
+  };
 
   const handleSyncPastRecords = async () => {
     if (!person) return;
@@ -216,6 +241,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   };
 
   return (
+    <>
     <Modal open={open} onClose={onClose} title={person.name}>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
@@ -234,6 +260,64 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             </span>
           )}
         </div>
+
+        <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4">
+          <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-accent-600">{t('current_balance')}</p>
+          {relationshipBalances.length === 0 ? (
+            <p className="text-[14px] font-semibold text-ink-900 mt-1">You are settled up with {person.name}.</p>
+          ) : (
+            <div className="space-y-1 mt-1">
+              {relationshipBalances.map(([currency, balance]) => (
+                <p key={currency} className="text-[14px] font-semibold text-ink-900">
+                  {balance > 0
+                    ? `${person.name} owes you ${formatMoney(balance, currency)}.`
+                    : `You owe ${person.name} ${formatMoney(Math.abs(balance), currency)}.`}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-ink-500 mb-2">{t('add_money_entry')}</p>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { label: t('person_gave'), type: 'loan_given' as const, icon: HandCoins },
+              { label: t('person_borrowed'), type: 'loan_taken' as const, icon: Handshake },
+              { label: t('person_paid_me_back'), type: 'repayment' as const, repaymentDirection: 'received' as const, icon: ArrowDownLeft },
+              { label: t('person_i_paid_back'), type: 'repayment' as const, repaymentDirection: 'paid' as const, icon: ArrowUpRight },
+            ].map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                onClick={() => openMoneyEntry({ type: action.type, repaymentDirection: action.repaymentDirection })}
+                className="rounded-xl bg-cream-card border border-cream-border px-3 py-3 text-left active:scale-[0.98] transition-transform"
+              >
+                <action.icon size={14} className="text-accent-600 mb-1.5" />
+                <span className="text-[12px] font-semibold text-ink-900">{action.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {recentEntries.length > 0 && (
+          <div className="rounded-2xl bg-cream-card border border-cream-border p-3.5">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-ink-500 mb-2">{t('recent_money_history')}</p>
+            <div className="space-y-2">
+              {recentEntries.map((entry) => (
+                <div key={entry.id} className="flex justify-between gap-3 text-[12px]">
+                  <span className="text-ink-700">{entry.type.replace(/_/g, ' ')}</span>
+                  <span className="font-semibold text-ink-900">{formatMoney(entry.amount, entry.currency)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {recentEntries.length === 0 && (
+          <p className="text-[12px] text-ink-500 bg-cream-soft border border-cream-hairline rounded-xl p-3 leading-relaxed">
+            No money history with {person.name} yet. Add the first entry above.
+          </p>
+        )}
 
         {/* Private trust history card. Visible only when there's at least one
             prior loan with this person — for fresh contacts the score is
@@ -481,5 +565,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
         )}
       </div>
     </Modal>
+    <QuickEntry
+      open={showMoneyEntry}
+      preset={moneyPreset}
+      onClose={() => {
+        setShowMoneyEntry(false);
+        setMoneyPreset(null);
+      }}
+    />
+    </>
   );
 }

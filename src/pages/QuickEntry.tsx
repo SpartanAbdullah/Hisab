@@ -22,7 +22,7 @@ import { useToast } from '../components/Toast';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
-import type { TransactionType, SplitGroup } from '../db';
+import { SUPPORTED_CURRENCIES, type Currency, type TransactionType, type SplitGroup } from '../db';
 import { AddAccountStepper } from './AddAccountStepper';
 
 // Internal type slot widened to include the "group_expense" sentinel.
@@ -31,6 +31,17 @@ import { AddAccountStepper } from './AddAccountStepper';
 // authored via AddGroupExpenseModal, so the type guard is "if the user
 // picked this tile, route to the group-picker step and hand off to App."
 type EntryKind = TransactionType | 'group_expense';
+type EntryIntent = 'expense' | 'income' | 'transfer' | 'person_money' | 'group_expense';
+type RepaymentDirection = 'received' | 'paid' | null;
+
+export interface QuickEntryPreset {
+  type?: Extract<TransactionType, 'expense' | 'income' | 'transfer' | 'loan_given' | 'loan_taken' | 'repayment'>;
+  contact?: ContactValue;
+  repaymentDirection?: Exclude<RepaymentDirection, null>;
+  accountId?: string;
+  lockContact?: boolean;
+  lockAccount?: boolean;
+}
 
 interface Props {
   open: boolean;
@@ -40,6 +51,7 @@ interface Props {
   // their typed amount when QuickEntry closes.
   onPickGroupExpense?: (group: SplitGroup, amount: string) => void;
   onCreateGroupForExpense?: (amount: string) => void;
+  preset?: QuickEntryPreset | null;
 }
 
 export function QuickEntry({
@@ -47,10 +59,12 @@ export function QuickEntry({
   onClose,
   onPickGroupExpense,
   onCreateGroupForExpense,
+  preset,
 }: Props) {
   const { accounts } = useAccountStore();
   const { processTransaction } = useTransactionStore();
   const { loans } = useLoanStore();
+  const { createLoan, applyRepayment } = useLoanStore();
   const { goals } = useGoalStore();
   const { generateSchedule } = useEmiStore();
   const { expenses: upcomingExpenses } = useUpcomingExpenseStore();
@@ -62,8 +76,10 @@ export function QuickEntry({
   const t = useT();
 
   const [step, setStep] = useState(0);
+  const [intent, setIntent] = useState<EntryIntent | null>(null);
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<EntryKind>('expense');
+  const [repaymentDirection, setRepaymentDirection] = useState<RepaymentDirection>(null);
   const [sourceId, setSourceId] = useState('');
   const [destId, setDestId] = useState('');
   const [category, setCategory] = useState('');
@@ -72,6 +88,7 @@ export function QuickEntry({
   const [loanId, setLoanId] = useState('');
   const [goalId, setGoalId] = useState('');
   const [conversionRate, setConversionRate] = useState('');
+  const [ledgerCurrency, setLedgerCurrency] = useState<Currency>((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
   const [hasEmi, setHasEmi] = useState(false);
   const [emiInstallments, setEmiInstallments] = useState('');
   const [emiStartDate, setEmiStartDate] = useState('');
@@ -109,11 +126,18 @@ export function QuickEntry({
     { value: 'loan_taken' as EntryKind, label: t('tx_loan_taken'), sub: t('tx_loan_taken_sub'), icon: Handshake, gradient: 'from-amber-500 to-orange-500', soft: 'bg-amber-50 text-amber-600 border-amber-100' },
     { value: 'repayment' as EntryKind, label: t('tx_repayment'), sub: t('tx_repayment_sub'), icon: RotateCcw, gradient: 'from-teal-500 to-emerald-500', soft: 'bg-teal-50 text-teal-600 border-teal-100' },
     { value: 'goal_contribution' as EntryKind, label: t('tx_goal_contribution'), sub: t('tx_goal_contribution_sub'), icon: Target, gradient: 'from-purple-500 to-violet-500', soft: 'bg-purple-50 text-purple-600 border-purple-100' },
-    { value: 'group_expense' as EntryKind, label: 'Group expense', sub: 'Split with a group', icon: Users, gradient: 'from-violet-500 to-purple-500', soft: 'bg-accent-50 text-accent-600 border-accent-100' },
+    { value: 'group_expense' as EntryKind, label: t('intent_group'), sub: t('intent_group_sub'), icon: Users, gradient: 'from-violet-500 to-purple-500', soft: 'bg-accent-50 text-accent-600 border-accent-100' },
+  ];
+  const INTENTS = [
+    { value: 'expense' as EntryIntent, label: t('intent_spend'), sub: t('intent_spend_sub'), icon: ArrowUpRight },
+    { value: 'income' as EntryIntent, label: t('intent_receive'), sub: t('intent_receive_sub'), icon: ArrowDownLeft },
+    { value: 'transfer' as EntryIntent, label: t('intent_move'), sub: t('intent_move_sub'), icon: ArrowLeftRight },
+    { value: 'person_money' as EntryIntent, label: t('intent_person'), sub: t('intent_person_sub'), icon: HandCoins },
+    { value: 'group_expense' as EntryIntent, label: t('intent_group'), sub: t('intent_group_sub'), icon: Users },
   ];
 
   const reset = () => {
-    setStep(0); setAmount(''); setType('expense');
+    setStep(0); setIntent(null); setAmount(''); setType('expense'); setRepaymentDirection(null);
     setSourceId(''); setDestId(''); setCategory('');
     setNotes(''); setContact({ id: null, name: '' }); setLoanId('');
     setGoalId(''); setConversionRate('');
@@ -121,14 +145,45 @@ export function QuickEntry({
   };
   const handleClose = () => { reset(); onClose(); };
 
+  useEffect(() => {
+    if (!open) return;
+    setStep(0);
+    setIntent(null);
+    setAmount('');
+    setType(preset?.type ?? 'expense');
+    setRepaymentDirection(preset?.repaymentDirection ?? null);
+    setSourceId(
+      preset?.accountId && ['expense', 'transfer', 'loan_given'].includes(preset.type ?? '')
+        ? preset.accountId
+        : '',
+    );
+    setDestId(
+      preset?.accountId && ['income', 'loan_taken'].includes(preset.type ?? '')
+        ? preset.accountId
+        : '',
+    );
+    setContact(preset?.contact ?? { id: null, name: '' });
+    setLoanId('');
+    setCategory('');
+    setNotes('');
+    setConversionRate('');
+  }, [open, preset]);
+
+  useEffect(() => {
+    if (!open || !preset?.accountId) return;
+    if (['expense', 'transfer', 'loan_given'].includes(type)) setSourceId(preset.accountId);
+    if (['income', 'loan_taken'].includes(type)) setDestId(preset.accountId);
+  }, [open, preset?.accountId, type]);
+
   const numpadPress = (key: string) => {
     if (key === 'del') { setAmount(a => a.slice(0, -1)); }
     else if (key === '.') { if (!amount.includes('.')) setAmount(a => a + '.'); }
     else { const parts = amount.split('.'); if (parts[1]?.length >= 2) return; setAmount(a => a + key); }
   };
 
-  const needsSource = ['expense', 'transfer', 'loan_given', 'goal_contribution'].includes(type);
-  const needsDest = ['income', 'transfer', 'loan_taken'].includes(type);
+  const isLedgerOnlyPersonFlow = appMode === 'splits_only' && ['loan_given', 'loan_taken', 'repayment'].includes(type);
+  const needsSource = !isLedgerOnlyPersonFlow && ['expense', 'transfer', 'loan_given', 'goal_contribution'].includes(type);
+  const needsDest = !isLedgerOnlyPersonFlow && ['income', 'transfer', 'loan_taken'].includes(type);
   const needsPerson = ['loan_given', 'loan_taken'].includes(type);
   const needsLoan = type === 'repayment';
   const needsGoal = type === 'goal_contribution';
@@ -136,6 +191,13 @@ export function QuickEntry({
   const isGroupExpense = type === 'group_expense';
   const selectedLoan = loans.find(l => l.id === loanId);
   const hasAccounts = accounts.length > 0;
+  const filteredLoans = loans.filter((loan) => {
+    if (loan.status !== 'active') return false;
+    if (repaymentDirection === 'received' && loan.type !== 'given') return false;
+    if (repaymentDirection === 'paid' && loan.type !== 'taken') return false;
+    if (preset?.contact?.id && loan.personId !== preset.contact.id) return false;
+    return true;
+  });
 
   // Group-expense handoff. The actual save happens in App's
   // AddGroupExpenseModal — we just close + relay.
@@ -195,11 +257,12 @@ export function QuickEntry({
     switch (type) {
       case 'income': return !!destId;
       case 'expense': return !!sourceId;
-      case 'transfer': return !!sourceId && !!destId;
-      case 'loan_given': return !!sourceId && !!contact.name.trim();
-      case 'loan_taken': return !!destId && !!contact.name.trim();
+      case 'transfer': return !!sourceId && !!destId && sourceId !== destId;
+      case 'loan_given': return (isLedgerOnlyPersonFlow || !!sourceId) && !!contact.name.trim();
+      case 'loan_taken': return (isLedgerOnlyPersonFlow || !!destId) && !!contact.name.trim();
       case 'repayment':
         if (!loanId) return false;
+        if (isLedgerOnlyPersonFlow) return true;
         return selectedLoan?.type === 'given' ? !!destId : !!sourceId;
       case 'goal_contribution': return !!sourceId && !!goalId;
       default: return false;
@@ -259,6 +322,42 @@ export function QuickEntry({
             ? await ensureResolvedPerson(contact.name.trim(), contact.id)
             : await usePersonStore.getState().findOrCreateByName(contact.name.trim()))
         : null;
+
+      if (isLedgerOnlyPersonFlow) {
+        if (type === 'repayment') {
+          if (!selectedLoan) throw new Error('Loan not found');
+          if (amt > selectedLoan.remainingAmount + 0.00001) {
+            throw new Error('Repayment cannot exceed the remaining balance');
+          }
+          await applyRepayment(selectedLoan.id, amt);
+          setConfirmData({
+            title: t('confirm_repayment_saved'),
+            description: selectedLoan.type === 'given'
+              ? `${selectedLoan.personName} paid you back ${formatMoney(amt, selectedLoan.currency)}.`
+              : `You paid ${selectedLoan.personName} back ${formatMoney(amt, selectedLoan.currency)}.`,
+            changes: [],
+          });
+        } else {
+          const loan = await createLoan({
+            personName: resolvedPerson!.name,
+            personId: resolvedPerson!.id,
+            type: type === 'loan_given' ? 'given' : 'taken',
+            totalAmount: amt,
+            currency: ledgerCurrency,
+            notes,
+          });
+          setConfirmData({
+            title: t('confirm_loan_saved'),
+            description: loan.type === 'given'
+              ? `${loan.personName} owes you ${formatMoney(amt, loan.currency)}.`
+              : `You owe ${loan.personName} ${formatMoney(amt, loan.currency)}.`,
+            changes: [],
+          });
+        }
+        setShowConfirmation(true);
+        reset();
+        return;
+      }
 
       // Phase 2B: Full Money Tracker can branch linked-contact loan entries
       // into an approval request. Simple mode must record local wallet effects
@@ -364,9 +463,23 @@ export function QuickEntry({
 
       const typeLabel = TX_TYPES.find(tx => tx.value === type)?.label ?? type;
       const confirmationCurrency = changes[0]?.currency ?? localStorage.getItem('hisaab_primary_currency') ?? 'PKR';
+      const resultDescription = (() => {
+        const first = changes[0];
+        if (type === 'expense' && first) return `${formatMoney(amt, first.currency)} was deducted from ${first.accountName}.`;
+        if (type === 'income' && first) return `${formatMoney(amt, first.currency)} was added to ${first.accountName}.`;
+        if (type === 'transfer' && changes.length === 2) return `${formatMoney(amt, changes[0].currency)} moved from ${changes[0].accountName} to ${changes[1].accountName}.`;
+        if (type === 'loan_given') return `${resolvedPerson!.name} owes you ${formatMoney(amt, confirmationCurrency)}.`;
+        if (type === 'loan_taken') return `You owe ${resolvedPerson!.name} ${formatMoney(amt, confirmationCurrency)}.`;
+        if (type === 'repayment' && selectedLoan) {
+          return selectedLoan.type === 'given'
+            ? `${selectedLoan.personName} paid you back ${formatMoney(amt, selectedLoan.currency)}.`
+            : `You paid ${selectedLoan.personName} back ${formatMoney(amt, selectedLoan.currency)}.`;
+        }
+        return `${formatMoney(amt, confirmationCurrency)} saved.`;
+      })();
       setConfirmData({
         title: emiFailed ? `${typeLabel} — Saved (EMI pending)` : `${typeLabel} — Done!`,
-        description: `${formatMoney(amt, confirmationCurrency)} processed`,
+        description: resultDescription,
         changes,
       });
       setShowConfirmation(true);
@@ -384,10 +497,10 @@ export function QuickEntry({
         title={step === 0 ? t('quick_how_much') : step === 1 ? t('quick_what_type') : t('quick_details')}
         footer={step === 0 ? (
           <button
-            onClick={() => { if (!hasAccounts) setShowInlineAccount(true); else if (parseFloat(amount) > 0) setStep(1); }}
+            onClick={() => { if (parseFloat(amount) > 0) setStep(preset?.type ? 2 : 1); }}
             disabled={!parseFloat(amount)}
             className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
-          >{!hasAccounts ? `${t('quick_create_first')} \u2192` : `${t('quick_next')} \u2192`}</button>
+          >{`${t('quick_next')} \u2192`}</button>
         ) : step === 1 ? (
           <button onClick={() => setStep(0)} className="w-full text-center text-[12px] text-ink-500 py-2 font-medium">
             &#x2190; {t('quick_change_amount')}
@@ -465,21 +578,19 @@ export function QuickEntry({
               <p className="text-[12px] text-ink-500 mt-1">{t('quick_where_money')}</p>
             </div>
             <div className="grid grid-cols-2 gap-2.5">
-              {TX_TYPES.map(tx => {
+              {INTENTS.map(tx => {
                 const Icon = tx.icon;
-                const isActive = type === tx.value;
+                const isActive = intent === tx.value;
                 // Tone-map by transaction semantics: receive (green) for inflows,
                 // pay (coral) for outflows, accent (violet) for goals, neutral
                 // (ink/cream) for transfer, warn for loan_taken.
                 const tone =
-                  tx.value === 'income' || tx.value === 'repayment'
+                  tx.value === 'income'
                     ? 'receive'
-                    : tx.value === 'expense' || tx.value === 'loan_given'
+                    : tx.value === 'expense'
                     ? 'pay'
-                    : tx.value === 'goal_contribution'
+                    : tx.value === 'group_expense' || tx.value === 'person_money'
                     ? 'accent'
-                    : tx.value === 'loan_taken'
-                    ? 'warn'
                     : 'neutral';
                 const inactiveBg = {
                   receive: 'bg-receive-50',
@@ -496,7 +607,15 @@ export function QuickEntry({
                   neutral: 'text-ink-600',
                 }[tone];
                 return (
-                  <button key={tx.value} onClick={() => { setType(tx.value); setStep(2); }}
+                  <button key={tx.value} onClick={() => {
+                    setIntent(tx.value);
+                    if (tx.value === 'person_money') {
+                      setStep(3);
+                    } else {
+                      setType(tx.value);
+                      setStep(2);
+                    }
+                  }}
                     className={`p-3.5 rounded-2xl border flex items-center gap-3 text-left transition-all duration-200 active:scale-[0.96] ${
                       isActive
                         ? 'bg-ink-900 text-white border-ink-900'
@@ -516,6 +635,45 @@ export function QuickEntry({
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-3 animate-fade-in">
+            <p className="text-[12px] text-ink-500 leading-relaxed">{t('intent_person_prompt')}</p>
+            {[
+              { value: 'loan_given' as const, label: t('person_gave'), sub: t('person_gave_sub'), icon: HandCoins },
+              { value: 'loan_taken' as const, label: t('person_borrowed'), sub: t('person_borrowed_sub'), icon: Handshake },
+              { value: 'repayment_received' as const, label: t('person_paid_me_back'), sub: t('person_paid_me_back_sub'), icon: ArrowDownLeft },
+              { value: 'repayment_paid' as const, label: t('person_i_paid_back'), sub: t('person_i_paid_back_sub'), icon: ArrowUpRight },
+            ].map((choice) => (
+              <button
+                key={choice.value}
+                type="button"
+                onClick={() => {
+                  if (choice.value === 'repayment_received' || choice.value === 'repayment_paid') {
+                    setType('repayment');
+                    setRepaymentDirection(choice.value === 'repayment_received' ? 'received' : 'paid');
+                  } else {
+                    setType(choice.value);
+                    setRepaymentDirection(null);
+                  }
+                  setStep(2);
+                }}
+                className="w-full rounded-2xl border border-cream-border bg-cream-card p-3.5 flex items-center gap-3 text-left active:scale-[0.98] transition-transform"
+              >
+                <div className="w-9 h-9 rounded-xl bg-accent-50 text-accent-600 flex items-center justify-center">
+                  <choice.icon size={16} strokeWidth={1.8} />
+                </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-ink-900">{choice.label}</p>
+                  <p className="text-[10.5px] text-ink-500 mt-0.5">{choice.sub}</p>
+                </div>
+              </button>
+            ))}
+            <button onClick={() => setStep(1)} className="w-full text-center text-[12px] text-ink-500 py-2 font-medium">
+              &#x2190; {t('back')}
+            </button>
           </div>
         )}
 
@@ -615,11 +773,23 @@ export function QuickEntry({
             )}
 
             {/* Account selectors */}
+            {(needsSource || needsDest) && !hasAccounts && (
+              <div className="rounded-2xl bg-warn-50 border border-cream-border p-4">
+                <p className="text-[12px] text-ink-700 leading-relaxed">{t('acct_need_for_tx')}</p>
+                <button
+                  type="button"
+                  onClick={() => setShowInlineAccount(true)}
+                  className="mt-3 w-full rounded-xl bg-ink-900 text-white py-2.5 text-[12px] font-semibold"
+                >
+                  {t('quick_create_first')}
+                </button>
+              </div>
+            )}
             {needsSource && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_from')}</label>
                 <div className="space-y-2">
-                  {accounts.map(a => {
+                  {(preset?.lockAccount && preset.accountId ? accounts.filter(a => a.id === preset.accountId) : accounts).map(a => {
                     const meta = currencyMeta[a.currency];
                     return (
                     <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
@@ -645,7 +815,7 @@ export function QuickEntry({
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_to')}</label>
                 <div className="space-y-2">
-                  {accounts.map(a => {
+                  {(preset?.lockAccount && preset.accountId ? accounts.filter(a => a.id === preset.accountId) : accounts).map(a => {
                     const meta = currencyMeta[a.currency];
                     return (
                     <button key={a.id} type="button" onClick={() => setDestId(a.id)}
@@ -695,7 +865,13 @@ export function QuickEntry({
             {needsPerson && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_who')}</label>
-                <ContactPicker value={contact} onChange={setContact} placeholder={t('quick_who_placeholder')} className={inputClass} />
+                {preset?.lockContact && preset.contact ? (
+                  <div className="rounded-2xl border border-accent-100 bg-accent-50 px-4 py-3 text-[13px] font-semibold text-ink-900">
+                    {preset.contact.name}
+                  </div>
+                ) : (
+                  <ContactPicker value={contact} onChange={setContact} placeholder={t('quick_who_placeholder')} className={inputClass} />
+                )}
                 {wouldBranchToLinked ? (
                   <p className="text-[11px] text-accent-600 mt-1.5">{t('ltr_branch_helper')}</p>
                 ) : (
@@ -704,9 +880,27 @@ export function QuickEntry({
               </div>
             )}
 
+            {isLedgerOnlyPersonFlow && type !== 'repayment' && (
+              <div>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('onboard_currency_label')}</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SUPPORTED_CURRENCIES.map((currency) => (
+                    <button
+                      key={currency}
+                      type="button"
+                      onClick={() => setLedgerCurrency(currency)}
+                      className={ledgerCurrency === currency ? 'selector-base selector-selected' : 'selector-base'}
+                    >
+                      <span className="text-[13px] font-semibold text-ink-800">{currencyMeta[currency]?.flag} {currency}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {type === 'loan_taken' && availableCashAdvanceCards.length > 0 && (
               <div>
-                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">Cash Advance Source</label>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('cash_advance_source')}</label>
                 <div className="space-y-2">
                   <button
                     type="button"
@@ -761,7 +955,7 @@ export function QuickEntry({
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_which_loan')}</label>
                 <select value={loanId} onChange={e => setLoanId(e.target.value)} className={`${inputClass} appearance-none`}>
                   <option value="">Select loan...</option>
-                  {loans.filter(l => l.status === 'active').map(l => (
+                  {filteredLoans.map(l => (
                     <option key={l.id} value={l.id}>{l.personName} — {l.type === 'given' ? 'Wapsi Aani Hai' : 'Dena Hai'} ({formatMoney(l.remainingAmount, l.currency)})</option>
                   ))}
                 </select>

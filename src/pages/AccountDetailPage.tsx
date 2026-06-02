@@ -23,6 +23,8 @@ import {
   PiggyBank,
   CreditCard,
   Plus,
+  ArrowDownLeft,
+  ArrowUpRight,
   ArrowLeftRight,
   AlertTriangle,
   MoreVertical,
@@ -32,7 +34,7 @@ import {
   Info,
 } from 'lucide-react';
 import type { Account } from '../db';
-import { QuickEntry } from './QuickEntry';
+import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
 import { useToast } from '../components/Toast';
 import {
   startOfDay,
@@ -50,7 +52,6 @@ import {
   differenceInDays,
 } from 'date-fns';
 import type { Transaction } from '../db';
-import { isGroupLinkedNote } from '../lib/internalNotes';
 
 type TimeFilter =
   | 'all'
@@ -107,6 +108,7 @@ export function AccountDetailPage() {
   const toast = useToast();
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
+  const [quickPreset, setQuickPreset] = useState<QuickEntryPreset | null>(null);
   const [showOpeningBalance, setShowOpeningBalance] = useState(false);
   const [openingAmount, setOpeningAmount] = useState('');
   const [openingDate, setOpeningDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -233,11 +235,14 @@ export function AccountDetailPage() {
           action={
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowAdd(true)}
+                onClick={() => {
+                  setQuickPreset({ accountId: account.id, lockAccount: true });
+                  setShowAdd(true);
+                }}
                 className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[11.5px] font-semibold text-white transition-colors"
-                aria-label="Add transaction"
+                aria-label="Add entry"
               >
-                <Plus size={12} strokeWidth={2.4} /> Tx
+                <Plus size={12} strokeWidth={2.4} /> {t('add_entry')}
               </button>
               <div className="relative">
                 <button
@@ -364,6 +369,26 @@ export function AccountDetailPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { type: 'expense' as const, label: t('intent_spend'), icon: ArrowUpRight },
+            { type: 'income' as const, label: t('intent_receive'), icon: ArrowDownLeft },
+            { type: 'transfer' as const, label: t('intent_move'), icon: ArrowLeftRight },
+          ].map((action) => (
+            <button
+              key={action.type}
+              type="button"
+              onClick={() => {
+                setQuickPreset({ type: action.type, accountId: account.id, lockAccount: true });
+                setShowAdd(true);
+              }}
+              className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+            >
+              <action.icon size={15} className="text-accent-600" />
+              {action.label}
+            </button>
+          ))}
+        </div>
         {/* Rename modal (lightweight — kept inline since the Modal helper is
             optimised for the bottom-sheet pattern, not centred dialogs) */}
         {showRename && (
@@ -539,35 +564,33 @@ export function AccountDetailPage() {
               tone="accent"
               size="compact"
               title={t('no_tx')}
-              description={t('no_tx_desc')}
+              description={`No entries in ${account.name} yet. Add your first spend or receive entry.`}
               actionLabel={t('txpage_add')}
               onAction={() => setShowAdd(true)}
             />
           ) : (
             <div className="rounded-[18px] bg-cream-card border border-cream-border px-4 divide-y divide-cream-hairline">
-              {filteredTxns.map((txn) =>
-                ['expense', 'loan_given', 'loan_taken'].includes(txn.type) &&
-                !isGroupLinkedNote(txn.notes) ? (
-                  <TransactionItem
-                    key={txn.id}
-                    transaction={txn}
-                    accountContextId={account.id}
-                    onClick={() => setSelectedTransaction(txn)}
-                  />
-                ) : (
-                  <TransactionItem
-                    key={txn.id}
-                    transaction={txn}
-                    accountContextId={account.id}
-                  />
-                ),
-              )}
+              {filteredTxns.map((txn) => (
+                <TransactionItem
+                  key={txn.id}
+                  transaction={txn}
+                  accountContextId={account.id}
+                  onClick={() => setSelectedTransaction(txn)}
+                />
+              ))}
             </div>
           )}
         </div>
       </div>
 
-      <QuickEntry open={showAdd} onClose={() => setShowAdd(false)} />
+      <QuickEntry
+        open={showAdd}
+        preset={quickPreset}
+        onClose={() => {
+          setShowAdd(false);
+          setQuickPreset(null);
+        }}
+      />
       <Modal
         open={showOpeningBalance}
         onClose={closeOpeningBalance}

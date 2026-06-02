@@ -612,6 +612,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   addGroupExpense: async (input) => {
     const group = await hydrateGroup(get().groups.find((item) => item.id === input.groupId) ?? await splitGroupsDb.get(input.groupId));
     if (!group) throw new Error('Group not found');
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      throw new Error('Expense amount must be greater than zero');
+    }
 
     const currentUserId = getCurrentUserId();
     const participantError = validateNewGroupExpenseParticipants(group, input.paidBy, input.splits);
@@ -954,10 +957,20 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   addSettlement: async (input) => {
     const group = await hydrateGroup(get().groups.find((item) => item.id === input.groupId) ?? await splitGroupsDb.get(input.groupId));
     if (!group) throw new Error('Group not found');
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      throw new Error('Settlement amount must be greater than zero');
+    }
 
     const currentUserId = getCurrentUserId();
     const participantError = validateNewSettlementParticipants(group, input.fromMember, input.toMember);
     if (participantError) throw new Error(participantError);
+    const outstanding = (await get().getSimplifiedDebts(input.groupId)).find(
+      (debt) => debt.from === input.fromMember && debt.to === input.toMember,
+    );
+    if (!outstanding) throw new Error('This balance is already settled');
+    if (input.amount > outstanding.amount + 0.00001) {
+      throw new Error(`Settlement cannot exceed the outstanding amount of ${outstanding.amount}`);
+    }
     const settlement: GroupSettlement = {
       id: uuid(),
       groupId: input.groupId,

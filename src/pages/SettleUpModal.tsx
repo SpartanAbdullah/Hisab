@@ -18,21 +18,37 @@ export function SettleUpModal({ open, group, debts, onClose }: Props) {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const activeDebts = debts.filter((debt) =>
     validateNewSettlementParticipants(group, debt.from, debt.to) === null
   );
 
   const handleSettle = async () => {
     if (!selectedDebt) return;
-    const amt = parseFloat(amount) || selectedDebt.amount;
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setError('Enter an amount greater than zero.');
+      return;
+    }
+    if (amt > selectedDebt.amount + 0.00001) {
+      setError(`Amount cannot exceed the outstanding ${formatMoney(selectedDebt.amount, group.currency)}.`);
+      return;
+    }
     setSaving(true);
+    setError('');
     try {
       await addSettlement({ groupId: group.id, fromMember: selectedDebt.from, toMember: selectedDebt.to, amount: amt, note });
-      toast.show({ type: 'success', title: t('done_btn') });
+      toast.show({
+        type: 'success',
+        title: 'Settlement saved',
+        subtitle: `${selectedDebt.fromName} paid ${selectedDebt.toName} ${formatMoney(amt, group.currency)}.`,
+      });
       setSelectedDebt(null); setAmount(''); setNote('');
       onClose();
     } catch (error) {
-      toast.show({ type: 'error', title: friendlyGroupParticipantError(error) || t('error') });
+      const message = friendlyGroupParticipantError(error) || (error instanceof Error ? error.message : t('error'));
+      setError(message);
+      toast.show({ type: 'error', title: 'Settlement not saved', subtitle: message });
     }
     finally { setSaving(false); }
   };
@@ -54,7 +70,7 @@ export function SettleUpModal({ open, group, debts, onClose }: Props) {
             <p className="text-center text-ink-500 text-sm py-4">{t('group_settled')}</p>
           ) : (
             activeDebts.map((d, i) => (
-              <button key={i} onClick={() => { setSelectedDebt(d); setAmount(d.amount.toString()); }}
+              <button key={i} onClick={() => { setSelectedDebt(d); setAmount(d.amount.toString()); setError(''); }}
                 className="w-full rounded-2xl bg-cream-card border border-cream-border p-4 flex items-center justify-between text-left active:scale-[0.98] transition-all">
                 <div>
                   <p className="text-[13px] font-semibold text-ink-800">
@@ -78,11 +94,16 @@ export function SettleUpModal({ open, group, debts, onClose }: Props) {
               <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_settle_amount')}</label>
               <input className={inputClass + ' mt-1.5 text-lg font-bold'} type="number" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} />
             </div>
+            {error && (
+              <p role="alert" className="text-[12px] font-medium text-pay-text bg-pay-50 border border-pay-100 rounded-xl px-3 py-2">
+                {error}
+              </p>
+            )}
             <div>
               <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_settle_note')}</label>
               <input className={inputClass + ' mt-1.5'} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Cash diya" />
             </div>
-            <button onClick={() => setSelectedDebt(null)} className="text-[12px] text-ink-500 font-medium underline">
+            <button onClick={() => { setSelectedDebt(null); setError(''); }} className="text-[12px] text-ink-500 font-medium underline">
               &larr; Back
             </button>
           </>

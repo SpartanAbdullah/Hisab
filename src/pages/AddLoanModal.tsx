@@ -228,7 +228,7 @@ export function AddLoanModal({ open, onClose }: Props) {
 
         {!isLedgerOnlyMode && loanType === 'taken' && availableCashAdvanceCards.length > 0 && (
           <div>
-            <label className="form-label">Cash Advance Source</label>
+            <label className="form-label">{t('cash_advance_source')}</label>
             <div className="space-y-2">
               <button
                 type="button"

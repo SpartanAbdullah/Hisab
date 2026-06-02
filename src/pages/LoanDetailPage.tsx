@@ -23,7 +23,6 @@ import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { RepaymentModal } from './RepaymentModal';
 import { SettleLinkedLoanModal } from './SettleLinkedLoanModal';
-import { isGroupLinkedNote } from '../lib/internalNotes';
 import { resolvePersonName } from '../lib/resolvePersonName';
 import { getOldestIsoDate } from '../lib/paymentReminders';
 import type { EmiSchedule, Transaction, SettlementRequest } from '../db';
@@ -292,13 +291,20 @@ export function LoanDetailPage() {
                   <RotateCcw size={12} /> {t('loan_mark_paid')}
                 </button>
               )}
-              <button
-                onClick={() => setShowRepayment(true)}
-                className="flex-1 bg-cream-soft border border-cream-border text-ink-800 rounded-xl py-2.5 text-[12px] font-semibold active:bg-cream-hairline transition-colors"
-              >
-                {t('loan_repay')}
-              </button>
+              {!isLinkedLoan && (
+                <button
+                  onClick={() => setShowRepayment(true)}
+                  className="flex-1 bg-cream-soft border border-cream-border text-ink-800 rounded-xl py-2.5 text-[12px] font-semibold active:bg-cream-hairline transition-colors"
+                >
+                  {t('loan_repay')}
+                </button>
+              )}
             </div>
+            {isLinkedLoan && (
+              <p className="text-[11px] text-ink-500 mt-2 leading-relaxed">
+                This loan is linked. Record repayment through settlement so both people confirm the same balance change.
+              </p>
+            )}
           </div>
         )}
 
@@ -437,21 +443,16 @@ export function LoanDetailPage() {
             </p>
           ) : (
             <div className="rounded-[18px] bg-cream-card border border-cream-border px-4 divide-y divide-cream-hairline">
-              {loanTransactions.map((transaction) =>
-                ['expense', 'loan_given', 'loan_taken'].includes(transaction.type) &&
-                !isGroupLinkedNote(transaction.notes) ? (
-                  <button
-                    key={transaction.id}
-                    type="button"
-                    onClick={() => setSelectedTransaction(transaction)}
-                    className="w-full text-left active:opacity-80 transition-opacity"
-                  >
-                    <TransactionItem transaction={transaction} />
-                  </button>
-                ) : (
-                  <TransactionItem key={transaction.id} transaction={transaction} />
-                ),
-              )}
+              {loanTransactions.map((transaction) => (
+                <button
+                  key={transaction.id}
+                  type="button"
+                  onClick={() => setSelectedTransaction(transaction)}
+                  className="w-full text-left active:opacity-80 transition-opacity"
+                >
+                  <TransactionItem transaction={transaction} />
+                </button>
+              ))}
             </div>
           )}
         </div>

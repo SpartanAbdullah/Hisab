@@ -76,6 +76,8 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const isExpense = transaction.type === 'expense';
   const isLoanGiven = transaction.type === 'loan_given';
   const isLoanTaken = transaction.type === 'loan_taken';
+  const noteMeta = parseInternalNote(transaction.notes).meta;
+  const isDirectlyEditable = (isExpense || isLoanGiven || isLoanTaken) && !noteMeta.groupExpenseId;
 
   const canSave = (() => {
     if (!(editableAmount > 0) || !accountId) return false;
@@ -171,6 +173,50 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
     }
   };
 
+  if (!isDirectlyEditable) {
+    const source = transaction.sourceAccountId ? accounts.find((account) => account.id === transaction.sourceAccountId) : null;
+    const destination = transaction.destinationAccountId ? accounts.find((account) => account.id === transaction.destinationAccountId) : null;
+    return (
+      <Modal
+        open={open}
+        onClose={onClose}
+        title="Entry details"
+        footer={(
+          <button
+            onClick={handleDelete}
+            disabled={saving || Boolean(noteMeta.groupExpenseId)}
+            className="w-full rounded-2xl bg-pay-50 text-pay-text py-3.5 text-sm font-bold disabled:opacity-40"
+          >
+            {saving ? t('quick_processing') : 'Reverse entry'}
+          </button>
+        )}
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-cream-soft border border-cream-hairline p-4">
+            <p className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">
+              {transaction.type.replace(/_/g, ' ')}
+            </p>
+            <p className="text-lg font-bold text-ink-900 tabular-nums mt-1">
+              {formatMoney(transaction.amount, transaction.currency)}
+            </p>
+          </div>
+          {source && <p className="text-[13px] text-ink-700">From: <span className="font-semibold">{source.name}</span></p>}
+          {destination && <p className="text-[13px] text-ink-700">To: <span className="font-semibold">{destination.name}</span></p>}
+          {transaction.relatedPerson && <p className="text-[13px] text-ink-700">Person: <span className="font-semibold">{transaction.relatedPerson}</span></p>}
+          {transaction.notes && <p className="text-[12px] text-ink-500">{parseInternalNote(transaction.notes).visibleNote}</p>}
+          <p className="text-[12px] text-ink-500 bg-cream-soft rounded-xl p-3 leading-relaxed">
+            This type is kept read-only to protect linked balances. Reversing it restores the affected balances and removes this entry.
+          </p>
+          {noteMeta.groupExpenseId && (
+            <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3 leading-relaxed">
+              This entry belongs to a group expense. Edit or delete it from the group details screen.
+            </p>
+          )}
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       open={open}
@@ -252,7 +298,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
 
         {isLoanTaken && availableCashAdvanceCards.length > 0 && (
           <div>
-            <label className="form-label">Cash Advance Source</label>
+            <label className="form-label">{t('cash_advance_source')}</label>
             <div className="space-y-2">
               <button
                 type="button"

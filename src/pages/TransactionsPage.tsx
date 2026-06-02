@@ -33,7 +33,7 @@ import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { QuickEntry } from './QuickEntry';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
-import { isGroupLinkedNote, parseInternalNote } from '../lib/internalNotes';
+import { parseInternalNote } from '../lib/internalNotes';
 import type { TransactionType, Transaction } from '../db';
 
 type TimeFilter =
@@ -446,18 +446,13 @@ export function TransactionsPage() {
                   )}
                 </div>
                 <div className="rounded-[18px] bg-cream-card border border-cream-border px-4 divide-y divide-cream-hairline">
-                  {group.items.map((txn) =>
-                    ['expense', 'loan_given', 'loan_taken'].includes(txn.type) &&
-                    !isGroupLinkedNote(txn.notes) ? (
-                      <TransactionItem
-                        key={txn.id}
-                        transaction={txn}
-                        onClick={() => setSelectedTransaction(txn)}
-                      />
-                    ) : (
-                      <TransactionItem key={txn.id} transaction={txn} />
-                    ),
-                  )}
+                  {group.items.map((txn) => (
+                    <TransactionItem
+                      key={txn.id}
+                      transaction={txn}
+                      onClick={() => setSelectedTransaction(txn)}
+                    />
+                  ))}
                 </div>
               </div>
             ))}

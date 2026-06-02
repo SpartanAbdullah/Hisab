@@ -211,7 +211,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
 
         {shouldTrackExpense && (
           <div>
-            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Paid From</label>
+            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('paid_from')}</label>
             <div className="space-y-2 mt-1.5">
               <button
                 onClick={() => setPaidFromAccountId('')}

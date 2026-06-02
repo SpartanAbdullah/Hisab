@@ -297,9 +297,9 @@ export function LoansPage() {
   };
 
   const tabPills: { value: Tab; label: string; count: number }[] = [
-    { value: 'receivables', label: 'Receivables', count: tabCounts.receivables },
-    { value: 'payables', label: 'Payables', count: tabCounts.payables },
-    { value: 'settled', label: 'Settled', count: tabCounts.settled },
+    { value: 'receivables', label: t('loan_people_owe'), count: tabCounts.receivables },
+    { value: 'payables', label: t('loan_you_owe'), count: tabCounts.payables },
+    { value: 'settled', label: t('settled'), count: tabCounts.settled },
   ];
 
   return (
@@ -441,7 +441,7 @@ export function LoansPage() {
                 ? `You are net set to receive ${formatMoney(netStance, primaryCurrency)}.`
                 : netStance < 0
                 ? `You are net due to pay ${formatMoney(Math.abs(netStance), primaryCurrency)}.`
-                : 'Receivables and payables are balanced in your primary currency.'
+                : 'Money people owe you and money you owe are balanced in your primary currency.'
             }
             next={
               primaryGroups.length > 0

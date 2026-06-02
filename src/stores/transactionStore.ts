@@ -532,6 +532,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             const src = accountStore.getAccount(input.sourceAccountId);
             const dest = accountStore.getAccount(input.destinationAccountId);
             if (!src || !dest) throw new Error('Account not found');
+            if (src.id === dest.id) throw new Error('Choose a different destination account');
             checkBalance(src, input.amount);
             currency = src.currency;
             sourceAccountId = input.sourceAccountId;
@@ -1053,10 +1054,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       throw new Error('This expense belongs to a group. Delete it from the group details screen.');
     }
 
-    if (!isEditableTransactionType(existing.type)) {
-      throw new Error('Only expenses and lend/borrow entries can be deleted right now.');
-    }
-
     await runSafeMutation(async (scope) => {
       const accountStore = useAccountStore.getState();
 
@@ -1064,6 +1061,28 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         case 'expense': {
           const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
           if (!source) throw new Error('Source account not found');
+          await trackedBalanceDelta(scope, source.id, existing.amount);
+          break;
+        }
+
+        case 'income':
+        case 'opening_balance': {
+          const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
+          if (!destination) throw new Error('Destination account not found');
+          checkBalance(destination, existing.amount);
+          await trackedBalanceDelta(scope, destination.id, -existing.amount);
+          break;
+        }
+
+        case 'transfer': {
+          const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
+          const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
+          if (!source || !destination) throw new Error('Account not found');
+          const destinationAmount = existing.conversionRate
+            ? Math.round(existing.amount * existing.conversionRate * 100) / 100
+            : existing.amount;
+          checkBalance(destination, destinationAmount);
+          await trackedBalanceDelta(scope, destination.id, -destinationAmount);
           await trackedBalanceDelta(scope, source.id, existing.amount);
           break;
         }
@@ -1110,6 +1129,60 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
           await trackedDeleteEmisByLoan(scope, relatedLoanId);
           await trackedDeleteLoan(scope, relatedLoanId);
+          break;
+        }
+
+        case 'repayment': {
+          const relatedLoanId = existing.relatedLoanId;
+          if (!relatedLoanId) throw new Error('Loan record not found for this repayment');
+          const loan = useLoanStore.getState().getLoan(relatedLoanId);
+          if (!loan) throw new Error('Loan not found');
+          if (useEmiStore.getState().getByLoan(relatedLoanId).length > 0) {
+            throw new Error('This repayment is linked to an EMI schedule. Reverse it from the loan details screen after reviewing the installment history.');
+          }
+          if (loan.type === 'given') {
+            const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
+            if (!destination) throw new Error('Destination account not found');
+            const creditedAmount = existing.conversionRate
+              ? Math.round(existing.amount * existing.conversionRate * 100) / 100
+              : existing.amount;
+            checkBalance(destination, creditedAmount);
+            await trackedBalanceDelta(scope, destination.id, -creditedAmount);
+          } else {
+            const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
+            if (!source) throw new Error('Source account not found');
+            const deductedAmount = existing.conversionRate
+              ? Math.round((existing.amount / existing.conversionRate) * 100) / 100
+              : existing.amount;
+            await trackedBalanceDelta(scope, source.id, deductedAmount);
+            if (existing.destinationAccountId) {
+              const cashAdvanceCard = accountStore.getAccount(existing.destinationAccountId);
+              if (!cashAdvanceCard) throw new Error('Cash advance card not found');
+              checkBalance(cashAdvanceCard, existing.amount);
+              await trackedBalanceDelta(scope, cashAdvanceCard.id, -existing.amount);
+            }
+          }
+          await trackedUpdateLoan(scope, relatedLoanId, {
+            remainingAmount: Math.min(loan.totalAmount, Math.round((loan.remainingAmount + existing.amount) * 100) / 100),
+            status: 'active',
+          });
+          break;
+        }
+
+        case 'goal_contribution': {
+          const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
+          if (!source || !existing.relatedGoalId) throw new Error('Savings contribution details not found');
+          const restoredAmount = existing.conversionRate
+            ? Math.round((existing.amount / existing.conversionRate) * 100) / 100
+            : existing.amount;
+          if (existing.destinationAccountId) {
+            const destination = accountStore.getAccount(existing.destinationAccountId);
+            if (!destination) throw new Error('Savings destination account not found');
+            checkBalance(destination, existing.amount);
+            await trackedBalanceDelta(scope, destination.id, -existing.amount);
+          }
+          await trackedBalanceDelta(scope, source.id, restoredAmount);
+          await trackedAddContribution(scope, existing.relatedGoalId, -existing.amount);
           break;
         }
       }
