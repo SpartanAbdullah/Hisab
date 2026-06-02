@@ -8,6 +8,10 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode;
 }
 
+// Co-located variant map. Could be moved to a styles file to make Fast
+// Refresh stricter, but it's a 6-key Tailwind lookup table tightly bound
+// to the Button component's props — not worth a separate file.
+// eslint-disable-next-line react-refresh/only-export-components
 export const BUTTON_VARIANT_CLASSES = {
   primary: 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 active:bg-indigo-700 active:shadow-none focus-visible:ring-indigo-500',
   secondary: 'bg-slate-100 border border-slate-200 text-slate-700 active:bg-slate-200 focus-visible:ring-slate-400',

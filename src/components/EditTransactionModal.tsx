@@ -190,7 +190,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
             disabled={saving || Boolean(noteMeta.groupExpenseId)}
             className="w-full rounded-2xl bg-pay-50 text-pay-text py-3.5 text-sm font-bold disabled:opacity-40"
           >
-            {saving ? t('quick_processing') : 'Reverse entry'}
+            {saving ? t('quick_processing') : 'Delete entry'}
           </button>
         )}
       >
@@ -211,7 +211,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           {transaction.relatedPerson && <p className="text-[13px] text-ink-700">Person: <span className="font-semibold">{transaction.relatedPerson}</span></p>}
           {transaction.notes && <p className="text-[12px] text-ink-500">{parseInternalNote(transaction.notes).visibleNote}</p>}
           <p className="text-[12px] text-ink-500 bg-cream-soft rounded-xl p-3 leading-relaxed">
-            This type is kept read-only to protect linked balances. Reversing it restores the affected balances and removes this entry.
+            This entry is kept read-only to protect linked balances. Deleting it restores the affected balances and removes the entry.
           </p>
           {noteMeta.groupExpenseId && (
             <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3 leading-relaxed">

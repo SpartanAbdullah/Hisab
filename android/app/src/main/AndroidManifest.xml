@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -20,6 +22,31 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Android App Links — tapped invite URLs from WhatsApp/email
+              open the app directly instead of the browser.
+
+              autoVerify="true" tells Android to fetch
+              https://usehisaab.com/.well-known/assetlinks.json on first
+              install and validate this app's signing fingerprint against
+              the file. Until that JSON is published with the correct
+              SHA-256 from our release keystore, links will still open in
+              a browser (graceful fallback) but the system disambiguation
+              dialog will list Hisaab as an option.
+
+              See RELEASE.md → "Deep links / Android App Links" for the
+              assetlinks.json format and how to derive the SHA-256
+              fingerprint from android/app/keystore.properties.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="usehisaab.com" />
+                <data android:pathPrefix="/join/" />
             </intent-filter>
 
         </activity>

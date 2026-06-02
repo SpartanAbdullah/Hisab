@@ -2,6 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Content Security Policy.
+
+      We allow only what the app actually uses:
+      - self            (our own bundle, manifest, sw.js, icons)
+      - Supabase        (auth, REST, realtime websockets, storage)
+      - Sentry          (crash reporting; safe to leave even when DSN unset)
+      - Google Fonts    (Geist font CSS + woff2 files)
+      - data:/blob:     (inline icons, generated blob URLs)
+      - 'unsafe-inline' on style-src because Tailwind v4 injects runtime
+        CSS via inline <style> tags and Modal/animation utilities use
+        inline style attributes. Removing it would require migrating to
+        nonces, which Vite doesn't ship out of the box.
+
+      connect-src includes wss:// for Supabase realtime and ws://localhost
+      for Vite HMR in dev (harmless in prod since it just won't connect).
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://*.ingest.de.sentry.io https://*.ingest.us.sentry.io ws://localhost:* http://localhost:*; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />

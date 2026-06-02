@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight,
+  HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight, Lock,
 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore, type TransactionInput } from '../stores/transactionStore';
@@ -257,11 +257,28 @@ export function QuickEntry({
     return '';
   })();
 
+  // Conversion-rate sanity bounds (Phase H2 hardening). A typo'd rate
+  // would silently corrupt balances; reject outside a sane window.
+  const RATE_MIN = 0.0001;
+  const RATE_MAX = 100000;
+  const rateIsValid = () => {
+    if (!isCrossCurrency) return true;
+    const r = parseFloat(conversionRate);
+    return r >= RATE_MIN && r <= RATE_MAX;
+  };
+
   const canSubmit = () => {
     const amt = parseFloat(amount);
     if (!amt) return false;
     // BATCH6: Block ALL cross-currency submissions without rate
     if (isCrossCurrency && !parseFloat(conversionRate)) return false;
+    // Phase H2: reject out-of-bounds conversion rates
+    if (!rateIsValid()) return false;
+    // Phase H2: overpayment guard on repayments (mirrors the simple-mode
+    // check at line 337, now applied to all paths).
+    if (type === 'repayment' && selectedLoan) {
+      if (amt > selectedLoan.remainingAmount + 0.00001) return false;
+    }
     switch (type) {
       case 'income': return !!destId;
       case 'expense': return !!sourceId;
@@ -807,6 +824,15 @@ export function QuickEntry({
             {needsSource && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_from')}</label>
+                {preset?.lockAccount && preset.accountId && (() => {
+                  const lockedAcct = accounts.find(a => a.id === preset.accountId);
+                  if (!lockedAcct) return null;
+                  return (
+                    <p className="text-[10.5px] text-accent-600 font-semibold mb-2 flex items-center gap-1.5">
+                      <Lock size={11} /> {t('locked_to_account').replace('{name}', lockedAcct.name)}
+                    </p>
+                  );
+                })()}
                 <div className="space-y-2">
                   {(preset?.lockAccount && preset.accountId ? accounts.filter(a => a.id === preset.accountId) : accounts).map(a => {
                     const meta = currencyMeta[a.currency];
@@ -833,6 +859,15 @@ export function QuickEntry({
             {needsDest && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_to')}</label>
+                {preset?.lockAccount && preset.accountId && (() => {
+                  const lockedAcct = accounts.find(a => a.id === preset.accountId);
+                  if (!lockedAcct) return null;
+                  return (
+                    <p className="text-[10.5px] text-accent-600 font-semibold mb-2 flex items-center gap-1.5">
+                      <Lock size={11} /> {t('locked_to_account').replace('{name}', lockedAcct.name)}
+                    </p>
+                  );
+                })()}
                 <div className="space-y-2">
                   {(preset?.lockAccount && preset.accountId ? accounts.filter(a => a.id === preset.accountId) : accounts).map(a => {
                     const meta = currencyMeta[a.currency];
@@ -869,6 +904,11 @@ export function QuickEntry({
                   </label>
                   <input type="number" step="0.0001" value={conversionRate} onChange={e => setConversionRate(e.target.value)}
                     placeholder="e.g. 78.50" className={inputClass} autoFocus />
+                  {conversionRate && !rateIsValid() && (
+                    <p className="mt-1.5 text-[11px] text-pay-text font-semibold leading-relaxed">
+                      {parseFloat(conversionRate) < RATE_MIN ? t('err_rate_too_low') : t('err_rate_too_high')}
+                    </p>
+                  )}
                 </div>
                 {conversionRate && parseFloat(conversionRate) > 0 && (
                   <div className="bg-cream-card rounded-xl p-3 text-center border border-cream-border animate-fade-in">
@@ -885,8 +925,16 @@ export function QuickEntry({
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_who')}</label>
                 {preset?.lockContact && preset.contact ? (
-                  <div className="rounded-2xl border border-accent-100 bg-accent-50 px-4 py-3 text-[13px] font-semibold text-ink-900">
-                    {preset.contact.name}
+                  <div className="rounded-2xl border border-accent-100 bg-accent-50 px-4 py-3 flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-accent-100 flex items-center justify-center shrink-0">
+                      <Lock size={13} className="text-accent-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-ink-900 truncate">{preset.contact.name}</p>
+                      <p className="text-[10px] text-ink-500">
+                        {t('locked_to_contact').replace('{name}', preset.contact.name)}
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <ContactPicker value={contact} onChange={setContact} placeholder={t('quick_who_placeholder')} className={inputClass} />
@@ -978,6 +1026,11 @@ export function QuickEntry({
                   </p>
                 ) : (
                   <div className="space-y-2">
+                    {selectedLoan && parseFloat(amount) > selectedLoan.remainingAmount + 0.00001 && (
+                      <p className="text-[11px] text-pay-text font-semibold leading-relaxed bg-pay-50 border border-pay-100 rounded-xl px-3 py-2">
+                        {t('err_overpayment').replace('{remaining}', formatMoney(selectedLoan.remainingAmount, selectedLoan.currency))}
+                      </p>
+                    )}
                     {filteredLoans.map(l => (
                       <button key={l.id} type="button" onClick={() => setLoanId(l.id)}
                         className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${

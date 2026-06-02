@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, AlertTriangle } from 'lucide-react';
 import type { Account, UpcomingExpense } from '../db';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
@@ -151,7 +152,11 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
 }
 
 function UpcomingBadge({ expense }: { expense: UpcomingExpense }) {
-  const daysLeft = Math.ceil((new Date(expense.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  // Captured once at mount — the daysLeft display does not need to
+  // re-compute every render. React's purity rule forbids Date.now() in
+  // the render body, so we initialize state lazily instead.
+  const [now] = useState(() => Date.now());
+  const daysLeft = Math.ceil((new Date(expense.dueDate).getTime() - now) / (1000 * 60 * 60 * 24));
   const urgent = daysLeft <= 7;
   return (
     <div className={`relative mt-2.5 rounded-xl px-3 py-2 flex items-center gap-2 ${urgent ? 'bg-red-500/20' : 'bg-amber-400/20'}`}>

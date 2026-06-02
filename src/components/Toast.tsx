@@ -18,6 +18,9 @@ interface ToastStore {
   dismiss: (id: string) => void;
 }
 
+// Co-located store — the toast hook and the Toast renderer share this
+// closure. Splitting them would force a circular-style import.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useToast = create<ToastStore>((set) => ({
   toasts: [],
   show: (toast) => {

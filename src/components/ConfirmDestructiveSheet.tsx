@@ -81,6 +81,10 @@ const useConfirmStore = create<ConfirmState>((set, get) => ({
   },
 }));
 
+// Imperative API for the destructive sheet — must live next to the
+// component it controls (shared store closure). Fast Refresh warning is
+// noise here.
+// eslint-disable-next-line react-refresh/only-export-components
 export function confirmDestructive(opts: ConfirmOptions): Promise<boolean> {
   return useConfirmStore.getState().ask(opts);
 }
@@ -92,8 +96,13 @@ export function ConfirmDestructiveSheet() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (open) requestAnimationFrame(() => setShow(true));
-    else setShow(false);
+    if (open) {
+      requestAnimationFrame(() => setShow(true));
+    } else {
+      // Animation flag sync — legitimate setState-in-effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setShow(false);
+    }
   }, [open]);
 
   if (!open || !options) return null;

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { Language } from '../lib/i18n';
 import { Wallet, ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle } from 'lucide-react';
 import { useOnboardingStore } from '../stores/onboardingStore';
 import { useAppModeStore } from '../stores/appModeStore';
@@ -6,6 +7,19 @@ import { useI18nStore, useT } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { SUPPORTED_CURRENCIES, type Currency, type AppMode } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
+
+// Hoisted out of OnboardingPage — components defined inside a parent render
+// body lose state on every re-render (react-hooks/static-components).
+function LangBtn({ lang, setLang }: { lang: Language; setLang: (l: Language) => void }) {
+  return (
+    <button
+      onClick={() => setLang(lang === 'ur' ? 'en' : 'ur')}
+      className="absolute top-5 right-5 z-50 bg-white/10 text-white/80 rounded-xl px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 active:scale-95 transition-all backdrop-blur-sm border border-white/10"
+    >
+      <Globe size={11} /> {lang === 'ur' ? 'EN' : 'UR'}
+    </button>
+  );
+}
 
 export function OnboardingPage() {
   const { completeOnboarding } = useOnboardingStore();
@@ -25,16 +39,6 @@ export function OnboardingPage() {
     await completeOnboarding(name.trim(), currency, selectedMode);
   };
 
-  // Language toggle — shown on every step
-  const LangBtn = () => (
-    <button
-      onClick={() => setLang(lang === 'ur' ? 'en' : 'ur')}
-      className="absolute top-5 right-5 z-50 bg-white/10 text-white/80 rounded-xl px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 active:scale-95 transition-all backdrop-blur-sm border border-white/10"
-    >
-      <Globe size={11} /> {lang === 'ur' ? 'EN' : 'UR'}
-    </button>
-  );
-
   return (
     <div className="min-h-dvh relative overflow-y-auto overflow-x-hidden bg-navy-bloom">
       {/* Background — Sukoon navy + bloom. The .bg-navy-bloom class layers the
@@ -42,7 +46,7 @@ export function OnboardingPage() {
           over a navy-800 base. */}
 
       {/* Language toggle */}
-      <LangBtn />
+      <LangBtn lang={lang} setLang={setLang} />
 
       {/* Content */}
       <div className="relative text-white flex flex-col min-h-dvh">

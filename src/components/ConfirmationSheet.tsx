@@ -29,6 +29,8 @@ export function ConfirmationSheet({ open, onClose, title, description, balanceCh
       const timer = setTimeout(onClose, 2500);
       return () => clearTimeout(timer);
     } else {
+      // Animation flag sync — legitimate setState-in-effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShow(false);
     }
   }, [open, onClose]);

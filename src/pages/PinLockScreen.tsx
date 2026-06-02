@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useT } from '../lib/i18n';
@@ -9,8 +9,17 @@ export function PinLockScreen() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
+  // Tick `now` every second so the lock screen auto-releases when the
+  // lockout window passes. Reading Date.now() in render directly would
+  // violate React's purity rule and never refresh anyway.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (lockedUntil === null || lockedUntil <= now) return;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [lockedUntil, now]);
 
-  const isTimeLocked = lockedUntil !== null && Date.now() < lockedUntil;
+  const isTimeLocked = lockedUntil !== null && now < lockedUntil;
 
   const handleDigit = (d: string) => {
     if (isTimeLocked) return;

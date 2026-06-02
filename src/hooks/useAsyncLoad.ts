@@ -39,6 +39,10 @@ export function useAsyncLoad(load: () => Promise<void>): AsyncLoadResult {
   }, [load]);
 
   useEffect(() => {
+    // `run` issues setState internally as the async load progresses.
+    // This is exactly the kind of "synchronize with external system"
+    // case useEffect is designed for — the rule's false positive.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     run();
     return () => {
       generation.current += 1;

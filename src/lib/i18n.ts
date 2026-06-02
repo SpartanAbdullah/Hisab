@@ -1369,6 +1369,56 @@ const S = {
   // AccountDetailPage — two new tiles for the expanded quick-action grid.
   acct_action_person: { ur: "Kisi ke sath", en: "With someone" },
   acct_action_group: { ur: "Group main", en: "Split group" },
+
+  // ── Phase H2: Money-safety guards (Android prod hardening) ──
+  // User-facing errors when amount validation rejects a save. These
+  // surface in toast subtitles, so keep them under ~80 chars.
+  err_overpayment: {
+    ur: "Yeh amount baqi qarz se zyada hai. Sirf {remaining} baqi hai.",
+    en: "Amount exceeds the remaining loan. Only {remaining} left.",
+  },
+  err_rate_too_low: {
+    ur: "Conversion rate bohot kam hai. Phir se check karein.",
+    en: "Conversion rate is too low. Please check and try again.",
+  },
+  err_rate_too_high: {
+    ur: "Conversion rate bohot zyada hai. Phir se check karein.",
+    en: "Conversion rate is too high. Please check and try again.",
+  },
+  // Loan confirmation step before commit — restates what's about to happen.
+  confirm_repayment_title: {
+    ur: "Confirm karein",
+    en: "Confirm payment",
+  },
+  confirm_repayment_body_received: {
+    ur: "{person} ne aap ko {amount} wapas diya. Yeh sahi hai?",
+    en: "{person} paid you {amount} back. Is this correct?",
+  },
+  confirm_repayment_body_paid: {
+    ur: "Aap {person} ko {amount} wapas day rahe hain. Yeh sahi hai?",
+    en: "You're paying {person} {amount} back. Is this correct?",
+  },
+  confirm_repayment_yes: { ur: "Haan, save karo", en: "Yes, save" },
+  confirm_repayment_no: { ur: "Wapas jaaiye", en: "Go back" },
+
+  // Locked contact / account chips — shown when a preset has locked the
+  // value so the user knows it's intentional, not broken.
+  locked_to_contact: { ur: "Sirf {name} ke liye", en: "Locked to {name}" },
+  locked_to_account: { ur: "Sirf {name} se", en: "Locked to {name}" },
+
+  // Password policy hint — surfaced inline on signup + change.
+  password_hint_12: {
+    ur: "Kam se kam 12 chars. Harf aur number dono shamil ho.",
+    en: "At least 12 characters with letters and numbers.",
+  },
+  password_too_short: {
+    ur: "Password chhota hai. 12+ chars use karein.",
+    en: "Password too short. Use 12 or more characters.",
+  },
+  password_missing_complexity: {
+    ur: "Password mein harf aur number dono honay chahiye.",
+    en: "Password must include both letters and numbers.",
+  },
 } as const;
 
 type Key = keyof typeof S;

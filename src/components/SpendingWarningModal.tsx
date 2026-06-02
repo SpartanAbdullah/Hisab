@@ -1,4 +1,5 @@
-﻿import { Modal } from './Modal';
+﻿import { useState } from 'react';
+import { Modal } from './Modal';
 import { AlertTriangle } from 'lucide-react';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -13,9 +14,12 @@ interface Props {
 
 export function SpendingWarningModal({ open, expense, onContinue, onCancel }: Props) {
   const t = useT();
+  // One-shot capture — daysLeft is a display calc, not a tick. Date.now()
+  // in the render body violates React's purity rule.
+  const [now] = useState(() => Date.now());
   if (!expense) return null;
 
-  const daysLeft = Math.ceil((new Date(expense.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const daysLeft = Math.ceil((new Date(expense.dueDate).getTime() - now) / (1000 * 60 * 60 * 24));
 
   return (
     <Modal open={open} onClose={onCancel} title={t('spend_warning_title')}

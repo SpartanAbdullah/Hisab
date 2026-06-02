@@ -1,5 +1,18 @@
 apply plugin: 'com.android.application'
 
+// Load release signing config from keystore.properties (gitignored).
+// See RELEASE.md → "Generate the upload keystore" for the keytool
+// command and the expected properties file format. If the file is
+// absent (e.g. a debug build on a fresh checkout) we fall through to
+// the default debug signing config so `cap run android` keeps working.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasReleaseKeystore = false
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    hasReleaseKeystore = true
+}
+
 android {
     namespace = "com.hisaab.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -8,7 +21,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +29,31 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            release {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            // ProGuard / R8 is disabled because the WebView app surface is
+            // small and Capacitor doesn't ship rules for all its plugins.
+            // Re-enable + supply rules before a final-perf release if
+            // bundle size becomes a concern.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
+            // If no keystore.properties is present, Gradle falls back to
+            // the debug signing config — fine for local testing but the
+            // resulting APK/AAB cannot be uploaded to Play. Generate the
+            // keystore before running `assembleRelease`/`bundleRelease`.
         }
     }
 }

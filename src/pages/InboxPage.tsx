@@ -241,6 +241,43 @@ export function InboxPage() {
   );
 }
 
+// Hoisted out of PillToggle — components defined inside a parent's render
+// body lose state on every parent re-render (react-hooks/static-components).
+function Pill({
+  value,
+  label,
+  count,
+  activeTab,
+  onSelect,
+}: {
+  value: Tab;
+  label: string;
+  count: number;
+  activeTab: Tab;
+  onSelect: (t: Tab) => void;
+}) {
+  const isActive = activeTab === value;
+  return (
+    <button
+      onClick={() => onSelect(value)}
+      className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors flex items-center gap-1 ${
+        isActive ? 'bg-white text-ink-900' : 'text-white/70'
+      }`}
+    >
+      {label}
+      {count > 0 && (
+        <span
+          className={`min-w-[14px] h-3.5 px-1 rounded-full text-[9px] font-bold flex items-center justify-center tabular-nums ${
+            isActive ? 'bg-pay-600 text-white' : 'bg-white/15 text-white'
+          }`}
+        >
+          {count > 9 ? '9+' : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function PillToggle({
   tab,
   setTab,
@@ -256,32 +293,10 @@ function PillToggle({
   incomingLabel: string;
   outgoingLabel: string;
 }) {
-  const Pill = ({ value, label, count }: { value: Tab; label: string; count: number }) => {
-    const isActive = tab === value;
-    return (
-      <button
-        onClick={() => setTab(value)}
-        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors flex items-center gap-1 ${
-          isActive ? 'bg-white text-ink-900' : 'text-white/70'
-        }`}
-      >
-        {label}
-        {count > 0 && (
-          <span
-            className={`min-w-[14px] h-3.5 px-1 rounded-full text-[9px] font-bold flex items-center justify-center tabular-nums ${
-              isActive ? 'bg-pay-600 text-white' : 'bg-white/15 text-white'
-            }`}
-          >
-            {count > 9 ? '9+' : count}
-          </span>
-        )}
-      </button>
-    );
-  };
   return (
     <div className="bg-white/10 rounded-full p-0.5 flex items-center">
-      <Pill value="incoming" label={incomingLabel} count={incomingCount} />
-      <Pill value="outgoing" label={outgoingLabel} count={outgoingCount} />
+      <Pill value="incoming" label={incomingLabel} count={incomingCount} activeTab={tab} onSelect={setTab} />
+      <Pill value="outgoing" label={outgoingLabel} count={outgoingCount} activeTab={tab} onSelect={setTab} />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Wallet, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { useT, useI18nStore } from '../lib/i18n';
 import { Globe } from 'lucide-react';
+import { validatePassword, PASSWORD_MIN_LENGTH } from '../lib/passwordPolicy';
 
 export function AuthPage() {
   const t = useT();
@@ -18,6 +19,15 @@ export function AuthPage() {
   const handleSubmit = async () => {
     if (!email) return;
     if (mode !== 'reset' && !password) return;
+    // Enforce password policy at signup only — login uses whatever password
+    // the account already has (may predate the new policy).
+    if (mode === 'signup') {
+      const policy = validatePassword(password);
+      if (!policy.valid) {
+        setMessage(policy.code === 'too_short' ? t('password_too_short') : t('password_missing_complexity'));
+        return;
+      }
+    }
     setLoading(true);
     setMessage('');
 
@@ -88,14 +98,27 @@ export function AuthPage() {
           </div>
 
           {mode !== 'reset' && (
-            <div className="relative">
-              <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
-              <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('settings_password')}
-                className={inputClass + ' pr-12'} onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
-              <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30">
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
+            <>
+              <div className="relative">
+                <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+                <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('settings_password')}
+                  className={inputClass + ' pr-12'} onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+                <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30">
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              {mode === 'signup' && (
+                <p className="text-white/50 text-[11px] leading-relaxed">
+                  {password.length === 0
+                    ? t('password_hint_12')
+                    : password.length < PASSWORD_MIN_LENGTH
+                      ? t('password_too_short')
+                      : validatePassword(password).valid
+                        ? t('password_hint_12')
+                        : t('password_missing_complexity')}
+                </p>
+              )}
+            </>
           )}
         </div>
 

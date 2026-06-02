@@ -30,10 +30,15 @@ export function MonthlyWrapModal() {
       (localStorage.getItem('hisaab_primary_currency') as Currency) ?? 'AED';
     const computed = computeMonthlyWrap(transactions, primaryCurrency);
     if (!shouldShowMonthlyWrap(computed)) return;
+    // Intentional: one-shot computation + scheduled open at mount. Deriving
+    // `stats` in render would recompute on every transaction change and is
+    // gated by `shouldShowMonthlyWrap`, so it's bounded but wasteful.
     setStats(computed);
     // Small delay so the wrap doesn't fight with auth/onboarding paint.
     const timer = setTimeout(() => setOpen(true), 1200);
     return () => clearTimeout(timer);
+    // `transactions` deliberately omitted — we only check at mount/auth.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, transactions.length]);
 
   const handleClose = () => {

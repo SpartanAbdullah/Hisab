@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hisaab is a personal-finance app. Allowing Android's auto-backup or
+  device-to-device transfer to copy our local Dexie database, encrypted
+  PIN hashes, or Supabase session tokens to Google Drive / another phone
+  would leak the user's full financial history in plaintext.
+
+  We exclude everything from cloud backup and device-to-device transfer.
+  This is the Android 12+ (API 31+) replacement for the older
+  android:fullBackupContent attribute.
+
+  https://developer.android.com/about/versions/12/backup-restore#xml-changes
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

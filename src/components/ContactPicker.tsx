@@ -7,10 +7,15 @@ export interface ContactValue {
   name: string;
 }
 
+// Co-located display helpers used by ContactPicker and by ContactsPage.
+// Moving them out would split tightly-coupled rendering logic across files
+// for no real Fast Refresh win.
+// eslint-disable-next-line react-refresh/only-export-components
 export function getContactTypeLabel(person: Pick<Person, 'linkedProfileId'>): 'Linked' | 'Local' {
   return person.linkedProfileId ? 'Linked' : 'Local';
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getContactSecondaryText(person: Pick<Person, 'linkedProfileId' | 'phone'>): string {
   const typeText = person.linkedProfileId ? 'Hisaab user' : 'Saved locally';
   return person.phone ? `${typeText} · ${person.phone}` : typeText;

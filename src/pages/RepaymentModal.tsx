@@ -5,6 +5,7 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useToast } from '../components/Toast';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
@@ -79,17 +80,88 @@ export function RepaymentModal({
     onClose();
   };
 
+  // Conversion-rate sanity bounds. A typo'd rate of 0.0001 or 999999
+  // would silently corrupt a balance, so we reject anything outside a
+  // sane window. Real-world rates for AED/PKR/USD/EUR sit between
+  // 0.005 and 350, well within these bounds.
+  const RATE_MIN = 0.0001;
+  const RATE_MAX = 100000;
+
   const canSubmit = () => {
     const parsedAmount = parseFloat(amount);
     if (!(parsedAmount > 0)) return false;
+    // Block overpayment at the canSubmit gate. transactionStore.ts:230
+    // silently clamps `remainingAmount` to 0, which would drop the
+    // overage with no user feedback — unacceptable for a money app.
+    if (parsedAmount > loan.remainingAmount + 0.00001) return false;
     if (!isLedgerOnlyMode && !accountId) return false;
-    if (!isLedgerOnlyMode && isCrossCurrency && !parseFloat(conversionRate)) return false;
+    if (!isLedgerOnlyMode && isCrossCurrency) {
+      const r = parseFloat(conversionRate);
+      if (!(r >= RATE_MIN && r <= RATE_MAX)) return false;
+    }
     return true;
   };
+
+  // Used by the inline error hint below the amount input.
+  const amountValidationMsg = (() => {
+    const parsedAmount = parseFloat(amount);
+    if (!parsedAmount) return null;
+    if (parsedAmount > loan.remainingAmount + 0.00001) {
+      return t('err_overpayment').replace('{remaining}', formatMoney(loan.remainingAmount, loan.currency));
+    }
+    return null;
+  })();
+
+  const rateValidationMsg = (() => {
+    if (!isCrossCurrency) return null;
+    const r = parseFloat(conversionRate);
+    if (!conversionRate) return null;
+    if (r < RATE_MIN) return t('err_rate_too_low');
+    if (r > RATE_MAX) return t('err_rate_too_high');
+    return null;
+  })();
 
   const handleSubmit = async () => {
     const parsedAmount = parseFloat(amount);
     if (!parsedAmount || !accountId) return;
+    // Defense-in-depth: even if canSubmit was bypassed somehow, refuse
+    // overpayments and out-of-bounds rates at the action layer.
+    if (parsedAmount > loan.remainingAmount + 0.00001) {
+      toast.show({
+        type: 'error',
+        title: t('error'),
+        subtitle: t('err_overpayment').replace('{remaining}', formatMoney(loan.remainingAmount, loan.currency)),
+      });
+      return;
+    }
+    if (!isLedgerOnlyMode && isCrossCurrency) {
+      const r = parseFloat(conversionRate);
+      if (!(r >= RATE_MIN && r <= RATE_MAX)) {
+        toast.show({
+          type: 'error',
+          title: t('error'),
+          subtitle: r < RATE_MIN ? t('err_rate_too_low') : t('err_rate_too_high'),
+        });
+        return;
+      }
+    }
+
+    // Phase H2: re-state what's about to happen so the user can catch a
+    // wrong-loan tap before it commits. Direction-aware copy mirrors the
+    // modal title — they should read identically.
+    const personName = resolvePersonName({ personId: loan.personId, fallback: loan.personName });
+    const amountLabel = formatMoney(parsedAmount, loan.currency);
+    const body = isGiven
+      ? t('confirm_repayment_body_received').replace('{person}', personName).replace('{amount}', amountLabel)
+      : t('confirm_repayment_body_paid').replace('{person}', personName).replace('{amount}', amountLabel);
+    const ok = await confirmDestructive({
+      title: t('confirm_repayment_title'),
+      description: body,
+      confirmLabel: t('confirm_repayment_yes'),
+      cancelLabel: t('confirm_repayment_no'),
+      tone: 'warning',
+    });
+    if (!ok) return;
 
     setSaving(true);
     try {
@@ -239,6 +311,11 @@ export function RepaymentModal({
                 Full amount: {formatMoney(loan.remainingAmount, loan.currency)}
               </button>
             ) : null}
+            {amountValidationMsg && (
+              <p className="mt-2 text-[11px] text-pay-text font-semibold leading-relaxed">
+                {amountValidationMsg}
+              </p>
+            )}
           </div>
 
           {!isLedgerOnlyMode && (
@@ -294,6 +371,11 @@ export function RepaymentModal({
                   placeholder="e.g. 78.50"
                   className="input-field"
                 />
+                {rateValidationMsg && (
+                  <p className="mt-1.5 text-[11px] text-pay-text font-semibold leading-relaxed">
+                    {rateValidationMsg}
+                  </p>
+                )}
               </div>
               {conversionRate && parseFloat(conversionRate) > 0 && parseFloat(amount) > 0 ? (
                 <div className="bg-white rounded-xl p-3 text-center border border-blue-100/60 animate-fade-in">

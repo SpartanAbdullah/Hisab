@@ -65,6 +65,23 @@ export async function initNativeBridge(opts: {
         // so this is mostly a defensive guard against custom-scheme oddities.
       }
     });
+
+    // App resume — fired when the user brings Hisaab back to the
+    // foreground after backgrounding it. Supabase's JS client refreshes
+    // its session automatically on most events, but the access-token
+    // refresh job pauses while the WebView is suspended, so after a long
+    // background the cached session can be stale. Explicitly nudging
+    // getSession() forces a refresh-and-reload of `auth.user` so any
+    // gated UI re-evaluates with the live state.
+    CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive) return;
+      // Dynamic import so we don't pay this dependency cost on web boot.
+      import('./supabase')
+        .then(({ supabase }) => supabase.auth.getSession())
+        .catch((err) => {
+          console.error('[nativeBridge] session refresh on resume failed', err);
+        });
+    });
   } catch (err) {
     console.error('[nativeBridge] init failed', err);
   }

@@ -37,3 +37,9 @@ android/*.iml
 *.aab
 *.jks
 *.keystore
+
+# Release signing — keystore + the passwords file that points to it.
+# Both must NEVER be committed. See RELEASE.md for setup.
+android/keystore.properties
+android/app/*.jks
+android/app/*.keystore

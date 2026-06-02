@@ -38,6 +38,7 @@ import { useAuthStore } from "../stores/authStore";
 import { useToast } from "../components/Toast";
 import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
 import { useT, useI18nStore } from "../lib/i18n";
+import { validatePassword, PASSWORD_MIN_LENGTH } from "../lib/passwordPolicy";
 import { exportAllData, importData, downloadJSON } from "../lib/dataExport";
 import { profilesDb } from "../lib/supabaseDb";
 import { db } from "../db";
@@ -303,10 +304,13 @@ export function SettingsPage() {
   };
 
   const handlePasswordReset = async () => {
-    if (!newPassword || newPassword.length < 6) {
+    const policy = validatePassword(newPassword);
+    if (!policy.valid) {
       toast.show({
         type: "error",
-        title: "Password must be at least 6 characters",
+        title: policy.code === "too_short"
+          ? t("password_too_short")
+          : t("password_missing_complexity"),
       });
       return;
     }
@@ -490,24 +494,40 @@ export function SettingsPage() {
                   {t("settings_reset_password")}
                 </button>
               </div>
-              {showPasswordChange && (
-                <div className="space-y-2 animate-fade-in bg-accent-50 rounded-xl p-3 border border-cream-border">
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="New password (min 6 chars)"
-                    className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all bg-white"
-                  />
-                  <button
-                    onClick={handlePasswordReset}
-                    disabled={passwordSaving || newPassword.length < 6}
-                    className="w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30"
-                  >
-                    {passwordSaving ? "Updating..." : "Update Password"}
-                  </button>
-                </div>
-              )}
+              {showPasswordChange && (() => {
+                const policy = validatePassword(newPassword);
+                return (
+                  <div className="space-y-2 animate-fade-in bg-accent-50 rounded-xl p-3 border border-cream-border">
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder={`New password (min ${PASSWORD_MIN_LENGTH} chars)`}
+                      className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all bg-white"
+                    />
+                    <p className={`text-[10.5px] leading-relaxed ${
+                      newPassword.length === 0 ? 'text-ink-500'
+                      : policy.valid ? 'text-receive-text font-semibold'
+                      : 'text-pay-text font-semibold'
+                    }`}>
+                      {newPassword.length === 0
+                        ? t('password_hint_12')
+                        : policy.code === 'too_short'
+                          ? t('password_too_short')
+                          : policy.code === 'missing_complexity'
+                            ? t('password_missing_complexity')
+                            : t('password_hint_12')}
+                    </p>
+                    <button
+                      onClick={handlePasswordReset}
+                      disabled={passwordSaving || !policy.valid}
+                      className="w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30"
+                    >
+                      {passwordSaving ? "Updating..." : "Update Password"}
+                    </button>
+                  </div>
+                );
+              })()}
               <button
                 onClick={handleSaveProfile}
                 className="w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold"

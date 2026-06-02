@@ -20,6 +20,10 @@ export function Modal({ open, onClose, title, children, footer }: Props) {
       openModal();
       requestAnimationFrame(() => setShow(true));
     } else {
+      // Intentional: `show` is an animation flag synchronized with the
+      // `open` prop. Deriving it via render-time computation would skip
+      // the enter/exit transition, which is the whole point.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShow(false);
       document.body.style.overflow = '';
       closeModal();
