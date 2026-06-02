@@ -5,7 +5,6 @@ import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { MoneyDisplay } from '../components/MoneyDisplay';
-import { LanguageToggle } from '../components/LanguageToggle';
 import { GroupCard } from '../components/GroupCard';
 import { PageErrorState } from '../components/PageErrorState';
 import { NextStepHint } from '../components/NextStepHint';
@@ -150,6 +149,10 @@ export function SplitsPage() {
         <TopBar
           title={t('groups_title')}
           action={
+            // Compact icon-only action row. Previously "Join code" carried
+            // a text label which on narrow Android screens squeezed the
+            // page title (flex-1 + truncate) down to almost nothing,
+            // making the actions appear to overlap the heading.
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowSearch((v) => !v)}
@@ -160,10 +163,11 @@ export function SplitsPage() {
               </button>
               <button
                 onClick={() => setShowJoin(true)}
-                className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[11.5px] font-semibold text-white transition-colors"
+                className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
                 aria-label="Join with code"
+                title="Join with code"
               >
-                <KeyRound size={12} strokeWidth={2.4} /> Join code
+                <KeyRound size={14} className="text-white" strokeWidth={2.2} />
               </button>
               <button
                 onClick={() => setShowCreate(true)}
@@ -172,7 +176,6 @@ export function SplitsPage() {
               >
                 <Plus size={15} className="text-white" strokeWidth={2.4} />
               </button>
-              <LanguageToggle />
             </div>
           }
         />

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, ArrowLeftRight, Users, HandCoins, Plus } from 'lucide-react';
+import { Home, ArrowLeftRight, Users, HandCoins, Plus, History } from 'lucide-react';
 import { useUIStore } from '../stores/uiStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useT } from '../lib/i18n';
@@ -8,13 +8,17 @@ interface Props {
   onQuickEntry: () => void;
 }
 
-// Sukoon bottom nav: 4 tab slots + center FAB for full_tracker (symmetric
-// 2 left / FAB / 2 right). Splits-only collapses to 3 tabs + FAB since its
-// surface set is smaller (no Ledger). Inbox lives in the top-right page
-// chrome with its own coral pending-count badge;
-// Settings via the avatar tap. The FAB always opens Quick Entry — the old
-// context-aware fan-out is gone; page-specific add actions live as a "+"
-// chip in each page's TopBar.
+// Sukoon bottom nav: 4 tab slots + center FAB. Layout is STABLE across
+// modes — Home always far-left, Groups always far-right, FAB always
+// centered, Loans always immediately right of the FAB. The only thing
+// that changes between modes is the slot at position 2:
+//   full_tracker → Transactions
+//   splits_only  → Activity (no transactions ledger in this mode, but
+//                  Activity is still a meaningful navigation surface)
+// Previously splits_only collapsed to a 4-col layout and put Loans on
+// the LEFT of the FAB, which made the bottom bar visually "jump" when
+// users toggled modes. Inbox lives in the top-right page chrome with
+// its own coral pending-count badge; Settings via the avatar tap.
 export function BottomNav({ onQuickEntry }: Props) {
   const modalCount = useUIStore((s) => s.modalCount);
   const mode = useAppModeStore((s) => s.mode);
@@ -23,27 +27,18 @@ export function BottomNav({ onQuickEntry }: Props) {
   if (modalCount > 0) return null;
 
   const isSplits = mode === 'splits_only';
-  const leftPair = isSplits
-    ? [
-        { to: '/', icon: Home, label: t('nav_home') },
-        { to: '/loans', icon: HandCoins, label: t('nav_loans') },
-      ]
-    : [
-        { to: '/', icon: Home, label: t('nav_home') },
-        { to: '/transactions', icon: ArrowLeftRight, label: t('nav_transactions') },
-      ];
-
-  // Right side: full_tracker has both People (Loans) and Groups; splits-only
-  // already has Loans on the left so the right side is just Groups.
-  const rightTabs = isSplits
-    ? [{ to: '/groups', icon: Users, label: t('nav_groups') }]
-    : [
-        { to: '/loans', icon: HandCoins, label: t('nav_loans') },
-        { to: '/groups', icon: Users, label: t('nav_groups') },
-      ];
-
-  // 5 cols when both sides have 2 tabs, 4 cols for splits-only's 2+1 layout.
-  const gridClass = isSplits ? 'grid-cols-4' : 'grid-cols-5';
+  const leftPair = [
+    { to: '/', icon: Home, label: t('nav_home') },
+    isSplits
+      ? { to: '/activity', icon: History, label: t('nav_activity') }
+      : { to: '/transactions', icon: ArrowLeftRight, label: t('nav_transactions') },
+  ];
+  const rightTabs = [
+    { to: '/loans', icon: HandCoins, label: t('nav_loans') },
+    { to: '/groups', icon: Users, label: t('nav_groups') },
+  ];
+  // Always 5 cols now (2 left + FAB + 2 right). Stable across modes.
+  const gridClass = 'grid-cols-5';
 
   return (
     <nav

@@ -350,6 +350,41 @@ export function HomePage() {
                 </div>
               )}
 
+              {/* Splits-only quick-action shortcuts. Since this mode has no
+                  accounts/transactions surfaces, surface the remaining
+                  browse destinations (Contacts, Activity) directly on home
+                  so they're not buried in Settings. */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => navigate("/contacts")}
+                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-accent-50 flex items-center justify-center mb-2.5">
+                    <Contact size={16} className="text-accent-600" />
+                  </div>
+                  <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
+                    {t('splits_home_contacts')}
+                  </p>
+                  <p className="text-[11px] text-ink-500 mt-0.5">
+                    {t('splits_home_contacts_sub')}
+                  </p>
+                </button>
+                <button
+                  onClick={() => navigate("/activity")}
+                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center mb-2.5">
+                    <History size={16} className="text-info-600" />
+                  </div>
+                  <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
+                    {t('splits_home_activity')}
+                  </p>
+                  <p className="text-[11px] text-ink-500 mt-0.5">
+                    {t('splits_home_activity_sub')}
+                  </p>
+                </button>
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-2.5 px-1">
                   <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">

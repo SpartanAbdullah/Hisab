@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut } from 'lucide-react';
+import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
-import { LanguageToggle } from '../components/LanguageToggle';
 import { AddGroupExpenseModal } from './AddGroupExpenseModal';
 import { EditGroupExpenseModal } from './EditGroupExpenseModal';
 import { SettleUpModal } from './SettleUpModal';
@@ -50,6 +49,20 @@ export function GroupDetailPage() {
   const [editExpense, setEditExpense] = useState<GroupExpense | null>(null);
   const [savingReconciliationId, setSavingReconciliationId] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Dismiss the kebab menu when the user taps outside it.
+  useEffect(() => {
+    if (!showMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showMenu]);
 
   useEffect(() => {
     const nextGroup = groups.find(item => item.id === id);
@@ -270,6 +283,10 @@ export function GroupDetailPage() {
           title={`${group.emoji} ${group.name}`}
           back
           action={
+            // Compact 2-icon action row + overflow menu. Previously this row
+            // showed Invite + Leave + Delete + LanguageToggle, which on
+            // narrow Android screens left almost no room for the group
+            // title (a `{emoji} {name}` string that's often long).
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowInvite(true)}
@@ -278,27 +295,45 @@ export function GroupDetailPage() {
               >
                 <Share2 size={14} className="text-white" />
               </button>
-              {currentMember?.profileId === currentUserId ? (
+              <div className="relative" ref={menuRef}>
                 <button
-                  onClick={handleLeave}
-                  disabled={leaving}
-                  className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 disabled:opacity-50 flex items-center justify-center transition-colors"
-                  aria-label={leaving ? 'Leaving group' : 'Leave group'}
-                  title="Leave group"
-                >
-                  <LogOut size={14} className={`text-white ${leaving ? 'animate-pulse' : ''}`} />
-                </button>
-              ) : null}
-              {currentMember?.isOwner ? (
-                <button
-                  onClick={handleDelete}
+                  onClick={() => setShowMenu((v) => !v)}
                   className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                  aria-label="Delete"
+                  aria-label="More"
+                  aria-haspopup="menu"
+                  aria-expanded={showMenu}
                 >
-                  <Trash2 size={14} className="text-white" />
+                  <MoreVertical size={14} className="text-white" />
                 </button>
-              ) : null}
-              <LanguageToggle />
+                {showMenu && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-11 z-30 min-w-[180px] rounded-2xl bg-cream-card border border-cream-border shadow-lg overflow-hidden animate-fade-in"
+                  >
+                    {currentMember?.profileId === currentUserId && (
+                      <button
+                        role="menuitem"
+                        onClick={() => { setShowMenu(false); handleLeave(); }}
+                        disabled={leaving}
+                        className="w-full px-4 py-3 text-left text-[13px] font-medium text-ink-800 active:bg-cream-soft flex items-center gap-2.5 disabled:opacity-50 transition-colors"
+                      >
+                        <LogOut size={14} className={`text-ink-600 ${leaving ? 'animate-pulse' : ''}`} />
+                        {leaving ? 'Leaving…' : 'Leave group'}
+                      </button>
+                    )}
+                    {currentMember?.isOwner && (
+                      <button
+                        role="menuitem"
+                        onClick={() => { setShowMenu(false); handleDelete(); }}
+                        className="w-full px-4 py-3 text-left text-[13px] font-medium text-pay-text active:bg-pay-50 flex items-center gap-2.5 border-t border-cream-hairline transition-colors"
+                      >
+                        <Trash2 size={14} className="text-pay-text" />
+                        Delete group
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           }
         />

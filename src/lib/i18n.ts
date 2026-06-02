@@ -1419,6 +1419,37 @@ const S = {
     ur: "Password mein harf aur number dono honay chahiye.",
     en: "Password must include both letters and numbers.",
   },
+
+  // ── Phase H3: Splits-only mode + Inbox polish ──
+  // Inbox empty state — replaces the generic "No pending requests right now"
+  // with a friendly, illustrated explanation of what the inbox is for.
+  inbox_empty_incoming_title: {
+    ur: "Inbox khali hai",
+    en: "Nothing waiting",
+  },
+  inbox_empty_incoming_desc: {
+    ur: "Jab koi linked contact aap ko loan ya settlement bhejega, yahan dikhega.",
+    en: "When a linked contact sends you a loan or settlement to confirm, it'll show up here.",
+  },
+  inbox_empty_outgoing_title: {
+    ur: "Sab clear hai",
+    en: "All clear",
+  },
+  inbox_empty_outgoing_desc: {
+    ur: "Jo requests aap ne bheji hain, woh confirm hotay hi yahan se hat jati hain.",
+    en: "Anything you've sent waiting on confirmation lives here. You're caught up.",
+  },
+
+  // Splits-only home page tiles — quick links to the surfaces that exist
+  // in this mode (no accounts/transactions).
+  splits_home_contacts: { ur: "Aap ke Contacts", en: "Your contacts" },
+  splits_home_contacts_sub: { ur: "Link aur trust", en: "Link and trust" },
+  splits_home_activity: { ur: "Recent Activity", en: "Recent activity" },
+  splits_home_activity_sub: { ur: "Sab kuch ek nazar mein", en: "Everything at a glance" },
+  splits_home_new_iou: { ur: "Naya Hisaab", en: "New IOU" },
+  splits_home_new_iou_sub: { ur: "Diya, liya, ya wapsi", en: "Gave, borrowed, paid back" },
+  splits_home_new_group: { ur: "Naya Group", en: "New group" },
+  splits_home_new_group_sub: { ur: "Friends ke sath split", en: "Split with friends" },
 } as const;
 
 type Key = keyof typeof S;

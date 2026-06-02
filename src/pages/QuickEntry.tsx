@@ -133,13 +133,20 @@ export function QuickEntry({
     { value: 'goal_contribution' as EntryKind, label: t('tx_goal_contribution'), sub: t('tx_goal_contribution_sub'), icon: Target, gradient: 'from-purple-500 to-violet-500', soft: 'bg-purple-50 text-purple-600 border-purple-100' },
     { value: 'group_expense' as EntryKind, label: t('intent_group'), sub: t('intent_group_sub'), icon: Users, gradient: 'from-violet-500 to-purple-500', soft: 'bg-accent-50 text-accent-600 border-accent-100' },
   ];
-  const INTENTS = [
-    { value: 'expense' as EntryIntent, label: t('intent_spend'), sub: t('intent_spend_sub'), icon: ArrowUpRight },
-    { value: 'income' as EntryIntent, label: t('intent_receive'), sub: t('intent_receive_sub'), icon: ArrowDownLeft },
-    { value: 'transfer' as EntryIntent, label: t('intent_move'), sub: t('intent_move_sub'), icon: ArrowLeftRight },
-    { value: 'person_money' as EntryIntent, label: t('intent_person'), sub: t('intent_person_sub'), icon: HandCoins },
-    { value: 'group_expense' as EntryIntent, label: t('intent_group'), sub: t('intent_group_sub'), icon: Users },
+  // Intent picker. Splits-only mode has no accounts, so the Spend/Receive/
+  // Move intents (which require source/dest account selection) are hidden
+  // entirely — only the people-oriented intents remain. Full-tracker mode
+  // shows everything.
+  const ALL_INTENTS: { value: EntryIntent; label: string; sub: string; icon: typeof ArrowUpRight }[] = [
+    { value: 'expense', label: t('intent_spend'), sub: t('intent_spend_sub'), icon: ArrowUpRight },
+    { value: 'income', label: t('intent_receive'), sub: t('intent_receive_sub'), icon: ArrowDownLeft },
+    { value: 'transfer', label: t('intent_move'), sub: t('intent_move_sub'), icon: ArrowLeftRight },
+    { value: 'person_money', label: t('intent_person'), sub: t('intent_person_sub'), icon: HandCoins },
+    { value: 'group_expense', label: t('intent_group'), sub: t('intent_group_sub'), icon: Users },
   ];
+  const INTENTS = appMode === 'splits_only'
+    ? ALL_INTENTS.filter((i) => i.value === 'person_money' || i.value === 'group_expense')
+    : ALL_INTENTS;
 
   const reset = () => {
     setStep(0); setIntent(null); setAmount(''); setType('expense'); setRepaymentDirection(null);

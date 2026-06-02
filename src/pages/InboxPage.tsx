@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
+import { Inbox, Send } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
-import { LanguageToggle } from '../components/LanguageToggle';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
@@ -11,6 +11,7 @@ import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
+import { EmptyState } from '../components/EmptyState';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { LinkedRequest, SettlementRequest } from '../db';
 
@@ -168,18 +169,18 @@ export function InboxPage() {
         <TopBar
           title={t('ltr_inbox_title')}
           back
+          // Hide the inbox bell from the top-right — we're already on the
+          // inbox page, the icon would be redundant + confusing.
+          showInbox={false}
           action={
-            <div className="flex items-center gap-2">
-              <PillToggle
-                tab={tab}
-                setTab={setTab}
-                incomingCount={incomingPendingCount}
-                outgoingCount={outgoingPendingCount}
-                incomingLabel={t('ltr_tab_incoming')}
-                outgoingLabel={t('ltr_tab_outgoing')}
-              />
-              <LanguageToggle />
-            </div>
+            <PillToggle
+              tab={tab}
+              setTab={setTab}
+              incomingCount={incomingPendingCount}
+              outgoingCount={outgoingPendingCount}
+              incomingLabel={t('ltr_tab_incoming')}
+              outgoingLabel={t('ltr_tab_outgoing')}
+            />
           }
         />
         <div className="px-5 pb-7">
@@ -203,9 +204,12 @@ export function InboxPage() {
           <ListSkeleton rows={3} withAvatar={false} />
         ) : visible.length === 0 ? (
           loadStatus === 'ready' ? (
-            <p className="text-[13px] text-ink-400 text-center py-10">
-              {tab === 'incoming' ? t('ltr_empty_incoming') : t('ltr_empty_outgoing')}
-            </p>
+            <EmptyState
+              icon={tab === 'incoming' ? Inbox : Send}
+              tone={tab === 'incoming' ? 'accent' : 'receive'}
+              title={tab === 'incoming' ? t('inbox_empty_incoming_title') : t('inbox_empty_outgoing_title')}
+              description={tab === 'incoming' ? t('inbox_empty_incoming_desc') : t('inbox_empty_outgoing_desc')}
+            />
           ) : null
         ) : (
           <div className="space-y-2.5">
