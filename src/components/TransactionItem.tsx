@@ -8,10 +8,12 @@ import { format } from 'date-fns';
 import type { Transaction } from '../db';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useLoanStore } from '../stores/loanStore';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { parseInternalNote } from '../lib/internalNotes';
 import { resolvePersonName } from '../lib/resolvePersonName';
+import { getActionLabel } from '../lib/transactionLabel';
 
 const iconMap: Record<string, React.ElementType> = {
   income: ArrowDownLeft,
@@ -60,6 +62,7 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
   const t = useT();
   const [savingReconciliation, setSavingReconciliation] = useState(false);
   const accounts = useAccountStore((state) => state.accounts);
+  const loans = useLoanStore((state) => state.loans);
   const setReconciled = useTransactionStore((state) => state.setReconciled);
   const Icon = iconMap[transaction.type] ?? ArrowLeftRight;
   const { visibleNote, meta } = parseInternalNote(transaction.notes);
@@ -74,16 +77,12 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
     ? accountTypeStyleMap[primaryAccount.type]
     : defaultStyleMap[transaction.type] ?? { text: 'text-ink-500', bg: 'bg-cream-soft' };
 
-  const typeLabels: Record<string, string> = {
-    income: t('tx_income'),
-    expense: t('tx_expense'),
-    transfer: t('tx_transfer'),
-    loan_given: t('tx_loan_given'),
-    loan_taken: t('tx_loan_taken'),
-    repayment: t('tx_repayment'),
-    goal_contribution: t('tx_goal_contribution'),
-    opening_balance: t('tx_opening_balance'),
-  };
+  const personName = resolvePersonName({ personId: transaction.personId, fallback: transaction.relatedPerson });
+  const linkedLoan = transaction.relatedLoanId ? loans.find((l) => l.id === transaction.relatedLoanId) ?? null : null;
+  const actionLabel = getActionLabel(transaction, t, { personName, loan: linkedLoan });
+  // Whether the friendly label already names the person — if so, drop the
+  // " · {name}" suffix below to avoid "You gave to Ali · Ali".
+  const labelHasPerson = ['loan_given', 'loan_taken', 'repayment'].includes(transaction.type) && !!personName;
 
   const contextIsDestination = Boolean(accountContextId && transaction.destinationAccountId === accountContextId);
   const contextIsSource = Boolean(accountContextId && transaction.sourceAccountId === accountContextId);
@@ -113,9 +112,12 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
     return { amount: transaction.amount, currency: transaction.currency };
   })();
 
+  // User-set category wins for expense/income (deliberate metadata).
+  // Otherwise fall back to the direction-aware action label.
+  const categoryWins = ['expense', 'income'].includes(transaction.type) && !!transaction.category;
   const title = meta.groupExpenseId
-    ? meta.expenseDescription || transaction.category || typeLabels[transaction.type] || transaction.type.replace(/_/g, ' ')
-    : transaction.category || typeLabels[transaction.type] || transaction.type.replace(/_/g, ' ');
+    ? meta.expenseDescription || (categoryWins ? transaction.category : actionLabel)
+    : (categoryWins ? transaction.category : actionLabel);
 
   const detailParts = [format(new Date(transaction.createdAt), 'MMM d, h:mm a')];
   if (meta.groupName) detailParts.push(meta.groupName);
@@ -168,10 +170,7 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-medium text-ink-900 truncate tracking-tight">
           {title}
-          {(() => {
-            const name = resolvePersonName({ personId: transaction.personId, fallback: transaction.relatedPerson });
-            return name ? ` · ${name}` : '';
-          })()}
+          {!labelHasPerson && personName ? ` · ${personName}` : ''}
         </p>
         <p className="text-[10.5px] text-ink-500 mt-0.5 truncate">
           {detailParts.join(' · ')}

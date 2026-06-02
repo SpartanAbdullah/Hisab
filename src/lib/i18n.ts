@@ -1295,6 +1295,80 @@ const S = {
     en: "The other person must also use Hisaab and share their code. After linking them here, loan and split approvals can be sent.",
   },
   edit_entry_title: { ur: "Entry Edit Karein", en: "Edit Entry" },
+
+  // ── Phase H1: Unified vocabulary (display-side action labels) ──
+  // Past-tense, direction-aware labels used wherever an entry is read back
+  // (TransactionItem, ContactDetailSheet history, EditTransactionModal
+  // header, RepaymentModal title). The {amount}/{person}/{src}/{dst}/{goal}
+  // placeholders are resolved by getActionLabel in src/lib/transactionLabel.
+  action_spent: { ur: "Kharcha kiya", en: "You spent" },
+  action_received: { ur: "Aaye", en: "You received" },
+  action_moved: { ur: "Move kiya", en: "You moved" },
+  action_gave: { ur: "Diye {person} ko", en: "You gave to {person}" },
+  action_gave_noperson: { ur: "Diye", en: "You gave" },
+  action_borrowed: { ur: "Liye {person} se", en: "You borrowed from {person}" },
+  action_borrowed_noperson: { ur: "Liye", en: "You borrowed" },
+  action_they_paid_back: {
+    ur: "{person} ne wapas diye",
+    en: "{person} paid you back",
+  },
+  action_they_paid_back_noperson: {
+    ur: "Wapas mil gaye",
+    en: "They paid you back",
+  },
+  action_i_paid_back: {
+    ur: "{person} ko wapas diye",
+    en: "You paid {person} back",
+  },
+  action_i_paid_back_noperson: { ur: "Wapas de diye", en: "You paid back" },
+  action_saved_goal: { ur: "Bachat ki {goal} ke liye", en: "You saved toward {goal}" },
+  action_saved_goal_nogoal: { ur: "Bachat ki", en: "You saved" },
+  action_opening_balance: { ur: "Opening balance", en: "Opening balance" },
+
+  // RepaymentModal — direction-aware titles. The current generic
+  // "Make Repayment - {name}" is wrong in tone when the OTHER person is
+  // the one paying (loan_given being settled).
+  repay_they_paying_title: {
+    ur: "{person} aap ko wapas day raha hai",
+    en: "{person} is paying you back",
+  },
+  repay_you_paying_title: {
+    ur: "Aap {person} ko wapas day rahe hain",
+    en: "You're paying {person} back",
+  },
+
+  // i18n leak fixes — these strings were previously hardcoded in
+  // English-mode code paths and surfaced Urdu transliteration to EN users.
+  toast_error_generic: {
+    ur: "Kuch galat ho gaya",
+    en: "Something went wrong. Your money was not moved.",
+  },
+  quick_note_placeholder: {
+    ur: "Koi detail likho...",
+    en: "Add a note (optional)",
+  },
+  account_not_found: { ur: "Account nahi mila", en: "Account not found" },
+
+  // Loan card-picker labels (replaces 4 native selects in QuickEntry).
+  pick_loan: { ur: "Kaun sa qarz?", en: "Which loan?" },
+  pick_account: { ur: "Kaun sa account?", en: "Which account?" },
+  pick_goal: { ur: "Kaun sa goal?", en: "Which goal?" },
+
+  // LoanDetailPage — unified payment CTA (replaces split
+  // Repay/Mark paid/Record Settlement buttons).
+  loan_record_payment: { ur: "Payment Record Karo", en: "Record payment" },
+  loan_record_payment_linked_sub: {
+    ur: "{person} ko confirm karna hoga",
+    en: "{person} will need to confirm",
+  },
+  loan_record_payment_local_sub: {
+    ur: "Sirf aap ke records main",
+    en: "Saves locally",
+  },
+
+  // AccountDetailPage — two new tiles for the expanded quick-action grid.
+  acct_action_person: { ur: "Kisi ke sath", en: "With someone" },
+  acct_action_group: { ur: "Group main", en: "Split group" },
 } as const;
 
 type Key = keyof typeof S;

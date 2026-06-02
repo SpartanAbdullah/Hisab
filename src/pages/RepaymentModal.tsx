@@ -173,7 +173,14 @@ export function RepaymentModal({
       <Modal
         open={open && !showConfirmation}
         onClose={handleClose}
-        title={`${isInstallmentPayment ? t('loan_mark_paid') : t('repay_title')} - ${resolvePersonName({ personId: loan.personId, fallback: loan.personName })}`}
+        title={(() => {
+          const personName = resolvePersonName({ personId: loan.personId, fallback: loan.personName });
+          // Direction-aware title. On a `given` loan, the OTHER person is
+          // doing the paying ("Ali is paying you back"). On a `taken` loan,
+          // the user is paying ("You're paying Ali back").
+          const key = loan.type === 'given' ? 'repay_they_paying_title' : 'repay_you_paying_title';
+          return t(key).replace('{person}', personName);
+        })()}
         footer={
           <button
             onClick={handleSubmit}

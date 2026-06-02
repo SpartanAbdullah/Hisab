@@ -26,6 +26,8 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   ArrowLeftRight,
+  HandCoins,
+  Users,
   AlertTriangle,
   MoreVertical,
   Pencil,
@@ -152,7 +154,7 @@ export function AccountDetailPage() {
     }
     return (
       <main className="min-h-dvh bg-cream-bg flex items-center justify-center">
-        <p className="text-ink-500 text-[13px]">Account nahi mila</p>
+        <p className="text-ink-500 text-[13px]">{t('account_not_found')}</p>
       </main>
     );
   }
@@ -369,6 +371,11 @@ export function AccountDetailPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+        {/* Account-scoped quick-action tiles. First row: three primary
+            account intents (Spend / Receive / Move) that act on this
+            account directly. Second row: two "deeper" intents that touch
+            this account but route through Step-3 (person) or the group
+            picker. Locked account context is preserved through preset. */}
         <div className="grid grid-cols-3 gap-2">
           {[
             { type: 'expense' as const, label: t('intent_spend'), icon: ArrowUpRight },
@@ -388,6 +395,32 @@ export function AccountDetailPage() {
               {action.label}
             </button>
           ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPreset({ intent: 'person_money', accountId: account.id, lockAccount: true });
+              setShowAdd(true);
+            }}
+            className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+          >
+            <HandCoins size={15} className="text-accent-600" />
+            {t('acct_action_person')}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              // Group expense uses splits across multiple accounts; the
+              // account context isn't locked here.
+              setQuickPreset({ intent: 'group_expense' });
+              setShowAdd(true);
+            }}
+            className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+          >
+            <Users size={15} className="text-accent-600" />
+            {t('acct_action_group')}
+          </button>
         </div>
         {/* Rename modal (lightweight — kept inline since the Modal helper is
             optimised for the bottom-sheet pattern, not centred dialogs) */}

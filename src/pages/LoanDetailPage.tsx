@@ -271,62 +271,67 @@ export function LoanDetailPage() {
                 )}
               </div>
             </div>
-            <div className="flex gap-2 mt-3">
+            {/* Unified payment CTA. Previously this row showed two buttons —
+                "Mark Paid" (EMI lock-amount) and "Repay" (free-form) — for
+                what users perceive as one action. Now a single button: for
+                linked loans it routes to the settlement flow; for unlinked
+                it opens RepaymentModal pre-filled with the next instalment
+                amount (editable). */}
+            <div className="mt-3">
               {canSettleLinked ? (
                 <button
                   onClick={() => setShowSettleLinked(true)}
-                  className="flex-1 bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                  className="w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
                 >
-                  <Handshake size={12} /> {t('stl_settle_cta')}
+                  <Handshake size={12} /> {t('loan_record_payment')}
                 </button>
               ) : isLinkedLoan ? (
-                <p className="flex-1 text-[11px] text-ink-500 self-center text-center">
+                <p className="text-[11px] text-ink-500 text-center py-2">
                   Use the linked-loan settle flow above.
                 </p>
               ) : (
                 <button
                   onClick={() => setSelectedEmi(nextInstalment)}
-                  className="flex-1 bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                  className="w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
                 >
-                  <RotateCcw size={12} /> {t('loan_mark_paid')}
+                  <RotateCcw size={12} /> {t('loan_record_payment')}
                 </button>
               )}
-              {!isLinkedLoan && (
-                <button
-                  onClick={() => setShowRepayment(true)}
-                  className="flex-1 bg-cream-soft border border-cream-border text-ink-800 rounded-xl py-2.5 text-[12px] font-semibold active:bg-cream-hairline transition-colors"
-                >
-                  {t('loan_repay')}
-                </button>
-              )}
-            </div>
-            {isLinkedLoan && (
-              <p className="text-[11px] text-ink-500 mt-2 leading-relaxed">
-                This loan is linked. Record repayment through settlement so both people confirm the same balance change.
+              <p className="text-[10.5px] text-ink-500 mt-1.5 text-center leading-relaxed">
+                {canSettleLinked
+                  ? t('loan_record_payment_linked_sub').replace('{person}', displayName)
+                  : isLinkedLoan
+                  ? null
+                  : t('loan_record_payment_local_sub')}
               </p>
-            )}
+            </div>
           </div>
         )}
 
-        {/* No EMI plan but loan still active → surface the repay/settle CTAs
-            as a quiet card so the user always has a way to record payment. */}
+        {/* No EMI plan but loan still active → surface the unified payment
+            CTA. Same vocabulary as the next-instalment card above. */}
         {!nextInstalment && loan.status === 'active' && loan.remainingAmount > 0 && (
-          <div className="flex gap-2">
+          <div>
             {canSettleLinked ? (
               <button
                 onClick={() => setShowSettleLinked(true)}
-                className="flex-1 bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
               >
-                <Handshake size={13} /> {t('stl_settle_cta')}
+                <Handshake size={13} /> {t('loan_record_payment')}
               </button>
             ) : (
               <button
                 onClick={() => setShowRepayment(true)}
-                className="flex-1 bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
               >
-                <RotateCcw size={13} /> {t('loan_repay')}
+                <RotateCcw size={13} /> {t('loan_record_payment')}
               </button>
             )}
+            <p className="text-[10.5px] text-ink-500 mt-1.5 text-center leading-relaxed">
+              {canSettleLinked
+                ? t('loan_record_payment_linked_sub').replace('{person}', displayName)
+                : t('loan_record_payment_local_sub')}
+            </p>
           </div>
         )}
 

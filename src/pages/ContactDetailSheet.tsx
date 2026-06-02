@@ -12,7 +12,10 @@ import { computeTrustScore, trustLevelStyle } from '../lib/trustScore';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import type { Person } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
+import { EditTransactionModal } from '../components/EditTransactionModal';
 import { useT } from '../lib/i18n';
+import { getActionLabel } from '../lib/transactionLabel';
+import type { Transaction } from '../db';
 
 interface Props {
   open: boolean;
@@ -48,6 +51,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [archiving, setArchiving] = useState(false);
   const [showMoneyEntry, setShowMoneyEntry] = useState(false);
   const [moneyPreset, setMoneyPreset] = useState<QuickEntryPreset | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -304,12 +308,21 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
           <div className="rounded-2xl bg-cream-card border border-cream-border p-3.5">
             <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-ink-500 mb-2">{t('recent_money_history')}</p>
             <div className="space-y-2">
-              {recentEntries.map((entry) => (
-                <div key={entry.id} className="flex justify-between gap-3 text-[12px]">
-                  <span className="text-ink-700">{entry.type.replace(/_/g, ' ')}</span>
-                  <span className="font-semibold text-ink-900">{formatMoney(entry.amount, entry.currency)}</span>
-                </div>
-              ))}
+              {recentEntries.map((entry) => {
+                const linkedLoan = entry.relatedLoanId ? loans.find((l) => l.id === entry.relatedLoanId) ?? null : null;
+                const label = getActionLabel(entry, t, { personName: person.name, loan: linkedLoan });
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => setEditingTransaction(entry)}
+                    className="w-full flex justify-between gap-3 text-[12px] text-left rounded-lg py-1 active:bg-cream-soft transition-colors"
+                  >
+                    <span className="text-ink-700 truncate">{label}</span>
+                    <span className="font-semibold text-ink-900 shrink-0">{formatMoney(entry.amount, entry.currency)}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -572,6 +585,11 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
         setShowMoneyEntry(false);
         setMoneyPreset(null);
       }}
+    />
+    <EditTransactionModal
+      open={!!editingTransaction}
+      transaction={editingTransaction}
+      onClose={() => setEditingTransaction(null)}
     />
     </>
   );

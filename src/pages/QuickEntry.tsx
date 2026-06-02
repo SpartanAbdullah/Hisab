@@ -36,6 +36,11 @@ type RepaymentDirection = 'received' | 'paid' | null;
 
 export interface QuickEntryPreset {
   type?: Extract<TransactionType, 'expense' | 'income' | 'transfer' | 'loan_given' | 'loan_taken' | 'repayment'>;
+  // `intent` lets callers start QuickEntry at a higher level than `type`.
+  // 'person_money' jumps directly to the Step-3 sub-picker after amount
+  // entry (so the user picks gave/borrowed/paid-back themselves).
+  // 'group_expense' routes amount → group picker.
+  intent?: 'person_money' | 'group_expense';
   contact?: ContactValue;
   repaymentDirection?: Exclude<RepaymentDirection, null>;
   accountId?: string;
@@ -148,9 +153,12 @@ export function QuickEntry({
   useEffect(() => {
     if (!open) return;
     setStep(0);
-    setIntent(null);
+    // Hydrate intent from preset so the Step-0 Next button routes to the
+    // right subsequent step (Step 3 for person_money, Step 2 with type set
+    // for group_expense).
+    setIntent(preset?.intent ?? null);
     setAmount('');
-    setType(preset?.type ?? 'expense');
+    setType(preset?.intent === 'group_expense' ? 'group_expense' : (preset?.type ?? 'expense'));
     setRepaymentDirection(preset?.repaymentDirection ?? null);
     setSourceId(
       preset?.accountId && ['expense', 'transfer', 'loan_given'].includes(preset.type ?? '')
@@ -485,7 +493,7 @@ export function QuickEntry({
       setShowConfirmation(true);
       reset();
     } catch (err) {
-      toast.show({ type: 'error', title: 'Transaction Failed', subtitle: err instanceof Error ? err.message : 'Kuch galat ho gaya' });
+      toast.show({ type: 'error', title: 'Transaction Failed', subtitle: err instanceof Error ? err.message : t('toast_error_generic') });
     } finally { setSaving(false); }
   };
 
@@ -497,7 +505,18 @@ export function QuickEntry({
         title={step === 0 ? t('quick_how_much') : step === 1 ? t('quick_what_type') : t('quick_details')}
         footer={step === 0 ? (
           <button
-            onClick={() => { if (parseFloat(amount) > 0) setStep(preset?.type ? 2 : 1); }}
+            onClick={() => {
+              if (parseFloat(amount) <= 0) return;
+              // Routing precedence:
+              //   preset.type      → Step 2 (details directly for that type)
+              //   preset.intent='person_money' → Step 3 (gave/borrowed/paid sub-picker)
+              //   preset.intent='group_expense' → Step 2 (group picker variant)
+              //   otherwise        → Step 1 (intent picker)
+              if (preset?.type) { setStep(2); return; }
+              if (preset?.intent === 'person_money') { setStep(3); return; }
+              if (preset?.intent === 'group_expense') { setStep(2); return; }
+              setStep(1);
+            }}
             disabled={!parseFloat(amount)}
             className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
           >{`${t('quick_next')} \u2192`}</button>
@@ -671,7 +690,7 @@ export function QuickEntry({
                 </div>
               </button>
             ))}
-            <button onClick={() => setStep(1)} className="w-full text-center text-[12px] text-ink-500 py-2 font-medium">
+            <button onClick={() => setStep(preset?.intent === 'person_money' ? 0 : 1)} className="w-full text-center text-[12px] text-ink-500 py-2 font-medium">
               &#x2190; {t('back')}
             </button>
           </div>
@@ -953,40 +972,102 @@ export function QuickEntry({
             {needsLoan && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_which_loan')}</label>
-                <select value={loanId} onChange={e => setLoanId(e.target.value)} className={`${inputClass} appearance-none`}>
-                  <option value="">Select loan...</option>
-                  {filteredLoans.map(l => (
-                    <option key={l.id} value={l.id}>{l.personName} — {l.type === 'given' ? 'Wapsi Aani Hai' : 'Dena Hai'} ({formatMoney(l.remainingAmount, l.currency)})</option>
-                  ))}
-                </select>
+                {filteredLoans.length === 0 ? (
+                  <p className="text-[12px] text-ink-500 bg-cream-soft border border-cream-hairline rounded-xl p-3 leading-relaxed">
+                    {t('loan_no_tx')}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredLoans.map(l => (
+                      <button key={l.id} type="button" onClick={() => setLoanId(l.id)}
+                        className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                          loanId === l.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-semibold text-ink-900 truncate">{l.personName}</p>
+                          <p className="text-[10px] text-ink-500">{l.type === 'given' ? t('loan_receivable') : t('loan_payable')}</p>
+                        </div>
+                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums shrink-0 ml-2">{formatMoney(l.remainingAmount, l.currency)}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {needsLoan && selectedLoan?.type === 'given' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_money_where')}</label>
-                <select value={destId} onChange={e => setDestId(e.target.value)} className={`${inputClass} appearance-none`}>
-                  <option value="">Select account...</option>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
-                </select>
+                <div className="space-y-2">
+                  {accounts.map(a => {
+                    const meta = currencyMeta[a.currency];
+                    return (
+                      <button key={a.id} type="button" onClick={() => setDestId(a.id)}
+                        className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                          destId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{meta?.flag}</span>
+                          <div>
+                            <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
+                            <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {needsLoan && selectedLoan?.type === 'taken' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_pay_from')}</label>
-                <select value={sourceId} onChange={e => setSourceId(e.target.value)} className={`${inputClass} appearance-none`}>
-                  <option value="">Select account...</option>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
-                </select>
+                <div className="space-y-2">
+                  {accounts.map(a => {
+                    const meta = currencyMeta[a.currency];
+                    return (
+                      <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
+                        className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                          sourceId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{meta?.flag}</span>
+                          <div>
+                            <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
+                            <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
             {needsGoal && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_which_goal')}</label>
-                <select value={goalId} onChange={e => setGoalId(e.target.value)} className={`${inputClass} appearance-none`}>
-                  <option value="">Select goal...</option>
-                  {goals.map(g => <option key={g.id} value={g.id}>{g.title} ({formatMoney(g.savedAmount, g.currency)}/{formatMoney(g.targetAmount, g.currency)})</option>)}
-                </select>
+                <div className="space-y-2">
+                  {goals.map(g => {
+                    const pct = g.targetAmount > 0 ? Math.min(100, Math.round((g.savedAmount / g.targetAmount) * 100)) : 0;
+                    return (
+                      <button key={g.id} type="button" onClick={() => setGoalId(g.id)}
+                        className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                          goalId === g.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-semibold text-ink-900 truncate">{g.title}</p>
+                          <p className="text-[10px] text-ink-500 tabular-nums">{formatMoney(g.savedAmount, g.currency)} / {formatMoney(g.targetAmount, g.currency)} · {pct}%</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -1008,7 +1089,7 @@ export function QuickEntry({
             {!isGroupExpense && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_note')}</label>
-                <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail likho..." className={inputClass} />
+                <input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('quick_note_placeholder')} className={inputClass} />
               </div>
             )}
 

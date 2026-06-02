@@ -4,6 +4,7 @@ import { Modal } from './Modal';
 import { ContactPicker, type ContactValue } from './ContactPicker';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useLoanStore } from '../stores/loanStore';
 import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
 import { confirmDestructive } from './ConfirmDestructiveSheet';
@@ -11,6 +12,7 @@ import { EXPENSE_CATEGORIES, formatMoney, formatSignedMoney } from '../lib/const
 import { currencyMeta } from '../lib/design-tokens';
 import { parseInternalNote } from '../lib/internalNotes';
 import { useT } from '../lib/i18n';
+import { getActionLabel } from '../lib/transactionLabel';
 import type { Transaction } from '../db';
 
 interface Props {
@@ -22,6 +24,7 @@ interface Props {
 export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const { accounts, loadAccounts } = useAccountStore();
   const { updateTransaction, deleteTransaction } = useTransactionStore();
+  const loans = useLoanStore((s) => s.loans);
   const toast = useToast();
   const t = useT();
 
@@ -194,7 +197,10 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
         <div className="space-y-4">
           <div className="rounded-2xl bg-cream-soft border border-cream-hairline p-4">
             <p className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">
-              {transaction.type.replace(/_/g, ' ')}
+              {getActionLabel(transaction, t, {
+                personName: transaction.relatedPerson,
+                loan: transaction.relatedLoanId ? loans.find((l) => l.id === transaction.relatedLoanId) ?? null : null,
+              })}
             </p>
             <p className="text-lg font-bold text-ink-900 tabular-nums mt-1">
               {formatMoney(transaction.amount, transaction.currency)}
@@ -244,7 +250,10 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
       <div className="space-y-4">
         <div className="bg-cream-soft/80 rounded-2xl p-3.5 border border-cream-hairline">
           <p className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">
-            {isExpense ? t('tx_expense') : isLoanGiven ? t('tx_loan_given') : t('tx_loan_taken')}
+            {getActionLabel(transaction, t, {
+              personName: contact.name || transaction.relatedPerson,
+              loan: transaction.relatedLoanId ? loans.find((l) => l.id === transaction.relatedLoanId) ?? null : null,
+            })}
           </p>
           <p className="text-lg font-bold text-ink-900 tabular-nums mt-1">
             {formatMoney(transaction.amount, transaction.currency)}
