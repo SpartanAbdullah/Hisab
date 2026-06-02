@@ -292,7 +292,7 @@ export function HomePage() {
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <button
-                    onClick={() => navigate("/loans")}
+                    onClick={() => navigate("/loans?tab=receivables")}
                     className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
                   >
                     <div className="flex items-center gap-2 mb-2.5">
@@ -320,7 +320,7 @@ export function HomePage() {
                     )}
                   </button>
                   <button
-                    onClick={() => navigate("/loans")}
+                    onClick={() => navigate("/loans?tab=payables")}
                     className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
                   >
                     <div className="flex items-center gap-2 mb-2.5">
@@ -637,7 +637,7 @@ export function HomePage() {
         {accountCount > 0 && (hasReceivables || hasPayables) && (
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => navigate("/loans")}
+              onClick={() => navigate("/loans?tab=receivables")}
               className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
             >
               <div className="flex items-center gap-2 mb-2.5">
@@ -672,7 +672,7 @@ export function HomePage() {
               )}
             </button>
             <button
-              onClick={() => navigate("/loans")}
+              onClick={() => navigate("/loans?tab=payables")}
               className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
             >
               <div className="flex items-center gap-2 mb-2.5">

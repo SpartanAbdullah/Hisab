@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Plus, ChevronRight, Users, Bell, Search, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -60,11 +60,16 @@ export function LoansPage() {
   const { transactions, loadTransactions } = useTransactionStore();
   const { loadAccounts } = useAccountStore();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const t = useT();
   const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
 
   const [showAdd, setShowAdd] = useState(false);
-  const [tab, setTab] = useState<Tab>('receivables');
+  const requestedTab = searchParams.get('tab');
+  const tab: Tab =
+    requestedTab === 'payables' || requestedTab === 'settled'
+      ? requestedTab
+      : 'receivables';
   const [selectedGroup, setSelectedGroup] = useState<LoanGroup | null>(null);
   const [reminderTarget, setReminderTarget] = useState<ReminderTarget | null>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -412,7 +417,7 @@ export function LoansPage() {
               <button
                 key={p.value}
                 onClick={() => {
-                  setTab(p.value);
+                  setSearchParams({ tab: p.value });
                   setSelectedGroup(null);
                 }}
                 className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap transition-colors ${
