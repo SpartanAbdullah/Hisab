@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical } from 'lucide-react';
+import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical, UserPlus, Pencil } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
@@ -17,6 +17,133 @@ import { useToast } from '../components/Toast';
 import { subscribeToGroupMembers } from '../lib/realtime';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { SplitGroup, GroupExpense, GroupEvent, GroupSettlement } from '../db';
+
+// Compact "May 26, 2026 · 11:39 PM" date format for activity tiles. Sidesteps
+// the noisy `toLocaleString()` default ("5/26/2026, 11:39:45 PM") so users can
+// scan a date column without parsing slash-separated numerics + seconds.
+function formatActivityTime(iso: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `${date} · ${time}`;
+}
+
+interface ActivityDisplay {
+  icon: JSX.Element;
+  iconBg: string;
+  title: string;
+  titleClass?: string;
+  subtitle?: string;
+  note?: string;
+  amount?: string;
+  amountClass?: string;
+  amountChange?: string;
+}
+
+// Maps a GroupEvent + payload to the visual props for its tile. Settlement
+// events fall back to the settlements list to recover the note + amount,
+// since the event payload only carries member ids and amount and we want
+// to surface the "cash diya"-style settler note for context.
+function getActivityDisplay(
+  event: GroupEvent,
+  settlements: GroupSettlement[],
+  group: SplitGroup,
+): ActivityDisplay {
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  const memberName = (id: string | undefined): string => {
+    if (!id) return '?';
+    return group.members.find(m => m.id === id)?.name ?? '?';
+  };
+
+  switch (event.eventType) {
+    case 'settlement_added': {
+      const settlement = settlements.find(s => s.id === event.entityId);
+      const fromId = typeof payload.fromMember === 'string' ? payload.fromMember : settlement?.fromMember;
+      const toId = typeof payload.toMember === 'string' ? payload.toMember : settlement?.toMember;
+      const amount = typeof payload.amount === 'number' ? payload.amount : settlement?.amount ?? 0;
+      return {
+        icon: <Handshake size={16} />,
+        iconBg: 'bg-receive-50 text-receive-text',
+        title: `${memberName(fromId)} → ${memberName(toId)}`,
+        subtitle: 'Settled up',
+        note: settlement?.note || undefined,
+        amount: formatMoney(amount, group.currency),
+        amountClass: 'text-receive-text',
+      };
+    }
+    case 'expense_added': {
+      const description = typeof payload.description === 'string' ? payload.description : event.summary;
+      const amount = typeof payload.amount === 'number' ? payload.amount : 0;
+      const paidById = typeof payload.paidBy === 'string' ? payload.paidBy : undefined;
+      const actorName = paidById ? memberName(paidById) : '';
+      return {
+        icon: <Receipt size={16} />,
+        iconBg: 'bg-accent-100 text-accent-600',
+        title: description,
+        subtitle: actorName ? `Added · paid by ${actorName}` : 'Expense added',
+        amount: amount > 0 ? formatMoney(amount, group.currency) : undefined,
+        amountClass: 'text-ink-900',
+      };
+    }
+    case 'expense_updated': {
+      const after = (payload.after ?? {}) as { description?: string; amount?: number };
+      const before = (payload.before ?? {}) as { description?: string; amount?: number };
+      const description = after.description ?? before.description ?? event.summary;
+      const amountChanged = typeof before.amount === 'number' && typeof after.amount === 'number' && Math.abs(before.amount - after.amount) > 0.001;
+      return {
+        icon: <Pencil size={16} />,
+        iconBg: 'bg-warn-50 text-warn-600',
+        title: description,
+        subtitle: 'Expense updated',
+        amount: typeof after.amount === 'number' && after.amount > 0 ? formatMoney(after.amount, group.currency) : undefined,
+        amountClass: 'text-ink-900',
+        amountChange: amountChanged
+          ? `${formatMoney(before.amount as number, group.currency)} → ${formatMoney(after.amount as number, group.currency)}`
+          : undefined,
+      };
+    }
+    case 'expense_deleted': {
+      const description = typeof payload.description === 'string' ? payload.description : event.summary;
+      const amount = typeof payload.amount === 'number' ? payload.amount : 0;
+      return {
+        icon: <Trash2 size={16} />,
+        iconBg: 'bg-pay-50 text-pay-text',
+        title: description,
+        titleClass: 'line-through text-ink-500',
+        subtitle: 'Expense deleted',
+        amount: amount > 0 ? formatMoney(amount, group.currency) : undefined,
+        amountClass: 'text-ink-500 line-through',
+      };
+    }
+    case 'member_joined':
+      return {
+        icon: <UserPlus size={16} />,
+        iconBg: 'bg-info-50 text-info-600',
+        title: event.summary,
+        subtitle: 'Joined the group',
+      };
+    case 'member_invited':
+      return {
+        icon: <Share2 size={16} />,
+        iconBg: 'bg-info-50 text-info-600',
+        title: event.summary,
+        subtitle: 'Invitation sent',
+      };
+    case 'group_created':
+      return {
+        icon: <Sparkles size={16} />,
+        iconBg: 'bg-accent-100 text-accent-600',
+        title: event.summary,
+        subtitle: 'Group created',
+      };
+    default:
+      return {
+        icon: <Clock3 size={16} />,
+        iconBg: 'bg-cream-soft text-ink-500',
+        title: event.summary,
+      };
+  }
+}
 
 function memberStatusClass(status?: string, isOwner?: boolean) {
   // Avatar chips render inside the navy hero, so the palette is white-on-dark
@@ -697,19 +824,46 @@ export function GroupDetailPage() {
               <p className="text-[12px] text-ink-500 mt-1">Adds, edits, deletes, joins, and settlements will appear here for everyone.</p>
             </div>
           ) : (
-            events.map((event, index) => (
-              <div key={event.id} className="rounded-[18px] bg-cream-card border border-cream-border p-4 animate-fade-in" style={{ animationDelay: `${index * 30}ms` }}>
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-accent-100 text-accent-600 flex items-center justify-center shrink-0">
-                    <Clock3 size={16} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-[13px] font-semibold text-ink-800 leading-snug">{event.summary}</p>
-                    <p className="text-[10px] text-ink-500 mt-1">{new Date(event.createdAt).toLocaleString()}</p>
+            events.map((event, index) => {
+              const display = getActivityDisplay(event, settlements, group);
+              return (
+                <div
+                  key={event.id}
+                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 animate-fade-in"
+                  style={{ animationDelay: `${index * 30}ms` }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${display.iconBg}`}>
+                      {display.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className={`text-[13px] font-bold text-ink-900 leading-snug ${display.titleClass ?? ''}`}>
+                          {display.title}
+                        </p>
+                        {display.amount && (
+                          <p className={`text-[14px] font-extrabold tabular-nums shrink-0 ${display.amountClass ?? 'text-ink-900'}`}>
+                            {display.amount}
+                          </p>
+                        )}
+                      </div>
+                      {display.subtitle && (
+                        <p className="text-[11px] font-medium text-ink-600 mt-0.5">{display.subtitle}</p>
+                      )}
+                      {display.amountChange && (
+                        <p className="text-[11px] text-ink-500 tabular-nums mt-1">{display.amountChange}</p>
+                      )}
+                      {display.note && (
+                        <p className="text-[11px] text-ink-500 mt-1.5 italic break-words">“{display.note}”</p>
+                      )}
+                      <p className="text-[10px] font-semibold text-ink-400 tabular-nums mt-2 tracking-wide">
+                        {formatActivityTime(event.createdAt)}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
