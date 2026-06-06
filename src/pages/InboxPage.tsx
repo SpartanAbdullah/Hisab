@@ -74,12 +74,29 @@ export function InboxPage() {
     [requests, settlements, myId],
   );
 
+  // Phase H4: surface the actual error in each catch instead of swallowing
+  // it. Previously every failure showed the same generic toast title, which
+  // made it impossible to tell whether the issue was missing RPCs, RLS,
+  // stale state, network, or auth. Now the catch logs to console.error AND
+  // includes the message as the toast subtitle, so users can read it and
+  // we can see it in DevTools / Sentry.
+  const errorSubtitle = (err: unknown): string => {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return 'Unknown error';
+    }
+  };
+
   const handleAccept = async (id: string) => {
     setBusyId(id);
     try {
       await accept(id);
-    } catch {
-      toast.show({ type: 'error', title: t('ltr_accept_error') });
+    } catch (err) {
+      console.error('[inbox] accept failed', err);
+      toast.show({ type: 'error', title: t('ltr_accept_error'), subtitle: errorSubtitle(err) });
     } finally {
       setBusyId(null);
     }
@@ -88,8 +105,9 @@ export function InboxPage() {
     setBusyId(id);
     try {
       await reject(id);
-    } catch {
-      toast.show({ type: 'error', title: t('ltr_reject_error') });
+    } catch (err) {
+      console.error('[inbox] reject failed', err);
+      toast.show({ type: 'error', title: t('ltr_reject_error'), subtitle: errorSubtitle(err) });
     } finally {
       setBusyId(null);
     }
@@ -98,8 +116,9 @@ export function InboxPage() {
     setBusyId(id);
     try {
       await cancel(id);
-    } catch {
-      toast.show({ type: 'error', title: t('ltr_cancel_error') });
+    } catch (err) {
+      console.error('[inbox] cancel failed', err);
+      toast.show({ type: 'error', title: t('ltr_cancel_error'), subtitle: errorSubtitle(err) });
     } finally {
       setBusyId(null);
     }
@@ -109,8 +128,9 @@ export function InboxPage() {
     setBusyId(id);
     try {
       await acceptSettlement(id);
-    } catch {
-      toast.show({ type: 'error', title: t('stl_accept_error') });
+    } catch (err) {
+      console.error('[inbox] accept settlement failed', err);
+      toast.show({ type: 'error', title: t('stl_accept_error'), subtitle: errorSubtitle(err) });
     } finally {
       setBusyId(null);
     }
@@ -119,8 +139,9 @@ export function InboxPage() {
     setBusyId(id);
     try {
       await rejectSettlement(id);
-    } catch {
-      toast.show({ type: 'error', title: t('stl_reject_error') });
+    } catch (err) {
+      console.error('[inbox] reject settlement failed', err);
+      toast.show({ type: 'error', title: t('stl_reject_error'), subtitle: errorSubtitle(err) });
     } finally {
       setBusyId(null);
     }
@@ -129,8 +150,9 @@ export function InboxPage() {
     setBusyId(id);
     try {
       await cancelSettlement(id);
-    } catch {
-      toast.show({ type: 'error', title: t('stl_cancel_error') });
+    } catch (err) {
+      console.error('[inbox] cancel settlement failed', err);
+      toast.show({ type: 'error', title: t('stl_cancel_error'), subtitle: errorSubtitle(err) });
     } finally {
       setBusyId(null);
     }
