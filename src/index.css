@@ -148,6 +148,16 @@
   60% { transform: translateX(-6px); }
   80% { transform: translateX(6px); }
 }
+/* Gentle "sparkle" for the Hisaab AI mark — a soft twinkle, not a distraction. */
+@keyframes sparkle {
+  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  45% { opacity: 0.65; transform: scale(1.14) rotate(10deg); }
+  70% { opacity: 0.9; transform: scale(0.97) rotate(-4deg); }
+}
+.animate-sparkle { animation: sparkle 2.6s ease-in-out infinite; transform-origin: center; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-sparkle { animation: none; }
+}
 
 /* ========== APP LOADING SCREEN ========== */
 .app-loading-screen {

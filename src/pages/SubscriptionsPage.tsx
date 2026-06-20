@@ -78,7 +78,7 @@ export function SubscriptionsPage() {
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
       <PageHeader
-        title="Subscriptions"
+        title="Subscription Tracker"
         back
         action={
           <button

@@ -79,6 +79,23 @@ describe('routeAssistantInput — group / split', () => {
   });
 });
 
+describe('routeAssistantInput — data queries', () => {
+  it('routes "Ghulam owes me how much?" to a person-balance query', () => {
+    const r = routeAssistantInput('Ghulam owes me how much?', full);
+    expect(r.kind).toBe('query');
+    expect(r.query).toEqual({ kind: 'person-balance', personName: 'Ghulam' });
+  });
+  it('routes "how much did I spend on food" to a category query', () => {
+    expect(routeAssistantInput('how much did I spend on food', full).kind).toBe('query');
+  });
+  it('routes "how much am I owed" to a net-balance query', () => {
+    expect(routeAssistantInput('how much am I owed', full).kind).toBe('query');
+  });
+  it('still routes a how-to question to knowledge, not a query', () => {
+    expect(routeAssistantInput('how do splits work?', full).kind).toBe('knowledge');
+  });
+});
+
 describe('routeAssistantInput — knowledge', () => {
   it('answers a how-to question from the knowledge base', () => {
     const r = routeAssistantInput('how do splits work?', full);
@@ -115,6 +132,6 @@ describe('routeAssistantInput — open-ended & fallback', () => {
   });
   it('offers mode-appropriate suggestions', () => {
     expect(routeAssistantInput('', splits).suggestions[0]).toMatch(/split/i);
-    expect(routeAssistantInput('', full).suggestions.some((s) => s.includes('karak'))).toBe(true);
+    expect(routeAssistantInput('', full).suggestions.some((s) => /add|owe|money/i.test(s))).toBe(true);
   });
 });

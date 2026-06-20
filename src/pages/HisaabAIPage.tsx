@@ -4,6 +4,8 @@ import { Sparkles, Send, Check, X, ShieldCheck, Flame, CalendarClock, Ghost, Che
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useRecurringStore } from '../stores/recurringStore';
+import { useLoanStore } from '../stores/loanStore';
+import { useBudgetStore } from '../stores/budgetStore';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { PageErrorState } from '../components/PageErrorState';
 import { useToast } from '../components/Toast';
@@ -15,12 +17,16 @@ import {
 import { type ParsedExpense, type Direction } from '../lib/nlExpenseParser';
 import { pickAccountForDraft, buildTransactionFromDraft } from '../lib/nlExpenseToTransaction';
 import { routeAssistantInput } from '../lib/hisaabAssistant';
+import type { ParsedQuery } from '../lib/nlQuery';
 import type { ParsedGroupExpense } from '../lib/nlGroupExpenseParser';
 import { equalSplits } from '../lib/splitMath';
 import { parseAmountExpression } from '../lib/parseAmountExpression';
 import { upcomingRenewals, detectGhosts, describeGhost } from '../lib/subscriptionMetrics';
 import { computeMonthlyWrap } from '../lib/monthlyWrap';
 import { computeLoggingStreak } from '../lib/loggingStreak';
+import { suggestCategory, type HistoryTxn } from '../lib/categorySuggest';
+import { getPersona, setPersona, flavor, type Persona } from '../lib/persona';
+import { spendAnchor } from '../lib/spendAnchor';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useSplitStore } from '../stores/splitStore';
 import { getActiveGroupMembers } from '../lib/groupActiveMembers';
@@ -53,6 +59,19 @@ function primaryCurrency(): string {
   return localStorage.getItem('hisaab_primary_currency') || 'AED';
 }
 
+// First name for warm, sparing personalization (greeting only — research says
+// name-on-every-line reads as creepy). Empty string when unknown → drops out gracefully.
+function firstName(): string {
+  return (localStorage.getItem('hisaab_user_name') ?? '').trim().split(/\s+/)[0] || '';
+}
+
+function timeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Subah bakhair'; // a little roman-Urdu warmth in the morning
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export function HisaabAIPage() {
   const accounts = useAccountStore((s) => s.accounts);
   const loadAccounts = useAccountStore((s) => s.loadAccounts);
@@ -64,14 +83,24 @@ export function HisaabAIPage() {
   const addGroupExpense = useSplitStore((s) => s.addGroupExpense);
   const templates = useRecurringStore((s) => s.templates);
   const loadTemplates = useRecurringStore((s) => s.loadTemplates);
+  const loans = useLoanStore((s) => s.loans);
+  const loadLoans = useLoanStore((s) => s.loadLoans);
+  const budgets = useBudgetStore((s) => s.budgets);
+  const loadBudgets = useBudgetStore((s) => s.loadBudgets);
   const mode = useAppModeStore((s) => s.mode);
   const isFull = mode === 'full_tracker';
+  const greetName = firstName();
+  const [persona, setPersonaState] = useState<Persona>(getPersona());
+  const changePersona = (p: Persona) => {
+    setPersonaState(p);
+    setPersona(p);
+  };
   const navigate = useNavigate();
   const toast = useToast();
 
   const load = useCallback(async () => {
-    await Promise.all([loadAccounts(), loadTransactions(), loadGroups(), loadTemplates()]);
-  }, [loadAccounts, loadTransactions, loadGroups, loadTemplates]);
+    await Promise.all([loadAccounts(), loadTransactions(), loadGroups(), loadTemplates(), loadLoans(), loadBudgets()]);
+  }, [loadAccounts, loadTransactions, loadGroups, loadTemplates, loadLoans, loadBudgets]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -119,6 +148,151 @@ export function HisaabAIPage() {
     [transactions],
   );
 
+  // ── Answer "fetch my own data" questions from local stores (no LLM) ──
+  const answerQuery = (q: ParsedQuery): { text: string; serious: boolean } => {
+    switch (q.kind) {
+      case 'person-balance': return { text: answerPersonBalance(q.personName ?? ''), serious: false };
+      case 'category-spend': return { text: answerCategorySpend(q.category ?? ''), serious: false };
+      case 'net-balance': return { text: answerNetBalance(), serious: false };
+      case 'account-balance': return { text: answerAccountBalance(), serious: false };
+      case 'top-spend': return { text: answerTopSpend(), serious: false };
+      case 'trend': return { text: answerTrend(), serious: false };
+      case 'budget-status': {
+        const text = answerBudgetStatus(q.category);
+        return { text, serious: /over by/.test(text) }; // over budget → no jokes
+      }
+    }
+  };
+
+  const answerPersonBalance = (name: string): string => {
+    const n = name.trim().toLowerCase();
+    const matches = loans.filter(
+      (l) => l.status === 'active' && l.remainingAmount > 0.01 && l.personName.toLowerCase().includes(n),
+    );
+    if (matches.length === 0) {
+      return `I couldn't find an open balance with "${name}". If you've recorded a loan with them, double-check the spelling.`;
+    }
+    const personName = matches[0].personName;
+    const byCur = new Map<string, number>();
+    for (const l of matches) {
+      const sign = l.type === 'given' ? 1 : -1; // "given" = they owe you
+      byCur.set(l.currency, (byCur.get(l.currency) ?? 0) + sign * l.remainingAmount);
+    }
+    const parts: string[] = [];
+    for (const [cur, net] of byCur) {
+      if (Math.abs(net) < 0.01) continue;
+      parts.push(net > 0 ? `${personName} owes you ${formatMoney(net, cur)}` : `you owe ${personName} ${formatMoney(-net, cur)}`);
+    }
+    if (parts.length === 0) return `You and ${personName} are all settled. 🎉`;
+    const s = parts.join(', and ');
+    return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+  };
+
+  const answerNetBalance = (): string => {
+    const owed = new Map<string, number>();
+    const iOwe = new Map<string, number>();
+    for (const l of loans) {
+      if (l.status !== 'active' || l.remainingAmount <= 0.01) continue;
+      const m = l.type === 'given' ? owed : iOwe;
+      m.set(l.currency, (m.get(l.currency) ?? 0) + l.remainingAmount);
+    }
+    const fmt = (m: Map<string, number>) => [...m.entries()].map(([c, v]) => formatMoney(v, c)).join(', ');
+    if (owed.size === 0 && iOwe.size === 0) return "You're all settled — nothing owed either way. 🎉";
+    const bits: string[] = [];
+    if (owed.size) bits.push(`you're owed ${fmt(owed)}`);
+    if (iOwe.size) bits.push(`you owe ${fmt(iOwe)}`);
+    const s = bits.join(', and ');
+    return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+  };
+
+  const answerCategorySpend = (category: string): string => {
+    const cur = primaryCurrency();
+    const ym = new Date().toISOString().slice(0, 7);
+    const c = category.trim().toLowerCase();
+    const rows = transactions.filter(
+      (t) =>
+        t.type === 'expense' &&
+        t.currency === cur &&
+        (t.createdAt ?? '').slice(0, 7) === ym &&
+        ((t.category || 'Other').toLowerCase().includes(c) || c.includes((t.category || 'other').toLowerCase())),
+    );
+    const total = rows.reduce((a, t) => a + t.amount, 0);
+    if (rows.length === 0) return `You haven't logged any ${category} spending this month (in ${cur}).`;
+    const anchor = spendAnchor(total, cur);
+    const count = `${rows.length} ${rows.length === 1 ? 'transaction' : 'transactions'}`;
+    return `You've spent ${formatMoney(total, cur)} on ${category} this month (${count})${anchor ? ` — ${anchor}` : ''}.`;
+  };
+
+  const answerTopSpend = (): string => {
+    if (summary.count === 0) {
+      return `No ${summary.cur} spending logged this month yet — add a few and I'll show you exactly where it goes.`;
+    }
+    const top = summary.top.slice(0, 3);
+    const lead = top[0];
+    const pct = summary.spent > 0 ? Math.round((lead.amt / summary.spent) * 100) : 0;
+    const rest = top.slice(1).map((c) => `${c.name} (${formatMoney(c.amt, summary.cur)})`).join(', ');
+    const anchor = spendAnchor(lead.amt, summary.cur);
+    return `Most of your money went to ${lead.name} this month — ${formatMoney(lead.amt, summary.cur)}, about ${pct}% of ${formatMoney(summary.spent, summary.cur)}${anchor ? ` (${anchor})` : ''}.${rest ? ` Then ${rest}.` : ''}`;
+  };
+
+  const answerAccountBalance = (): string => {
+    const byCur = new Map<string, number>();
+    for (const a of accounts) byCur.set(a.currency, (byCur.get(a.currency) ?? 0) + a.balance);
+    if (byCur.size === 0) return "You haven't added any accounts yet — add one and I can track your balance.";
+    const parts = [...byCur.entries()].map(([c, v]) => formatMoney(v, c));
+    return `You've got ${parts.join(' and ')} across your accounts right now.`;
+  };
+
+  const answerTrend = (): string => {
+    const cur = primaryCurrency();
+    const now = new Date();
+    const thisYm = now.toISOString().slice(0, 7);
+    const lastYm = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 7);
+    const sumFor = (ym: string) =>
+      transactions
+        .filter((t) => t.type === 'expense' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym)
+        .reduce((a, t) => a + t.amount, 0);
+    const a = sumFor(thisYm);
+    const b = sumFor(lastYm);
+    if (a === 0 && b === 0) return `No ${cur} spending logged this month or last to compare yet.`;
+    if (b === 0) return `You've spent ${formatMoney(a, cur)} so far this month — there's no ${cur} spending last month to compare against.`;
+    const diff = a - b;
+    const pct = Math.round((Math.abs(diff) / b) * 100);
+    const verdict = diff > 0 ? `${pct}% more` : diff < 0 ? `${pct}% less` : 'about the same';
+    return `So far this month you've spent ${formatMoney(a, cur)} vs ${formatMoney(b, cur)} last month — ${verdict}.`;
+  };
+
+  const answerBudgetStatus = (cat?: string): string => {
+    if (budgets.length === 0) return "You haven't set any budgets yet — you can add one from the Budgets screen.";
+    const cur = primaryCurrency();
+    const ym = new Date().toISOString().slice(0, 7);
+    const spentOn = (category: string) =>
+      transactions
+        .filter(
+          (t) =>
+            t.type === 'expense' &&
+            t.currency === cur &&
+            (t.createdAt ?? '').slice(0, 7) === ym &&
+            (t.category || 'Other').toLowerCase() === category.toLowerCase(),
+        )
+        .reduce((a, t) => a + t.amount, 0);
+    const relevant = cat
+      ? budgets.filter(
+          (b) => b.category.toLowerCase().includes(cat.toLowerCase()) || cat.toLowerCase().includes(b.category.toLowerCase()),
+        )
+      : budgets;
+    if (cat && relevant.length === 0) return `You don't have a budget for "${cat}" yet.`;
+    const lines = relevant.slice(0, 4).map((b) => {
+      const spent = spentOn(b.category);
+      const left = b.monthlyAmount - spent;
+      const pct = b.monthlyAmount > 0 ? Math.round((spent / b.monthlyAmount) * 100) : 0;
+      return left < 0
+        ? `${b.category}: over by ${formatMoney(-left, b.currency)} (${pct}% of ${formatMoney(b.monthlyAmount, b.currency)})`
+        : `${b.category}: ${formatMoney(left, b.currency)} left of ${formatMoney(b.monthlyAmount, b.currency)} (${pct}% used)`;
+    });
+    return `${lines.join(' · ')}.`;
+  };
+
   // Resolve a parsed split into either a group confirm-chip, or guidance that
   // asks which group / how much when we can't pin it down.
   const buildGroupReply = (draft: ParsedGroupExpense): Msg[] => {
@@ -158,7 +332,10 @@ export function HisaabAIPage() {
     const reply = routeAssistantInput(text, { mode, defaultCurrency: primaryCurrency() });
 
     let aiMsgs: Msg[];
-    if (reply.kind === 'group' && reply.group) {
+    if (reply.kind === 'query' && reply.query) {
+      const ans = answerQuery(reply.query);
+      aiMsgs = [{ id: mkId(), role: 'ai', text: flavor(ans.text, persona, ans.serious) }];
+    } else if (reply.kind === 'group' && reply.group) {
       aiMsgs = buildGroupReply(reply.group);
     } else if (reply.kind === 'command' && reply.command) {
       if (isFull && reply.command.canPost) {
@@ -194,7 +371,7 @@ export function HisaabAIPage() {
       setMessages((m) =>
         m
           .map((msg) => (msg.id === chipId && msg.role === 'chip' ? { ...msg, resolved: summaryText } : msg))
-          .concat({ id: mkId(), role: 'ai', text: `Done — ${summaryText} logged. Anything else? Try 'careem 30'.` }),
+          .concat({ id: mkId(), role: 'ai', text: flavor(`Logged — ${summaryText}. What's next?`, persona) }),
       );
       toast.show({ type: 'success', title: 'Saved', subtitle: summaryText });
     } catch (err) {
@@ -277,7 +454,7 @@ export function HisaabAIPage() {
               className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: 'linear-gradient(135deg, var(--color-accent-500), var(--color-accent-600))' }}
             >
-              <Sparkles size={18} className="text-white" />
+              <Sparkles size={18} className="text-white animate-sparkle" />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[16px] font-semibold tracking-tight">Hisaab AI</span>
@@ -289,6 +466,12 @@ export function HisaabAIPage() {
               <ShieldCheck size={12} className="text-white/60" /> On-device
             </div>
           </div>
+
+          {greetName && (
+            <p className="text-[12.5px] text-white/65 mt-4">
+              {timeGreeting()}, <span className="text-white font-medium">{greetName}</span> 👋
+            </p>
+          )}
 
           {/* This month headline — only meaningful in Full Tracker (Splits Only
               has no personal accounts). In Splits mode the AI is a guide + split helper. */}
@@ -327,6 +510,24 @@ export function HisaabAIPage() {
             onRetry={retryLoad}
           />
         )}
+
+        {/* Personality dial — opt-in vibe (Chill / Balanced / Roast) */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-400">Vibe</span>
+          <div className="flex items-center gap-1 rounded-full bg-cream-soft border border-cream-border p-0.5">
+            {(['chill', 'balanced', 'roast'] as Persona[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => changePersona(p)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize transition-colors ${
+                  persona === p ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Streak — gentle encouragement only, never shaming (Full Tracker) */}
         {isFull && streak.streak > 0 && (
@@ -422,7 +623,7 @@ export function HisaabAIPage() {
               className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: 'rgba(255,255,255,0.08)' }}
             >
-              <Sparkles size={18} className="text-white" />
+              <Sparkles size={18} className="text-white animate-sparkle" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[13.5px] font-semibold">Last month, wrapped</p>
@@ -438,8 +639,8 @@ export function HisaabAIPage() {
           <AIBubble>
             <p>
               {isFull
-                ? "Salaam! Tell me what you spent in plain words and I'll log it — I always show a card to confirm first, so nothing is saved without your tap. You can also ask me how anything in Hisaab works."
-                : "Salaam! I'm your Hisaab guide. Ask me how to split a bill, settle up, or which mode fits you — and I'll point you the right way."}
+                ? `Salaam${greetName ? `, ${greetName}` : ''}! Tell me what you spent in plain words — "200 for groceries", "30 careem" — and I'll log it (always with a card to confirm first). You can also ask me things like "where did my money go?" or "how much does Ali owe me?".`
+                : `Salaam${greetName ? `, ${greetName}` : ''}! I'm your Hisaab guide. Ask me how to split a bill, settle up, or which mode fits you — and I'll point you the right way.`}
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {(isFull ? EXAMPLE_PROMPTS : SPLITS_EXAMPLES).map((q) => (
@@ -482,6 +683,7 @@ export function HisaabAIPage() {
                 key={m.id}
                 draft={m.draft}
                 accounts={accounts}
+                history={transactions}
                 resolved={m.resolved}
                 busy={busyChipId === m.id}
                 onConfirm={(input, summaryText) => confirmChip(m.id, input, summaryText)}
@@ -665,6 +867,7 @@ function GroupChipCard({
 interface ChipCardProps {
   draft: ParsedExpense;
   accounts: Account[];
+  history: HistoryTxn[];
   resolved?: string;
   busy: boolean;
   onConfirm: (input: ReturnType<typeof buildTransactionFromDraft>, summaryText: string) => void;
@@ -672,15 +875,20 @@ interface ChipCardProps {
   onAddAccount: () => void;
 }
 
-function ChipCard({ draft, accounts, resolved, busy, onConfirm, onCancel, onAddAccount }: ChipCardProps) {
+function ChipCard({ draft, accounts, history, resolved, busy, onConfirm, onCancel, onAddAccount }: ChipCardProps) {
   const [direction, setDirection] = useState<Direction>(draft.direction);
   const [amount, setAmount] = useState(String(draft.amount ?? ''));
   const defaultAccount = useMemo(() => pickAccountForDraft(draft, accounts), [draft, accounts]);
   const [accountId, setAccountId] = useState(defaultAccount?.id ?? '');
   const cats: readonly string[] = direction === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
-  const [category, setCategory] = useState<string>(
-    draft.category && cats.includes(draft.category) ? draft.category : 'Other',
-  );
+  // Your own history wins over the parser's cold-start seed: if you've logged
+  // this kind of thing before, reuse the category you chose then.
+  const [category, setCategory] = useState<string>(() => {
+    const learned = suggestCategory(draft.label, history, draft.direction);
+    if (learned && cats.includes(learned)) return learned;
+    return draft.category && cats.includes(draft.category) ? draft.category : 'Other';
+  });
+  const learnedNow = suggestCategory(draft.label, history, direction);
   const labelIsEcho = !!draft.category && draft.label.toLowerCase() === draft.category.toLowerCase();
   const [note, setNote] = useState(labelIsEcho ? '' : draft.label);
 
@@ -794,6 +1002,9 @@ function ChipCard({ draft, accounts, resolved, busy, onConfirm, onCancel, onAddA
             {/* category */}
             <label className="block text-[10px] font-semibold text-ink-500 uppercase tracking-[0.1em] mb-1">
               Category
+              {learnedNow && learnedNow === category && (
+                <span className="ml-1.5 normal-case tracking-normal text-accent-600 font-medium">· like you tagged before</span>
+              )}
             </label>
             <select
               value={category}

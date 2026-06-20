@@ -126,15 +126,24 @@ const INCOME_TRIGGERS = new Set([
   'refund', 'refunded', 'cashback', 'bonus', 'freelance', 'tankhwa', 'eidi',
 ]);
 
-// Filler removed from the label. Currency words and numbers are stripped
-// separately. Kept tight on purpose so descriptive words ("with", "team")
-// survive.
+// Filler removed from the label so a full sentence ("can you add an expense
+// for breakfast today") reduces to the merchant ("Breakfast"). Currency words
+// and numbers are stripped separately. Real users type conversationally, so
+// this covers polite/command framing — but keeps descriptive words ("with",
+// "team", "office") that belong in the note.
 const LABEL_STOPWORDS = new Set([
+  // amount/verb framing
   'add', 'for', 'on', 'spent', 'spend', 'paid', 'pay', 'bought', 'buy',
-  'got', 'get', 'received', 'receive', 'a', 'an', 'the', 'please', 'pls',
-  'i', 'my', 'me', 'to', 'of', 'from', 'just', 'today', 'yesterday',
+  'got', 'get', 'received', 'receive', 'expense', 'expenses', 'income',
+  'log', 'logged', 'record', 'make', 'made', 'create', 'put', 'enter', 'note',
+  // conversational / polite framing
+  'can', 'could', 'would', 'will', 'you', 'u', 'please', 'pls', 'kindly',
+  'want', 'wanna', 'need', 'let', 'lets', 'me', 'i', 'my', 'mine', 'we',
+  // articles / glue / time
+  'a', 'an', 'the', 'to', 'of', 'from', 'just', 'some', 'and', 'is', 'was',
+  'this', 'that', 'it', 'today', 'yesterday', 'morning', 'evening', 'night', 'tonight',
   // roman-urdu fillers
-  'ka', 'ki', 'ke', 'ko', 'se', 'mein', 'par', 'liye', 'wala', 'wali',
+  'ka', 'ki', 'ke', 'ko', 'se', 'mein', 'par', 'liye', 'wala', 'wali', 'karo', 'kar', 'do',
 ]);
 
 function titleCase(s: string): string {

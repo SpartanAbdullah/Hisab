@@ -206,6 +206,31 @@ describe('"guided not lost" — never a dead end', () => {
   });
 });
 
+describe('conversational / full-sentence phrasing', () => {
+  it('strips polite framing — "can you add an expense for breakfast for today 10 AED"', () => {
+    const r = parseExpenseInput('can you add an expense for breakfast for today 10 AED');
+    expect(r.amount).toBe(10);
+    expect(r.currency).toBe('AED');
+    expect(r.category).toBe('Food & Dining');
+    expect(r.label).toBe('Breakfast');
+  });
+  it('handles "please log 25 aed for uber"', () => {
+    const r = parseExpenseInput('please log 25 aed for uber');
+    expect(r.amount).toBe(25);
+    expect(r.category).toBe('Transport');
+    expect(r.label).toBe('Uber');
+  });
+  it('handles "i want to add lunch 30 aed"', () => {
+    const r = parseExpenseInput('i want to add lunch 30 aed');
+    expect(r.amount).toBe(30);
+    expect(r.label).toBe('Lunch');
+  });
+  it('keeps a genuinely descriptive note ("dinner with the office team")', () => {
+    const r = parseExpenseInput('add 120 aed for dinner with the office team');
+    expect(r.label).toBe('Dinner With Office Team');
+  });
+});
+
 describe('totality — fuzz a range of inputs without throwing', () => {
   const inputs = [
     '', ' ', '3', 'aed', 'karak', '3 3 3', '...', '12.', '.5',

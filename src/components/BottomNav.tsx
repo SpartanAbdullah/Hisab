@@ -107,7 +107,7 @@ function NavTab({ to, icon: Icon, label, badge = 0 }: NavTabProps) {
             <Icon
               size={22}
               strokeWidth={isActive ? 2.2 : 1.7}
-              className={isActive ? 'text-ink-900' : 'text-ink-500'}
+              className={`${isActive ? 'text-ink-900' : 'text-ink-500'}${to === '/hisaab-ai' ? ' animate-sparkle' : ''}`}
             />
             {badge > 0 && (
               <span

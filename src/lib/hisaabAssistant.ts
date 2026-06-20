@@ -12,6 +12,7 @@
 
 import { parseExpenseInput, type ParsedExpense } from './nlExpenseParser';
 import { isSplitIntent, parseGroupExpenseInput, type ParsedGroupExpense } from './nlGroupExpenseParser';
+import { parseDataQuery, type ParsedQuery } from './nlQuery';
 
 export type AppMode = 'full_tracker' | 'splits_only';
 
@@ -124,12 +125,13 @@ export const KNOWLEDGE_BASE: KnowledgeTopic[] = [
   },
 ];
 
-export type RouteKind = 'command' | 'group' | 'knowledge' | 'unknown';
+export type RouteKind = 'command' | 'group' | 'query' | 'knowledge' | 'unknown';
 
 export interface AssistantReply {
   kind: RouteKind;
   command?: ParsedExpense; // when kind === 'command' (personal expense/income)
   group?: ParsedGroupExpense; // when kind === 'group' (split/shared expense)
+  query?: ParsedQuery; // when kind === 'query' (answer from local data)
   knowledge?: KnowledgeTopic; // when kind === 'knowledge'
   text?: string; // fallback text for 'unknown'
   suggestions: string[]; // tappable example prompts
@@ -166,7 +168,7 @@ export function findKnowledge(input: string): KnowledgeTopic | null {
 function suggestionsFor(mode: AppMode): string[] {
   return mode === 'splits_only'
     ? ['How do I split a bill?', 'How do I settle up?', 'Should I use Full Tracker?']
-    : ['add 3 aed for karak', 'How do subscriptions work?', 'Which mode should I use?'];
+    : ['add 200 for groceries', 'Where did my money go?', 'How much does Ali owe me?'];
 }
 
 const REASONING_HINT_RE = /\b(afford|forecast|predict|how much (can|should)|if i|when will|plan|enough)\b/i;
@@ -187,6 +189,11 @@ export function routeAssistantInput(rawInput: string, ctx: RouteContext): Assist
   if (!input) {
     return { kind: 'unknown', suggestions, text: "Tell me an expense, or ask me how something in Hisaab works." };
   }
+
+  // Easy "fetch my own data" questions answered natively, no LLM — "Ali owes me
+  // how much?", "how much did I spend on food?", "how much am I owed?".
+  const dataQuery = parseDataQuery(input);
+  if (dataQuery) return { kind: 'query', query: dataQuery, suggestions };
 
   const isQuestion = looksLikeQuestion(input);
   const knowledge = findKnowledge(input);
