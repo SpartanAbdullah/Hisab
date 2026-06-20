@@ -35,11 +35,31 @@ describe('advanceDate', () => {
     expect(advanceDate('2026-12-15', 'monthly')).toBe('2027-01-15');
   });
 
-  it('handles month-end edge: Jan 31 + monthly → Mar 3 (JS month overflow)', () => {
-    // JS Date overflow: Jan 31 + 1 month becomes Feb 31 which normalises to Mar 3.
-    // This documents the current behaviour. If we ever want "last day of month"
-    // semantics this test will need to change.
-    expect(advanceDate('2026-01-31', 'monthly')).toBe('2026-03-03');
+  it('clamps month-end: Jan 31 + monthly → Feb 28 (not Mar 3)', () => {
+    // Was a known bug: naive +1 month turned Feb 31 into Mar 3, skipping
+    // February and drifting the due day forward forever. Now clamps to the
+    // last valid day of the target month.
+    expect(advanceDate('2026-01-31', 'monthly')).toBe('2026-02-28');
+  });
+
+  it('clamps month-end on a leap February: Jan 31 + monthly → Feb 29 in 2028', () => {
+    expect(advanceDate('2028-01-31', 'monthly')).toBe('2028-02-29');
+  });
+
+  it('does not skip a month across the short-month boundary (31st progression)', () => {
+    // The old bug skipped February. Walk a 31st-of-month subscription through
+    // the year and assert every step lands in the very next month.
+    const jan = '2026-01-31';
+    const feb = advanceDate(jan, 'monthly');
+    const mar = advanceDate(feb, 'monthly');
+    const apr = advanceDate(mar, 'monthly');
+    expect(feb).toBe('2026-02-28');
+    expect(mar).toBe('2026-03-28'); // anchor not restored without a stored day (Phase 2)
+    expect(apr).toBe('2026-04-28');
+  });
+
+  it('clamps a 30th-of-month sub into February correctly', () => {
+    expect(advanceDate('2026-01-30', 'monthly')).toBe('2026-02-28');
   });
 
   it('is timezone-independent (uses UTC math)', () => {
@@ -50,8 +70,14 @@ describe('advanceDate', () => {
     expect(advanceDate('2026-11-01', 'daily')).toBe('2026-11-02'); // DST end day
   });
 
-  it('handles leap years on yearly', () => {
-    // Feb 29 2028 + 1 year → Mar 1 2029 (JS Date overflow normalises Feb 29 → Mar 1)
-    expect(advanceDate('2028-02-29', 'yearly')).toBe('2029-03-01');
+  it('clamps leap day on yearly: Feb 29 2028 → Feb 28 2029 (not Mar 1)', () => {
+    // Was a known bug: Feb 29 + 1 year overflowed to Mar 1. Now clamps to the
+    // last valid day of the same month in the target year.
+    expect(advanceDate('2028-02-29', 'yearly')).toBe('2029-02-28');
+  });
+
+  it('keeps Feb 29 → Feb 29 across a four-year leap gap', () => {
+    expect(advanceDate('2028-02-29', 'yearly')).toBe('2029-02-28');
+    expect(advanceDate('2027-02-28', 'yearly')).toBe('2028-02-28');
   });
 });

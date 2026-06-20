@@ -16,6 +16,7 @@ import { useSplitStore } from '../stores/splitStore';
 import { Modal } from '../components/Modal';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
+import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { SpendingWarningModal } from '../components/SpendingWarningModal';
 import { useToast } from '../components/Toast';
@@ -402,6 +403,10 @@ export function QuickEntry({
           requestCurrency: accountForBranch?.currency,
         });
         if (branch.branch === true) {
+          // Deliberate confirm before mirroring a currency-locked record to them.
+          const guard = await confirmCrossUserRequest({ amount: amt, currency: branch.currency, personName: resolvedPerson!.name });
+          if (guard.blockedReason) { toast.show({ type: 'error', title: 'Check the amount', subtitle: guard.blockedReason }); return; }
+          if (!guard.ok) return;
           await useLinkedRequestStore.getState().createRequest({
             toUserId: branch.toUserId,
             personId: branch.personId,

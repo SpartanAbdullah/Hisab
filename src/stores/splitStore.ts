@@ -39,6 +39,8 @@ import { useActivityStore } from './activityStore';
 import { useTransactionStore } from './transactionStore';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 import { refreshAfterSuccessfulLeave } from '../lib/groupLeave';
+import { computePairwiseDebts } from '../lib/groupDebts';
+import { coreExpenseFieldsChanged } from '../lib/groupExpenseDiff';
 import {
   expenseParticipantsChanged,
   validateNewGroupExpenseParticipants,
@@ -107,6 +109,8 @@ interface SplitState {
   }) => Promise<GroupSettlement>;
 
   getSimplifiedDebts: (groupId: string) => Promise<SimplifiedDebt[]>;
+  // Raw direct "you owe X to Y" debts with no rerouting — the default settle-up view.
+  getPairwiseDebts: (groupId: string) => Promise<SimplifiedDebt[]>;
   getMyBalance: (groupId: string) => Promise<number>;
   reset: () => void;
 }
@@ -822,6 +826,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       });
     }
 
+    // Editing the payer/amount/splits silently changes what people owe, so a
+    // reconciled (settled) expense must reopen when any of those change.
+    const keepReconciled = !coreExpenseFieldsChanged(existing, nextExpense);
     try {
       await groupExpensesDb.update(id, {
         description: nextExpense.description,
@@ -836,9 +843,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         }),
         updatedBy: currentUserId,
         version: (existing.version ?? 1) + 1,
-        isReconciled: existing.paidBy === nextExpense.paidBy ? existing.isReconciled ?? false : false,
-        reconciledAt: existing.paidBy === nextExpense.paidBy ? existing.reconciledAt ?? null : null,
-        reconciledBy: existing.paidBy === nextExpense.paidBy ? existing.reconciledBy ?? null : null,
+        isReconciled: keepReconciled ? existing.isReconciled ?? false : false,
+        reconciledAt: keepReconciled ? existing.reconciledAt ?? null : null,
+        reconciledBy: keepReconciled ? existing.reconciledBy ?? null : null,
       });
     } catch (err) {
       // Run rollbacks LIFO. Each failure is logged but does not block the
@@ -964,12 +971,21 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     const currentUserId = getCurrentUserId();
     const participantError = validateNewSettlementParticipants(group, input.fromMember, input.toMember);
     if (participantError) throw new Error(participantError);
-    const outstanding = (await get().getSimplifiedDebts(input.groupId)).find(
-      (debt) => debt.from === input.fromMember && debt.to === input.toMember,
+    // Accept a settlement that's valid under EITHER the raw pairwise view (the
+    // default) OR the simplified/rerouted view, capped at the larger of the two
+    // — so paying down a debt is allowed however the user is looking at it.
+    const matches = (debt: SimplifiedDebt) => debt.from === input.fromMember && debt.to === input.toMember;
+    const [pairwise, simplified] = await Promise.all([
+      get().getPairwiseDebts(input.groupId),
+      get().getSimplifiedDebts(input.groupId),
+    ]);
+    const cap = Math.max(
+      pairwise.find(matches)?.amount ?? 0,
+      simplified.find(matches)?.amount ?? 0,
     );
-    if (!outstanding) throw new Error('This balance is already settled');
-    if (input.amount > outstanding.amount + 0.00001) {
-      throw new Error(`Settlement cannot exceed the outstanding amount of ${outstanding.amount}`);
+    if (cap <= 0.01) throw new Error('This balance is already settled');
+    if (input.amount > cap + 0.00001) {
+      throw new Error(`Settlement cannot exceed the outstanding amount of ${cap}`);
     }
     const settlement: GroupSettlement = {
       id: uuid(),
@@ -1078,6 +1094,16 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     }
 
     return debts;
+  },
+
+  getPairwiseDebts: async (groupId) => {
+    const group = await getGroupOrFetch(groupId, get().groups);
+    if (!group) return [];
+    const [expenses, settlements] = await Promise.all([
+      groupExpensesDb.getByGroup(groupId),
+      groupSettlementsDb.getByGroup(groupId),
+    ]);
+    return computePairwiseDebts(group.members, expenses, settlements);
   },
 
   getMyBalance: async (groupId) => {

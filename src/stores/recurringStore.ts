@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { recurringTransactionsDb } from '../lib/supabaseDb';
+import { validateRecurringStart } from '../lib/recurringStartValidation';
 import type { RecurringTransaction, RecurringCadence, Currency } from '../db';
 
 interface CreateInput {
@@ -46,6 +47,13 @@ export const useRecurringStore = create<RecurringState>((set, get) => ({
   },
 
   createTemplate: async (input) => {
+    // Server-of-last-resort: refuse an absurd start date (years off = a typo)
+    // before it materialises retroactive entries. The modal handles the softer
+    // "this is in the past" warning.
+    const startCheck = validateRecurringStart(input.nextDueDate, new Date().toISOString().slice(0, 10));
+    if (!startCheck.ok && startCheck.severity === 'block') {
+      throw new Error(startCheck.reason ?? 'Pick a valid start date.');
+    }
     const t: RecurringTransaction = {
       id: uuid(),
       type: input.type,
@@ -89,9 +97,23 @@ export const useRecurringStore = create<RecurringState>((set, get) => ({
   },
 }));
 
+// Number of days in the given UTC month (month is 0-indexed). Day 0 of the
+// *next* month is the last day of this one.
+function daysInUTCMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
 // Adds one cadence unit to the given YYYY-MM-DD date string and returns the
 // new YYYY-MM-DD. Day-anchored math (no time), so DST boundaries don't shift
 // the date.
+//
+// Month/year steps CLAMP to the last valid day instead of overflowing: a
+// subscription due Jan 31 advances to Feb 28, not "Mar 3" (JS Date's naive
+// Feb-31→Mar-3 rollover, which silently skipped February entirely and drifted
+// the due day forward every month). Subscriptions and rent cluster at month
+// end, so this matters. Note: after clamping into a short month the anchor
+// day is not restored (Jan 31 → Feb 28 → Mar 28); true "always the last day"
+// / "always the 31st" semantics need a stored anchor day — a Phase 2 field.
 export function advanceDate(yyyyMmDd: string, cadence: RecurringCadence): string {
   const [y, m, d] = yyyyMmDd.split('-').map(Number);
   const base = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
@@ -102,12 +124,21 @@ export function advanceDate(yyyyMmDd: string, cadence: RecurringCadence): string
     case 'weekly':
       base.setUTCDate(base.getUTCDate() + 7);
       break;
-    case 'monthly':
+    case 'monthly': {
+      const day = base.getUTCDate();
+      base.setUTCDate(1); // park on the 1st so the month step can't overflow
       base.setUTCMonth(base.getUTCMonth() + 1);
+      base.setUTCDate(Math.min(day, daysInUTCMonth(base.getUTCFullYear(), base.getUTCMonth())));
       break;
-    case 'yearly':
+    }
+    case 'yearly': {
+      const day = base.getUTCDate();
+      const month = base.getUTCMonth();
+      base.setUTCDate(1); // park on the 1st so the year step can't overflow (Feb 29)
       base.setUTCFullYear(base.getUTCFullYear() + 1);
+      base.setUTCDate(Math.min(day, daysInUTCMonth(base.getUTCFullYear(), month)));
       break;
+    }
   }
   return base.toISOString().slice(0, 10);
 }

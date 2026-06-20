@@ -1239,6 +1239,7 @@ function mapLoan(r: Record<string, unknown>): Loan {
     createdAt: r.created_at as string,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
     deletedAt: (r.deleted_at as string) ?? null,
+    loanPairId: (r.loan_pair_id as string) ?? null,
   };
 }
 

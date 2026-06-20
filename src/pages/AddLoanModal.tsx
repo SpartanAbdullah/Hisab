@@ -12,6 +12,7 @@ import { useToast } from '../components/Toast';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
+import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
 import { SUPPORTED_CURRENCIES, type Currency, type LoanType } from '../db';
 
 interface Props { open: boolean; onClose: () => void; }
@@ -85,6 +86,10 @@ export function AddLoanModal({ open, onClose }: Props) {
       });
 
       if (branch.branch === true) {
+        // Deliberate confirm before mirroring a currency-locked record to them.
+        const guard = await confirmCrossUserRequest({ amount: amt, currency: branch.currency, personName: person.name });
+        if (guard.blockedReason) { setError(guard.blockedReason); return; }
+        if (!guard.ok) return;
         await useLinkedRequestStore.getState().createRequest({
           toUserId: branch.toUserId,
           personId: branch.personId,

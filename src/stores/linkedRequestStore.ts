@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { linkedRequestsDb } from '../lib/supabaseDb';
 import type { LinkedRequest, LinkedRequestKind, Currency, Loan } from '../db';
+import { plausibilityCheck } from '../lib/currencyValidation';
 import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
 import { usePersonStore } from './personStore';
@@ -98,6 +99,12 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
   },
 
   createRequest: async (input) => {
+    // Server-of-last-resort: refuse a gross currency typo at the source, before
+    // it can ever be mirrored onto the other user (currency locks on accept).
+    const check = plausibilityCheck(input.amount, input.currency);
+    if (!check.passed && check.severity === 'block') {
+      throw new Error(check.reason ?? "That amount doesn't look right.");
+    }
     const id = uuid();
     await linkedRequestsDb.insert({
       id,

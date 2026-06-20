@@ -13,7 +13,6 @@ import { useSplitStore } from './stores/splitStore';
 import { useSettlementRequestStore } from './stores/settlementRequestStore';
 import { useBudgetStore } from './stores/budgetStore';
 import { useRecurringStore } from './stores/recurringStore';
-import { useRemittanceStore } from './stores/remittanceStore';
 import { runRecurringExpansion } from './lib/recurringRunner';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
@@ -40,8 +39,11 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ de
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m.InboxPage })));
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then(m => ({ default: m.BudgetsPage })));
-const RemittancesPage = lazy(() => import('./pages/RemittancesPage').then(m => ({ default: m.RemittancesPage })));
 const RecurringTransactionsPage = lazy(() => import('./pages/RecurringTransactionsPage').then(m => ({ default: m.RecurringTransactionsPage })));
+const SubscriptionsPage = lazy(() => import('./pages/SubscriptionsPage').then(m => ({ default: m.SubscriptionsPage })));
+const HisaabAIPage = lazy(() => import('./pages/HisaabAIPage').then(m => ({ default: m.HisaabAIPage })));
+const InsightDetailPage = lazy(() => import('./pages/InsightDetailPage').then(m => ({ default: m.InsightDetailPage })));
+const WrapPage = lazy(() => import('./pages/WrapPage').then(m => ({ default: m.WrapPage })));
 const PublicInfoPage = lazy(() => import('./pages/PublicInfoPages').then(m => ({ default: m.PublicInfoPage })));
 
 // Quick Entry is the only modal launched globally (from the BottomNav FAB).
@@ -219,7 +221,7 @@ function AppContent() {
     void useSplitStore.getState().loadGroups().catch((err) => {
       console.error('loadGroups failed (non-fatal)', err);
     });
-    // Phase 3: load budgets, recurring templates, and remittance history.
+    // Phase 3: load budgets and recurring templates.
     // Budgets feed the home banner; recurring needs to be loaded BEFORE
     // the expansion runner can decide which entries are due.
     void useBudgetStore.getState().loadBudgets().catch((err) => {
@@ -234,9 +236,6 @@ function AppContent() {
       });
     }).catch((err) => {
       console.error('loadRecurring failed (non-fatal)', err);
-    });
-    void useRemittanceStore.getState().loadRemittances().catch((err) => {
-      console.error('loadRemittances failed (non-fatal)', err);
     });
   }, [user?.id]);
 
@@ -337,12 +336,16 @@ function AppContent() {
           <Route path="/loans" element={<LoansPage />} />
           <Route path="/loan/:id" element={<LoanDetailPage />} />
           {/* Phase 3 features. Budgets + Recurring stay full_tracker-only
-              because they presuppose accounts; Remittances is available
-              in either mode (the splits-only user might still need to track
-              "I sent X home this month"). */}
+              because they presuppose accounts. */}
           <Route path="/budgets" element={mode === 'full_tracker' ? <BudgetsPage /> : <Navigate to="/" replace />} />
           <Route path="/recurring" element={mode === 'full_tracker' ? <RecurringTransactionsPage /> : <Navigate to="/" replace />} />
-          <Route path="/remittances" element={<RemittancesPage />} />
+          <Route path="/subscriptions" element={mode === 'full_tracker' ? <SubscriptionsPage /> : <Navigate to="/" replace />} />
+          <Route path="/hisaab-ai" element={<HisaabAIPage />} />
+          <Route path="/hisaab-ai/insight/:category" element={mode === 'full_tracker' ? <InsightDetailPage /> : <Navigate to="/hisaab-ai" replace />} />
+          <Route path="/hisaab-ai/wrap" element={mode === 'full_tracker' ? <WrapPage /> : <Navigate to="/hisaab-ai" replace />} />
+          {/* Remittances feature retired (confused users into thinking Hisaab
+              is a remittance app). Data layer kept dormant; old links redirect. */}
+          <Route path="/remittances" element={<Navigate to="/" replace />} />
 
           {/* Savings goals stay full-tracker only. Transactions and loans are
               available in both modes so simple users can still record expense

@@ -22,7 +22,6 @@ import {
   Copy,
   Wallet2,
   Repeat,
-  Send,
   Database,
   RefreshCw,
   FileText,
@@ -719,19 +718,6 @@ export function SettingsPage() {
               <div className="flex-1">
                 <p className="text-[13px] font-semibold text-ink-900">Recurring</p>
                 <p className="text-[11px] text-ink-500">Salary, rent, EMIs — one tap each month</p>
-              </div>
-              <ChevronRight size={16} className="text-ink-300" />
-            </button>
-            <button
-              onClick={() => navigate('/remittances')}
-              className={rowClass + " w-full text-left"}
-            >
-              <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center">
-                <Send size={16} className="text-info-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-[13px] font-semibold text-ink-900">Remittances</p>
-                <p className="text-[11px] text-ink-500">Track money sent home, fees, effective rate</p>
               </div>
               <ChevronRight size={16} className="text-ink-300" />
             </button>

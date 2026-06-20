@@ -9,12 +9,18 @@ export const EXPENSE_CATEGORIES = [
   'Education',
   'Shopping',
   'Entertainment',
+  'Subscriptions',
   'Remittance',
   'Family Support',
   'Loan Payment',
   'Savings',
   'Other',
 ] as const;
+
+// The expense category that marks a recurring template as a subscription.
+// Phase 1 of the Subscriptions Tracker is a view over recurring expenses
+// tagged with this category — no schema change. See subscriptionMetrics.ts.
+export const SUBSCRIPTION_CATEGORY = 'Subscriptions';
 
 export const INCOME_CATEGORIES = [
   'Salary',

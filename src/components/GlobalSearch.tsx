@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType } from 'react';
-import { Search, X, Receipt, HandCoins, Send, ChevronRight } from 'lucide-react';
+import { Search, X, Receipt, HandCoins, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useSplitStore } from '../stores/splitStore';
-import { useRemittanceStore } from '../stores/remittanceStore';
 import { groupExpensesDb } from '../lib/supabaseDb';
 import { formatMoney } from '../lib/constants';
 import type { Currency, GroupExpense } from '../db';
@@ -39,7 +38,6 @@ export function GlobalSearch({ open, onClose }: Props) {
   const { transactions, loadTransactions } = useTransactionStore();
   const { loans, loadLoans } = useLoanStore();
   const { groups, loadGroups } = useSplitStore();
-  const { remittances, loadRemittances } = useRemittanceStore();
 
   useEffect(() => {
     if (!open) return;
@@ -54,9 +52,8 @@ export function GlobalSearch({ open, onClose }: Props) {
       loadTransactions().catch(() => undefined),
       loadLoans().catch(() => undefined),
       loadGroups().catch(() => undefined),
-      loadRemittances().catch(() => undefined),
       groupExpensesDb.getAllVisible().catch(() => [] as GroupExpense[]),
-    ]).then(([, , , , , visibleGroupExpenses]) => {
+    ]).then(([, , , , visibleGroupExpenses]) => {
       if (cancelled) return;
       setGroupExpenses(visibleGroupExpenses ?? []);
     }).finally(() => {
@@ -72,7 +69,6 @@ export function GlobalSearch({ open, onClose }: Props) {
     loadTransactions,
     loadLoans,
     loadGroups,
-    loadRemittances,
   ]);
 
   const groupById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups]);
@@ -124,20 +120,8 @@ export function GlobalSearch({ open, onClose }: Props) {
       }
     }
 
-    for (const remittance of remittances) {
-      rows.push({
-        id: `remittance-${remittance.id}`,
-        title: remittance.recipientName,
-        meta: `${remittance.status} - ${formatMoney(remittance.sourceAmount, remittance.sourceCurrency)} to ${formatMoney(remittance.destinationAmount, remittance.destinationCurrency)}`,
-        scope: 'Remittance',
-        href: '/remittances',
-        icon: Send,
-        terms: `${remittance.recipientName} ${remittance.channel} ${remittance.notes} remittance ${remittance.sourceAmount} ${remittance.destinationAmount}`,
-      });
-    }
-
     return rows;
-  }, [accountById, transactions, loans, groups, groupExpenses, groupById, remittances]);
+  }, [accountById, transactions, loans, groups, groupExpenses, groupById]);
 
   const visibleResults = useMemo(() => {
     const needle = normalize(query);

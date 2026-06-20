@@ -15,7 +15,7 @@ import {
   Landmark,
   Contact,
   Repeat,
-  Send,
+  CreditCard,
   Search,
   CheckCircle2,
 } from "lucide-react";
@@ -770,10 +770,10 @@ export function HomePage() {
                 onClick={() => navigate("/recurring")}
               />
               <QuickTile
-                label="Remit"
-                icon={Send}
+                label="Subscriptions"
+                icon={CreditCard}
                 iconClass="text-info-600"
-                onClick={() => navigate("/remittances")}
+                onClick={() => navigate("/subscriptions")}
               />
               <QuickTile
                 label={t("analytics_title")}

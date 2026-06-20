@@ -10,6 +10,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { validateRecurringStart } from '../lib/recurringStartValidation';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { RecurringCadence, RecurringTransaction } from '../db';
 
@@ -210,6 +211,21 @@ function AddRecurringModal({ open, onClose }: AddRecurringModalProps) {
     if (!account) {
       toast.show({ type: 'error', title: 'Account not found' });
       return;
+    }
+    const startCheck = validateRecurringStart(nextDueDate, new Date().toISOString().slice(0, 10));
+    if (startCheck.severity === 'block') {
+      toast.show({ type: 'error', title: 'Check the start date', subtitle: startCheck.reason });
+      return;
+    }
+    if (startCheck.severity === 'warn') {
+      const ok = await confirmDestructive({
+        title: 'Start date is in the past',
+        description: startCheck.reason ?? '',
+        confirmLabel: 'Use this date',
+        cancelLabel: 'Change',
+        tone: 'warning',
+      });
+      if (!ok) return;
     }
     setSaving(true);
     try {

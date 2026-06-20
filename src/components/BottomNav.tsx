@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, ArrowLeftRight, Users, HandCoins, Plus, History } from 'lucide-react';
+import { Home, Users, HandCoins, Plus, History, Sparkles } from 'lucide-react';
 import { useUIStore } from '../stores/uiStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useT } from '../lib/i18n';
@@ -8,17 +8,15 @@ interface Props {
   onQuickEntry: () => void;
 }
 
-// Sukoon bottom nav: 4 tab slots + center FAB. Layout is STABLE across
-// modes — Home always far-left, Groups always far-right, FAB always
-// centered, Loans always immediately right of the FAB. The only thing
-// that changes between modes is the slot at position 2:
-//   full_tracker → Transactions
-//   splits_only  → Activity (no transactions ledger in this mode, but
-//                  Activity is still a meaningful navigation surface)
-// Previously splits_only collapsed to a 4-col layout and put Loans on
-// the LEFT of the FAB, which made the bottom bar visually "jump" when
-// users toggled modes. Inbox lives in the top-right page chrome with
-// its own coral pending-count badge; Settings via the avatar tap.
+// Sukoon bottom nav: 4 tab slots + center FAB. Home far-left, then the
+// FAB, then Hisaab AI and Groups on the right in BOTH modes — the AI tab
+// is a money assistant AND a Hisaab guide, useful everywhere. Only slot 2
+// changes by mode:
+//   full_tracker → Home · Loans · [+] · Hisaab AI · Groups
+//   splits_only  → Home · Activity · [+] · Hisaab AI · Groups
+// Transactions (full) and Loans (splits) move off the bar to make room;
+// both stay reachable from Home's cards. Inbox lives in the top-right page
+// chrome with its own coral pending-count badge; Settings via the avatar tap.
 export function BottomNav({ onQuickEntry }: Props) {
   const modalCount = useUIStore((s) => s.modalCount);
   const mode = useAppModeStore((s) => s.mode);
@@ -31,10 +29,10 @@ export function BottomNav({ onQuickEntry }: Props) {
     { to: '/', icon: Home, label: t('nav_home') },
     isSplits
       ? { to: '/activity', icon: History, label: t('nav_activity') }
-      : { to: '/transactions', icon: ArrowLeftRight, label: t('nav_transactions') },
+      : { to: '/loans', icon: HandCoins, label: t('nav_loans') },
   ];
   const rightTabs = [
-    { to: '/loans', icon: HandCoins, label: t('nav_loans') },
+    { to: '/hisaab-ai', icon: Sparkles, label: 'Hisaab AI' },
     { to: '/groups', icon: Users, label: t('nav_groups') },
   ];
   // Always 5 cols now (2 left + FAB + 2 right). Stable across modes.

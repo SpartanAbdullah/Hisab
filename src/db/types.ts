@@ -63,6 +63,10 @@ export interface Loan {
   createdAt: string;
   updatedAt?: string;
   deletedAt?: string | null;
+  // Set (backfilled by accept_linked_request) when this loan is mirrored to
+  // another Hisaab user. A linked loan must not be unilaterally edited/deleted
+  // — that would diverge the two ledgers. See linkedLoanGuards.ts.
+  loanPairId?: string | null;
 }
 
 export interface Person {

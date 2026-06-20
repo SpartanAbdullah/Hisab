@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { db } from '../db';
 import { loansDb } from '../lib/supabaseDb';
 import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
+import { assertLinkedLoanEditAllowed, assertLinkedLoanDeleteAllowed } from '../lib/linkedLoanGuards';
 import type { Loan, LoanType, Currency } from '../db';
 import { useActivityStore } from './activityStore';
 
@@ -114,6 +115,9 @@ export const useLoanStore = create<LoanState>((set, get) => ({
   updateLoan: async (loanId, changes) => {
     const loan = get().loans.find((l) => l.id === loanId);
     if (!loan) throw new Error(`Loan ${loanId} not found`);
+    // A mirrored (linked) loan can't have its currency/amount changed on one
+    // side — that would diverge from the other user's copy.
+    assertLinkedLoanEditAllowed(loan, changes);
 
     const nextLoan: Loan = {
       ...loan,
@@ -130,6 +134,8 @@ export const useLoanStore = create<LoanState>((set, get) => ({
   },
 
   deleteLoan: async (loanId) => {
+    const existing = get().loans.find((l) => l.id === loanId);
+    if (existing) assertLinkedLoanDeleteAllowed(existing);
     await loansDb.delete(loanId);
     await mirrorDelete(db.loans, loanId);
     markMirrorStale('loans');

@@ -13,6 +13,8 @@ import {
   getInactiveGroupMembers,
   NEED_TWO_ACTIVE_MEMBERS_MESSAGE,
 } from '../lib/groupActiveMembers';
+import { findRecentDuplicate } from '../lib/duplicateExpense';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 
 interface Props {
   open: boolean;
@@ -23,6 +25,10 @@ interface Props {
   // re-enter; null/undefined keeps the existing "empty form" behaviour
   // for the GroupDetailPage entry point.
   prefillAmount?: string;
+  // Recent group expenses (passed by GroupDetailPage) used to warn on a likely
+  // duplicate — e.g. both flatmates logging the same rent. Omitted on the
+  // QuickEntry handoff path, where the check simply doesn't run.
+  recentExpenses?: ReadonlyArray<{ id: string; description: string; amount: number; createdAt: string }>;
 }
 
 const CATEGORIES = ['Food', 'Transport', 'Shopping', 'Bills', 'Entertainment', 'Travel', 'Health', 'General'];
@@ -31,7 +37,7 @@ function sameDisplayName(a: string | null | undefined, b: string | null | undefi
   return (a ?? '').trim().toLocaleLowerCase() === (b ?? '').trim().toLocaleLowerCase();
 }
 
-export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Props) {
+export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, recentExpenses }: Props) {
   const t = useT();
   const toast = useToast();
   const { addGroupExpense } = useSplitStore();
@@ -170,6 +176,21 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount }: Pr
     if (!valid) {
       setSubmitError(error || t('error'));
       return;
+    }
+
+    // Soft-warn on a likely duplicate (both flatmates logging the same bill).
+    if (recentExpenses && recentExpenses.length > 0) {
+      const dup = findRecentDuplicate({ description: description.trim(), amount: amt }, recentExpenses, Date.now());
+      if (dup) {
+        const ok = await confirmDestructive({
+          title: 'Looks like a duplicate',
+          description: `A "${dup.description}" for ${formatMoney(dup.amount, group.currency)} was added moments ago. Add this one too?`,
+          confirmLabel: 'Add anyway',
+          cancelLabel: 'Cancel',
+          tone: 'warning',
+        });
+        if (!ok) return;
+      }
     }
 
     setSaving(true);

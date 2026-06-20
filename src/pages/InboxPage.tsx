@@ -7,7 +7,9 @@ import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { usePersonStore } from '../stores/personStore';
 import { useToast } from '../components/Toast';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { formatMoney } from '../lib/constants';
+import { approxOther, plausibilityCheck } from '../lib/currencyValidation';
 import { useT } from '../lib/i18n';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
@@ -91,9 +93,35 @@ export function InboxPage() {
   };
 
   const handleAccept = async (id: string) => {
+    // Tier-2: cross-user, irreversible, currency-locks on accept → deliberate confirm.
+    const req = requests.find((r) => r.id === id);
+    if (req) {
+      // Defense-in-depth: refuse an implausible amount before it mirrors onto
+      // your ledger, even if it slipped past the sender's guard.
+      const plaus = plausibilityCheck(req.amount, req.currency);
+      if (!plaus.passed && plaus.severity === 'block') {
+        toast.show({ type: 'error', title: 'This amount looks off', subtitle: `${plaus.reason ?? ''} Ask them to resend it.` });
+        return;
+      }
+      const approx = approxOther(req.amount, req.currency);
+      const warnNote = !plaus.passed && plaus.reason ? ` ${plaus.reason}` : '';
+      const ok = await confirmDestructive({
+        title: `Accept this request for ${formatMoney(req.amount, req.currency)}?`,
+        description: `${approx ? `${approx}. ` : ''}This adds a shared loan to both your ledgers. Afterwards it can't be edited — only settled.${warnNote}`,
+        confirmLabel: 'Accept',
+        cancelLabel: 'Not now',
+        tone: 'warning',
+      });
+      if (!ok) return;
+    }
     setBusyId(id);
     try {
       await accept(id);
+      toast.show({
+        type: 'success',
+        title: 'Accepted ✓',
+        subtitle: req ? `${formatMoney(req.amount, req.currency)} is now on your ledger.` : undefined,
+      });
     } catch (err) {
       console.error('[inbox] accept failed', err);
       toast.show({ type: 'error', title: t('ltr_accept_error'), subtitle: errorSubtitle(err) });
@@ -125,9 +153,25 @@ export function InboxPage() {
   };
 
   const handleAcceptSettlement = async (id: string) => {
+    const req = settlements.find((r) => r.id === id);
+    if (req) {
+      const ok = await confirmDestructive({
+        title: `Confirm settlement of ${formatMoney(req.amount, req.currency)}?`,
+        description: "This clears the matching balance on both sides. It can't be undone.",
+        confirmLabel: 'Confirm settlement',
+        cancelLabel: 'Not now',
+        tone: 'warning',
+      });
+      if (!ok) return;
+    }
     setBusyId(id);
     try {
       await acceptSettlement(id);
+      toast.show({
+        type: 'success',
+        title: 'Settled up 🎉',
+        subtitle: req ? `${formatMoney(req.amount, req.currency)} cleared.` : undefined,
+      });
     } catch (err) {
       console.error('[inbox] accept settlement failed', err);
       toast.show({ type: 'error', title: t('stl_accept_error'), subtitle: errorSubtitle(err) });

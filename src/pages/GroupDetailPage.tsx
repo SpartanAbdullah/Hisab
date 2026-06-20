@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical, UserPlus, Pencil } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
@@ -29,7 +29,7 @@ function formatActivityTime(iso: string): string {
 }
 
 interface ActivityDisplay {
-  icon: JSX.Element;
+  icon: ReactNode;
   iconBg: string;
   title: string;
   titleClass?: string;
@@ -161,7 +161,7 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const t = useT();
   const toast = useToast();
-  const { groups, getGroupExpenses, getSimplifiedDebts, deleteGroup, leaveGroup, getGroupEvents, getSettlements, loadGroups, setGroupExpenseReconciled } = useSplitStore();
+  const { groups, getGroupExpenses, getSimplifiedDebts, getPairwiseDebts, deleteGroup, leaveGroup, getGroupEvents, getSettlements, loadGroups, setGroupExpenseReconciled } = useSplitStore();
   const markGroupRead = useNotificationStore((state) => state.markGroupRead);
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
@@ -169,6 +169,9 @@ export function GroupDetailPage() {
   const [events, setEvents] = useState<GroupEvent[]>([]);
   const [settlements, setSettlements] = useState<GroupSettlement[]>([]);
   const [debts, setDebts] = useState<{ from: string; fromName: string; to: string; toName: string; amount: number }[]>([]);
+  const [pairwiseDebts, setPairwiseDebts] = useState<{ from: string; fromName: string; to: string; toName: string; amount: number }[]>([]);
+  // Default to RAW direct debts (no rerouting to strangers); "Simplify" is opt-in.
+  const [simplify, setSimplify] = useState(false);
   const [tab, setTab] = useState<'expenses' | 'balances' | 'activity'>('expenses');
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showSettle, setShowSettle] = useState(false);
@@ -201,18 +204,20 @@ export function GroupDetailPage() {
     // Deep-links to /group/:id may land here before the global groups list
     // is hydrated. Kick off loadGroups in parallel so the header renders.
     const needsGroups = useSplitStore.getState().groups.length === 0;
-    const [, nextExpenses, nextDebts, nextEvents, nextSettlements] = await Promise.all([
+    const [, nextExpenses, nextDebts, nextPairwise, nextEvents, nextSettlements] = await Promise.all([
       needsGroups ? loadGroups() : Promise.resolve(),
       getGroupExpenses(id),
       getSimplifiedDebts(id),
+      getPairwiseDebts(id),
       getGroupEvents(id),
       getSettlements(id),
     ]);
     setExpenses(nextExpenses);
     setDebts(nextDebts);
+    setPairwiseDebts(nextPairwise);
     setEvents(nextEvents);
     setSettlements(nextSettlements);
-  }, [id, getGroupExpenses, getSimplifiedDebts, getGroupEvents, getSettlements, loadGroups]);
+  }, [id, getGroupExpenses, getSimplifiedDebts, getPairwiseDebts, getGroupEvents, getSettlements, loadGroups]);
 
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(reload);
 
@@ -282,9 +287,10 @@ export function GroupDetailPage() {
   // Group-level health: total spend, settlements, and how far toward "zero
   // imbalance" the group is. Used both by the summary card and by the
   // per-member rings on the Balances tab.
+  const shownDebts = simplify ? debts : pairwiseDebts;
   const totalSpend = expenses.reduce((s, e) => s + e.amount, 0);
   const totalSettled = settlements.reduce((s, x) => s + x.amount, 0);
-  const totalOutstanding = debts.reduce((s, d) => s + d.amount, 0);
+  const totalOutstanding = shownDebts.reduce((s, d) => s + d.amount, 0);
   const settledRatio = totalOutstanding === 0
     ? 1
     : totalSettled / (totalSettled + totalOutstanding);
@@ -293,7 +299,7 @@ export function GroupDetailPage() {
   // Per-member net balance — positive = owed money, negative = owes money.
   const memberNet = new Map<string, number>();
   for (const member of group.members) memberNet.set(member.id, 0);
-  for (const d of debts) {
+  for (const d of shownDebts) {
     memberNet.set(d.to, (memberNet.get(d.to) ?? 0) + d.amount);
     memberNet.set(d.from, (memberNet.get(d.from) ?? 0) - d.amount);
   }
@@ -597,10 +603,21 @@ export function GroupDetailPage() {
         </div>
       )}
 
-      {debts.length > 0 && tab !== 'activity' && (
+      {shownDebts.length > 0 && tab !== 'activity' && (
         <div className="px-5 pt-3">
           <div className="rounded-[18px] bg-cream-card border border-cream-border p-4 space-y-2.5">
-            {debts.map((debt, index) => (
+            <div className="flex items-center justify-between pb-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-ink-400">
+                {simplify ? 'Simplified' : 'Who owes whom'}
+              </span>
+              <button
+                onClick={() => setSimplify((v) => !v)}
+                className="text-[10.5px] font-semibold text-accent-600 active:opacity-60"
+              >
+                {simplify ? 'Show direct' : 'Simplify debts'}
+              </button>
+            </div>
+            {shownDebts.map((debt, index) => (
               <div key={`${debt.from}-${debt.to}-${index}`} className="flex items-center justify-between">
                 <p className="text-[12px] text-ink-600">
                   <span className="font-bold text-pay-text">{debt.fromName}</span>
@@ -891,9 +908,9 @@ export function GroupDetailPage() {
 
       </div>
 
-      <AddGroupExpenseModal open={showAddExpense} group={group} onClose={() => { setShowAddExpense(false); void reload(); }} />
+      <AddGroupExpenseModal open={showAddExpense} group={group} recentExpenses={expenses} onClose={() => { setShowAddExpense(false); void reload(); }} />
       <EditGroupExpenseModal open={!!editExpense} group={group} expense={editExpense} onClose={() => { setEditExpense(null); void reload(); }} />
-      <SettleUpModal open={showSettle} group={group} debts={debts} onClose={() => { setShowSettle(false); void reload(); }} />
+      <SettleUpModal open={showSettle} group={group} debts={shownDebts} onClose={() => { setShowSettle(false); void reload(); }} />
       <GroupInviteModal open={showInvite} group={group} onClose={() => { setShowInvite(false); void reload(); }} />
     </main>
   );
