@@ -15,6 +15,7 @@ import { Modal } from '../components/Modal';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
+import { daysUntilDayOfMonth } from '../lib/inboxInfo';
 import { useT } from '../lib/i18n';
 import {
   Wallet,
@@ -34,6 +35,7 @@ import {
   Trash2,
   Calculator,
   Info,
+  CalendarClock,
 } from 'lucide-react';
 import type { Account } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
@@ -343,30 +345,45 @@ export function AccountDetailPage() {
             />
           </div>
 
-          {isCreditCard && creditLimit > 0 && (
-            <>
-              <div className="mt-4 h-1.5 rounded-full bg-white/15 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-white transition-all duration-500"
-                  style={{ width: `${Math.max(0, Math.min(100, (used / creditLimit) * 100))}%` }}
-                />
-              </div>
-              <div className="flex justify-between mt-2 text-[11px]">
-                <span className="text-white/65">
-                  {t('cc_used')}: {formatMoney(used, account.currency)}
-                </span>
-                <span className="text-white/85 font-medium">
-                  {t('cc_limit')}: {formatMoney(creditLimit, account.currency)}
-                </span>
-              </div>
-              {account.metadata.dueDay && (
-                <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-warn-600/25 px-3 py-1 text-[11px] font-semibold text-white">
-                  {t('cc_next_due')}: {account.metadata.dueDay}
-                  {getOrdinal(parseInt(account.metadata.dueDay))} of month
+          {isCreditCard && creditLimit > 0 && (() => {
+            const utilPct = Math.max(0, Math.min(100, (used / creditLimit) * 100));
+            // Coral when nearly maxed, amber mid-range, white when healthy.
+            const barColor = utilPct >= 80 ? 'bg-pay-600' : utilPct >= 50 ? 'bg-warn-600' : 'bg-white';
+            const dueDay = account.metadata.dueDay ? parseInt(account.metadata.dueDay, 10) : NaN;
+            const dueIn = daysUntilDayOfMonth(dueDay, new Date());
+            const dueUrgent = dueIn !== null && dueIn <= 3;
+            return (
+              <>
+                <div className="mt-4 h-1.5 rounded-full bg-white/15 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${barColor} transition-all duration-500`}
+                    style={{ width: `${utilPct}%` }}
+                  />
                 </div>
-              )}
-            </>
-          )}
+                <div className="flex justify-between mt-2 text-[11px]">
+                  <span className="text-white/65 tabular-nums">
+                    {t('cc_used')}: {formatMoney(used, account.currency)} · {Math.round(utilPct)}%
+                  </span>
+                  <span className="text-white/85 font-medium tabular-nums">
+                    {t('cc_limit')}: {formatMoney(creditLimit, account.currency)}
+                  </span>
+                </div>
+                {account.metadata.dueDay && (
+                  <div className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold text-white ${dueUrgent ? 'bg-pay-600/30' : 'bg-warn-600/25'}`}>
+                    <CalendarClock size={11} />
+                    {t('cc_next_due')}: {account.metadata.dueDay}
+                    {getOrdinal(parseInt(account.metadata.dueDay))}
+                    {dueIn !== null && (
+                      <span className="text-white/85">
+                        {' · '}
+                        {dueIn === 0 ? t('cc_due_today') : t('cc_due_in').replace('{n}', String(dueIn))}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       </NavyHero>
 

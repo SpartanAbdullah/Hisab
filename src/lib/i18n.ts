@@ -1557,6 +1557,10 @@ const S = {
   cancel: { ur: "Cancel", en: "Cancel" },
   confirm_generic: { ur: "Theek hai", en: "Confirm" },
   err_contact_support: { ur: "Support se rabta karein", en: "Contact support" },
+  cc_due_in: { ur: "{n} din mein due", en: "Due in {n}d" },
+  cc_due_today: { ur: "Aaj due", en: "Due today" },
+  cc_used_pct: { ur: "{n}% istemal", en: "{n}% used" },
+  acct_cash_owed: { ur: "{cash} cash · {owed} dena", en: "{cash} cash · {owed} owed" },
 
   // ── UX localization pass ──
   // Generic actions / nav

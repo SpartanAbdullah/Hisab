@@ -17,10 +17,10 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
-import { NextStepHint } from '../components/NextStepHint';
 import { AddAccountStepper } from './AddAccountStepper';
-import { formatMoney } from '../lib/constants';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
+import { daysUntilDayOfMonth } from '../lib/inboxInfo';
 import { useT } from '../lib/i18n';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 
@@ -72,25 +72,43 @@ export function AccountsPage() {
     {} as Record<string, number>,
   );
   const primaryTotal = totalsByCurrency[primaryCurrency] ?? 0;
-  const otherCurrencies = Object.entries(totalsByCurrency).filter(
-    ([cur, amt]) => cur !== primaryCurrency && amt > 0,
-  );
 
-  // Assets vs. owed split — shown as two chips under the total whenever the
-  // user holds at least one credit card, so the net figure reads clearly.
+  // Currencies the user holds, primary first, then by net (largest first).
+  const orderedCurrencies = [...new Set(accounts.map((a) => a.currency))].sort((a, b) => {
+    if (a === primaryCurrency) return -1;
+    if (b === primaryCurrency) return 1;
+    return (totalsByCurrency[b] ?? 0) - (totalsByCurrency[a] ?? 0);
+  });
+  const otherCurrencies = orderedCurrencies.filter((c) => c !== primaryCurrency);
+
+  // Per-currency breakdown: cash/bank assets, credit-card owed, and the net
+  // (== totalsByCurrency). Owed only counts cards with a known limit, so an
+  // unset-limit card never silently distorts the figure.
+  const breakdownFor = (cur: string) => {
+    const accs = accounts.filter((a) => a.currency === cur);
+    const assets = accs
+      .filter((a) => a.type !== 'credit_card')
+      .reduce((sum, a) => sum + a.balance, 0);
+    const owed = accs
+      .filter((a) => a.type === 'credit_card')
+      .reduce((sum, a) => {
+        const limit = parseFloat(a.metadata.creditLimit || '0');
+        return limit > 0 ? sum + Math.max(0, limit - a.balance) : sum;
+      }, 0);
+    return {
+      accounts: accs,
+      assets,
+      owed,
+      net: totalsByCurrency[cur] ?? 0,
+      hasCard: accs.some((a) => a.type === 'credit_card'),
+    };
+  };
+
+  // Assets vs. owed split for the primary-currency hero chips.
   const hasCreditCard = accounts.some((a) => a.type === 'credit_card');
-  const primaryAssets = accounts
-    .filter((a) => a.currency === primaryCurrency && a.type !== 'credit_card')
-    .reduce((sum, a) => sum + a.balance, 0);
-  const primaryOwed = accounts
-    .filter((a) => a.currency === primaryCurrency && a.type === 'credit_card')
-    .reduce((sum, a) => {
-      const limit = parseFloat(a.metadata.creditLimit || '0');
-      return sum + (limit - a.balance);
-    }, 0);
-
-  const primaryAccounts = accounts.filter((a) => a.currency === primaryCurrency);
-  const otherAccounts = accounts.filter((a) => a.currency !== primaryCurrency);
+  const primaryBreakdown = breakdownFor(primaryCurrency);
+  const primaryAssets = primaryBreakdown.assets;
+  const primaryOwed = primaryBreakdown.owed;
 
   // Until the first load resolves, treat the screen as "we don't know yet" —
   // don't render the empty state or the hero's "No accounts yet" headline,
@@ -110,6 +128,12 @@ export function AccountsPage() {
     const creditLimit = isCreditCard ? parseFloat(account.metadata.creditLimit || '0') : 0;
     const used = isCreditCard ? creditLimit - account.balance : 0;
     if (isCreditCard) {
+      const utilPct = creditLimit > 0 ? Math.max(0, Math.min(100, (used / creditLimit) * 100)) : 0;
+      // Utilisation colour: calm green under 50%, amber 50–80%, coral above —
+      // the at-a-glance "how maxed is this card" read.
+      const utilColor = utilPct >= 80 ? 'bg-pay-600' : utilPct >= 50 ? 'bg-warn-600' : 'bg-receive-600';
+      const dueDay = parseInt(account.metadata.dueDay || '', 10);
+      const dueIn = daysUntilDayOfMonth(dueDay, new Date());
       return (
         <button
           key={account.id}
@@ -127,7 +151,19 @@ export function AccountsPage() {
               {typeLabel}
               {masked}
             </p>
-            {creditLimit === 0 && (
+            {creditLimit > 0 ? (
+              <div className="mt-1.5 flex items-center gap-2">
+                <div className="flex-1 max-w-[110px] h-1 rounded-full bg-cream-soft overflow-hidden">
+                  <div className={`h-full rounded-full ${utilColor}`} style={{ width: `${utilPct}%` }} />
+                </div>
+                <span className="text-[9.5px] text-ink-400 tabular-nums shrink-0">{Math.round(utilPct)}%</span>
+                {dueIn !== null && dueIn <= 7 && (
+                  <span className={`text-[9.5px] font-semibold shrink-0 ${dueIn <= 2 ? 'text-pay-text' : 'text-warn-700'}`}>
+                    {dueIn === 0 ? t('cc_due_today') : t('cc_due_in').replace('{n}', String(dueIn))}
+                  </span>
+                )}
+              </div>
+            ) : (
               <span className="inline-flex items-center mt-1 text-[10px] font-semibold text-warn-700 bg-warn-50 rounded-md px-1.5 py-0.5">
                 {t('acct_set_limit')}
               </span>
@@ -231,11 +267,21 @@ export function AccountsPage() {
                 </div>
               )}
               {otherCurrencies.length > 0 && (
-                <p className="text-[12px] text-white/55 mt-2 tabular-nums">
-                  {otherCurrencies
-                    .map(([cur, amt]) => formatMoney(amt, cur))
-                    .join(' · ')}
-                </p>
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {otherCurrencies.map((cur) => {
+                    const net = totalsByCurrency[cur] ?? 0;
+                    return (
+                      <span
+                        key={cur}
+                        className={`inline-flex items-center gap-1 text-[10.5px] font-semibold rounded-md px-1.5 py-0.5 tabular-nums ${
+                          net < 0 ? 'bg-pay-600/25 text-pay-100' : 'bg-white/10 text-white/85'
+                        }`}
+                      >
+                        <span>{currencyMeta[cur]?.flag}</span> {formatSignedMoney(net, cur)}
+                      </span>
+                    );
+                  })}
+                </div>
               )}
             </>
           )}
@@ -249,25 +295,6 @@ export function AccountsPage() {
             title="Couldn't load accounts"
             message={error ?? 'Some data failed to load.'}
             onRetry={retry}
-          />
-        )}
-
-        {status === 'ready' && hasAccounts && (
-          <NextStepHint
-            icon={primaryAccounts.length > 0 ? Landmark : Wallet}
-            tone={otherAccounts.length > 0 ? 'info' : 'receive'}
-            status={
-              otherAccounts.length > 0
-                ? `${primaryAccounts.length} primary-currency account${primaryAccounts.length === 1 ? '' : 's'} and ${otherAccounts.length} other-currency account${otherAccounts.length === 1 ? '' : 's'} are active.`
-                : `${accounts.length} account${accounts.length === 1 ? '' : 's'} ready in ${primaryCurrency}.`
-            }
-            next={
-              otherAccounts.length > 0
-                ? 'Keep balances separated by currency; tap any account to inspect activity before moving money.'
-                : 'Tap an account to review recent activity, or add another wallet when you start tracking a new cash source.'
-            }
-            actionLabel="Add account"
-            onAction={() => setShowAdd(true)}
           />
         )}
 
@@ -285,31 +312,45 @@ export function AccountsPage() {
           />
         ) : (
           <>
-            {primaryAccounts.length > 0 && (
-              <div>
-                <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5 px-1">
-                  {primaryCurrency} accounts
-                </h2>
-                <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
-                  {primaryAccounts.map(renderRow)}
+            {/* One section per currency (primary first). Each header carries
+                that currency's net worth — and an assets·owed sub-line when a
+                credit card is in play — so a multi-currency user sees exactly
+                what they hold where, with no misleading cross-currency sum. */}
+            {orderedCurrencies.map((cur) => {
+              const b = breakdownFor(cur);
+              return (
+                <div key={cur}>
+                  <div className="flex items-baseline justify-between mb-2.5 px-1 gap-3">
+                    <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] flex items-center gap-1.5 shrink-0">
+                      <span className="text-[12px]">{currencyMeta[cur]?.flag}</span> {cur}
+                    </h2>
+                    <div className="text-right min-w-0">
+                      <span
+                        className={`text-[12px] font-semibold tabular-nums ${
+                          b.net < 0 ? 'text-pay-text' : 'text-ink-700'
+                        }`}
+                      >
+                        {formatSignedMoney(b.net, cur)}
+                      </span>
+                      {b.hasCard && (b.assets > 0 || b.owed > 0) && (
+                        <p className="text-[9.5px] text-ink-400 tabular-nums mt-0.5 truncate">
+                          {t('acct_cash_owed')
+                            .replace('{cash}', formatMoney(b.assets, cur))
+                            .replace('{owed}', formatMoney(b.owed, cur))}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+                    {b.accounts.map(renderRow)}
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {otherAccounts.length > 0 && (
-              <div>
-                <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5 px-1">
-                  Other currencies
-                </h2>
-                <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
-                  {otherAccounts.map(renderRow)}
-                </div>
-              </div>
-            )}
+              );
+            })}
 
             <button
               onClick={() => setShowAdd(true)}
-              className="w-full rounded-[14px] border-2 border-dashed border-cream-border bg-transparent text-ink-600 py-3 text-[13px] font-semibold active:bg-cream-soft transition-colors flex items-center justify-center gap-2"
+              className="w-full rounded-[14px] border-2 border-dashed border-cream-border bg-transparent text-ink-600 py-3 text-[13px] font-semibold active:bg-cream-soft transition-colors flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
             >
               <Plus size={14} strokeWidth={2.4} /> {t('home_create_account')}
             </button>
