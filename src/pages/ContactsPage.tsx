@@ -9,6 +9,7 @@ import {
   Info,
 } from 'lucide-react';
 import { usePersonStore } from '../stores/personStore';
+import { useLoanStore } from '../stores/loanStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { UserAvatar } from '../components/UserAvatar';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -35,6 +36,8 @@ export function ContactsPage() {
   const persons = usePersonStore((s) => s.persons);
   const loadPersons = usePersonStore((s) => s.loadPersons);
   const createPerson = usePersonStore((s) => s.createPerson);
+  const loans = useLoanStore((s) => s.loans);
+  const loadLoans = useLoanStore((s) => s.loadLoans);
   const t = useT();
   const toast = useToast();
 
@@ -54,8 +57,9 @@ export function ContactsPage() {
   const [showLinkHelp, setShowLinkHelp] = useState(false);
 
   const load = useCallback(async () => {
-    await loadPersons();
-  }, [loadPersons]);
+    // Loans drive the Settled / Unsettled status chip per contact.
+    await Promise.all([loadPersons(), loadLoans()]);
+  }, [loadPersons, loadLoans]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   // Filter then alphabetise. Search is case-insensitive on name only — link
@@ -95,6 +99,25 @@ export function ContactsPage() {
     () => persons.filter((p) => Boolean(p.linkedProfileId)).length,
     [persons],
   );
+
+  // A contact is "unsettled" when they have at least one active loan with an
+  // open balance. Match by personId; fall back to name only for legacy loans
+  // that predate person linking (so a same-named contact isn't mis-flagged).
+  const { openIds, openNames } = useMemo(() => {
+    const openIds = new Set<string>();
+    const openNames = new Set<string>();
+    for (const l of loans) {
+      if (l.status !== 'active' || l.remainingAmount <= 0.01) continue;
+      if (l.personId) openIds.add(l.personId);
+      else if (l.personName) openNames.add(l.personName.trim().toLowerCase());
+    }
+    return { openIds, openNames };
+  }, [loans]);
+  const isUnsettled = useCallback(
+    (p: Person) => openIds.has(p.id) || openNames.has(p.name.trim().toLowerCase()),
+    [openIds, openNames],
+  );
+  const openCount = useMemo(() => persons.filter(isUnsettled).length, [persons, isUnsettled]);
 
   const lastCreated = useMemo(
     () => persons.find((p) => p.id === lastCreatedId) ?? null,
@@ -168,6 +191,7 @@ export function ContactsPage() {
           <p className="text-[10.5px] font-semibold text-white/55 tracking-[0.12em] uppercase">
             {persons.length} {persons.length === 1 ? 'contact' : 'contacts'}
             {linkedCount > 0 && <> · {linkedCount} linked</>}
+            {openCount > 0 && <> · <span className="text-warn-50">{openCount} unsettled</span></>}
           </p>
         </div>
       </NavyHero>
@@ -433,11 +457,11 @@ export function ContactsPage() {
                           {person.name}
                         </p>
                         {person.linkedProfileId ? (
-                          <span className="text-[8.5px] font-semibold uppercase tracking-[0.1em] rounded-full bg-accent-100 text-accent-600 px-1.5 py-0.5 shrink-0">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] rounded-full bg-accent-100 text-accent-600 px-1.5 py-0.5 shrink-0">
                             linked
                           </span>
                         ) : (
-                          <span className="text-[8.5px] font-medium uppercase tracking-[0.1em] rounded-full bg-cream-soft border border-cream-hairline text-ink-500 px-1.5 py-0.5 shrink-0">
+                          <span className="text-[10px] font-medium uppercase tracking-[0.08em] rounded-full bg-cream-soft border border-cream-hairline text-ink-500 px-1.5 py-0.5 shrink-0">
                             local
                           </span>
                         )}
@@ -448,6 +472,21 @@ export function ContactsPage() {
                         </p>
                       )}
                     </div>
+                    {/* Settled / Unsettled — at-a-glance: amber = an open
+                        balance needs action, green = all clear / calm. */}
+                    {(() => {
+                      const unsettled = isUnsettled(person);
+                      return (
+                        <span
+                          className={`shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] rounded-full px-2 py-1 ${
+                            unsettled ? 'bg-warn-50 text-warn-700' : 'bg-receive-50 text-receive-text'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${unsettled ? 'bg-warn-600' : 'bg-receive-600'}`} />
+                          {unsettled ? t('status_unsettled') : t('status_settled')}
+                        </span>
+                      );
+                    })()}
                   </button>
                 ))}
               </div>

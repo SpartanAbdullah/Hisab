@@ -56,7 +56,7 @@ export function SettlementNudgeBanner({ nudges }: Props) {
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <button
                   onClick={() => navigate('/inbox')}
-                  className="text-[11px] font-semibold text-white bg-ink-900 rounded-lg px-2.5 py-1 active:scale-95 transition-transform"
+                  className="min-h-[44px] text-[11px] font-semibold text-white bg-ink-900 rounded-lg px-3 py-1.5 active:scale-95 transition-transform"
                 >
                   Open in Inbox
                 </button>
@@ -65,7 +65,7 @@ export function SettlementNudgeBanner({ nudges }: Props) {
                     href={nudge.whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[11px] font-semibold text-receive-text bg-receive-50 rounded-lg px-2.5 py-1 active:scale-95 transition-transform flex items-center gap-1"
+                    className="min-h-[44px] text-[11px] font-semibold text-receive-text bg-receive-50 rounded-lg px-3 py-1.5 active:scale-95 transition-transform flex items-center gap-1"
                   >
                     <MessageCircle size={11} strokeWidth={2.4} />
                     WhatsApp
@@ -76,7 +76,7 @@ export function SettlementNudgeBanner({ nudges }: Props) {
             <button
               onClick={() => handleDismiss(nudge.request.id)}
               aria-label="Snooze for 24 hours"
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-500 active:bg-warn-50/60 transition-colors shrink-0"
+              className='relative w-7 h-7 rounded-lg flex items-center justify-center text-ink-500 active:bg-warn-50/60 transition-colors shrink-0 before:absolute before:-inset-2 before:content-[""]'
             >
               <X size={14} />
             </button>

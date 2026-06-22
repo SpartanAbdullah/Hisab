@@ -1,7 +1,8 @@
-﻿import { CheckCircle, ArrowRight } from 'lucide-react';
+import { CheckCircle, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { formatSignedMoney } from '../lib/constants';
 import { Button } from './Button';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../lib/i18n';
 
 interface BalanceChange {
@@ -17,25 +18,53 @@ interface Props {
   title: string;
   description: string;
   balanceChanges: BalanceChange[];
+  // Optional deep-link to the record this confirmation is about (e.g.
+  // `/loan/123` or `/transactions/abc`). When present, a secondary "View"
+  // button appears next to Done; when omitted the button is gracefully hidden.
+  viewRoute?: string;
 }
 
-export function ConfirmationSheet({ open, onClose, title, description, balanceChanges }: Props) {
+// Auto-dismiss window. Long enough to read the before→after balance, and it
+// pauses entirely while the user is touching/hovering the sheet.
+const AUTO_DISMISS_MS = 6000;
+
+export function ConfirmationSheet({ open, onClose, title, description, balanceChanges, viewRoute }: Props) {
   const [show, setShow] = useState(false);
   const t = useT();
+  const navigate = useNavigate();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+  }, []);
+
+  // (Re)start the auto-dismiss countdown from the full duration. Called on
+  // open and whenever the pointer leaves the sheet after a pause.
+  const startTimer = useCallback(() => {
+    clearTimer();
+    timerRef.current = setTimeout(onClose, AUTO_DISMISS_MS);
+  }, [clearTimer, onClose]);
 
   useEffect(() => {
     if (open) {
       requestAnimationFrame(() => setShow(true));
-      const timer = setTimeout(onClose, 2500);
-      return () => clearTimeout(timer);
+      startTimer();
+      return clearTimer;
     } else {
       // Animation flag sync — legitimate setState-in-effect.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setShow(false);
     }
-  }, [open, onClose]);
+  }, [open, startTimer, clearTimer]);
 
   if (!open) return null;
+
+  const handleView = () => {
+    if (!viewRoute) return;
+    clearTimer();
+    onClose();
+    navigate(viewRoute);
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center" onClick={onClose}>
@@ -46,6 +75,12 @@ export function ConfirmationSheet({ open, onClose, title, description, balanceCh
         }`}
         style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
         onClick={(e) => e.stopPropagation()}
+        // Pause the auto-dismiss while the user is reading / interacting, so
+        // the before→after balance stays on screen as long as they want.
+        onMouseEnter={clearTimer}
+        onMouseLeave={startTimer}
+        onTouchStart={clearTimer}
+        onTouchEnd={startTimer}
       >
         {/* Success header */}
         <div className="relative overflow-hidden px-6 py-8 text-center text-white">
@@ -86,10 +121,18 @@ export function ConfirmationSheet({ open, onClose, title, description, balanceCh
           </div>
         )}
 
-        <div className="px-6 pb-8 pt-2">
+        <div className="px-6 pb-8 pt-2 space-y-2">
           <Button variant="gradient" size="lg" onClick={onClose}>
             {t('done_btn')}
           </Button>
+          {viewRoute && (
+            <button
+              onClick={handleView}
+              className="w-full min-h-[44px] text-center text-[13px] font-semibold text-accent-600 active:text-accent-700 transition-colors"
+            >
+              {t('action_view')}
+            </button>
+          )}
         </div>
       </div>
     </div>

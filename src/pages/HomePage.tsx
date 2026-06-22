@@ -12,9 +12,9 @@ import {
   Target,
   History,
   ChevronRight,
+  ChevronDown,
   Landmark,
   Contact,
-  Repeat,
   CreditCard,
   Search,
   CheckCircle2,
@@ -29,6 +29,7 @@ import { useSplitStore } from "../stores/splitStore";
 import { useSettlementRequestStore } from "../stores/settlementRequestStore";
 import { usePersonStore } from "../stores/personStore";
 import { useBudgetStore, computeBudgetUsages } from "../stores/budgetStore";
+import { useRecurringStore } from "../stores/recurringStore";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
 import { SettlementNudgeBanner } from "../components/SettlementNudgeBanner";
 import { BudgetWarningBanner } from "../components/BudgetWarningBanner";
@@ -43,6 +44,7 @@ import { MoneyDisplay } from "../components/MoneyDisplay";
 import { GlobalSearch } from "../components/GlobalSearch";
 import { NextStepHint } from "../components/NextStepHint";
 import { AddAccountStepper } from "./AddAccountStepper";
+import { QuickEntry } from "./QuickEntry";
 import { formatMoney } from "../lib/constants";
 import { currencyMeta } from "../lib/design-tokens";
 import { useT } from "../lib/i18n";
@@ -78,6 +80,9 @@ export function HomePage() {
   const t = useT();
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  // splits_only "Record an IOU" entry — opens QuickEntry locally so the
+  // empty-state CTA actually does something instead of pointing at the FAB.
+  const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
   const [renderNowMs] = useState(() => Date.now());
 
@@ -163,6 +168,19 @@ export function HomePage() {
   // change. Banner self-hides for the session when dismissed.
   const budgets = useBudgetStore((s) => s.budgets);
   const budgetUsages = useMemo(() => computeBudgetUsages(budgets, transactions), [budgets, transactions]);
+
+  // Quick-tile pending counts. Recurring templates are preloaded at app boot
+  // (App.tsx), so reading them here is cheap and already-warm. A subscription
+  // is "due soon" when its next charge lands within the next 7 days.
+  const recurringTemplates = useRecurringStore((s) => s.templates);
+  const subscriptionsDueSoon = useMemo(() => {
+    const horizon = renderNowMs + 7 * 24 * 60 * 60 * 1000;
+    return recurringTemplates.filter((tpl) => {
+      if (!tpl.active) return false;
+      const due = new Date(tpl.nextDueDate).getTime();
+      return Number.isFinite(due) && due <= horizon;
+    }).length;
+  }, [recurringTemplates, renderNowMs]);
   const getMonthStats = (accountId: string) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -180,6 +198,12 @@ export function HomePage() {
     return income > 0 || expense > 0 ? { income, expense } : null;
   };
   const activeLoans = loans.filter((l) => l.status === "active");
+  // Distinct people who still have an open balance — drives the Contacts
+  // quick-tile badge (an "unsettled" count). Keyed by personId when present,
+  // else by normalised name so name-only loans still de-dupe.
+  const unsettledContactCount = new Set(
+    activeLoans.map((l) => l.personId ?? l.personName.trim().toLowerCase()),
+  ).size;
   // Keep receivables/payables grouped by currency so AED and PKR don't merge.
   const sumLoansByCurrency = (items: typeof loans) =>
     items.reduce((acc, l) => {
@@ -192,11 +216,20 @@ export function HomePage() {
   const payablesByCurrency = sumLoansByCurrency(
     activeLoans.filter((l) => l.type === "taken"),
   );
-  const receivableEntries = Object.entries(receivablesByCurrency).filter(
-    ([, v]) => v > 0,
+  // Order each currency list so the BIG number is the primary currency when
+  // present, otherwise the largest balance. The runner-up (if any) is then
+  // shown as a concrete amount line — no vague "+1 more ccy" jargon.
+  const orderByPrimary = (entries: [string, number][]) =>
+    [...entries].sort((a, b) => {
+      if (a[0] === primaryCurrency) return -1;
+      if (b[0] === primaryCurrency) return 1;
+      return b[1] - a[1];
+    });
+  const receivableEntries = orderByPrimary(
+    Object.entries(receivablesByCurrency).filter(([, v]) => v > 0),
   );
-  const payableEntries = Object.entries(payablesByCurrency).filter(
-    ([, v]) => v > 0,
+  const payableEntries = orderByPrimary(
+    Object.entries(payablesByCurrency).filter(([, v]) => v > 0),
   );
   const hasReceivables = receivableEntries.length > 0;
   const hasPayables = payableEntries.length > 0;
@@ -204,20 +237,31 @@ export function HomePage() {
   if (mode === "splits_only") {
     const recvLoanCount = activeLoans.filter((l) => l.type === "given").length;
     const payLoanCount = activeLoans.filter((l) => l.type === "taken").length;
-    const recvPrimary =
-      receivablesByCurrency[primaryCurrency] ??
-      Object.values(receivablesByCurrency)[0] ??
-      0;
-    const recvPrimaryCur = receivablesByCurrency[primaryCurrency] !== undefined
-      ? primaryCurrency
-      : Object.keys(receivablesByCurrency)[0] ?? primaryCurrency;
-    const payPrimary =
-      payablesByCurrency[primaryCurrency] ??
-      Object.values(payablesByCurrency)[0] ??
-      0;
-    const payPrimaryCur = payablesByCurrency[primaryCurrency] !== undefined
-      ? primaryCurrency
-      : Object.keys(payablesByCurrency)[0] ?? primaryCurrency;
+    // Pin the big number to the primary currency (fallback: largest), and
+    // capture the runner-up currency as a concrete second amount.
+    const orderByPrimaryCcy = (map: Record<string, number>) =>
+      Object.entries(map)
+        .filter(([, v]) => v > 0)
+        .sort((a, b) => {
+          if (a[0] === primaryCurrency) return -1;
+          if (b[0] === primaryCurrency) return 1;
+          return b[1] - a[1];
+        });
+    const recvOrdered = orderByPrimaryCcy(receivablesByCurrency);
+    const payOrdered = orderByPrimaryCcy(payablesByCurrency);
+    const recvPrimary = recvOrdered[0]?.[1] ?? 0;
+    const recvPrimaryCur = recvOrdered[0]?.[0] ?? primaryCurrency;
+    const recvSecond = recvOrdered[1] ?? null;
+    const payPrimary = payOrdered[0]?.[1] ?? 0;
+    const payPrimaryCur = payOrdered[0]?.[0] ?? primaryCurrency;
+    const paySecond = payOrdered[1] ?? null;
+
+    // Live people/group summary for the splits hero subtitle: how many
+    // people still owe / are owed plus how many groups carry a balance.
+    const splitsPeopleCount = activeLoans.length;
+    const activeGroupCount = groups.filter(
+      (g) => Math.abs(groupBalances[g.id] ?? 0) > 0,
+    ).length;
 
     return (
       <main className="min-h-dvh bg-cream-bg pb-28">
@@ -250,17 +294,36 @@ export function HomePage() {
             </div>
           </div>
 
-          <div className="px-5 pb-7">
+          <button
+            onClick={() =>
+              navigate(
+                splitsPeopleCount > 0 ? "/loans" : activeGroupCount > 0 ? "/groups" : "/loans",
+              )
+            }
+            className="block w-full text-left px-5 pb-7 active:opacity-80 transition-opacity"
+          >
             <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
               Splits only
             </p>
             <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
               Track people, not accounts.
             </p>
-            <p className="text-[12px] text-white/55 mt-2 max-w-[280px] leading-relaxed">
-              Loans and groups. No cash wallets, no bank balances.
-            </p>
-          </div>
+            {/* Live summary from active loans + groups carrying a balance.
+                Falls back to the static blurb when nothing is outstanding. */}
+            {splitsPeopleCount > 0 || activeGroupCount > 0 ? (
+              <p className="text-[12px] text-white/70 mt-2 max-w-[280px] leading-relaxed">
+                {splitsPeopleCount > 0 &&
+                  t('home_people_to_settle').replace('{n}', String(splitsPeopleCount))}
+                {splitsPeopleCount > 0 && activeGroupCount > 0 && " · "}
+                {activeGroupCount > 0 &&
+                  t('home_groups_active').replace('{n}', String(activeGroupCount))}
+              </p>
+            ) : (
+              <p className="text-[12px] text-white/55 mt-2 max-w-[280px] leading-relaxed">
+                Loans and groups. No cash wallets, no bank balances.
+              </p>
+            )}
+          </button>
         </NavyHero>
 
         <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
@@ -286,8 +349,15 @@ export function HomePage() {
                     No IOUs yet
                   </p>
                   <p className="text-[12px] text-ink-500 mt-1">
-                    Use the + button to record who owes whom.
+                    {t('home_record_iou_hint')}
                   </p>
+                  <button
+                    onClick={() => setShowQuickEntry(true)}
+                    className="mt-3 inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-2xl bg-accent-600 text-white text-[13px] font-semibold active:scale-[0.97] transition-transform"
+                  >
+                    <Plus size={15} strokeWidth={2.4} />
+                    {t('home_record_iou_cta')}
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
@@ -314,7 +384,9 @@ export function HomePage() {
                           {formatMoney(recvPrimary, recvPrimaryCur)}
                         </p>
                         <p className="text-[11px] text-ink-500 mt-1">
-                          {recvLoanCount} {recvLoanCount === 1 ? "loan" : "loans"}
+                          {recvSecond
+                            ? `+ ${formatMoney(recvSecond[1], recvSecond[0])}`
+                            : `${recvLoanCount} ${recvLoanCount === 1 ? "loan" : "loans"}`}
                         </p>
                       </>
                     )}
@@ -342,7 +414,9 @@ export function HomePage() {
                           {formatMoney(payPrimary, payPrimaryCur)}
                         </p>
                         <p className="text-[11px] text-ink-500 mt-1">
-                          {payLoanCount} {payLoanCount === 1 ? "loan" : "loans"}
+                          {paySecond
+                            ? `+ ${formatMoney(paySecond[1], paySecond[0])}`
+                            : `${payLoanCount} ${payLoanCount === 1 ? "loan" : "loans"}`}
                         </p>
                       </>
                     )}
@@ -462,6 +536,7 @@ export function HomePage() {
           )}
         </div>
         <GlobalSearch open={showGlobalSearch} onClose={() => setShowGlobalSearch(false)} />
+        <QuickEntry open={showQuickEntry} onClose={() => setShowQuickEntry(false)} />
       </main>
     );
   }
@@ -509,10 +584,50 @@ export function HomePage() {
 
   const primaryTotal = totals[primaryCurrency] ?? 0;
   const accountCount = accounts.length;
+  // Show ALL non-primary currency lines — including negatives. Hiding the
+  // negatives understated the user's liabilities (e.g. a PKR credit card
+  // owed) and made the net-worth line read more positive than reality.
   const otherTotals = Object.entries(totals).filter(
-    ([cur, amt]) => cur !== primaryCurrency && amt > 0,
+    ([cur, amt]) => cur !== primaryCurrency && amt !== 0,
   );
   const budgetAttentionCount = budgetUsages.filter((usage) => usage.overWarn).length;
+
+  // Does the concrete BudgetWarningBanner actually render? It self-hides for
+  // the session via this sessionStorage flag. We mirror the check here so the
+  // NextStepHint never duplicates a banner that's already on screen, and so
+  // the attention-banner cap counts only what's truly visible.
+  const budgetBannerDismissed = (() => {
+    try {
+      return sessionStorage.getItem("hisaab_budget_warning_dismissed_v1") === "1";
+    } catch {
+      return false;
+    }
+  })();
+  const budgetBannerVisible = budgetAttentionCount > 0 && !budgetBannerDismissed;
+
+  // De-dup: the urgent-expense strip and BudgetWarningBanner are concrete UI
+  // that already speak for those signals. When either is on screen we suppress
+  // the matching NextStepHint branch so each alert appears exactly once. The
+  // hint is then reserved for onboarding ("no activity yet") and the calm
+  // "all up to date" state — and that calm state is hidden whenever any real
+  // attention banner is showing.
+  const hasUrgentStrip = urgentExpenses.length > 0;
+  const hasAttentionBanner =
+    hasUrgentStrip || budgetBannerVisible || overdueNudges.length > 0;
+
+  // Cap simultaneous attention banners at 2 (priority: time-sensitive bills →
+  // budget → settlement nudges). Anything beyond the first two collapses into
+  // a single "N more reminders" chip so the home feed never stacks a wall of
+  // amber cards. The chip routes to the most relevant overflow destination.
+  const ATTENTION_CAP = 2;
+  const activeBanners: { key: "urgent" | "budget" | "settlement"; href: string }[] = [];
+  if (hasUrgentStrip) activeBanners.push({ key: "urgent", href: "/subscriptions" });
+  if (budgetBannerVisible) activeBanners.push({ key: "budget", href: "/budgets" });
+  if (overdueNudges.length > 0) activeBanners.push({ key: "settlement", href: "/inbox" });
+  const shownBannerKeys = new Set(activeBanners.slice(0, ATTENTION_CAP).map((b) => b.key));
+  const collapsedBanners = activeBanners.slice(ATTENTION_CAP);
+  const collapsedReminderHref = collapsedBanners[0]?.href ?? "/";
+
   const homeHint =
     accountCount === 0
       ? null
@@ -525,22 +640,11 @@ export function HomePage() {
           actionLabel: "Add transaction",
           onAction: () => navigate("/transactions"),
         }
-      : urgentExpenses.length > 0
-      ? {
-          icon: Repeat,
-          tone: "warn" as const,
-          status: `${urgentExpenses.length} upcoming payment ${urgentExpenses.length === 1 ? "needs" : "need"} attention.`,
-          next: "Review the reminder strip below, then dismiss the ones you have already handled.",
-        }
-      : budgetAttentionCount > 0
-      ? {
-          icon: Wallet2,
-          tone: "warn" as const,
-          status: `${budgetAttentionCount} budget ${budgetAttentionCount === 1 ? "is" : "are"} near the warning line.`,
-          next: "Open Budgets to adjust caps or check which categories are driving the month.",
-          actionLabel: "Review budgets",
-          onAction: () => navigate("/budgets"),
-        }
+      : hasAttentionBanner
+      ? // A concrete strip/banner is already covering the active signal(s) —
+        // don't echo it as a hint. (Kept null rather than removed so the
+        // "all up to date" branch below can't fire alongside an alert.)
+        null
       : {
           icon: CheckCircle2,
           tone: "receive" as const,
@@ -602,14 +706,27 @@ export function HomePage() {
             </>
           ) : (
             <>
-              <div className="mt-1.5">
+              <div className="mt-1.5 flex items-center gap-1.5">
                 <MoneyDisplay
                   amount={primaryTotal}
                   currency={primaryCurrency}
                   size={42}
                   tone="on-navy"
                 />
+                {/* Non-colour liability cue: down-caret + word so a negative
+                    net worth never relies on the minus sign alone. */}
+                {primaryTotal < 0 && (
+                  <span className="inline-flex items-center gap-0.5 rounded-full bg-white/12 px-1.5 py-0.5 text-[10px] font-semibold text-white/80">
+                    <ChevronDown size={11} strokeWidth={2.6} />
+                    {t('home_owed')}
+                  </span>
+                )}
               </div>
+              {primaryTotal < 0 && (
+                <p className="text-[10px] text-white/55 mt-1">
+                  {t('home_net_liab')}
+                </p>
+              )}
               <p className="text-[12px] text-white/55 mt-2">
                 {accountCount} {accountCount === 1 ? "account" : "accounts"}
                 {otherTotals.length > 0 && (
@@ -696,8 +813,11 @@ export function HomePage() {
                   </p>
                   <p className="text-[11px] text-ink-500 mt-1">
                     {receivableEntries.length > 1
-                      ? `+ ${receivableEntries.length - 1} more ccy`
-                      : `${receivableEntries[0][0]}`}
+                      ? `+ ${formatMoney(
+                          receivableEntries[1][1],
+                          receivableEntries[1][0],
+                        )}`
+                      : receivableEntries[0][0]}
                   </p>
                 </>
               ) : (
@@ -728,8 +848,11 @@ export function HomePage() {
                   </p>
                   <p className="text-[11px] text-ink-500 mt-1">
                     {payableEntries.length > 1
-                      ? `+ ${payableEntries.length - 1} more ccy`
-                      : `${payableEntries[0][0]}`}
+                      ? `+ ${formatMoney(
+                          payableEntries[1][1],
+                          payableEntries[1][0],
+                        )}`
+                      : payableEntries[0][0]}
                   </p>
                 </>
               ) : (
@@ -764,12 +887,16 @@ export function HomePage() {
                 label="Budget"
                 icon={Wallet2}
                 iconClass="text-receive-text"
+                badge={budgetAttentionCount}
+                badgeBgClass="bg-receive-50"
                 onClick={() => navigate("/budgets")}
               />
               <QuickTile
                 label="Subscriptions"
                 icon={CreditCard}
                 iconClass="text-info-600"
+                badge={subscriptionsDueSoon}
+                badgeBgClass="bg-info-50"
                 onClick={() => navigate("/subscriptions")}
               />
               <QuickTile
@@ -788,6 +915,9 @@ export function HomePage() {
                 label="Contacts"
                 icon={Contact}
                 iconClass="text-warn-600"
+                badge={unsettledContactCount}
+                badgeBgClass="bg-warn-50"
+                badgeTextClass="text-warn-700"
                 onClick={() => navigate("/contacts")}
               />
             </div>
@@ -806,7 +936,7 @@ export function HomePage() {
           />
         )}
 
-        {urgentExpenses.length > 0 && (
+        {shownBannerKeys.has("urgent") && (
           <div className="space-y-2">
             {urgentExpenses.slice(0, 2).map((exp) => {
               const daysLeft = Math.ceil(
@@ -837,7 +967,7 @@ export function HomePage() {
                     onClick={() =>
                       setDismissedReminders((d) => [...d, exp.id])
                     }
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors shrink-0"
+                    className='relative w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors shrink-0 before:absolute before:-inset-2 before:content-[""]'
                     aria-label="Dismiss"
                   >
                     &#x2715;
@@ -938,12 +1068,36 @@ export function HomePage() {
         )}
 
         {/* Budget warning — most-overspent category surfaces above the
-            settlement nudges so the user sees the money decision first. */}
-        <BudgetWarningBanner usages={budgetUsages} />
+            settlement nudges so the user sees the money decision first.
+            Gated by the attention-banner cap (see shownBannerKeys). */}
+        {shownBannerKeys.has("budget") && (
+          <BudgetWarningBanner usages={budgetUsages} />
+        )}
 
         {/* Settlement nudges — surface outgoing requests sitting >= 3 days.
             Renders nothing on empty so adjacent sections layout normally. */}
-        <SettlementNudgeBanner nudges={overdueNudges} />
+        {shownBannerKeys.has("settlement") && (
+          <SettlementNudgeBanner nudges={overdueNudges} />
+        )}
+
+        {/* Overflow: when more than two attention signals are live, the rest
+            collapse into one calm chip instead of stacking more cards. */}
+        {collapsedBanners.length > 0 && (
+          <button
+            onClick={() => navigate(collapsedReminderHref)}
+            className="w-full min-h-[44px] rounded-2xl bg-cream-card border border-cream-border px-4 flex items-center gap-2.5 text-left active:bg-cream-soft transition-colors"
+          >
+            <span className="w-7 h-7 rounded-full bg-warn-50 flex items-center justify-center shrink-0 text-warn-700 text-[11px] font-bold tabular-nums">
+              {collapsedBanners.length}
+            </span>
+            <span className="text-[12px] font-semibold text-ink-700">
+              {collapsedBanners.length === 1
+                ? t('home_more_reminder_one')
+                : t('home_more_reminders').replace('{n}', String(collapsedBanners.length))}
+            </span>
+            <ChevronRight size={15} className="text-ink-400 ml-auto shrink-0" />
+          </button>
+        )}
 
         {/* Recent Transactions */}
         {recentTxns.length > 0 && (
@@ -989,14 +1143,29 @@ interface QuickTileProps {
   // neutral cream-soft across all tiles — only the icon carries the tone.
   iconClass: string;
   onClick: () => void;
+  // Optional pending-state count. >0 renders a corner badge tinted to match
+  // the icon (badgeBgClass) so the cue is never colour-only — it sits right
+  // beside the same-hue glyph and carries the number itself. badgeTextClass
+  // defaults to the icon tint but can override it for AA contrast on light
+  // tints (e.g. warn-700 instead of warn-600 on warn-50).
+  badge?: number;
+  badgeBgClass?: string;
+  badgeTextClass?: string;
 }
 
-function QuickTile({ label, icon: Icon, iconClass, onClick }: QuickTileProps) {
+function QuickTile({ label, icon: Icon, iconClass, onClick, badge = 0, badgeBgClass, badgeTextClass }: QuickTileProps) {
   return (
     <button
       onClick={onClick}
-      className="aspect-square rounded-2xl bg-cream-soft border border-cream-hairline flex flex-col items-center justify-center gap-2 px-1.5 active:scale-[0.97] active:bg-cream-bg transition-all"
+      className="relative aspect-square rounded-2xl bg-cream-soft border border-cream-hairline flex flex-col items-center justify-center gap-2 px-1.5 active:scale-[0.97] active:bg-cream-bg transition-all"
     >
+      {badge > 0 && (
+        <span
+          className={`absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full ${badgeBgClass ?? "bg-warn-50"} ${badgeTextClass ?? iconClass} text-[10px] font-bold flex items-center justify-center tabular-nums ring-1 ring-white`}
+        >
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
       <Icon size={26} className={iconClass} strokeWidth={1.7} />
       <span className="text-[10.5px] font-semibold text-ink-800 tracking-tight truncate max-w-full">
         {label}

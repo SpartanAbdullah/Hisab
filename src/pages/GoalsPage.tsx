@@ -188,12 +188,12 @@ export function GoalsPage() {
                   {/* Actions */}
                   <div className="flex gap-2 mt-3">
                     <button onClick={() => markPaid(exp.id)}
-                      className="flex-1 py-2 rounded-xl border border-receive-100 text-receive-600 text-[11px] font-bold flex items-center justify-center gap-1.5 active:bg-receive-50 transition-all"
+                      className="flex-1 min-h-[44px] py-2 rounded-xl border border-receive-100 text-receive-600 text-[11px] font-bold flex items-center justify-center gap-1.5 active:bg-receive-50 transition-all"
                     >
                       <CheckCircle size={12} /> {t('upcoming_status_done')}
                     </button>
                     <button onClick={() => updateStatus(exp.id, 'cancelled')}
-                      className="py-2 px-3 rounded-xl border border-pay-100 text-pay-text flex items-center gap-1.5 active:bg-pay-50 transition-all text-[11px] font-bold"
+                      className="min-h-[44px] py-2 px-3 rounded-xl border border-pay-100 text-pay-text flex items-center gap-1.5 active:bg-pay-50 transition-all text-[11px] font-bold"
                     >
                       <XCircle size={12} /> {t('upcoming_status_cancel')}
                     </button>
@@ -220,6 +220,15 @@ export function GoalsPage() {
           const account = g.storedInAccountId ? accounts.find(a => a.id === g.storedInAccountId) : null;
           const isComplete = progress >= 100;
           const isInternal = !g.storedInAccountId;
+          // "How much more" + a soft pace estimate from the average saved per
+          // month since the goal was created.
+          const remaining = Math.max(0, g.targetAmount - g.savedAmount);
+          const monthsElapsed = Math.max(
+            1,
+            differenceInDays(new Date(), new Date(g.createdAt)) / 30,
+          );
+          const pace = g.savedAmount / monthsElapsed;
+          const monthsToGo = pace > 0 ? Math.ceil(remaining / pace) : 0;
           return (
             <div key={g.id}
               className={`rounded-2xl bg-cream-card border border-cream-border p-5 animate-fade-in ${isComplete ? '!border-receive-100/60' : ''}`}
@@ -257,6 +266,19 @@ export function GoalsPage() {
                 <span>{t('goal_saved')}: {formatMoney(g.savedAmount, g.currency)}</span>
                 <span>{t('goal_target')}: {formatMoney(g.targetAmount, g.currency)}</span>
               </div>
+
+              {!isComplete && (
+                <div className="flex items-center justify-between gap-2 mt-2">
+                  <p className="text-[11px] font-semibold text-ink-700 tabular-nums">
+                    {t('goal_to_go').replace('{amount}', formatMoney(remaining, g.currency))}
+                  </p>
+                  {pace > 0 && (
+                    <p className="text-[11px] text-ink-400 tabular-nums">
+                      {t('goal_pace').replace('{n}', String(monthsToGo))}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {!isComplete && (
                 <button onClick={() => setShowContribute(true)}

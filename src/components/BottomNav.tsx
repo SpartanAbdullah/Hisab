@@ -58,12 +58,14 @@ export function BottomNav({ onQuickEntry }: Props) {
         ))}
 
         {/* Center FAB. -22px lift puts it above the nav surface; the cream-bg
-            ring matches the body so the FAB reads as floating, not pasted. */}
-        <div className="flex items-center justify-center relative">
+            ring matches the body so the FAB reads as floating, not pasted.
+            The 'Add' microlabel under it matches the other tabs' label
+            treatment so the FAB reads as a peer of the surrounding tabs. */}
+        <div className="flex flex-col items-center justify-center">
           <button
             onClick={onQuickEntry}
             aria-label="Quick entry"
-            className="w-[54px] h-[54px] rounded-full flex items-center justify-center text-white active:scale-95 transition-transform"
+            className="w-[54px] h-[54px] rounded-full flex items-center justify-center text-white active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
             style={{
               marginTop: -22,
               // Accent-violet at the top (carrying the bloom hue from the
@@ -77,6 +79,15 @@ export function BottomNav({ onQuickEntry }: Props) {
           >
             <Plus size={22} strokeWidth={2.4} />
           </button>
+          {/* -2px pulls the label up into the gap freed by the FAB's lift so
+              it baseline-aligns with the sibling tab labels. */}
+          <span
+            className="text-[10px] tracking-tight text-ink-500 font-medium"
+            style={{ marginTop: -2 }}
+            aria-hidden
+          >
+            {t('nav_add')}
+          </span>
         </div>
 
         {rightTabs.map((link) => (
@@ -99,7 +110,8 @@ function NavTab({ to, icon: Icon, label, badge = 0 }: NavTabProps) {
     <NavLink
       to={to}
       end={to === '/'}
-      className="flex flex-col items-center gap-0.5 py-1.5 transition-opacity active:opacity-60"
+      aria-label={badge > 0 ? `${label}, ${badge} pending` : undefined}
+      className="flex flex-col items-center justify-center gap-0.5 py-1.5 h-full transition-opacity active:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-inset rounded-xl"
     >
       {({ isActive }) => (
         <>
@@ -113,6 +125,7 @@ function NavTab({ to, icon: Icon, label, badge = 0 }: NavTabProps) {
               <span
                 className="absolute -top-1.5 -right-2 min-w-[14px] h-3.5 px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center tabular-nums ring-2 ring-white"
                 style={{ background: 'var(--color-pay-600)' }}
+                aria-hidden
               >
                 {badge > 9 ? '9+' : badge}
               </span>

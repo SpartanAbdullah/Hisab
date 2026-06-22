@@ -16,8 +16,8 @@ export function ProgressRing({
   size = 48,
   strokeWidth = 4,
   progress,
-  color = '#6366f1',
-  trackColor = '#e2e8f0',
+  color = 'var(--color-accent-500)',
+  trackColor = 'var(--color-ink-200)',
   children,
   className,
 }: Props) {

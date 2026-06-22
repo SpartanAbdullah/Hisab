@@ -62,6 +62,14 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const amt = parseFloat(amount) || 0;
+  // Live running totals for the split preview. Glanceable feedback so the
+  // user can see whether an exact/percentage split adds up before saving.
+  const exactTotal = selectedMembers.reduce((sum, id) => sum + (parseFloat(exactAmounts[id] || '0') || 0), 0);
+  const pctTotal = selectedMembers.reduce((sum, id) => sum + (parseFloat(percentages[id] || '0') || 0), 0);
+  const sharesTotal = selectedMembers.reduce((sum, id) => sum + (parseFloat(shares[id] || '1') || 0), 0);
+  const exactRemaining = Math.round((amt - exactTotal) * 100) / 100;
+  const exactIsOff = Math.abs(exactTotal - amt) > 0.01;
+  const pctIsOff = Math.abs(pctTotal - 100) > 0.01;
   const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
   const currentUserName = localStorage.getItem('hisaab_user_name') ?? '';
   const paidByMember = group.members.find(member => member.id === paidBy);
@@ -108,7 +116,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
   };
 
   const computeSplits = (): { valid: boolean; splits: SplitDetail[]; error?: string } => {
-    if (selectedMembers.length === 0) return { valid: false, splits: [], error: t('fill_all') };
+    if (selectedMembers.length === 0) return { valid: false, splits: [], error: t('val_pick_member') };
 
     if (splitType === 'equal') {
       const base = Math.floor((amt * 100) / selectedMembers.length) / 100;
@@ -141,7 +149,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
 
     if (splitType === 'shares') {
       const totalShares = selectedMembers.reduce((sum, id) => sum + parseFloat(shares[id] || '1'), 0);
-      if (totalShares === 0) return { valid: false, splits: [], error: t('fill_all') };
+      if (totalShares === 0) return { valid: false, splits: [], error: t('val_shares_zero') };
       const splits = selectedMembers.map(id => {
         const share = parseFloat(shares[id] || '1');
         return { memberId: id, amount: Math.round((share / totalShares) * amt * 100) / 100 };
@@ -159,7 +167,15 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
       setSubmitError('Your group membership could not be matched. Reopen the group or ask the owner to reconnect you before adding an expense.');
       return;
     }
-    if (!description.trim() || amt <= 0 || !paidBy) {
+    if (!description.trim()) {
+      setSubmitError(t('val_need_name'));
+      return;
+    }
+    if (amt <= 0) {
+      setSubmitError(t('val_need_amount'));
+      return;
+    }
+    if (!paidBy) {
       setSubmitError(t('fill_all'));
       return;
     }
@@ -272,7 +288,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
           <div className="flex flex-wrap gap-2 mt-1.5">
             {activeMembers.map(member => (
               <button key={member.id} onClick={() => setPaidBy(member.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
+                className={`min-h-[44px] inline-flex items-center px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
                 {member.name}
               </button>
             ))}
@@ -304,7 +320,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
           <div className="flex flex-wrap gap-2 mt-1.5">
             {activeMembers.map(member => (
               <button key={member.id} onClick={() => toggleMember(member.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
+                className={`min-h-[44px] inline-flex items-center px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
                 {member.name}
               </button>
             ))}
@@ -322,7 +338,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
           <div className="grid grid-cols-4 gap-1.5 mt-1.5">
             {(['equal', 'exact', 'percentage', 'shares'] as SplitType[]).map(split => (
               <button key={split} onClick={() => setSplitType(split)}
-                className={`py-2 rounded-xl text-[11px] font-bold transition-all ${splitType === split ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-500'}`}>
+                className={`min-h-[44px] inline-flex items-center justify-center py-2 rounded-xl text-[11px] font-bold transition-all ${splitType === split ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-500'}`}>
                 {split === 'equal' ? t('group_split_equal') : split === 'exact' ? t('group_split_exact') : split === 'percentage' ? t('group_split_pct') : t('group_split_shares')}
               </button>
             ))}
@@ -339,26 +355,42 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
             {splitType === 'exact' && selectedMembers.map(id => (
               <div key={id} className="flex items-center gap-2">
                 <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
-                <input className="flex-1 border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
+                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
                   value={exactAmounts[id] || ''} onChange={e => setExactAmounts({ ...exactAmounts, [id]: e.target.value })} placeholder="0" />
               </div>
             ))}
+            {splitType === 'exact' && (
+              <p className={`text-[11px] font-semibold tabular-nums px-1 ${exactIsOff ? 'text-pay-text' : 'text-ink-500'}`}>
+                {t('split_allocated').replace('{a}', formatMoney(exactTotal, group.currency)).replace('{b}', formatMoney(amt, group.currency))}
+                {' — '}{formatMoney(Math.abs(exactRemaining), group.currency)} {exactRemaining < 0 ? 'over' : 'left'}
+              </p>
+            )}
             {splitType === 'percentage' && selectedMembers.map(id => (
               <div key={id} className="flex items-center gap-2">
                 <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
-                <input className="flex-1 border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
+                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
                   value={percentages[id] || ''} onChange={e => setPercentages({ ...percentages, [id]: e.target.value })} placeholder="%" />
                 <span className="text-[11px] text-ink-500">%</span>
               </div>
             ))}
+            {splitType === 'percentage' && (
+              <p className={`text-[11px] font-semibold tabular-nums px-1 ${pctIsOff ? 'text-pay-text' : 'text-ink-500'}`}>
+                {t('split_total_pct').replace('{n}', String(Math.round(pctTotal * 100) / 100))}
+              </p>
+            )}
             {splitType === 'shares' && selectedMembers.map(id => (
               <div key={id} className="flex items-center gap-2">
                 <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
-                <input className="flex-1 border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="numeric"
+                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="numeric"
                   value={shares[id] || '1'} onChange={e => setShares({ ...shares, [id]: e.target.value })} placeholder="1" />
                 <span className="text-[11px] text-ink-500">shares</span>
               </div>
             ))}
+            {splitType === 'shares' && (
+              <p className="text-[11px] font-semibold tabular-nums px-1 text-ink-500">
+                {t('split_total_shares').replace('{n}', String(Math.round(sharesTotal * 100) / 100))}
+              </p>
+            )}
           </div>
         )}
 
@@ -367,7 +399,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {CATEGORIES.map(item => (
               <button key={item} onClick={() => setCategory(item)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${category === item ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-500'}`}>
+                className={`min-h-[44px] inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${category === item ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-500'}`}>
                 {item}
               </button>
             ))}

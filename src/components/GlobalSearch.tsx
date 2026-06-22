@@ -8,6 +8,7 @@ import { useLoanStore } from '../stores/loanStore';
 import { useSplitStore } from '../stores/splitStore';
 import { groupExpensesDb } from '../lib/supabaseDb';
 import { formatMoney } from '../lib/constants';
+import { useT } from '../lib/i18n';
 import type { Currency, GroupExpense } from '../db';
 
 interface Props {
@@ -29,6 +30,7 @@ const normalize = (value: string) => value.trim().toLowerCase();
 
 export function GlobalSearch({ open, onClose }: Props) {
   const navigate = useNavigate();
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [groupExpenses, setGroupExpenses] = useState<GroupExpense[]>([]);
@@ -123,6 +125,9 @@ export function GlobalSearch({ open, onClose }: Props) {
     return rows;
   }, [accountById, transactions, loans, groups, groupExpenses, groupById]);
 
+  const trimmedQuery = query.trim();
+  const isEmptyQuery = trimmedQuery.length === 0;
+
   const visibleResults = useMemo(() => {
     const needle = normalize(query);
     if (!needle) return results.slice(0, 12);
@@ -134,6 +139,19 @@ export function GlobalSearch({ open, onClose }: Props) {
       })
       .slice(0, 40);
   }, [query, results]);
+
+  // Group the visible rows by scope so the list reads as labelled sections
+  // ("Transactions", "Loans", "Group expenses") instead of one flat stream.
+  // Insertion order of the map preserves the scope order rows first appear in.
+  const groupedResults = useMemo(() => {
+    const map = new Map<string, SearchResult[]>();
+    for (const result of visibleResults) {
+      const bucket = map.get(result.scope);
+      if (bucket) bucket.push(result);
+      else map.set(result.scope, [result]);
+    }
+    return [...map.entries()];
+  }, [visibleResults]);
 
   if (!open) return null;
 
@@ -148,14 +166,14 @@ export function GlobalSearch({ open, onClose }: Props) {
                 ref={inputRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search transactions"
+                placeholder={t('search_scope_placeholder')}
                 className="w-full h-11 rounded-2xl bg-cream-soft border border-cream-border pl-10 pr-3 text-[14px] font-medium text-ink-900 outline-none focus:border-accent-500"
               />
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="w-10 h-10 rounded-xl bg-cream-soft border border-cream-border flex items-center justify-center text-ink-500 active:scale-95 transition-transform"
+              className="min-w-[44px] min-h-[44px] rounded-xl bg-cream-soft border border-cream-border flex items-center justify-center text-ink-500 active:scale-95 transition-transform"
               aria-label="Close search"
             >
               <X size={17} />
@@ -166,37 +184,58 @@ export function GlobalSearch({ open, onClose }: Props) {
             {loading && results.length === 0 ? (
               <p className="text-center text-[12px] text-ink-500 py-8">Searching money activity...</p>
             ) : visibleResults.length === 0 ? (
-              <p className="text-center text-[12px] text-ink-500 py-8">No matching results.</p>
+              isEmptyQuery ? (
+                /* Empty query, nothing to recall yet — tell the user what
+                   Search reaches across so the blank box isn't a dead end. */
+                <p className="text-center text-[12px] text-ink-500 py-8 px-4 leading-relaxed">
+                  {t('search_covers')}
+                </p>
+              ) : (
+                <p className="text-center text-[12px] text-ink-500 py-8 px-4 leading-relaxed">
+                  {t('search_no_matches').replace('{q}', trimmedQuery)} {t('search_covers')}
+                </p>
+              )
             ) : (
-              <div className="space-y-1.5">
-                {visibleResults.map((result) => {
-                  const Icon = result.icon;
-                  return (
-                    <button
-                      key={result.id}
-                      type="button"
-                      onClick={() => {
-                        navigate(result.href);
-                        onClose();
-                      }}
-                      className="w-full rounded-2xl bg-cream-card border border-cream-border px-3.5 py-3 flex items-center gap-3 text-left active:bg-cream-soft transition-colors"
-                    >
-                      <div className="w-9 h-9 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
-                        <Icon size={16} className="text-accent-600" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <p className="text-[13px] font-semibold text-ink-900 truncate">{result.title}</p>
-                          <span className="shrink-0 rounded-full bg-info-50 px-2 py-0.5 text-[9px] font-bold text-info-600">
-                            {result.scope}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-ink-500 truncate mt-0.5">{result.meta}</p>
-                      </div>
-                      <ChevronRight size={15} className="text-ink-300 shrink-0" />
-                    </button>
-                  );
-                })}
+              <div className="space-y-3">
+                {/* On an empty query the list is the most recent activity —
+                    label it so the user knows these aren't search matches. */}
+                {isEmptyQuery && (
+                  <p className="px-1 text-[10px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                    {t('search_recent')}
+                  </p>
+                )}
+                {groupedResults.map(([scope, rows]) => (
+                  <div key={scope} className="space-y-1.5">
+                    {/* Scope section header — replaces the per-row chip so the
+                        scope label reads at >=10px and the list is grouped. */}
+                    <p className="px-1 text-[10px] font-semibold text-ink-400 uppercase tracking-[0.1em]">
+                      {scope}
+                    </p>
+                    {rows.map((result) => {
+                      const Icon = result.icon;
+                      return (
+                        <button
+                          key={result.id}
+                          type="button"
+                          onClick={() => {
+                            navigate(result.href);
+                            onClose();
+                          }}
+                          className="w-full rounded-2xl bg-cream-card border border-cream-border px-3.5 py-3 flex items-center gap-3 text-left active:bg-cream-soft transition-colors"
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
+                            <Icon size={16} className="text-accent-600" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[13px] font-semibold text-ink-900 truncate">{result.title}</p>
+                            <p className="text-[11px] text-ink-500 truncate mt-0.5">{result.meta}</p>
+                          </div>
+                          <ChevronRight size={15} className="text-ink-300 shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             )}
           </div>

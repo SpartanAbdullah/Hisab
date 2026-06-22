@@ -71,7 +71,7 @@ export function BudgetWarningBanner({ usages }: Props) {
       <button
         onClick={handleDismiss}
         aria-label="Dismiss"
-        className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-500 active:bg-warn-50/60 transition-colors shrink-0"
+        className='relative w-7 h-7 rounded-lg flex items-center justify-center text-ink-500 active:bg-warn-50/60 transition-colors shrink-0 before:absolute before:-inset-2 before:content-[""]'
       >
         <X size={14} />
       </button>

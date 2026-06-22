@@ -38,9 +38,16 @@ const NAVY_BLOOM =
 const EXAMPLE_PROMPTS = ['add 3 aed for karak', 'How much was my income this month?', 'Which card did I spend most from?', 'How do subscriptions work?'];
 const SPLITS_EXAMPLES = ['How do I split a bill?', 'How do I settle up?', 'Should I use Full Tracker?'];
 
+// When a data answer maps to a drillable view we attach a "view link": either
+// the category-insight page or the transactions list. Threaded through the ai
+// Msg so the bubble can render a "View these N transactions" chip under it.
+type ViewLink =
+  | { kind: 'category'; category: string; count: number }
+  | { kind: 'transactions'; count: number };
+
 type Msg =
   | { id: number; role: 'user'; text: string }
-  | { id: number; role: 'ai'; text: string; suggestions?: string[] }
+  | { id: number; role: 'ai'; text: string; suggestions?: string[]; viewLink?: ViewLink }
   | { id: number; role: 'chip'; draft: ParsedExpense; resolved?: string }
   | { id: number; role: 'groupchip'; draft: ParsedGroupExpense; groupId: string; resolved?: string };
 
@@ -139,6 +146,47 @@ export function HisaabAIPage() {
     return { cur, spent, top, count: monthExpenses.length };
   }, [transactions]);
 
+  // Dynamic example chips — seeded from the user's own data so the first run
+  // feels personal: busiest account, an open-loan person, and a group. Falls
+  // back to the static list whenever a source is empty.
+  const dynamicExamples = useMemo(() => {
+    if (isFull) {
+      const chips: string[] = [];
+      // Busiest account this month (primary currency), if any.
+      const cur = primaryCurrency();
+      const ym = new Date().toISOString().slice(0, 7);
+      const byAcct = new Map<string, number>();
+      for (const t of transactions) {
+        if (t.type === 'expense' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym && t.sourceAccountId) {
+          byAcct.set(t.sourceAccountId, (byAcct.get(t.sourceAccountId) ?? 0) + t.amount);
+        }
+      }
+      const topAcctId = [...byAcct.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      const topAcct = topAcctId ? accounts.find((a) => a.id === topAcctId) : undefined;
+      if (topAcct) chips.push(`How much did I spend from ${topAcct.name}?`);
+      // An active loan person.
+      const person = loans.find((l) => l.status === 'active' && l.remainingAmount > 0.01)?.personName;
+      if (person) chips.push(`How much does ${person} owe me?`);
+      // A group name.
+      const group = groups[0]?.name;
+      if (group) chips.push(`How do I split a bill with ${group}?`);
+      // Top up to 3, padding from the static list without duplicates.
+      for (const s of EXAMPLE_PROMPTS) {
+        if (chips.length >= 3) break;
+        if (!chips.includes(s)) chips.push(s);
+      }
+      return chips.slice(0, 4);
+    }
+    // Splits mode: surface a real group if one exists.
+    const group = groups[0]?.name;
+    const chips = group ? [`How do I split a bill with ${group}?`] : [];
+    for (const s of SPLITS_EXAMPLES) {
+      if (chips.length >= 3) break;
+      if (!chips.includes(s)) chips.push(s);
+    }
+    return chips;
+  }, [isFull, transactions, accounts, loans, groups]);
+
   // Gentle nudges + streak (Full Tracker feed only). All on-device.
   const todayIso = new Date().toISOString().slice(0, 10);
   const streak = useMemo(
@@ -148,15 +196,47 @@ export function HisaabAIPage() {
   const renewals = useMemo(() => upcomingRenewals(templates, todayIso, 7), [templates, todayIso]);
   const ghosts = useMemo(() => detectGhosts(templates, todayIso), [templates, todayIso]);
 
+  // Count transactions backing a category-spend answer (this month, primary
+  // currency) so we can offer a precise "View these N transactions" link.
+  const countCategorySpend = (category: string): number => {
+    const cur = primaryCurrency();
+    const ym = new Date().toISOString().slice(0, 7);
+    const c = category.trim().toLowerCase();
+    return transactions.filter(
+      (t) =>
+        t.type === 'expense' &&
+        t.currency === cur &&
+        (t.createdAt ?? '').slice(0, 7) === ym &&
+        ((t.category || 'Other').toLowerCase().includes(c) || c.includes((t.category || 'other').toLowerCase())),
+    ).length;
+  };
+
   // ── Answer "fetch my own data" questions from local stores (no LLM) ──
-  const answerQuery = (q: ParsedQuery): { text: string; serious: boolean } => {
+  const answerQuery = (q: ParsedQuery): { text: string; serious: boolean; viewLink?: ViewLink } => {
     switch (q.kind) {
-      case 'person-balance': return { text: answerPersonBalance(q.personName ?? ''), serious: false };
-      case 'category-spend': return { text: answerCategorySpend(q.category ?? ''), serious: false };
+      case 'person-balance':
+        return { text: answerPersonBalance(q.personName ?? ''), serious: false, viewLink: linkForPerson(q.personName ?? '') };
+      case 'category-spend': {
+        const category = (q.category ?? '').trim();
+        const count = category ? countCategorySpend(category) : 0;
+        return {
+          text: answerCategorySpend(category),
+          serious: false,
+          viewLink: category && count > 0 ? { kind: 'category', category, count } : undefined,
+        };
+      }
       case 'net-balance': return { text: answerNetBalance(), serious: false };
       case 'account-balance': return { text: answerAccountBalance(), serious: false };
-      case 'top-spend': return { text: answerTopSpend(), serious: false };
-      case 'account-spend': return { text: answerAccountSpend(q.accountName, q.period ?? 'this'), serious: false };
+      case 'top-spend': {
+        const top = summary.top[0];
+        return {
+          text: answerTopSpend(),
+          serious: false,
+          viewLink: top ? { kind: 'category', category: top.name, count: countCategorySpend(top.name) } : undefined,
+        };
+      }
+      case 'account-spend':
+        return { text: answerAccountSpend(q.accountName, q.period ?? 'this'), serious: false, viewLink: { kind: 'transactions', count: summary.count } };
       case 'income': return { text: answerIncome(q.period ?? 'this'), serious: false };
       case 'trend': return { text: answerTrend(), serious: false };
       case 'budget-status': {
@@ -164,6 +244,16 @@ export function HisaabAIPage() {
         return { text, serious: /over by/.test(text) }; // over budget → no jokes
       }
     }
+  };
+
+  // A person-balance answer links to the transactions list (filtered mentally
+  // by the user); we attach a link only when there's an open loan to view.
+  const linkForPerson = (name: string): ViewLink | undefined => {
+    const n = name.trim().toLowerCase();
+    const matches = loans.filter(
+      (l) => l.status === 'active' && l.remainingAmount > 0.01 && l.personName.toLowerCase().includes(n),
+    );
+    return matches.length > 0 ? { kind: 'transactions', count: matches.length } : undefined;
   };
 
   const answerPersonBalance = (name: string): string => {
@@ -396,7 +486,7 @@ export function HisaabAIPage() {
     let aiMsgs: Msg[];
     if (reply.kind === 'query' && reply.query) {
       const ans = answerQuery(reply.query);
-      aiMsgs = [{ id: mkId(), role: 'ai', text: flavor(ans.text, persona, ans.serious) }];
+      aiMsgs = [{ id: mkId(), role: 'ai', text: flavor(ans.text, persona, ans.serious), viewLink: ans.viewLink }];
     } else if (reply.kind === 'group' && reply.group) {
       aiMsgs = buildGroupReply(reply.group);
     } else if (reply.kind === 'command' && reply.command) {
@@ -685,7 +775,7 @@ export function HisaabAIPage() {
                 : `${t('greet_hello')}${greetName ? `, ${greetName}` : ''}! I'm your Hisaab guide. Ask me how to split a bill, settle up, or which mode fits you — and I'll point you the right way.`}
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
-              {(isFull ? EXAMPLE_PROMPTS : SPLITS_EXAMPLES).map((q) => (
+              {dynamicExamples.map((q) => (
                 <SuggestionChip key={q} q={q} onTap={() => submit(q)} />
               ))}
             </div>
@@ -697,6 +787,21 @@ export function HisaabAIPage() {
               return (
                 <AIBubble key={m.id}>
                   <p>{m.text}</p>
+                  {m.viewLink && (
+                    <button
+                      onClick={() =>
+                        m.viewLink!.kind === 'category'
+                          ? navigate(`/hisaab-ai/insight/${encodeURIComponent(m.viewLink!.category)}`)
+                          : navigate('/transactions')
+                      }
+                      className="mt-2.5 inline-flex items-center gap-1.5 min-h-[44px] px-3 -ml-1 rounded-lg text-[12px] font-semibold text-accent-600 active:opacity-70 transition-opacity"
+                    >
+                      {m.viewLink.count === 1
+                        ? t('ai_view_txn_one')
+                        : t('ai_view_txns').replace('{count}', String(m.viewLink.count))}
+                      <ChevronRight size={14} />
+                    </button>
+                  )}
                   {m.suggestions && m.suggestions.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-3">
                       {m.suggestions.map((q) => (
@@ -777,7 +882,7 @@ function SuggestionChip({ q, onTap }: { q: string; onTap: () => void }) {
   return (
     <button
       onClick={onTap}
-      className="text-[11.5px] font-medium px-3 py-1.5 rounded-full bg-cream-soft border border-cream-border text-ink-700 active:scale-95 transition-transform"
+      className="relative text-[11.5px] font-medium px-3 py-1.5 rounded-full bg-cream-soft border border-cream-border text-ink-700 active:scale-95 transition-transform before:absolute before:-inset-2 before:content-['']"
     >
       {q}
     </button>

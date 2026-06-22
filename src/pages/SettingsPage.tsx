@@ -398,6 +398,12 @@ export function SettingsPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+        {/* Group header — Account & security. Lightweight visual chunking only;
+            no behaviour change. */}
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 px-1 pt-1">
+          {t('settings_grp_account')}
+        </p>
+
         {/* My Account */}
         <div className={sectionClass}>
           <button
@@ -691,6 +697,11 @@ export function SettingsPage() {
           )}
         </div>
 
+        {/* Group header — Your money */}
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 px-1 pt-2">
+          {t('settings_grp_money')}
+        </p>
+
         {/* Phase 3: Money tools — only meaningful in full_tracker mode.
             Each row deep-links to the matching feature page. */}
         {mode === 'full_tracker' && (
@@ -769,6 +780,11 @@ export function SettingsPage() {
             <ChevronRight size={16} className="text-ink-300" />
           </button>
         </div>
+
+        {/* Group header — Data & backup */}
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 px-1 pt-2">
+          {t('settings_grp_data')}
+        </p>
 
         {/* Backup */}
         <div className={sectionClass}>
@@ -862,6 +878,11 @@ export function SettingsPage() {
             </div>
           </div>
         </div>
+
+        {/* Group header — About & legal */}
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 px-1 pt-2">
+          {t('settings_grp_about')}
+        </p>
 
         {/* About */}
         <div className={sectionClass}>

@@ -259,7 +259,16 @@ export function RepaymentModal({
             disabled={saving || !canSubmit()}
             className="cta-primary"
           >
-            {saving ? t('repay_paying') : isInstallmentPayment ? t('loan_mark_paid') : t('repay_confirm')}
+            {saving
+              ? t('repay_paying')
+              : isInstallmentPayment
+              ? t('loan_mark_paid')
+              : /* Direction-aware: on a given loan we're recording money
+                   coming back to us; on a taken loan we're recording a
+                   payment going out. */
+                isGiven
+              ? t('repay_record_received')
+              : t('repay_record_paid')}
           </button>
         }
       >
@@ -292,6 +301,37 @@ export function RepaymentModal({
             <label className="form-label">
               {(lockAmount ? t('loan_installment_amount') : t('repay_amount'))} ({loan.currency})
             </label>
+            {/* Quick-fill chips — Full / Half / (when an EMI instalment is
+                known) Next instalment. Each is a >=44px tap target so a
+                thumb can hit it cleanly. Hidden when the amount is locked
+                to a specific EMI. */}
+            {!lockAmount ? (
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setAmount(String(loan.remainingAmount))}
+                  className="flex-1 min-h-[44px] rounded-xl bg-cream-soft border border-cream-border text-[12px] font-semibold text-ink-700 active:scale-[0.97] transition-transform"
+                >
+                  {t('repay_full')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAmount(String(Math.round((loan.remainingAmount / 2) * 100) / 100))}
+                  className="flex-1 min-h-[44px] rounded-xl bg-cream-soft border border-cream-border text-[12px] font-semibold text-ink-700 active:scale-[0.97] transition-transform"
+                >
+                  {t('repay_half')}
+                </button>
+                {installmentAmount != null && (
+                  <button
+                    type="button"
+                    onClick={() => setAmount(String(installmentAmount))}
+                    className="flex-1 min-h-[44px] rounded-xl bg-accent-50 border border-accent-100 text-[12px] font-semibold text-accent-600 active:scale-[0.97] transition-transform"
+                  >
+                    {t('repay_next')}
+                  </button>
+                )}
+              </div>
+            ) : null}
             <input
               type="number"
               step="0.01"
@@ -402,9 +442,11 @@ export function RepaymentModal({
             />
           </div>
 
-          <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
-            {t('money_not_moved_notice')}
-          </p>
+          {!isLedgerOnlyMode && (
+            <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
+              {t('money_not_moved_notice')}
+            </p>
+          )}
         </div>
       </Modal>
 

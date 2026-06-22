@@ -284,7 +284,7 @@ export function AccountDetailPage() {
                           }
                           const ok = await confirmDestructive({
                             title: t('acct_delete_confirm'),
-                            description: 'This permanently removes the account.',
+                            description: t('del_account_body'),
                             confirmLabel: 'Delete account',
                           });
                           if (ok) {

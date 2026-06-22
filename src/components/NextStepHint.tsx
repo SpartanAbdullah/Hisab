@@ -1,4 +1,5 @@
 import { ArrowRight, CheckCircle2, Lightbulb, type LucideIcon } from 'lucide-react';
+import { useT } from '../lib/i18n';
 
 type Tone = 'accent' | 'receive' | 'pay' | 'warn' | 'info';
 
@@ -52,18 +53,19 @@ export function NextStepHint({
   actionLabel,
   onAction,
 }: Props) {
-  const t = TONES[tone];
+  const tt = TONES[tone];
+  const t = useT();
 
   return (
-    <div className={`rounded-[18px] border ${t.shell} p-4 flex items-start gap-3`}>
-      <div className={`w-9 h-9 rounded-xl ${t.iconBox} ${t.icon} flex items-center justify-center shrink-0`}>
+    <div className={`rounded-[18px] border ${tt.shell} p-4 flex items-start gap-3`}>
+      <div className={`w-9 h-9 rounded-xl ${tt.iconBox} ${tt.icon} flex items-center justify-center shrink-0`}>
         <Icon size={16} strokeWidth={1.8} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <CheckCircle2 size={12} className={t.status} />
-          <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${t.status}`}>
-            Current status
+          <CheckCircle2 size={12} className={tt.status} />
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${tt.status}`}>
+            {t('hint_current_status')}
           </p>
         </div>
         <p className="text-[13px] font-semibold text-ink-900 tracking-tight mt-1 leading-snug">

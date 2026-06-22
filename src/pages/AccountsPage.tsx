@@ -76,6 +76,19 @@ export function AccountsPage() {
     ([cur, amt]) => cur !== primaryCurrency && amt > 0,
   );
 
+  // Assets vs. owed split — shown as two chips under the total whenever the
+  // user holds at least one credit card, so the net figure reads clearly.
+  const hasCreditCard = accounts.some((a) => a.type === 'credit_card');
+  const primaryAssets = accounts
+    .filter((a) => a.currency === primaryCurrency && a.type !== 'credit_card')
+    .reduce((sum, a) => sum + a.balance, 0);
+  const primaryOwed = accounts
+    .filter((a) => a.currency === primaryCurrency && a.type === 'credit_card')
+    .reduce((sum, a) => {
+      const limit = parseFloat(a.metadata.creditLimit || '0');
+      return sum + (limit - a.balance);
+    }, 0);
+
   const primaryAccounts = accounts.filter((a) => a.currency === primaryCurrency);
   const otherAccounts = accounts.filter((a) => a.currency !== primaryCurrency);
 
@@ -91,6 +104,52 @@ export function AccountsPage() {
     const meta = currencyMeta[account.currency];
     const typeLabel = labelForType[account.type] ?? account.type.replace(/_/g, ' ');
     const masked = account.metadata.lastFour ? ` · ⋯${account.metadata.lastFour}` : '';
+    // Credit cards read as "available balance" + how much is owed, so the
+    // liability is visible without decoding a negative net-worth figure.
+    const isCreditCard = account.type === 'credit_card';
+    const creditLimit = isCreditCard ? parseFloat(account.metadata.creditLimit || '0') : 0;
+    const used = isCreditCard ? creditLimit - account.balance : 0;
+    if (isCreditCard) {
+      return (
+        <button
+          key={account.id}
+          onClick={() => navigate(`/account/${account.id}`)}
+          className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-cream-soft transition-colors"
+        >
+          <div className="w-9 h-9 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
+            <Icon size={16} className="text-ink-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
+              {account.name}
+            </p>
+            <p className="text-[11px] text-ink-500 mt-0.5">
+              {typeLabel}
+              {masked}
+            </p>
+            {creditLimit === 0 && (
+              <span className="inline-flex items-center mt-1 text-[10px] font-semibold text-warn-700 bg-warn-50 rounded-md px-1.5 py-0.5">
+                {t('acct_set_limit')}
+              </span>
+            )}
+          </div>
+          <div className="text-right shrink-0">
+            <p className={`text-[13.5px] font-semibold tabular-nums tracking-tight ${account.balance < 0 ? 'text-pay-text' : 'text-ink-900'}`}>
+              {formatMoney(account.balance, account.currency)}
+            </p>
+            <p className="text-[10px] text-ink-400 mt-0.5">
+              {t('acct_available')}
+            </p>
+            {creditLimit > 0 && (
+              <p className="text-[10px] text-pay-text mt-0.5 tabular-nums">
+                {t('acct_owe').replace('{amount}', formatMoney(used, account.currency))}
+              </p>
+            )}
+          </div>
+          <ChevronRight size={14} className="text-ink-300 shrink-0 -mr-1" />
+        </button>
+      );
+    }
     return (
       <button
         key={account.id}
@@ -161,6 +220,16 @@ export function AccountsPage() {
                   tone="on-navy"
                 />
               </div>
+              {hasCreditCard && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="inline-flex items-center text-[10px] font-semibold text-receive-100 bg-receive-600/25 rounded-md px-1.5 py-0.5 tabular-nums">
+                    {t('acct_assets').replace('{amount}', formatMoney(primaryAssets, primaryCurrency))}
+                  </span>
+                  <span className="inline-flex items-center text-[10px] font-semibold text-pay-100 bg-pay-600/25 rounded-md px-1.5 py-0.5 tabular-nums">
+                    {t('acct_owe_total').replace('{amount}', formatMoney(primaryOwed, primaryCurrency))}
+                  </span>
+                </div>
+              )}
               {otherCurrencies.length > 0 && (
                 <p className="text-[12px] text-white/55 mt-2 tabular-nums">
                   {otherCurrencies

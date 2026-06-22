@@ -22,6 +22,10 @@ interface Props {
   currency: Currency;
   direction: PaymentReminderDirection;
   startedAt?: string | null;
+  // When false, the loan has no EMI/due date, so we never label it "overdue" —
+  // a neutral "open for N days" is shown instead. Defaults to true to preserve
+  // existing call-site behaviour.
+  hasDueDate?: boolean;
 }
 
 function copyWithFallback(text: string): Promise<void> {
@@ -62,15 +66,17 @@ function formatDuration(age: ReminderAge, t: ReturnType<typeof useT>) {
   return t('reminder_duration_months').replace('{count}', String(months));
 }
 
-function formatMeta(age: ReminderAge, t: ReturnType<typeof useT>) {
+function formatMeta(age: ReminderAge, t: ReturnType<typeof useT>, hasDueDate: boolean) {
   if (age.days === null) return t('reminder_no_due_date');
   if (age.days === 0) return t('reminder_open_today');
   if (age.days === 1) return t('reminder_open_days').replace('{count}', '1');
-  if (age.isOverdue) return t('reminder_overdue_days').replace('{count}', String(age.days));
+  // Only call it "overdue" when there's an actual due date to be overdue
+  // against. Open-ended loans stay neutral: "open for N days".
+  if (hasDueDate && age.isOverdue) return t('reminder_overdue_days').replace('{count}', String(age.days));
   return t('reminder_open_days').replace('{count}', String(age.days));
 }
 
-export function PaymentReminderModal({ open, onClose, personName, amount, currency, direction, startedAt }: Props) {
+export function PaymentReminderModal({ open, onClose, personName, amount, currency, direction, startedAt, hasDueDate = true }: Props) {
   const t = useT();
   const toast = useToast();
   const [tone, setTone] = useState<PaymentReminderTone>('friendly');
@@ -161,7 +167,7 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
             {direction === 'receivable' ? t('reminder_they_owe_me') : t('reminder_i_owe_them')}
           </p>
           <p className="text-2xl font-extrabold text-ink-900 tabular-nums tracking-tight mt-1">{amountText}</p>
-          <p className="text-[12px] text-ink-500 mt-1">{personName} - {formatMeta(age, t)}</p>
+          <p className="text-[12px] text-ink-500 mt-1">{personName} - {formatMeta(age, t, hasDueDate)}</p>
         </div>
 
         <div>

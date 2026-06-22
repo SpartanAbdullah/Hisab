@@ -308,19 +308,28 @@ export function SplitsPage() {
                 </p>
               ) : (
                 <div className="space-y-2.5">
-                  {visibleGroups.map((g) => (
-                    <GroupCard
-                      key={g.id}
-                      group={g}
-                      balance={balances[g.id] ?? 0}
-                      balanceLoaded={balancesLoaded}
-                      settledLabel={t('group_settled')}
-                      membersLabel={t('group_members_count')}
-                      hasUnreadActivity={unreadGroupIds.has(g.id)}
-                      hasUnreconciled={Boolean(unreconciledFlags[g.id])}
-                      onClick={() => navigate(`/group/${g.id}`)}
-                    />
-                  ))}
+                  {visibleGroups.map((g) => {
+                    // Outstanding count from this user's per-group net: a
+                    // non-zero balance means one balance still to settle in
+                    // that group. Reuses the already-loaded balances map so
+                    // there's no extra fetch.
+                    const groupBalance = balances[g.id] ?? 0;
+                    const outstandingCount = Math.abs(groupBalance) > 0.01 ? 1 : 0;
+                    return (
+                      <GroupCard
+                        key={g.id}
+                        group={g}
+                        balance={groupBalance}
+                        balanceLoaded={balancesLoaded}
+                        settledLabel={t('group_settled')}
+                        membersLabel={t('group_members_count')}
+                        hasUnreadActivity={unreadGroupIds.has(g.id)}
+                        hasUnreconciled={Boolean(unreconciledFlags[g.id])}
+                        outstandingCount={outstandingCount}
+                        onClick={() => navigate(`/group/${g.id}`)}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -75,6 +75,7 @@
   /* Functional */
   --color-warn-50:  #FBF3DD;
   --color-warn-600: #C28E1A;
+  --color-warn-700: #8A6410;  /* darker amber for TEXT on warn-50 — passes WCAG AA (~5.5:1) */
   --color-info-50:  #E8EEFB;
   --color-info-600: #3F6BD9;
 
@@ -745,7 +746,11 @@ input, select, textarea {
     transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
   }
   .row-interactive:active {
-    background-color: #f8fafc;                    /* slate-50 */
+    background-color: var(--color-cream-soft);
+  }
+  .row-interactive:focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: -2px;
   }
 
   /* ========== SELECTOR TOKENS ==========
@@ -757,8 +762,9 @@ input, select, textarea {
     align-items: center;
     justify-content: space-between;
     width: 100%;
+    min-height: 44px;                             /* touch target */
     padding: 14px;                                /* p-3.5 */
-    border: 2px solid rgba(226, 232, 240, 0.6);   /* slate-200/60 */
+    border: 2px solid var(--color-cream-border);
     border-radius: 16px;                          /* rounded-2xl */
     background: white;
     text-align: left;
@@ -768,11 +774,14 @@ input, select, textarea {
   .selector-base:active {
     transform: scale(0.98);
   }
+  .selector-base:focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+  }
   .selector-selected {
-    border-color: #818cf8;                        /* indigo-400 */
-    background: rgba(238, 242, 255, 0.5);         /* indigo-50/50 */
-    /* shadow-sm shadow-indigo-500/5 */
-    box-shadow: 0 1px 2px 0 rgba(99, 102, 241, 0.05);
+    border-color: var(--color-accent-500);
+    background: var(--color-accent-50);
+    box-shadow: 0 1px 2px 0 rgba(91, 71, 232, 0.06);
   }
 
   /* ========== CHIP TOKENS ==========
@@ -786,10 +795,10 @@ input, select, textarea {
     display: inline-flex;
     align-items: center;
     padding: 6px 12px;                            /* py-1.5 px-3 */
-    border: 1px solid rgba(226, 232, 240, 0.6);   /* slate-200/60 */
+    border: 1px solid var(--color-cream-border);
     border-radius: 12px;                          /* rounded-xl */
     background: white;
-    color: #64748b;                               /* slate-500 */
+    color: var(--color-ink-500);
     font-size: 11px;
     font-weight: 600;                             /* semibold */
     cursor: pointer;
@@ -798,10 +807,14 @@ input, select, textarea {
   .chip-base:active {
     transform: scale(0.95);
   }
+  .chip-base:focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+  }
   .chip-selected {
-    background: #4f46e5;                          /* indigo-600 */
+    background: var(--color-accent-600);
     color: white;
-    border-color: #4f46e5;
+    border-color: var(--color-accent-600);
     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);  /* shadow-sm */
   }
 
@@ -958,19 +971,46 @@ input, select, textarea {
    * Transition matches Tailwind's `transition-colors` default so
    * swapping from that utility is zero-regression. */
   .nav-icon-button {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     width: 32px;                                  /* w-8 */
     height: 32px;                                 /* h-8 */
     border-radius: 12px;                          /* rounded-xl */
-    background: rgba(241, 245, 249, 0.8);         /* bg-slate-100/80 */
+    background: var(--color-cream-soft);
     transition-property: color, background-color, border-color,
                          outline-color, text-decoration-color, fill, stroke;
     transition-duration: 150ms;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
+  /* Expand the tap target to ~44px without changing the 32px visual. */
+  .nav-icon-button::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
   .nav-icon-button:active {
-    background: #e2e8f0;                          /* slate-200 */
+    background: var(--color-cream-border);
+  }
+  .nav-icon-button:focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+  }
+
+  /* ========== STATUS CHIP TOKEN ==========
+   * Tiny pill used for status badges (overdue / due-soon / settled /
+   * pending). Structure only — colour pairing (bg + text) and any
+   * leading icon stay on the call site so status is never colour-only.
+   * The 10px floor keeps chip text legible per the Sukoon a11y bar. */
+  .chip-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 9999px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
   }
 }

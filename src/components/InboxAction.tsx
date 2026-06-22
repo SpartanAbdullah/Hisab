@@ -47,12 +47,16 @@ export function InboxAction({ tone = 'on-navy', className = '' }: InboxActionPro
   return (
     <button
       onClick={() => navigate('/inbox')}
-      className={`relative w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${buttonClass} ${className}`}
-      aria-label="Inbox"
+      className={`relative w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors before:absolute before:-inset-1 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 ${buttonClass} ${className}`}
+      aria-label={pendingApprovalCount > 0 ? `Inbox, ${pendingApprovalCount} pending` : 'Inbox'}
     >
       <Bell size={16} className={iconClass} />
       {pendingApprovalCount > 0 && (
-        <span className={`absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ${badgeRingClass} tabular-nums`}>
+        <span
+          role="status"
+          aria-live="polite"
+          className={`absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-pay-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ${badgeRingClass} tabular-nums`}
+        >
           {pendingApprovalCount > 9 ? '9+' : pendingApprovalCount}
         </span>
       )}

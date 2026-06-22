@@ -44,20 +44,21 @@ export function SpendingWarningModal({ open, expense, onContinue, onCancel }: Pr
         </div>
         <div>
           <p className="text-[15px] font-bold text-ink-900">
-            Yaad rakhein: "{expense.title}"
+            {t('spend_warning_remember').replace('{title}', expense.title)}
           </p>
           <p className="text-[13px] text-ink-700 mt-2">
-            <span className="font-bold text-warn-600">{formatMoney(expense.amount, expense.currency)}</span>
-            {' '}{t('spend_warning_msg_suffix')} {expense.title}
+            {t('spend_warning_body')
+              .replace('{amount}', formatMoney(expense.amount, expense.currency))
+              .replace('{title}', expense.title)}
           </p>
           <p className="text-[12px] text-ink-500 mt-1">
             {new Date(expense.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
             {' — '}
-            {daysLeft <= 0 ? 'Overdue!' : `${daysLeft} ${t('upcoming_due_in')}`}
+            {daysLeft <= 0 ? t('upcoming_overdue') : `${daysLeft} ${t('upcoming_due_in')}`}
           </p>
         </div>
-        <p className="text-[12px] text-ink-500 bg-warn-50 rounded-xl p-3 border border-warn-50">
-          Kya aap phir bhi aage badhna chahte hain?
+        <p className="text-[12px] text-warn-700 bg-warn-50 rounded-xl p-3 border border-warn-50 font-medium">
+          {t('spend_warning_confirm_q')}
         </p>
       </div>
     </Modal>

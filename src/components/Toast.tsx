@@ -66,7 +66,11 @@ function ToastItem({ toast }: { toast: ToastData }) {
         <p className="text-[13px] font-semibold tracking-tight">{toast.title}</p>
         {toast.subtitle && <p className="text-xs opacity-75 mt-0.5">{toast.subtitle}</p>}
       </div>
-      <button onClick={handleDismiss} className="shrink-0 mt-0.5 opacity-50 active:opacity-100 transition-opacity">
+      <button
+        onClick={handleDismiss}
+        aria-label="Dismiss"
+        className="relative shrink-0 mt-0.5 opacity-50 active:opacity-100 transition-opacity before:absolute before:-inset-2.5 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 rounded"
+      >
         <X size={14} />
       </button>
     </div>

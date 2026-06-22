@@ -6,13 +6,16 @@ interface Props {
 
 // Deterministic letter-circle avatar. Color is picked from the first letter so
 // the same user always renders the same tile, without storing anything.
+// Palettes derive from the Sukoon money/semantic families (accent / receive /
+// pay / info / warn). Every stop is a 600/700 shade so white initials clear
+// AA contrast on the gradient regardless of which palette a name lands on.
 const PALETTES = [
-  'from-indigo-400 to-purple-500',
-  'from-emerald-400 to-teal-500',
-  'from-rose-400 to-pink-500',
-  'from-amber-400 to-orange-500',
-  'from-sky-400 to-blue-500',
-  'from-violet-400 to-fuchsia-500',
+  'from-accent-500 to-accent-600',
+  'from-receive-600 to-receive-700',
+  'from-pay-600 to-pay-700',
+  'from-warn-600 to-warn-700',
+  'from-info-600 to-accent-600',
+  'from-accent-500 to-info-600',
 ];
 
 // Simple djb2 hash so different letters/names actually land on different
@@ -30,12 +33,17 @@ export function UserAvatar({ name, size = 40, onClick }: Props) {
   const palette = PALETTES[hashName(trimmed || 'User') % PALETTES.length];
   const fontSize = Math.round(size * 0.42);
 
-  const className = `rounded-full bg-gradient-to-br ${palette} text-white font-bold flex items-center justify-center shadow-sm shadow-slate-900/10 active:scale-95 transition-all shrink-0`;
+  const className = `rounded-full bg-gradient-to-br ${palette} text-white font-bold flex items-center justify-center shadow-sm shadow-ink-900/10 active:scale-95 transition-all shrink-0`;
   const style = { width: size, height: size, fontSize };
 
   if (onClick) {
     return (
-      <button onClick={onClick} className={className} style={style} aria-label="Profile">
+      <button
+        onClick={onClick}
+        className={`${className} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2`}
+        style={style}
+        aria-label="Profile"
+      >
         {letter}
       </button>
     );

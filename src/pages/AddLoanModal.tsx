@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from 'react';
+import { Users, Lock } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -71,7 +72,9 @@ export function AddLoanModal({ open, onClose }: Props) {
     setError('');
     const amt = parseFloat(amount);
     const trimmedName = contact.name.trim();
-    if (!amt || !trimmedName || (!isLedgerOnlyMode && !accountId)) { setError(t('fill_all')); return; }
+    if (!amt) { setError(t('val_need_amount')); return; }
+    if (!trimmedName) { setError(t('val_need_name')); return; }
+    if (!isLedgerOnlyMode && !accountId) { setError(t('val_pick_account')); return; }
     setSaving(true);
     try {
       const person = contact.id
@@ -282,6 +285,25 @@ export function AddLoanModal({ open, onClose }: Props) {
               <label className="form-label">Start Date</label>
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-field" required />
             </div>
+          </div>
+        )}
+
+        {/* Glanceable confirm/private chip near the Save CTA — mirrors
+            QuickEntry's loan helper. Linked contacts get a confirm request;
+            everyone else stays a private local-only record. */}
+        {wouldBranchToLinked ? (
+          <div className="flex items-center gap-2 rounded-2xl bg-accent-50 border border-accent-100 px-3 py-2.5">
+            <Users size={13} className="text-accent-600 shrink-0" />
+            <p className="text-[11px] font-semibold text-accent-600 leading-snug">
+              {t('loan_will_confirm').replace('{name}', contact.name.trim() || t('loan_they'))}
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-2xl bg-cream-soft border border-cream-border px-3 py-2.5">
+            <Lock size={13} className="text-ink-500 shrink-0" />
+            <p className="text-[11px] font-semibold text-ink-600 leading-snug">
+              {t('loan_private')}
+            </p>
           </div>
         )}
 

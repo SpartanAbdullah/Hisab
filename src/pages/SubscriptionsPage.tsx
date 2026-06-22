@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { CreditCard, CalendarClock, Ghost, Pause, Play, Trash2, Plus, Repeat, Pencil } from 'lucide-react';
+import { CreditCard, CalendarClock, Ghost, Pause, Play, Trash2, Plus, Repeat, Pencil, Layers, PauseCircle } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
 import { PageErrorState } from '../components/PageErrorState';
@@ -7,6 +7,7 @@ import { ListSkeleton } from '../components/ListSkeleton';
 import { AddRecurringModal } from '../components/AddRecurringModal';
 import { useRecurringStore } from '../stores/recurringStore';
 import { formatMoney } from '../lib/constants';
+import { useT } from '../lib/i18n';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
@@ -17,6 +18,7 @@ import {
   detectGhosts,
   describeGhost,
   daysUntil,
+  monthlyAmount,
 } from '../lib/subscriptionMetrics';
 import type { RecurringTransaction } from '../db';
 
@@ -26,6 +28,9 @@ export function SubscriptionsPage() {
   const updateTemplate = useRecurringStore((s) => s.updateTemplate);
   const deleteTemplate = useRecurringStore((s) => s.deleteTemplate);
   const toast = useToast();
+  // Named `tr` (not `t`) because the subscription list maps over items bound to
+  // a local `t` (a RecurringTransaction); shadowing would break those rows.
+  const tr = useT();
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<RecurringTransaction | null>(null);
 
@@ -123,27 +128,41 @@ export function SubscriptionsPage() {
         ) : (
           <>
             {/* Burn totals — one pair of cards per currency (no cross-currency
-                summing; mixed currencies are shown separately). */}
-            {totals.byCurrency.map((c) => (
-              <div key={c.currency} className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
-                  <p className="text-[11px] text-ink-500">
-                    Per month{totals.mixed ? ` · ${c.currency}` : ''}
-                  </p>
-                  <p className="text-[20px] font-bold text-ink-900 tabular-nums mt-1">
-                    {formatMoney(c.monthly, c.currency)}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
-                  <p className="text-[11px] text-ink-500">
-                    Per year{totals.mixed ? ` · ${c.currency}` : ''}
-                  </p>
-                  <p className="text-[20px] font-bold text-ink-900 tabular-nums mt-1">
-                    {formatMoney(c.yearly, c.currency)}
-                  </p>
-                </div>
+                summing; mixed currencies are shown separately). When every
+                subscription is paused there is no burn, so we swap the
+                "AED 0" cards for a calm, reassuring banner instead. */}
+            {totals.activeCount === 0 ? (
+              <div className="flex items-center gap-2.5 rounded-2xl bg-cream-card border border-cream-border p-4">
+                <PauseCircle size={18} className="text-ink-400 shrink-0" />
+                <p className="text-[12.5px] font-semibold text-ink-700">
+                  {tr('subs_paused')}
+                </p>
               </div>
-            ))}
+            ) : (
+              totals.byCurrency.map((c) => (
+                <div key={c.currency} className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+                    <p className="text-[11px] text-ink-500">
+                      Per month{totals.mixed ? ` · ${c.currency}` : ''}
+                    </p>
+                    <p className="text-[20px] font-bold text-ink-900 tabular-nums mt-1">
+                      {formatMoney(c.monthly, c.currency)}
+                    </p>
+                    <p className="text-[10px] text-ink-500 mt-0.5 tabular-nums">
+                      {tr('subs_active_count').replace('{c}', String(c.count))}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+                    <p className="text-[11px] text-ink-500">
+                      Per year{totals.mixed ? ` · ${c.currency}` : ''}
+                    </p>
+                    <p className="text-[20px] font-bold text-ink-900 tabular-nums mt-1">
+                      {formatMoney(c.yearly, c.currency)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
 
             {/* Renews soon */}
             {renewals.slice(0, 2).map((r) => (
@@ -170,14 +189,23 @@ export function SubscriptionsPage() {
                   </p>
                 </div>
                 <div className="mt-2.5 space-y-1.5">
-                  {ghosts.map((g) => (
-                    <div key={`ghost-${g.template.id}`} className="flex items-baseline justify-between gap-2">
-                      <p className="text-[12px] text-ink-700 truncate">
-                        {g.template.label || g.template.category}
-                      </p>
-                      <p className="text-[11px] text-pay-text shrink-0">{describeGhost(g, todayIso)}</p>
-                    </div>
-                  ))}
+                  {ghosts.map((g) => {
+                    const isDuplicate = g.reasons.includes('duplicate');
+                    const ReasonIcon = isDuplicate ? Layers : Ghost;
+                    return (
+                      <div key={`ghost-${g.template.id}`} className="flex items-baseline justify-between gap-2">
+                        <p className="text-[12px] text-ink-700 truncate flex items-center gap-1.5 min-w-0">
+                          <ReasonIcon size={12} className="text-pay-text shrink-0 self-center" />
+                          <span className="truncate">{g.template.label || g.template.category}</span>
+                        </p>
+                        <p className="text-[11px] text-pay-text shrink-0 text-right">
+                          {isDuplicate
+                            ? tr('subs_duplicate')
+                            : describeGhost(g, todayIso)}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -195,9 +223,16 @@ export function SubscriptionsPage() {
                     <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">
                       {t.label || t.category}
                     </p>
-                    <p className="text-[12px] font-semibold text-pay-text tabular-nums shrink-0">
-                      {formatMoney(t.amount, t.currency)}
-                    </p>
+                    <div className="text-right shrink-0">
+                      <p className="text-[12px] font-semibold text-pay-text tabular-nums">
+                        {formatMoney(t.amount, t.currency)}
+                      </p>
+                      {t.cadence !== 'monthly' && (
+                        <p className="text-[10px] text-ink-400 tabular-nums mt-0.5">
+                          {tr('subs_per_mo').replace('{amount}', formatMoney(monthlyAmount(t.amount, t.cadence), t.currency))}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[11px] text-ink-500 mt-1">
                     {cadenceLabel(t)} ·{' '}
@@ -206,20 +241,20 @@ export function SubscriptionsPage() {
                   <div className="flex items-center gap-2 mt-3">
                     <button
                       onClick={() => setEditing(t)}
-                      className="text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
                     >
                       <Pencil size={11} /> Edit
                     </button>
                     <button
                       onClick={() => togglePause(t)}
-                      className="text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
                     >
                       {t.active ? <Pause size={11} /> : <Play size={11} />}
                       {t.active ? 'Pause' : 'Resume'}
                     </button>
                     <button
                       onClick={() => handleDelete(t)}
-                      className="text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
                     >
                       <Trash2 size={11} /> Remove
                     </button>
@@ -263,20 +298,20 @@ export function SubscriptionsPage() {
                   <div className="flex items-center gap-2 mt-3">
                     <button
                       onClick={() => setEditing(t)}
-                      className="text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
                     >
                       <Pencil size={11} /> Edit
                     </button>
                     <button
                       onClick={() => togglePause(t)}
-                      className="text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
                     >
                       {t.active ? <Pause size={11} /> : <Play size={11} />}
                       {t.active ? 'Pause' : 'Resume'}
                     </button>
                     <button
                       onClick={() => handleDelete(t)}
-                      className="text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
                     >
                       <Trash2 size={11} /> Remove
                     </button>

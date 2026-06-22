@@ -38,20 +38,28 @@ export function MoneyDisplay({
   const primary = color ?? (tone === 'on-navy' ? '#ffffff' : 'var(--color-ink-900)');
   const muted   = mutedColor ?? (tone === 'on-navy' ? 'rgba(255,255,255,0.5)' : 'var(--color-ink-500)');
 
+  // Overflow guard for big PKR amounts. Count actual digits (commas excluded)
+  // and step the integer one notch (×0.82) down when it runs long (>9 digits,
+  // i.e. ≥1,000,000,000) so the number doesn't clip the navy hero. Currency
+  // and cents scale off this effective size so the 3-part baseline stays.
+  const digitCount = intPart.replace(/,/g, '').length;
+  const effectiveSize = digitCount > 9 ? size * 0.82 : size;
+
   return (
     <span
       className="inline-flex items-baseline"
       style={{
-        gap: Math.max(4, size * 0.12),
+        gap: Math.max(4, effectiveSize * 0.12),
         letterSpacing: '-0.025em',
         fontVariantNumeric: 'tabular-nums',
+        maxWidth: '100%',
       }}
     >
-      <span style={{ fontSize: size * 0.45, fontWeight: 500, color: muted }}>{currency}</span>
-      <span style={{ fontSize: size, fontWeight: 600, color: primary }}>
+      <span style={{ fontSize: effectiveSize * 0.45, fontWeight: 500, color: muted }}>{currency}</span>
+      <span style={{ fontSize: effectiveSize, fontWeight: 600, color: primary }}>
         {sign}{intPart}
       </span>
-      <span style={{ fontSize: size * 0.42, fontWeight: 500, color: muted }}>.{cents}</span>
+      <span style={{ fontSize: effectiveSize * 0.42, fontWeight: 500, color: muted }}>.{cents}</span>
     </span>
   );
 }

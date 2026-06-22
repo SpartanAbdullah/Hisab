@@ -1,6 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import type { SplitGroup } from '../db';
 import { formatMoney } from '../lib/constants';
+import { useT } from '../lib/i18n';
 
 interface Props {
   group: SplitGroup;
@@ -10,10 +11,16 @@ interface Props {
   membersLabel: string;
   hasUnreadActivity: boolean;
   // True when the current user paid for an expense in this group that
-  // isn't reconciled yet. Surfaces as a small coral dot next to the state
+  // isn't reconciled yet. Surfaces as a small hollow ring next to the state
   // label so the user can scan the list for "what needs my attention"
-  // without opening every group.
+  // without opening every group. Kept visually distinct from the unread
+  // activity dot (filled, top-right of the avatar) so the two never blur.
   hasUnreconciled?: boolean;
+  // Number of outstanding balances the current user still has to settle in
+  // this group (0 = square). Drives the settle-status pill: "Settled" when
+  // zero, "{n} to settle" otherwise. Derived from per-group balances on the
+  // Splits page so no extra fetch is needed.
+  outstandingCount?: number;
   onClick: () => void;
 }
 
@@ -29,11 +36,20 @@ export function GroupCard({
   membersLabel,
   hasUnreadActivity,
   hasUnreconciled,
+  outstandingCount,
   onClick,
 }: Props) {
+  const t = useT();
   const connected = group.members.filter((m) => m.status === 'connected').length;
   const owed = balance > 0.01;
   const owes = balance < -0.01;
+
+  // Settle-status: prefer an explicit outstandingCount from the parent; fall
+  // back to deriving it from this user's net balance (non-zero ⇒ one balance
+  // left to settle). Pairs the colour with a dot + word so it isn't
+  // colour-only.
+  const toSettle = outstandingCount ?? (owed || owes ? 1 : 0);
+  const isSquare = toSettle === 0;
 
   // State copy + colour token mapping. Sukoon's group cards label the state
   // explicitly ("You're owed" / "You owe" / "All settled") rather than
@@ -53,12 +69,14 @@ export function GroupCard({
       <div className="flex items-center gap-3">
         <div className="relative w-11 h-11 rounded-2xl bg-cream-soft border border-cream-hairline flex items-center justify-center text-lg shrink-0">
           {group.emoji}
-          <span
-            className={`absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${
-              hasUnreadActivity ? 'bg-pay-600' : 'bg-receive-600'
-            }`}
-            aria-label={hasUnreadActivity ? 'Unread group activity' : 'No unread group activity'}
-          />
+          {/* Unread-activity dot — present ONLY when there's unread activity, so
+              its mere presence (not its colour) carries the meaning. */}
+          {hasUnreadActivity && (
+            <span
+              className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white bg-pay-600"
+              aria-label="Unread group activity"
+            />
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
@@ -73,15 +91,31 @@ export function GroupCard({
         <ChevronRight size={14} className="text-ink-300 shrink-0" />
       </div>
 
-      <div className="mt-3 pt-3 border-t border-cream-hairline flex items-center justify-between">
-        <span className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] flex items-center gap-1.5">
-          {balanceLoaded ? stateLabel : 'Loading…'}
+      <div className="mt-3 pt-3 border-t border-cream-hairline flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] flex items-center gap-1.5 min-w-0">
+          <span className="truncate">{balanceLoaded ? stateLabel : 'Loading…'}</span>
+          {/* Unreconciled marker — a hollow amber ring with a '!' glyph, kept
+              visually distinct from the filled unread-activity dot on the
+              avatar so the two signals never read as the same thing. */}
           {hasUnreconciled && (
             <span
-              className="w-1.5 h-1.5 rounded-full bg-pay-600 shrink-0"
+              className="shrink-0 w-3.5 h-3.5 rounded-full border border-warn-600 text-warn-700 flex items-center justify-center text-[8px] font-bold leading-none"
               aria-label="You have unreconciled expenses in this group"
               title="You have unreconciled expenses in this group"
-            />
+            >
+              !
+            </span>
+          )}
+          {/* Settle-status pill — colour + dot + word, never colour alone. */}
+          {balanceLoaded && (
+            <span
+              className={`shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-[0.02em] ${
+                isSquare ? 'bg-receive-50 text-receive-text' : 'bg-warn-50 text-warn-700'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isSquare ? 'bg-receive-600' : 'bg-warn-600'}`} />
+              {isSquare ? t('status_settled') : t('group_to_settle').replace('{n}', String(toSettle))}
+            </span>
           )}
         </span>
         {!balanceLoaded ? (

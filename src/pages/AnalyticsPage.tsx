@@ -1,9 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { ChevronRight, TrendingUp } from 'lucide-react';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useSplitStore } from '../stores/splitStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
+import { EmptyState } from '../components/EmptyState';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { groupByCategory, monthlyTrend, dailySpending, topExpenses } from '../lib/analytics';
@@ -63,6 +66,7 @@ function getTransactionSubtitle(tx: Transaction) {
 
 export function AnalyticsPage() {
   const t = useT();
+  const navigate = useNavigate();
   const { transactions, loadTransactions } = useTransactionStore();
   const { loadGroups } = useSplitStore();
   const [period, setPeriod] = useState<Period>('this_month');
@@ -103,12 +107,24 @@ export function AnalyticsPage() {
   const incomeByCurrency = useMemo(() => sumByCurrency(transactions, 'income', start, end), [transactions, start, end]);
   const hasAnyData = spentByCurrency.length > 0 || incomeByCurrency.length > 0;
 
+  // Net = income − spent, kept per-currency (never summed across currencies).
+  // Ordered largest-magnitude first so the headline line is the dominant one.
+  const netByCurrency = useMemo(() => {
+    const byCur = new Map<Currency, number>();
+    for (const { currency, amount } of incomeByCurrency) byCur.set(currency, (byCur.get(currency) ?? 0) + amount);
+    for (const { currency, amount } of spentByCurrency) byCur.set(currency, (byCur.get(currency) ?? 0) - amount);
+    return Array.from(byCur.entries())
+      .map(([currency, amount]) => ({ currency, amount }))
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || a.currency.localeCompare(b.currency));
+  }, [incomeByCurrency, spentByCurrency]);
+
   const periods: { key: Period; label: string }[] = [
     { key: 'this_month', label: t('analytics_this_month') },
     { key: 'last_month', label: t('analytics_last_month') },
     { key: '3months', label: t('analytics_3months') },
     { key: 'year', label: t('analytics_year') },
   ];
+  const periodLabel = periods.find((p) => p.key === period)?.label ?? '';
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -131,8 +147,15 @@ export function AnalyticsPage() {
         ))}
       </div>
 
+      {/* Period echo beside the cards so the figures are never ambiguous. */}
+      <div className="px-5 pt-4 flex items-center justify-between gap-2">
+        <p className="text-[10px] text-ink-500 font-semibold uppercase tracking-[0.12em]">
+          {t('analytics_showing')} · {periodLabel}
+        </p>
+      </div>
+
       {/* Summary cards */}
-      <div className="px-5 pt-4 grid grid-cols-2 gap-2.5">
+      <div className="px-5 pt-2 grid grid-cols-2 gap-2.5">
         <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
           <p className="text-[10px] text-ink-500 font-bold uppercase tracking-widest">{t('analytics_total_spent')}</p>
           <MoneyLines totals={spentByCurrency} tone="expense" />
@@ -142,6 +165,29 @@ export function AnalyticsPage() {
           <MoneyLines totals={incomeByCurrency} tone="income" />
         </div>
       </div>
+
+      {/* Net (income − spent) per currency. Coloured + signed so it's never
+          colour-only: a leading +/− pairs with the receive/pay tint. */}
+      {hasAnyData && netByCurrency.length > 0 && (
+        <div className="px-5 pt-2.5">
+          <div className="rounded-2xl bg-cream-card border border-cream-border px-4 py-3 flex items-center justify-between gap-3">
+            <p className="text-[10px] text-ink-500 font-bold uppercase tracking-widest shrink-0">{t('analytics_net')} · {periodLabel}</p>
+            <div className="flex flex-col items-end gap-0.5 min-w-0">
+              {netByCurrency.map(({ currency, amount }) => {
+                const positive = amount >= 0;
+                return (
+                  <p
+                    key={currency}
+                    className={`text-[14px] font-bold tabular-nums leading-tight ${positive ? 'text-receive-text' : 'text-pay-text'}`}
+                  >
+                    {positive ? '+' : '−'}{formatMoney(Math.abs(amount), currency)}
+                  </p>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {currencies.length > 1 && (
         <div className="px-5 pt-3">
@@ -165,10 +211,14 @@ export function AnalyticsPage() {
       )}
 
       {!hasAnyData ? (
-        <div className="px-5 pt-12 text-center">
-          <p className="text-4xl mb-3">📊</p>
-          <p className="text-ink-500 text-sm">{t('analytics_no_data')}</p>
-        </div>
+        <EmptyState
+          icon={TrendingUp}
+          tone="accent"
+          title={t('analytics_no_data')}
+          description={t('analytics_empty_desc')}
+          actionLabel={t('analytics_empty_cta')}
+          onAction={() => navigate('/transactions')}
+        />
       ) : (
         <>
           {/* Category Pie Chart */}
@@ -189,11 +239,16 @@ export function AnalyticsPage() {
                   </ResponsiveContainer>
                   <div className="flex-1 space-y-1.5 pl-2">
                     {categories.slice(0, 5).map(c => (
-                      <div key={c.category} className="flex items-center gap-2">
+                      <button
+                        key={c.category}
+                        onClick={() => navigate(`/hisaab-ai/insight/${encodeURIComponent(c.category)}`)}
+                        className="w-full flex items-center gap-2 min-h-[44px] text-left active:opacity-70 transition-opacity"
+                      >
                         <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
                         <span className="text-[11px] text-ink-600 truncate flex-1">{c.category}</span>
                         <span className="text-[11px] font-bold text-ink-800 tabular-nums">{c.percentage}%</span>
-                      </div>
+                        <ChevronRight size={12} className="text-ink-300 shrink-0" />
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -251,14 +306,20 @@ export function AnalyticsPage() {
               <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-cream-hairline">
                 {topExp.map(tx => {
                   const subtitle = getTransactionSubtitle(tx);
+                  const cat = tx.category || 'Other';
                   return (
-                    <div key={tx.id} className="px-4 py-3 flex items-center justify-between">
+                    <button
+                      key={tx.id}
+                      onClick={() => navigate(`/hisaab-ai/insight/${encodeURIComponent(cat)}`)}
+                      className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between text-left active:bg-cream-soft transition-colors"
+                    >
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-semibold text-ink-800 truncate">{tx.category || 'Other'}</p>
+                        <p className="text-[12px] font-semibold text-ink-800 truncate">{cat}</p>
                         {subtitle ? <p className="text-[10px] text-ink-500 truncate">{subtitle}</p> : null}
                       </div>
-                      <p className="text-[13px] font-bold text-pay-text tabular-nums shrink-0 ml-2">{formatMoney(tx.amount, tx.currency)}</p>
-                    </div>
+                      <p className="text-[13px] font-bold text-pay-text tabular-nums shrink-0 ml-2">−{formatMoney(tx.amount, tx.currency)}</p>
+                      <ChevronRight size={13} className="text-ink-300 shrink-0 ml-1.5" />
+                    </button>
                   );
                 })}
               </div>

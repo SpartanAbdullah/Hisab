@@ -218,7 +218,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const handleArchive = async () => {
     const confirmed = await confirmDestructive({
       title: 'Remove this contact?',
-      description: 'This hides the contact from new entries. Settled history will keep showing their name.',
+      description: t('del_contact_body'),
       confirmLabel: 'Remove contact',
     });
     if (!confirmed) return;
@@ -254,13 +254,25 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[14px] font-semibold text-ink-900 truncate">{person.name}</p>
-            <p className="text-[11px] text-ink-500">
-              {isLinked ? 'Linked to a Hisaab user' : 'Not linked to a Hisaab user'}
-            </p>
+            {isLinked && person.linkedProfileId ? (
+              // Surface WHICH Hisaab account this contact is paired with so the
+              // user can verify before syncing or unlinking. The display name
+              // is the contact's own name; the short account ref (font-mono)
+              // is the stable, comparable identifier for that account.
+              <p className="text-[11px] text-ink-500 truncate">
+                {t('contact_linked_to')} <span className="font-semibold text-ink-700">{person.name}</span>
+                {' · '}
+                <span className="font-mono text-ink-600">{person.linkedProfileId.slice(0, 8)}</span>
+              </p>
+            ) : (
+              <p className="text-[11px] text-ink-500">
+                {t('contact_not_linked')}
+              </p>
+            )}
           </div>
           {isLinked && (
             <span className="text-[10px] font-bold uppercase tracking-widest text-receive-text bg-receive-50 rounded-full px-2.5 py-1">
-              Linked
+              {t('contact_linked_pill')}
             </span>
           )}
         </div>

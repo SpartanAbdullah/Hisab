@@ -14,10 +14,29 @@ function LangBtn({ lang, setLang }: { lang: Language; setLang: (l: Language) => 
   return (
     <button
       onClick={() => setLang(lang === 'ur' ? 'en' : 'ur')}
-      className="absolute top-5 right-5 z-50 bg-white/10 text-white/80 rounded-xl px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 active:scale-95 transition-all backdrop-blur-sm border border-white/10"
+      className="absolute top-5 right-5 z-50 bg-white/10 text-white/80 rounded-xl px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 active:scale-95 transition-all backdrop-blur-sm border border-white/10 min-h-[44px]"
     >
       <Globe size={11} /> {lang === 'ur' ? 'EN' : 'UR'}
     </button>
+  );
+}
+
+// Continuous 4-dot progress for the post-welcome steps (1–4). The active step
+// fills brighter; completed steps stay lit so the journey reads as honest and
+// continuous rather than four disconnected "STEP n of 4" counters. Welcome
+// (step 0) is uncounted and never renders this row.
+function StepDots({ current }: { current: 1 | 2 | 3 | 4 }) {
+  return (
+    <div className="flex items-center gap-1.5 mb-3" role="presentation" aria-label={`Step ${current} of 4`}>
+      {[1, 2, 3, 4].map((n) => (
+        <span
+          key={n}
+          className={`h-1.5 rounded-full transition-all duration-300 ${
+            n === current ? 'w-6 bg-white' : n < current ? 'w-1.5 bg-white/60' : 'w-1.5 bg-white/20'
+          }`}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -112,7 +131,7 @@ export function OnboardingPage() {
         {step === 1 && (
           <div className="flex-1 flex flex-col px-8 pt-20 animate-fade-in">
             <div className="mb-8">
-              <p className="text-white/50 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">STEP 1 {t('onboard_step_of')} 4</p>
+              <StepDots current={1} />
               <h2 className="text-2xl font-bold tracking-tight text-white">{t('onboard_your_name')}</h2>
               <p className="text-white/60 text-[13px] mt-2">{t('onboard_name_sub')}</p>
             </div>
@@ -151,6 +170,9 @@ export function OnboardingPage() {
         {/* Step 2: Safety Reassurance */}
         {step === 2 && (
           <div className="flex-1 flex flex-col px-8 pt-16 animate-fade-in">
+            <div className="flex justify-center mb-3">
+              <StepDots current={2} />
+            </div>
             <div className="flex items-center justify-center mb-6">
               <div className="w-16 h-16 rounded-3xl bg-receive-600/25 flex items-center justify-center backdrop-blur-sm border border-receive-600/30">
                 <Shield size={32} className="text-receive-50" strokeWidth={1.5} />
@@ -188,12 +210,37 @@ export function OnboardingPage() {
         {step === 3 && (
           <div className="flex-1 flex flex-col px-8 pt-16 animate-fade-in">
             <div className="mb-6">
-              <p className="text-white/50 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">STEP 3 {t('onboard_step_of')} 4</p>
+              <StepDots current={3} />
               <h2 className="text-2xl font-bold tracking-tight text-white">{t('mode_select_title')}</h2>
               <p className="text-white/60 text-[13px] mt-2">{t('mode_select_sub')}</p>
             </div>
 
             <div className="space-y-4 flex-1">
+              {/* Full Tracker — listed first to match the default selectedMode and
+                  carry the "Recommended" pill. */}
+              <button onClick={() => setSelectedMode('full_tracker')}
+                className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'full_tracker' ? 'border-warn-600/60 bg-warn-600/20 scale-[1.02] shadow-lg shadow-warn-600/15 ring-1 ring-warn-600/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${selectedMode === 'full_tracker' ? 'bg-warn-600/30' : 'bg-warn-600/20'}`}>
+                    <BarChart3 size={20} className={`transition-colors ${selectedMode === 'full_tracker' ? 'text-warn-50' : 'text-warn-50'}`} strokeWidth={1.5} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className={`font-bold text-[14px] tracking-tight transition-colors ${selectedMode === 'full_tracker' ? 'text-white' : 'text-white/80'}`}>{t('mode_full_title')}</p>
+                      <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-600">
+                        {t('onboard_recommended')}
+                      </span>
+                    </div>
+                    <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-warn-50/85' : 'text-white/40'}`}>{t('mode_full_sub')}</p>
+                  </div>
+                </div>
+                <div className="space-y-1.5 ml-14">
+                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_1')}</p>
+                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_2')}</p>
+                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_3')}</p>
+                </div>
+              </button>
+
               {/* Splits Only */}
               <button onClick={() => setSelectedMode('splits_only')}
                 className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'splits_only' ? 'border-accent-500/60 bg-accent-500/20 scale-[1.02] shadow-lg shadow-accent-500/15 ring-1 ring-accent-500/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
@@ -213,31 +260,15 @@ export function OnboardingPage() {
                 </div>
               </button>
 
-              {/* Full Tracker */}
-              <button onClick={() => setSelectedMode('full_tracker')}
-                className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'full_tracker' ? 'border-warn-600/60 bg-warn-600/20 scale-[1.02] shadow-lg shadow-warn-600/15 ring-1 ring-warn-600/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${selectedMode === 'full_tracker' ? 'bg-warn-600/30' : 'bg-warn-600/20'}`}>
-                    <BarChart3 size={20} className={`transition-colors ${selectedMode === 'full_tracker' ? 'text-warn-50' : 'text-warn-50'}`} strokeWidth={1.5} />
-                  </div>
-                  <div>
-                    <p className={`font-bold text-[14px] tracking-tight transition-colors ${selectedMode === 'full_tracker' ? 'text-white' : 'text-white/80'}`}>{t('mode_full_title')}</p>
-                    <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-warn-50/85' : 'text-white/40'}`}>{t('mode_full_sub')}</p>
-                  </div>
-                </div>
-                <div className="space-y-1.5 ml-14">
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_1')}</p>
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_2')}</p>
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_3')}</p>
-                </div>
-              </button>
+              {/* Reassurance — switching modes is non-destructive and lives in Settings. */}
+              <p className="text-white/45 text-[11px] text-center px-2">{t('onboard_switch_anytime')}</p>
             </div>
 
             <div className="pb-4">
               <Button variant="secondary" size="lg" onClick={() => setStep(4)} icon={<ArrowRight size={16} />}>
                 {t('onboard_next')}
               </Button>
-              <button onClick={() => setStep(2)} className="text-[11px] text-white/30 w-full text-center py-2 mt-2 font-medium">
+              <button onClick={() => setStep(2)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] mt-2 font-medium">
                 {t('onboard_back')}
               </button>
             </div>
@@ -248,7 +279,7 @@ export function OnboardingPage() {
         {step === 4 && (
           <div className="flex-1 flex flex-col px-8 pt-20 animate-fade-in">
             <div className="mb-8">
-              <p className="text-white/50 text-[10px] font-bold uppercase tracking-[0.2em] mb-3">STEP 4 {t('onboard_step_of')} 4</p>
+              <StepDots current={4} />
               <h2 className="text-2xl font-bold tracking-tight text-white">{name.trim()}, {t('onboard_how_start')}</h2>
               <p className="text-white/60 text-[13px] mt-2">{t('onboard_how_sub')}</p>
               <p className="text-receive-50 text-[12px] font-semibold mt-3">{t('onboard_start_instruction')}</p>
@@ -304,7 +335,7 @@ export function OnboardingPage() {
               </div>
             )}
             <div className="pb-8">
-              <button onClick={() => setStep(3)} className="text-[11px] text-white/30 w-full text-center py-2 font-medium">{t('onboard_back')}</button>
+              <button onClick={() => setStep(3)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
             </div>
           </div>
         )}

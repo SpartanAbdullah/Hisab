@@ -288,9 +288,11 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
           )}
         </div>
 
-        <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
-          {t('money_not_moved_notice')}
-        </p>
+        {!isLedgerOnlyMode && (
+          <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
+            {t('money_not_moved_notice')}
+          </p>
+        )}
       </div>
     </Modal>
   );

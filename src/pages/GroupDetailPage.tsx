@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical, UserPlus, Pencil } from 'lucide-react';
+import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical, UserPlus, Pencil, X } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
@@ -145,6 +145,16 @@ function getActivityDisplay(
   }
 }
 
+// Human-readable member status, replacing the raw enum ("connected",
+// "invited", "guest"…) that leaked into the UI. Owner wins over status.
+// Takes the active translator so the short status words localize.
+function memberStatusLabel(t: ReturnType<typeof useT>, status?: string, isOwner?: boolean): string {
+  if (isOwner) return t('member_owner');
+  if (status === 'connected') return t('member_on_app');
+  if (status === 'invited') return t('member_invited');
+  return t('member_not_on_app');
+}
+
 function memberStatusClass(status?: string, isOwner?: boolean) {
   // Avatar chips render inside the navy hero, so the palette is white-on-dark
   // tints rather than the legacy pastel-on-light. Owner uses the violet accent;
@@ -181,6 +191,15 @@ export function GroupDetailPage() {
   const [leaving, setLeaving] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // One-time member-status legend. Shown the first time a group has any
+  // non-connected member; dismissal persists per-device so it doesn't nag.
+  const [legendDismissed, setLegendDismissed] = useState(
+    () => localStorage.getItem('hisaab_member_legend_dismissed') === '1',
+  );
+  const dismissLegend = () => {
+    localStorage.setItem('hisaab_member_legend_dismissed', '1');
+    setLegendDismissed(true);
+  };
 
   // Dismiss the kebab menu when the user taps outside it.
   useEffect(() => {
@@ -346,7 +365,7 @@ export function GroupDetailPage() {
   const handleDelete = async () => {
     const ok = await confirmDestructive({
       title: t('group_delete_confirm'),
-      description: 'All expenses, settlements, and member links will be removed.',
+      description: t('del_group_body'),
       confirmLabel: 'Delete group',
     });
     if (ok) {
@@ -479,18 +498,45 @@ export function GroupDetailPage() {
 
           <div className="flex items-center gap-1.5 mt-3 overflow-x-auto no-scrollbar">
             {group.members.map((member) => (
-              <div key={member.id} className="flex flex-col items-center gap-0.5 shrink-0 w-12">
+              <div key={member.id} className="flex flex-col items-center gap-0.5 shrink-0 w-14">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold ${memberStatusClass(member.status, member.isOwner)}`}
                 >
                   {member.name.charAt(0).toUpperCase()}
                 </div>
                 <span className="text-[9px] text-white/60 truncate w-full text-center">
-                  {member.isOwner ? 'owner' : member.status ?? 'guest'}
+                  {memberStatusLabel(t, member.status, member.isOwner)}
                 </span>
               </div>
             ))}
           </div>
+
+          {/* One-line status legend — appears the first time a group has any
+              non-connected member, so the colour coding on the avatars is
+              decodable. Dismissible and remembered per-device. */}
+          {!legendDismissed && group.members.some((m) => !m.isOwner && m.status !== 'connected') && (
+            <div className="mt-2.5 flex items-center gap-3 rounded-xl bg-white/10 px-3 py-2 animate-fade-in">
+              <span className="flex items-center gap-1.5 text-[9.5px] text-white/75">
+                <span className="w-2 h-2 rounded-full bg-receive-600/70" />
+                {t('member_on_app')}
+              </span>
+              <span className="flex items-center gap-1.5 text-[9.5px] text-white/75">
+                <span className="w-2 h-2 rounded-full bg-warn-600/70" />
+                {t('member_invited')}
+              </span>
+              <span className="flex items-center gap-1.5 text-[9.5px] text-white/75">
+                <span className="w-2 h-2 rounded-full bg-white/30" />
+                {t('member_not_on_app')}
+              </span>
+              <button
+                onClick={dismissLegend}
+                className="ml-auto relative -m-2 p-2 text-white/60 active:text-white transition-colors"
+                aria-label="Dismiss legend"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
         </div>
       </NavyHero>
 
@@ -617,16 +663,34 @@ export function GroupDetailPage() {
                 {simplify ? 'Show direct' : 'Simplify debts'}
               </button>
             </div>
-            {shownDebts.map((debt, index) => (
-              <div key={`${debt.from}-${debt.to}-${index}`} className="flex items-center justify-between">
-                <p className="text-[12px] text-ink-600">
-                  <span className="font-bold text-pay-text">{debt.fromName}</span>
-                  {' '}{t('group_owes')}{' '}
-                  <span className="font-bold text-receive-text">{debt.toName}</span>
-                </p>
-                <p className="text-[13px] font-bold text-ink-900 tabular-nums">{formatMoney(debt.amount, group.currency)}</p>
-              </div>
-            ))}
+            {[...shownDebts]
+              // Float debts involving "you" to the top — that's what the user
+              // most likely came here to act on.
+              .map((debt, originalIndex) => ({ debt, originalIndex }))
+              .sort((a, b) => {
+                const aMe = a.debt.from === currentMember?.id || a.debt.to === currentMember?.id;
+                const bMe = b.debt.from === currentMember?.id || b.debt.to === currentMember?.id;
+                if (aMe === bMe) return a.originalIndex - b.originalIndex;
+                return aMe ? -1 : 1;
+              })
+              .map(({ debt, originalIndex }) => {
+                const fromIsMe = debt.from === currentMember?.id;
+                const toIsMe = debt.to === currentMember?.id;
+                return (
+                  <div key={`${debt.from}-${debt.to}-${originalIndex}`} className="flex items-center justify-between">
+                    <p className="text-[12px] text-ink-600">
+                      <span className={`font-bold ${fromIsMe ? 'text-accent-600' : 'text-pay-text'}`}>
+                        {fromIsMe ? t('label_you') : debt.fromName}
+                      </span>
+                      {' '}{t('group_owes')}{' '}
+                      <span className={`font-bold ${toIsMe ? 'text-accent-600' : 'text-receive-text'}`}>
+                        {toIsMe ? t('label_you') : debt.toName}
+                      </span>
+                    </p>
+                    <p className="text-[13px] font-bold text-ink-900 tabular-nums">{formatMoney(debt.amount, group.currency)}</p>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
@@ -783,7 +847,7 @@ export function GroupDetailPage() {
                     <div className="min-w-0">
                       <p className="text-[13px] font-semibold text-ink-800 truncate">{member.name}</p>
                       <p className="text-[10px] text-ink-500 mt-0.5">
-                        {member.isOwner ? 'owner' : member.status ?? 'guest'}
+                        {memberStatusLabel(t, member.status, member.isOwner)}
                         {member.id === currentMember?.id ? <span className="font-semibold text-accent-600"> · you</span> : null}
                       </p>
                     </div>
@@ -910,7 +974,7 @@ export function GroupDetailPage() {
 
       <AddGroupExpenseModal open={showAddExpense} group={group} recentExpenses={expenses} onClose={() => { setShowAddExpense(false); void reload(); }} />
       <EditGroupExpenseModal open={!!editExpense} group={group} expense={editExpense} onClose={() => { setEditExpense(null); void reload(); }} />
-      <SettleUpModal open={showSettle} group={group} debts={shownDebts} onClose={() => { setShowSettle(false); void reload(); }} />
+      <SettleUpModal open={showSettle} group={group} debts={shownDebts} currentMemberId={currentMember?.id} onClose={() => { setShowSettle(false); void reload(); }} />
       <GroupInviteModal open={showInvite} group={group} onClose={() => { setShowInvite(false); void reload(); }} />
     </main>
   );

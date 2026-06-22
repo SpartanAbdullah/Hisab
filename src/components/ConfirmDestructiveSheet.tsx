@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from './Button';
+import { useT } from '../lib/i18n';
 
 // Imperative replacement for window.confirm() for destructive actions.
 // Native confirm() does not render reliably inside iOS standalone PWA / Capacitor
@@ -34,16 +35,20 @@ interface ConfirmationActionsProps {
 
 export function ConfirmationActions({
   confirmLabel,
-  cancelLabel = 'Cancel',
+  cancelLabel,
   tone = 'destructive',
   loading = false,
   onCancel,
   onConfirm,
 }: ConfirmationActionsProps) {
+  const t = useT();
+  // Default the cancel affordance to the localized "Cancel" label; callers can
+  // still pass an explicit cancelLabel to override.
+  const resolvedCancelLabel = cancelLabel ?? t('cancel');
   return (
     <div className="sheet-actions space-y-2">
       <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={loading}>
-        {cancelLabel}
+        {resolvedCancelLabel}
       </Button>
       <Button
         type="button"
@@ -94,6 +99,7 @@ export function ConfirmDestructiveSheet() {
   const options = useConfirmStore((s) => s.options);
   const answer = useConfirmStore((s) => s.answer);
   const [show, setShow] = useState(false);
+  const t = useT();
 
   useEffect(() => {
     if (open) {
@@ -128,7 +134,7 @@ export function ConfirmDestructiveSheet() {
         </div>
 
         <ConfirmationActions
-          confirmLabel={options.confirmLabel ?? 'Confirm'}
+          confirmLabel={options.confirmLabel ?? t('confirm_generic')}
           cancelLabel={options.cancelLabel}
           tone={tone}
           onCancel={() => answer(false)}

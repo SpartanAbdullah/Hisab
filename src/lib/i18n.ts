@@ -1505,6 +1505,179 @@ const S = {
     ur: "Linked loans yahan shamil nahi — unhein loan page se settle karein.",
     en: "Linked loans aren't included here — settle those from their loan page.",
   },
+
+  // ── UX pass: bilingual copy for confirmations, errors, status & validation ──
+  // Cross-user money confirmations (were English-only)
+  confirm_send_title: { ur: "{name} ko {amount} bhejein?", en: "Send {amount} to {name}?" },
+  confirm_send_body: { ur: "{approx}Yeh {name} ko bhi dikhega aur accept hone ke baad badla nahi ja sakta.", en: "{approx}This is mirrored to {name} and can't be edited after they accept." },
+  confirm_send_cta: { ur: "Request bhejo", en: "Send request" },
+  confirm_accept_title: { ur: "{amount} accept karein?", en: "Accept {amount}?" },
+  confirm_accept_body: { ur: "{approx}Yeh dono taraf shared loan banayega. Iske baad sirf settle ho sakta hai, edit nahi.", en: "{approx}This adds a shared loan to both ledgers. After this it can only be settled, not edited." },
+  confirm_settle_title: { ur: "{amount} ki settlement confirm karein?", en: "Confirm settlement of {amount}?" },
+  confirm_settle_body: { ur: "Yeh dono taraf ka hisaab barabar kar dega. Wapas nahi ho sakta.", en: "This clears the matching balance on both sides. It can't be undone." },
+  // Destructive confirmations
+  del_account_body: { ur: "Yeh account aur uski history hamesha ke liye delete kar dega. Wapas nahi hoga.", en: "This permanently deletes the account and its history. This can't be undone." },
+  del_group_body: { ur: "Sab kharche, settlements aur members ke links sab ke liye hat jayenge. Wapas nahi hoga.", en: "All expenses, settlements and member links are removed for everyone. This can't be undone." },
+  del_budget_body: { ur: "Jab chahein dobara bana sakte hain.", en: "You can recreate it any time." },
+  del_tx_title: { ur: "Yeh entry delete karein?", en: "Delete this entry?" },
+  del_tx_body: { ur: "Iska balance par asar ulat jayega.", en: "The balance change will be reversed." },
+  del_contact_body: { ur: "Yeh contact aur uska local record hat jayega.", en: "This removes the contact and its local record." },
+  // Error recovery (replace raw err.message)
+  err_offline: { ur: "Aap offline hain. Connect hote hi save ho jayega.", en: "You're offline. We'll save this once you reconnect." },
+  err_could_not_save: { ur: "Save nahi hua — aapka paisa waise ka waisa hai. Dobara koshish karein.", en: "Couldn't save that — your money wasn't touched. Try again." },
+  // Shared error/hint defaults
+  err_page_title: { ur: "Yeh load nahi hua", en: "Couldn't load this" },
+  err_page_msg: { ur: "Apna connection check karke dobara koshish karein.", en: "Check your connection and try again." },
+  err_retry: { ur: "Dobara koshish", en: "Try again" },
+  hint_current_status: { ur: "Abhi ki soorat-e-haal", en: "Current status" },
+  err_insufficient: { ur: "{account} mein sirf {available} hain — yeh {amount} se kam hai.", en: "{account} only has {available} — that's less than {amount}." },
+  // Spending warning (was hardcoded Roman Urdu, leaked to English users)
+  spend_warning_remember: { ur: "Yaad rahe: {title} aa raha hai", en: "Heads up: {title} is coming up" },
+  spend_warning_body: { ur: "{title} ke liye jald {amount} chahiye honge.", en: "You'll need {amount} for {title} soon." },
+  spend_warning_confirm_q: { ur: "Phir bhi kharch karein?", en: "Spend anyway?" },
+  // Field-specific validation
+  val_need_amount: { ur: "Pehle amount likho", en: "Enter an amount first" },
+  val_need_name: { ur: "Ek naam do", en: "Give it a name" },
+  val_pick_account: { ur: "Account chuno", en: "Choose an account" },
+  val_pick_member: { ur: "Kam se kam ek banda chuno jiske sath bantna hai", en: "Pick at least one person to split with" },
+  val_shares_zero: { ur: "Kam se kam ek banday ko hissa do", en: "Give at least one person a share" },
+  // Repayment CTA (direction-aware)
+  repay_record_received: { ur: "Wapsi record karo", en: "Record received" },
+  repay_record_paid: { ur: "Adaigi record karo", en: "Record payment" },
+  // At-a-glance status labels
+  status_overdue: { ur: "Overdue", en: "Overdue" },
+  status_due_soon: { ur: "Jald due", en: "Due soon" },
+  status_settled: { ur: "Settled", en: "Settled" },
+  status_unsettled: { ur: "Baqaya", en: "Unsettled" },
+  status_pending_reply: { ur: "Jawab ka intezar", en: "Awaiting reply" },
+  // Search
+  search_scope_placeholder: { ur: "Transactions, loans, groups dhoondein...", en: "Search transactions, loans, groups..." },
+  search_covers: { ur: "Search transactions, loans aur group expenses ko cover karta hai.", en: "Search covers transactions, loans and group expenses." },
+  // Generic dialog actions
+  cancel: { ur: "Cancel", en: "Cancel" },
+  confirm_generic: { ur: "Theek hai", en: "Confirm" },
+
+  // ── UX localization pass ──
+  // Generic actions / nav
+  action_view: { ur: "Dekho", en: "View" },
+  nav_add: { ur: "Add", en: "Add" },
+  not_now: { ur: "Abhi nahin", en: "Not now" },
+  label_you: { ur: "Aap", en: "You" },
+  // Groups list / card
+  group_to_settle: { ur: "{n} settle karne hain", en: "{n} to settle" },
+  // Global search
+  search_recent: { ur: "Haal hi mein", en: "Recent" },
+  search_no_matches: { ur: "“{q}” ke liye kuch nahin mila.", en: "No matches for “{q}”." },
+  // Accounts
+  acct_set_limit: { ur: "Limit set karo", en: "Set limit" },
+  acct_available: { ur: "available", en: "available" },
+  acct_owe: { ur: "Dena hai {amount}", en: "Owe {amount}" },
+  acct_assets: { ur: "Assets +{amount}", en: "Assets +{amount}" },
+  acct_owe_total: { ur: "Dena hai -{amount}", en: "Owe -{amount}" },
+  // Budgets
+  budget_over: { ur: "{n} over", en: "{n} over" },
+  budget_near: { ur: "{n} limit ke kareeb", en: "{n} near limit" },
+  budget_on_track: { ur: "Sab theek", en: "All on track" },
+  budget_over_by_short: { ur: "{amount} over", en: "{amount} over" },
+  budget_over_by: { ur: "{amount} se zyada ho gaya", en: "over by {amount}" },
+  // Loan / QuickEntry helpers
+  loan_they: { ur: "Woh", en: "They" },
+  loan_will_confirm: { ur: "{name} ko confirm karne ki request jayegi", en: "{name} will get a request to confirm this" },
+  loan_private: { ur: "Private — sirf aap dekh sakte ho", en: "Private — only you see this" },
+  qe_after: { ur: "Baad mein: {amount}", en: "After: {amount}" },
+  qe_low_balance: { ur: "· Balance kam", en: "· Low balance" },
+  // Analytics
+  analytics_showing: { ur: "Dikha rahe", en: "Showing" },
+  analytics_net: { ur: "Net", en: "Net" },
+  analytics_empty_desc: { ur: "Thoda kharcha aur amdani likho, phir aapke spend trends, categories aur net flow yahan dikhne lagenge.", en: "Log a few expenses and income, and your spend trends, categories and net flow show up here." },
+  analytics_empty_cta: { ur: "Transaction add karo", en: "Add a transaction" },
+  // Group expense split
+  split_allocated: { ur: "Allocated {a} / {b}", en: "Allocated {a} / {b}" },
+  split_total_pct: { ur: "Total {n}%", en: "Total {n}%" },
+  split_total_shares: { ur: "Total {n} shares", en: "Total {n} shares" },
+  // Home
+  home_owed: { ur: "dena", en: "owed" },
+  home_net_liab: { ur: "Liabilities ke baad", en: "Net of liabilities" },
+  home_record_iou_hint: { ur: "Kis ne kis ka dena hai, likho aur shuru karo.", en: "Record who owes whom to get started." },
+  home_record_iou_cta: { ur: "IOU likho", en: "Record an IOU" },
+  home_people_to_settle: { ur: "{n} log settle karne hain", en: "{n} to settle" },
+  home_groups_active: { ur: "{n} group active", en: "{n} groups active" },
+  home_more_reminders: { ur: "{n} aur reminders", en: "{n} more reminders" },
+  home_more_reminder_one: { ur: "1 aur reminder", en: "1 more reminder" },
+  // Contact detail (linked account)
+  contact_linked_to: { ur: "Linked", en: "Linked to" },
+  contact_not_linked: { ur: "Kisi Hisaab user se linked nahin", en: "Not linked to a Hisaab user" },
+  contact_linked_pill: { ur: "Linked", en: "Linked" },
+  // Group members / legend
+  member_on_app: { ur: "Hisaab par", en: "on Hisaab" },
+  member_invited: { ur: "invite bheji", en: "invite sent" },
+  member_not_on_app: { ur: "app par nahin", en: "not on app" },
+  member_owner: { ur: "owner", en: "owner" },
+  // Hisaab AI
+  ai_view_txns: { ur: "Ye {count} transactions dekho", en: "View these {count} transactions" },
+  ai_view_txn_one: { ur: "Ye transaction dekho", en: "View this transaction" },
+  // Goals
+  goal_to_go: { ur: "{amount} baqi", en: "{amount} to go" },
+  goal_pace: { ur: "is raftaar se takreeban {n} mahine", en: "about {n} mo at this pace" },
+  // Loans
+  status_linked: { ur: "Linked", en: "Linked" },
+  loans_pending_banner: { ur: "Aapke inbox mein {count} pending request", en: "{count} pending request in your inbox" },
+  loans_pending_banner_plural: { ur: "Aapke inbox mein {count} pending requests", en: "{count} pending requests in your inbox" },
+  loans_pending_reply: { ur: "{count} aapke jawab ke muntazir", en: "{count} need your reply" },
+  // PIN lock
+  pin_try_again: { ur: "{s}s baad dobara koshish karo", en: "Try again in {s}s" },
+  pin_tries_left: { ur: "{n} koshishein baqi", en: "{n} tries left" },
+  pin_tries_left_one: { ur: "1 koshish baqi", en: "1 try left" },
+  pin_forgot: { ur: "PIN bhool gaye?", en: "Forgot PIN?" },
+  pin_recovery: { ur: "PIN reset nahin hota — yeh sirf is device ko lock karta hai. Sign out karke dobara sign in karo, phir Settings mein naya PIN set karo.", en: "There's no PIN reset — your PIN locks this device only. Sign out and sign back in to clear it, then set a new PIN in Settings." },
+  pin_signout_reset: { ur: "Reset ke liye sign out karo", en: "Sign out to reset" },
+  pin_signing_out: { ur: "Sign out ho raha hai…", en: "Signing out…" },
+  // Join group
+  join_find_cta: { ur: "Group dhoondo", en: "Find group" },
+  join_confirm_cta: { ur: "Is group mein join karo", en: "Join this group" },
+  join_ready: { ur: "Join karne ke liye taiyar", en: "Ready to join" },
+  join_double_check: { ur: "Ek dafa check karo ke code sahi hai, phir neeche “Join this group” dabao. Join hote hi aap group ke kharchay aur members dekh paoge.", en: "Double-check this is the right code, then tap “Join this group” below. You'll see the group's expenses and members once you're in." },
+  join_use_different: { ur: "Doosra code istemal karo", en: "Use a different code" },
+  // Loan detail — cancel settlement
+  loan_cancel_settle_title: { ur: "Yeh settlement request cancel karein?", en: "Cancel this settlement request?" },
+  loan_cancel_settle_body: { ur: "Pending {amount} settlement dono taraf apply nahin hogi.", en: "The pending {amount} settlement won't be applied on either side." },
+  loan_cancel_request: { ur: "Request cancel karo", en: "Cancel request" },
+  // Transactions
+  tx_search_placeholder: { ur: "Notes, category, banda, amount dhoondo", en: "Search notes, category, person, amount" },
+  // Onboarding
+  onboard_recommended: { ur: "Tajweez karda", en: "Recommended" },
+  onboard_switch_anytime: { ur: "Settings mein kabhi bhi badal sakte ho.", en: "You can switch anytime in Settings." },
+  // Inbox
+  confirm_settle_cta: { ur: "Settlement confirm karo", en: "Confirm settlement" },
+  inbox_incoming_explainer: { ur: "Aapke linked contacts ki requests yahan aayengi — accept ya decline karne ke liye.", en: "Requests from your linked contacts will land here for you to accept or decline." },
+  inbox_send_request: { ur: "Linked request bhejo", en: "Send a linked request" },
+  inbox_card_incoming_lent_full: { ur: "aapko {name} ko dena hoga", en: "you'd owe {name}" },
+  inbox_card_incoming_borrowed_full: { ur: "{name} ko aapko dena hoga", en: "{name} would owe you" },
+  // Settings group headers
+  settings_grp_account: { ur: "Account aur security", en: "Account & security" },
+  settings_grp_money: { ur: "Aapka paisa", en: "Your money" },
+  settings_grp_data: { ur: "Data aur backup", en: "Data & backup" },
+  settings_grp_about: { ur: "About aur legal", en: "About & legal" },
+  // Subscriptions
+  subs_paused: { ur: "Saari subscriptions paused", en: "All subscriptions paused" },
+  subs_active_count: { ur: "{c} active", en: "{c} active" },
+  subs_duplicate: { ur: "Double charge ho sakta hai — review karo", en: "Possible double charge — review" },
+  subs_per_mo: { ur: "~ {amount}/mahina", en: "~ {amount}/mo" },
+  // Settle up modal
+  settle_you_pay: { ur: "Aap {name} ko do", en: "You pay {name}" },
+  settle_pays_you: { ur: "{name} aapko de", en: "{name} pays you" },
+  settle_pays: { ur: "{from} {to} ko de", en: "{from} pays {to}" },
+  settle_remaining: { ur: "Iske baad baqi: {amount}", en: "Remaining after this: {amount}" },
+  settle_fully_settled: { ur: "Pura settle ho gaya", en: "Fully settled" },
+  settle_full: { ur: "Poora {amount}", en: "Full {amount}" },
+  settle_partial: { ur: "Thoda sa", en: "Partial" },
+  settle_done: { ur: "Done", en: "Done" },
+  settle_all_square: { ur: "Sab barabar", en: "Everyone's square" },
+  settle_all_square_sub: { ur: "Is group mein abhi koi baqaya balance settle karne ko nahin.", en: "There are no outstanding balances to settle in this group right now." },
+  // Repayment modal
+  repay_full: { ur: "Poora", en: "Full" },
+  repay_half: { ur: "Aadha", en: "Half" },
+  repay_next: { ur: "Agli qist", en: "Next instalment" },
 } as const;
 
 type Key = keyof typeof S;

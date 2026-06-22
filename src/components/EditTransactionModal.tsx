@@ -154,8 +154,8 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
 
   const handleDelete = async () => {
     const ok = await confirmDestructive({
-      title: 'Delete this entry?',
-      description: 'The balance change will be reversed.',
+      title: t('del_tx_title'),
+      description: t('del_tx_body'),
       confirmLabel: 'Delete',
     });
     if (!ok) return;
@@ -233,7 +233,8 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           <button
             onClick={handleDelete}
             disabled={saving}
-            className="px-4 py-3.5 rounded-2xl bg-pay-50 text-pay-text active:bg-pay-100 transition-all disabled:opacity-50"
+            aria-label="Delete entry"
+            className="min-h-[44px] min-w-[44px] px-4 rounded-2xl bg-pay-50 text-pay-text active:bg-pay-100 transition-all disabled:opacity-50 flex items-center justify-center"
           >
             <Trash2 size={16} />
           </button>

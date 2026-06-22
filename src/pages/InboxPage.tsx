@@ -164,10 +164,11 @@ export function InboxPage() {
       const approx = approxOther(req.amount, req.currency);
       const warnNote = !plaus.passed && plaus.reason ? ` ${plaus.reason}` : '';
       const ok = await confirmDestructive({
-        title: `Accept this request for ${formatMoney(req.amount, req.currency)}?`,
-        description: `${approx ? `${approx}. ` : ''}This adds a shared loan to both your ledgers. Afterwards it can't be edited — only settled.${warnNote}`,
-        confirmLabel: 'Accept',
-        cancelLabel: 'Not now',
+        title: t('confirm_accept_title').replace('{amount}', formatMoney(req.amount, req.currency)),
+        description:
+          t('confirm_accept_body').replace('{approx}', approx ? `${approx}. ` : '') + warnNote,
+        confirmLabel: t('ltr_accept'),
+        cancelLabel: t('not_now'),
         tone: 'warning',
       });
       if (!ok) return;
@@ -214,10 +215,10 @@ export function InboxPage() {
     const req = settlements.find((r) => r.id === id);
     if (req) {
       const ok = await confirmDestructive({
-        title: `Confirm settlement of ${formatMoney(req.amount, req.currency)}?`,
-        description: "This clears the matching balance on both sides. It can't be undone.",
-        confirmLabel: 'Confirm settlement',
-        cancelLabel: 'Not now',
+        title: t('confirm_settle_title').replace('{amount}', formatMoney(req.amount, req.currency)),
+        description: t('confirm_settle_body'),
+        confirmLabel: t('confirm_settle_cta'),
+        cancelLabel: t('not_now'),
         tone: 'warning',
       });
       if (!ok) return;
@@ -366,12 +367,28 @@ export function InboxPage() {
           <ListSkeleton rows={3} withAvatar={false} />
         ) : visible.length === 0 ? (
           loadStatus === 'ready' ? (
-            <EmptyState
-              icon={tab === 'incoming' ? Inbox : Send}
-              tone={tab === 'incoming' ? 'accent' : 'receive'}
-              title={tab === 'incoming' ? t('inbox_empty_incoming_title') : t('inbox_empty_outgoing_title')}
-              description={tab === 'incoming' ? t('inbox_empty_incoming_desc') : t('inbox_empty_outgoing_desc')}
-            />
+            tab === 'incoming' ? (
+              <EmptyState
+                icon={Inbox}
+                tone="accent"
+                title={t('inbox_empty_incoming_title')}
+                description={t('inbox_empty_incoming_desc')}
+                // One-line explainer so an empty incoming tab reads as
+                // "nothing to do" rather than "is this broken?".
+                subhint={t('inbox_incoming_explainer')}
+              />
+            ) : (
+              <EmptyState
+                icon={Send}
+                tone="receive"
+                title={t('inbox_empty_outgoing_title')}
+                description={t('inbox_empty_outgoing_desc')}
+                // Outgoing-empty nudges toward the place linked requests are
+                // created: a linked contact's detail sheet.
+                actionLabel={t('inbox_send_request')}
+                onAction={() => navigate('/contacts')}
+              />
+            )
           ) : null
         ) : (
           <div className="space-y-2.5">
@@ -566,14 +583,14 @@ function SettlementCard({
                 <button
                   onClick={onReject}
                   disabled={busy}
-                  className="flex-1 py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold active:bg-cream-hairline transition-colors disabled:opacity-50"
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold active:bg-cream-hairline transition-colors disabled:opacity-50"
                 >
                   {busy ? t('ltr_rejecting') : t('ltr_reject')}
                 </button>
                 <button
                   onClick={onAccept}
                   disabled={busy}
-                  className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
                 >
                   {busy ? t('ltr_accepting') : t('ltr_accept')}
                 </button>
@@ -582,7 +599,7 @@ function SettlementCard({
               <button
                 onClick={onCancel}
                 disabled={busy}
-                className="flex-1 py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
+                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
               >
                 {busy ? t('ltr_cancelling') : t('ltr_cancel')}
               </button>
@@ -607,6 +624,8 @@ function RequestCard({
 }) {
   const t = useT();
   const isPending = request.status === 'pending';
+  const amountText = formatMoney(request.amount, request.currency);
+  const isIncoming = tab === 'incoming';
 
   let title: string;
   if (tab === 'outgoing') {
@@ -618,6 +637,17 @@ function RequestCard({
       ? t('ltr_card_incoming_lent').replace('{name}', contactName)
       : t('ltr_card_incoming_borrowed').replace('{name}', contactName);
   }
+
+  // Incoming: fold the amount and the resulting stance into one sentence so
+  // the user reads "what this means for me" without doing the mental math.
+  // lent → they lent you → you'd owe them (pay-text). borrowed → they borrowed
+  // from you → they'd owe you (receive-text).
+  const stanceClause = isIncoming
+    ? request.kind === 'lent'
+      ? t('inbox_card_incoming_lent_full').replace('{name}', contactName)
+      : t('inbox_card_incoming_borrowed_full').replace('{name}', contactName)
+    : null;
+  const stanceColor = request.kind === 'lent' ? 'text-pay-text' : 'text-receive-text';
 
   const statusKey = (`ltr_status_${request.status}`) as
     | 'ltr_status_pending' | 'ltr_status_accepted' | 'ltr_status_rejected' | 'ltr_status_cancelled';
@@ -633,7 +663,22 @@ function RequestCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-[13px] font-medium text-ink-900 tracking-tight">{title}</p>
+            <p className="text-[13px] font-medium text-ink-900 tracking-tight">
+              {isIncoming ? (
+                <>
+                  {title} <span className="font-semibold tabular-nums">{amountText}</span>
+                  {stanceClause && (
+                    <>
+                      {' '}
+                      <span className="text-ink-400">— </span>
+                      <span className={`font-semibold ${stanceColor}`}>{stanceClause}</span>
+                    </>
+                  )}
+                </>
+              ) : (
+                title
+              )}
+            </p>
             {/* Phase 2D: marks a "sync past record" request so the recipient
                 sees this is historical, not a fresh-loan announcement. Same
                 accept/decline flow underneath. */}
@@ -643,9 +688,11 @@ function RequestCard({
               </span>
             )}
           </div>
-          <p className="text-[18px] font-semibold text-ink-900 tabular-nums mt-1 tracking-tight">
-            {formatMoney(request.amount, request.currency)}
-          </p>
+          {!isIncoming && (
+            <p className="text-[18px] font-semibold text-ink-900 tabular-nums mt-1 tracking-tight">
+              {amountText}
+            </p>
+          )}
           <p className="text-[10.5px] text-ink-500 mt-1">
             {format(new Date(request.createdAt), 'MMM d, h:mm a')}
           </p>
@@ -668,14 +715,14 @@ function RequestCard({
               <button
                 onClick={onReject}
                 disabled={busy}
-                className="flex-1 py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold active:bg-cream-hairline transition-colors disabled:opacity-50"
+                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold active:bg-cream-hairline transition-colors disabled:opacity-50"
               >
                 {busy ? t('ltr_rejecting') : t('ltr_reject')}
               </button>
               <button
                 onClick={onAccept}
                 disabled={busy}
-                className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
+                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
               >
                 {busy ? t('ltr_accepting') : t('ltr_accept')}
               </button>
@@ -684,7 +731,7 @@ function RequestCard({
             <button
               onClick={onCancel}
               disabled={busy}
-              className="flex-1 py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
+              className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
             >
               {busy ? t('ltr_cancelling') : t('ltr_cancel')}
             </button>

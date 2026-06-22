@@ -103,7 +103,7 @@ export function QuickEntry({
   const [emiStartDate, setEmiStartDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [confirmData, setConfirmData] = useState<{ title: string; description: string; changes: Array<{ accountName: string; currency: string; before: number; after: number }> }>({ title: '', description: '', changes: [] });
+  const [confirmData, setConfirmData] = useState<{ title: string; description: string; changes: Array<{ accountName: string; currency: string; before: number; after: number }>; route?: string }>({ title: '', description: '', changes: [] });
   const [showInlineAccount, setShowInlineAccount] = useState(false);
   const [showSpendingWarning, setShowSpendingWarning] = useState(false);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -246,6 +246,18 @@ export function QuickEntry({
     (!dstAccount || a.currency === dstAccount.currency)
   );
   const selectedCashAdvanceCard = availableCashAdvanceCards.find(a => a.id === sourceId);
+
+  // Active currency for the amount step + quick-amount presets. Prefer the
+  // preset account's currency (when QuickEntry was launched pinned to an
+  // account); otherwise the user's primary currency.
+  const primaryCurrency = (localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED';
+  const presetAccount = preset?.accountId ? accounts.find(a => a.id === preset.accountId) : undefined;
+  const activeCurrency: Currency = presetAccount?.currency ?? primaryCurrency;
+  // Quick-amount chips scale with the primary currency: PKR users deal in
+  // far larger nominal amounts than AED users, so offer a bigger preset set.
+  const quickAmounts = primaryCurrency === 'PKR'
+    ? [500, 1000, 5000, 10000, 50000]
+    : [50, 100, 500, 1000, 5000];
 
   // Determine if cross-currency conversion is needed
   const isCrossCurrency = (() => {
@@ -399,6 +411,7 @@ export function QuickEntry({
               ? `${selectedLoan.personName} paid you back ${formatMoney(amt, selectedLoan.currency)}.`
               : `You paid ${selectedLoan.personName} back ${formatMoney(amt, selectedLoan.currency)}.`,
             changes: [],
+            route: `/loan/${selectedLoan.id}`,
           });
         } else {
           // Split-only can still mirror a loan to a linked contact. The
@@ -444,6 +457,7 @@ export function QuickEntry({
               ? `${loan.personName} owes you ${formatMoney(amt, loan.currency)}.`
               : `You owe ${loan.personName} ${formatMoney(amt, loan.currency)}.`,
             changes: [],
+            route: `/loan/${loan.id}`,
           });
         }
         setShowConfirmation(true);
@@ -573,10 +587,21 @@ export function QuickEntry({
         }
         return `${formatMoney(amt, confirmationCurrency)} saved.`;
       })();
+      // Deep-link the "View" button only where a detail page exists: loans
+      // (incl. the loan a repayment belongs to) and goals. Plain
+      // expense/income/transfer have no per-record route, so leave it unset
+      // and the View button hides gracefully.
+      const confirmRoute = (() => {
+        if ((type === 'loan_given' || type === 'loan_taken') && resultTx.relatedLoanId) return `/loan/${resultTx.relatedLoanId}`;
+        if (type === 'repayment' && selectedLoan) return `/loan/${selectedLoan.id}`;
+        if (type === 'goal_contribution') return '/goals';
+        return undefined;
+      })();
       setConfirmData({
         title: emiFailed ? `${typeLabel} — Saved (EMI pending)` : `${typeLabel} — Done!`,
         description: resultDescription,
         changes,
+        route: confirmRoute,
       });
       setShowConfirmation(true);
       reset();
@@ -586,6 +611,24 @@ export function QuickEntry({
   };
 
   const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all";
+
+  // Heads-up "After: …" preview for source rows (money leaving an account).
+  // Glanceable only — never blocks submit. Tints pay-text + shows a small
+  // "Low balance" caption when the move would push a non-credit account
+  // negative. Credit cards legitimately carry a negative available balance,
+  // so we don't flag them.
+  const renderAfterBalance = (acct: { balance: number; currency: string; type: string }) => {
+    const amt = parseFloat(amount);
+    if (!amt) return null;
+    const after = acct.balance - amt;
+    const goesNegative = after < 0 && acct.type !== 'credit_card';
+    return (
+      <p className={`text-[10px] mt-0.5 tabular-nums ${goesNegative ? 'text-pay-text' : 'text-ink-500'}`}>
+        {t('qe_after').replace('{amount}', formatSignedMoney(after, acct.currency))}
+        {goesNegative && <span className="ml-1.5 font-semibold">{t('qe_low_balance')}</span>}
+      </p>
+    );
+  };
 
   return (
     <>
@@ -639,6 +682,7 @@ export function QuickEntry({
         {step === 0 && (
           <div className="space-y-5">
             <div className="text-center py-4">
+              <p className="text-[12px] font-semibold text-ink-500 tracking-[0.12em] uppercase">{activeCurrency}</p>
               <input
                 ref={amountRef}
                 type="text"
@@ -654,18 +698,19 @@ export function QuickEntry({
 
             {/* Quick amounts */}
             <div className="flex gap-2 justify-center flex-wrap">
-              {[50, 100, 500, 1000, 5000].map(v => (
+              {quickAmounts.map(v => (
                 <button key={v} onClick={() => setAmount(String(v))}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-cream-card text-ink-600 border border-cream-border active:bg-cream-soft active:scale-95 transition-all tabular-nums"
+                  className="min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold bg-cream-card text-ink-600 border border-cream-border active:bg-cream-soft active:scale-95 transition-all tabular-nums"
                 >{v.toLocaleString()}</button>
               ))}
             </div>
 
             {/* Numpad — Sukoon: white cells, 1px cream-border, radius 14 */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2" aria-label="Number pad" role="group">
               {['1','2','3','4','5','6','7','8','9','.','0','del'].map(key => (
                 <button key={key} onClick={() => numpadPress(key)}
-                  className={`h-13 rounded-[14px] text-[19px] font-medium transition-all active:scale-95 flex items-center justify-center border ${
+                  aria-label={key === 'del' ? 'Delete last digit' : undefined}
+                  className={`h-12 rounded-[14px] text-[19px] font-medium transition-all active:scale-95 flex items-center justify-center border ${
                     key === 'del' ? 'bg-pay-50 text-pay-text border-pay-100 active:bg-pay-100' : 'bg-cream-card text-ink-900 border-cream-border active:bg-cream-soft'
                   }`}
                 >{key === 'del' ? <Delete size={18} /> : key}</button>
@@ -920,7 +965,10 @@ export function QuickEntry({
                           <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
                         </div>
                       </div>
-                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      <div className="text-right shrink-0">
+                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                        {renderAfterBalance(a)}
+                      </div>
                     </button>
                   );})}
                 </div>
@@ -1059,7 +1107,10 @@ export function QuickEntry({
                         <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
                         <p className="text-[10px] text-ink-500">Credit card</p>
                       </div>
-                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      <div className="text-right shrink-0">
+                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                        {renderAfterBalance(a)}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -1174,7 +1225,10 @@ export function QuickEntry({
                             <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
                           </div>
                         </div>
-                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                        <div className="text-right shrink-0">
+                          <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                          {renderAfterBalance(a)}
+                        </div>
                       </button>
                     );
                   })}
@@ -1233,12 +1287,37 @@ export function QuickEntry({
               </p>
             )}
 
+            {/* Glanceable confirm/private chip near Save — tells the user
+                whether this loan will mirror to a linked contact (who must
+                confirm) or stay a private local-only record. */}
+            {(type === 'loan_given' || type === 'loan_taken') && (() => {
+              const personName = (preset?.lockContact && preset.contact ? preset.contact.name : contact.name).trim();
+              if (wouldBranchToLinked) {
+                return (
+                  <div className="flex items-center gap-2 rounded-2xl bg-accent-50 border border-accent-100 px-3 py-2.5">
+                    <Users size={13} className="text-accent-600 shrink-0" />
+                    <p className="text-[11px] font-semibold text-accent-600 leading-snug">
+                      {t('loan_will_confirm').replace('{name}', personName || t('loan_they'))}
+                    </p>
+                  </div>
+                );
+              }
+              return (
+                <div className="flex items-center gap-2 rounded-2xl bg-cream-soft border border-cream-border px-3 py-2.5">
+                  <Lock size={13} className="text-ink-500 shrink-0" />
+                  <p className="text-[11px] font-semibold text-ink-600 leading-snug">
+                    {t('loan_private')}
+                  </p>
+                </div>
+              );
+            })()}
+
           </div>
         )}
       </Modal>
 
       <AddAccountStepper open={showInlineAccount} onClose={() => setShowInlineAccount(false)} onComplete={() => setShowInlineAccount(false)} inline />
-      <ConfirmationSheet open={showConfirmation} onClose={() => { setShowConfirmation(false); onClose(); }} title={confirmData.title} description={confirmData.description} balanceChanges={confirmData.changes} />
+      <ConfirmationSheet open={showConfirmation} onClose={() => { setShowConfirmation(false); onClose(); }} title={confirmData.title} description={confirmData.description} balanceChanges={confirmData.changes} viewRoute={confirmData.route} />
       <SpendingWarningModal
         open={showSpendingWarning}
         expense={nearestUpcoming}

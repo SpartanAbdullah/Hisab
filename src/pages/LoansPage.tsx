@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Plus, ChevronRight, Users, Bell, Search, X } from 'lucide-react';
+import { Plus, ChevronRight, Users, Bell, Search, X, AlertCircle, Clock, Link2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useSettlementRequestStore } from '../stores/settlementRequestStore';
+import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { AllocateRepaymentModal } from '../components/AllocateRepaymentModal';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -26,7 +28,8 @@ import {
   type PaymentReminderDirection,
 } from '../lib/paymentReminders';
 import { AddLoanModal } from './AddLoanModal';
-import { format } from 'date-fns';
+import { format, isPast, differenceInDays } from 'date-fns';
+import { Link } from 'react-router-dom';
 import type { Currency, Loan } from '../db';
 
 type LoanDirection = 'given' | 'taken';
@@ -53,6 +56,7 @@ type ReminderTarget = {
   currency: Currency;
   direction: PaymentReminderDirection;
   startedAt: string | null;
+  hasDueDate: boolean;
 };
 
 export function LoansPage() {
@@ -62,6 +66,9 @@ export function LoansPage() {
   const { loadAccounts } = useAccountStore();
   const linkedRequests = useLinkedRequestStore((s) => s.requests);
   const loadLinkedRequests = useLinkedRequestStore((s) => s.loadRequests);
+  const settlementRequests = useSettlementRequestStore((s) => s.requests);
+  const loadSettlementRequests = useSettlementRequestStore((s) => s.loadRequests);
+  const myId = useSupabaseAuthStore((s) => s.user?.id ?? '');
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const t = useT();
@@ -82,8 +89,8 @@ export function LoansPage() {
   const load = useCallback(async () => {
     // loadLinkedRequests is needed so we can exclude linked loans (which must
     // settle via their own confirm flow) from the multi-loan allocation.
-    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts(), loadLinkedRequests()]);
-  }, [loadAccounts, loadLoans, loadSchedules, loadTransactions, loadLinkedRequests]);
+    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts(), loadLinkedRequests(), loadSettlementRequests()]);
+  }, [loadAccounts, loadLoans, loadSchedules, loadTransactions, loadLinkedRequests, loadSettlementRequests]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   // Loans mirrored to another Hisaab user (accepted linked pair) — excluded
@@ -227,6 +234,35 @@ export function LoansPage() {
     otherGroups = otherGroups.filter((g) => g.name.toLowerCase().includes(q));
   }
 
+  // Float overdue groups to the top, then due-soon, preserving the existing
+  // amount-based order within each band. Settled tab keeps its own ordering.
+  if (tab !== 'settled') {
+    const statusRank = (g: LoanGroup) => {
+      const s = getGroupStatus(g);
+      return s === 'overdue' ? 0 : s === 'due-soon' ? 1 : 2;
+    };
+    const byStatus = (a: LoanGroup, b: LoanGroup) => statusRank(a) - statusRank(b);
+    primaryGroups = primaryGroups.slice().sort(byStatus);
+    otherGroups = otherGroups.slice().sort(byStatus);
+  }
+
+  // Count of overdue people in the active (non-settled) tab — shown as a
+  // small alert pill on the tab so users feel the urgency before tapping in.
+  const overdueCount =
+    tab === 'settled'
+      ? 0
+      : [...primaryGroups, ...otherGroups].filter((g) => getGroupStatus(g) === 'overdue').length;
+
+  // Pending linked + settlement requests waiting on someone — mirrors the
+  // InboxPage selectors so the count matches what the user sees in /inbox.
+  const incomingPendingCount =
+    linkedRequests.filter((r) => r.status === 'pending' && r.toUserId === myId).length +
+    settlementRequests.filter((r) => r.status === 'pending' && r.toUserId === myId).length;
+  const outgoingPendingCount =
+    linkedRequests.filter((r) => r.status === 'pending' && r.fromUserId === myId).length +
+    settlementRequests.filter((r) => r.status === 'pending' && r.fromUserId === myId).length;
+  const pendingTotal = incomingPendingCount + outgoingPendingCount;
+
   const selectedLoanIds = new Set(selectedGroup?.loans.map((l) => l.id) ?? []);
   const selectedTransactions = transactions
     .filter((tx) => tx.relatedLoanId && selectedLoanIds.has(tx.relatedLoanId))
@@ -252,10 +288,43 @@ export function LoansPage() {
     return upcoming ?? null;
   };
 
-  const formatReminderMeta = (startedAt: string | null) => {
+  // At-a-glance status derived from the group's unpaid schedules:
+  // 'overdue' if any unpaid instalment's dueDate is in the past, 'due-soon'
+  // if the next one falls within ~3 days, otherwise none. Groups with no
+  // EMI schedule have no status here (open-ended loans aren't "overdue").
+  type GroupStatus = 'overdue' | 'due-soon' | null;
+  const getGroupStatus = (group: LoanGroup): GroupStatus => {
+    if (group.status === 'settled') return null;
+    const loanIds = new Set(group.loans.map((l) => l.id));
+    const unpaid = schedules.filter((s) => loanIds.has(s.loanId) && s.status !== 'paid');
+    if (unpaid.length === 0) return null;
+    const anyOverdue = unpaid.some((s) => isPast(new Date(s.dueDate)));
+    if (anyOverdue) return 'overdue';
+    const next = unpaid
+      .slice()
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
+    const days = differenceInDays(new Date(next.dueDate), new Date());
+    if (days >= 0 && days <= 3) return 'due-soon';
+    return null;
+  };
+
+  // Does this person-group include any loan mirrored to another Hisaab user?
+  const groupHasLinked = (group: LoanGroup) =>
+    group.loans.some((l) => linkedLoanIds.has(l.id));
+
+  // A loan only has a real due date when it carries at least one unpaid EMI
+  // schedule. Open-ended loans (no schedule) must NOT be called "overdue" —
+  // they're simply "open for N days".
+  const groupHasDueDate = (group: LoanGroup) => {
+    const loanIds = new Set(group.loans.map((l) => l.id));
+    return schedules.some((s) => loanIds.has(s.loanId) && s.status !== 'paid');
+  };
+
+  const formatReminderMeta = (startedAt: string | null, hasDueDate: boolean) => {
     const age = getReminderAge(startedAt);
     if (age.days === null) return t('reminder_no_due_date');
-    if (age.isOverdue) return t('reminder_overdue_days').replace('{count}', String(age.days));
+    // Without a due date, "overdue" is meaningless — fall back to neutral.
+    if (hasDueDate && age.isOverdue) return t('reminder_overdue_days').replace('{count}', String(age.days));
     return t('reminder_open_days').replace('{count}', String(age.days));
   };
 
@@ -267,6 +336,7 @@ export function LoansPage() {
       currency: group.currency,
       direction: group.direction === 'given' ? 'receivable' : 'payable',
       startedAt: getGroupReminderDate(group),
+      hasDueDate: groupHasDueDate(group),
     });
   };
 
@@ -289,6 +359,8 @@ export function LoansPage() {
             group.loans.some((l) => l.id === s.loanId) && s.status !== 'paid',
         ).length
       : 0;
+    const status = getGroupStatus(group);
+    const isLinked = groupHasLinked(group);
 
     return (
       <button
@@ -299,9 +371,32 @@ export function LoansPage() {
       >
         <UserAvatar name={group.name} size={44} />
         <div className="flex-1 min-w-0">
-          <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
-            {group.name}
-          </p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
+              {group.name}
+            </p>
+            {status && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold shrink-0 ${
+                  status === 'overdue'
+                    ? 'bg-pay-50 text-pay-text'
+                    : 'bg-warn-50 text-warn-700'
+                }`}
+              >
+                {status === 'overdue' ? (
+                  <AlertCircle size={10} strokeWidth={2.4} />
+                ) : (
+                  <Clock size={10} strokeWidth={2.4} />
+                )}
+                {status === 'overdue' ? t('status_overdue') : t('status_due_soon')}
+              </span>
+            )}
+          </div>
+          {isLinked && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent-50 text-accent-600 px-1.5 py-0.5 text-[10px] font-semibold mt-1">
+              <Link2 size={10} strokeWidth={2.4} /> {t('status_linked')}
+            </span>
+          )}
           <p className="text-[11px] text-ink-500 mt-0.5">
             {totalLoans} {totalLoans === 1 ? 'loan' : 'loans'}
             {remainingInstalments > 0 && (
@@ -434,6 +529,27 @@ export function LoansPage() {
           </div>
         )}
 
+        {/* Pending linked/settlement requests waiting in the inbox — a thin
+            tappable banner so the user can act on cross-user IOUs without
+            hunting for the bell. */}
+        {pendingTotal > 0 && (
+          <Link
+            to="/inbox"
+            className="flex items-center gap-2.5 rounded-2xl bg-accent-50 border border-accent-100 px-3.5 py-2.5 active:scale-[0.99] transition-transform"
+          >
+            <Bell size={14} className="text-accent-600 shrink-0" strokeWidth={2.2} />
+            <p className="flex-1 text-[12px] font-semibold text-accent-600 leading-snug">
+              {(pendingTotal === 1 ? t('loans_pending_banner') : t('loans_pending_banner_plural')).replace('{count}', String(pendingTotal))}
+              {incomingPendingCount > 0 && (
+                <span className="font-normal text-ink-500">
+                  {' '}· {t('loans_pending_reply').replace('{count}', String(incomingPendingCount))}
+                </span>
+              )}
+            </p>
+            <ChevronRight size={15} className="text-accent-600 shrink-0" />
+          </Link>
+        )}
+
         {/* Tab pills: Receivables / Payables / Settled — colour-coded by
             financial direction (green = owed to you, coral = you owe,
             neutral = settled). Selected = solid fill; unselected = a soft
@@ -467,6 +583,12 @@ export function LoansPage() {
                 {p.count > 0 && (
                   <span className={`ml-1.5 ${isActive ? 'text-white/75' : 'text-ink-400'}`}>
                     · {p.count}
+                  </span>
+                )}
+                {isActive && p.value !== 'settled' && overdueCount > 0 && (
+                  <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold leading-none align-middle">
+                    <AlertCircle size={9} strokeWidth={2.6} />
+                    {overdueCount}
                   </span>
                 )}
               </button>
@@ -556,7 +678,7 @@ export function LoansPage() {
                   ? () => openReminder(selectedGroup)
                   : undefined
               }
-              reminderMeta={formatReminderMeta(getGroupReminderDate(selectedGroup))}
+              reminderMeta={formatReminderMeta(getGroupReminderDate(selectedGroup), groupHasDueDate(selectedGroup))}
             />
 
             {/* Multi-loan payment — spread one amount across these loans
@@ -633,6 +755,7 @@ export function LoansPage() {
           currency={reminderTarget.currency}
           direction={reminderTarget.direction}
           startedAt={reminderTarget.startedAt}
+          hasDueDate={reminderTarget.hasDueDate}
         />
       ) : null}
 

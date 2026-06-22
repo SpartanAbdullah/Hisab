@@ -18,6 +18,8 @@ import { TransactionItem } from '../components/TransactionItem';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
 import { PageErrorState } from '../components/PageErrorState';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { useToast } from '../components/Toast';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -35,9 +37,12 @@ export function LoanDetailPage() {
   const { loadAccounts, accounts } = useAccountStore();
   const linkedRequests = useLinkedRequestStore((s) => s.requests);
   const settlementRequests = useSettlementRequestStore((s) => s.requests);
+  const cancelSettlement = useSettlementRequestStore((s) => s.cancel);
   const persons = usePersonStore((s) => s.persons);
   const currentUserId = useSupabaseAuthStore((s) => s.user?.id ?? '');
   const t = useT();
+  const toast = useToast();
+  const [cancellingSettlementId, setCancellingSettlementId] = useState<string | null>(null);
   const [showRepayment, setShowRepayment] = useState(false);
   const [showSettleLinked, setShowSettleLinked] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
@@ -130,6 +135,32 @@ export function LoanDetailPage() {
     void loadSchedules();
     void loadTransactions();
     void loadAccounts();
+  };
+
+  // Cancel a pending settlement request the current user sent. Confirms first
+  // (cross-user action), then refreshes so the row flips to "cancelled".
+  const handleCancelSettlement = async (request: SettlementRequest) => {
+    const ok = await confirmDestructive({
+      title: t('loan_cancel_settle_title'),
+      description: t('loan_cancel_settle_body').replace('{amount}', formatMoney(request.amount, loan.currency)),
+      confirmLabel: t('ltr_cancel'),
+      cancelLabel: t('not_now'),
+      tone: 'warning',
+    });
+    if (!ok) return;
+    setCancellingSettlementId(request.id);
+    try {
+      await cancelSettlement(request.id);
+      refreshLoanDetail();
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('stl_cancel_error'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setCancellingSettlementId(null);
+    }
   };
 
   return (
@@ -429,6 +460,9 @@ export function LoanDetailPage() {
                       request={s}
                       currency={loan.currency}
                       appliedFromAccountName={appliedFromName}
+                      canCancel={s.status === 'pending' && s.fromUserId === currentUserId}
+                      cancelling={cancellingSettlementId === s.id}
+                      onCancel={() => handleCancelSettlement(s)}
                     />
                   );
                 })}
@@ -500,6 +534,7 @@ export function LoanDetailPage() {
         currency={loan.currency}
         direction={loan.type === 'given' ? 'receivable' : 'payable'}
         startedAt={reminderStartedAt}
+        hasDueDate={totalCount > 0}
       />
       {isLinkedLoan && (
         <SettleLinkedLoanModal
@@ -519,10 +554,18 @@ function SettlementHistoryRow({
   request,
   currency,
   appliedFromAccountName,
+  canCancel = false,
+  cancelling = false,
+  onCancel,
 }: {
   request: SettlementRequest;
   currency: string;
   appliedFromAccountName?: string | null;
+  // True only when this is a pending request the current user sent — the only
+  // case where it can still be withdrawn.
+  canCancel?: boolean;
+  cancelling?: boolean;
+  onCancel?: () => void;
 }) {
   const t = useT();
   const statusKey = (`stl_status_${request.status}`) as
@@ -534,7 +577,8 @@ function SettlementHistoryRow({
     cancelled: 'bg-cream-soft text-ink-500',
   }[request.status];
   return (
-    <div className="rounded-[18px] bg-cream-card border border-cream-border p-3.5 flex items-center gap-3">
+    <div className="rounded-[18px] bg-cream-card border border-cream-border p-3.5">
+      <div className="flex items-center gap-3">
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-semibold text-ink-900 tabular-nums">
           {formatMoney(request.amount, currency)}
@@ -557,10 +601,23 @@ function SettlementHistoryRow({
       {request.status === 'pending' && (
         <Link
           to="/inbox"
-          className="text-[10px] text-accent-600 font-semibold active:opacity-70 transition-opacity flex items-center gap-0.5"
+          className="relative text-[10px] text-accent-600 font-semibold active:opacity-70 transition-opacity flex items-center gap-0.5 before:absolute before:-inset-2 before:content-['']"
         >
           {t('stl_history_view_in_inbox')} <ChevronRight size={10} />
         </Link>
+      )}
+      </div>
+      {/* Withdraw a still-pending request you sent. pay-50 tint + "request"
+          wording keeps it calm but clearly destructive. */}
+      {canCancel && onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={cancelling}
+          className="mt-3 w-full min-h-[44px] rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
+        >
+          {cancelling ? t('ltr_cancelling') : t('loan_cancel_request')}
+        </button>
       )}
     </div>
   );

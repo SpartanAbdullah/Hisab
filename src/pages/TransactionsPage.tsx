@@ -242,6 +242,9 @@ export function TransactionsPage() {
   };
 
   const filtersActive = filter !== 'all' || timeFilter !== 'all' || search.trim().length > 0;
+  // Keep the search box expanded whenever a filter or search is active, so the
+  // active query stays visible and editable instead of collapsing away.
+  const searchExpanded = showSearch || filtersActive;
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -301,24 +304,33 @@ export function TransactionsPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-3">
-        {showSearch && (
-          <div className="relative">
-            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={t('search_placeholder')}
-              className="w-full bg-cream-card border border-cream-border rounded-2xl pl-10 pr-10 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
-              autoFocus
-            />
-            {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 active:scale-90"
-                aria-label="Clear search"
-              >
-                <X size={14} />
-              </button>
+        {searchExpanded && (
+          <div>
+            <div className="relative">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t('tx_search_placeholder')}
+                className="w-full bg-cream-card border border-cream-border rounded-2xl pl-10 pr-10 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
+                autoFocus={showSearch}
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 active:scale-90 w-9 h-9 flex items-center justify-center"
+                  aria-label="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            {/* Results count sits directly under the search box for a tight
+                search → result-count reading order. */}
+            {filtersActive && (
+              <p className="text-[10.5px] text-ink-500 font-semibold mt-1.5 px-1">
+                {filtered.length} {t('time_results')}
+              </p>
             )}
           </div>
         )}
@@ -362,12 +374,6 @@ export function TransactionsPage() {
             );
           })}
         </div>
-
-        {filtersActive && (
-          <p className="text-[10.5px] text-ink-500 font-semibold">
-            {filtered.length} {t('time_results')}
-          </p>
-        )}
 
         {loadStatus === 'ready' && transactions.length > 0 && (
           <NextStepHint

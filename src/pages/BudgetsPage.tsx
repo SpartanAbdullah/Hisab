@@ -13,8 +13,10 @@ import { SUPPORTED_CURRENCIES, type Currency, type Budget } from '../db';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
+import { useT } from '../lib/i18n';
 
 export function BudgetsPage() {
+  const t = useT();
   const budgets = useBudgetStore((s) => s.budgets);
   const loadBudgets = useBudgetStore((s) => s.loadBudgets);
   const transactions = useTransactionStore((s) => s.transactions);
@@ -67,6 +69,27 @@ export function BudgetsPage() {
             message={loadError ?? 'Some data failed to load.'}
             onRetry={retryLoad}
           />
+        )}
+
+        {loadStatus === 'ready' && usages.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {overLimitCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-pay-700 bg-pay-50 rounded-full px-2 py-1 tabular-nums">
+                <AlertTriangle size={11} className="text-pay-700" />
+                {t('budget_over').replace('{n}', String(overLimitCount))}
+              </span>
+            )}
+            {overWarnCount > 0 && (
+              <span className="inline-flex items-center text-[10px] font-semibold text-warn-700 bg-warn-50 rounded-full px-2 py-1 tabular-nums">
+                {t('budget_near').replace('{n}', String(overWarnCount))}
+              </span>
+            )}
+            {overLimitCount === 0 && overWarnCount === 0 && (
+              <span className="inline-flex items-center text-[10px] font-semibold text-receive-text bg-receive-50 rounded-full px-2 py-1">
+                {t('budget_on_track')}
+              </span>
+            )}
+          </div>
         )}
 
         {loadStatus === 'ready' && usages.length > 0 && (
@@ -137,8 +160,15 @@ interface BudgetCardProps {
 }
 
 function BudgetCard({ usage, onEdit }: BudgetCardProps) {
+  const t = useT();
   const { budget, spent, remaining, percent, overLimit, overWarn } = usage;
   const cappedPercent = Math.min(percent, 100);
+  // Where "on pace" spending would sit today — a vertical tick on the bar so
+  // the user can see if they're ahead of or behind an even monthly burn.
+  const now = new Date();
+  const dayOfMonth = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const expectedPercent = Math.min(100, (dayOfMonth / daysInMonth) * 100);
   // Bar color shifts as the user gets closer to the cap. Green → amber → coral
   // so the meaning is obvious without reading the number.
   const barColor = overLimit
@@ -165,19 +195,33 @@ function BudgetCard({ usage, onEdit }: BudgetCardProps) {
           {' '}/ {formatMoney(budget.monthlyAmount, budget.currency)}
         </p>
         <p
-          className={`text-[11px] font-semibold tabular-nums ${
+          className={`text-[11px] font-semibold tabular-nums inline-flex items-center gap-1 ${
             overLimit ? 'text-pay-text' : 'text-receive-text'
           }`}
         >
-          {overLimit
-            ? `${formatMoney(Math.abs(remaining), budget.currency)} over`
-            : `${formatMoney(remaining, budget.currency)} left`}
+          {overLimit ? (
+            <>
+              <AlertTriangle size={11} className="text-pay-text shrink-0" aria-hidden="true" />
+              {t('budget_over_by_short').replace('{amount}', formatMoney(Math.abs(remaining), budget.currency))}
+              <span className="sr-only">
+                {t('budget_over_by').replace('{amount}', formatMoney(Math.abs(remaining), budget.currency))}
+              </span>
+            </>
+          ) : (
+            `${formatMoney(remaining, budget.currency)} left`
+          )}
         </p>
       </div>
-      <div className="mt-2.5 h-2 rounded-full bg-cream-soft overflow-hidden">
+      <div className="relative mt-2.5 h-2 rounded-full bg-cream-soft overflow-hidden">
         <div
           className={`h-full ${barColor} transition-all`}
           style={{ width: `${cappedPercent}%` }}
+        />
+        {/* Pace tick — where even spending would put us today. */}
+        <span
+          aria-hidden="true"
+          className="absolute top-0 bottom-0 w-px bg-ink-400/70"
+          style={{ left: `${expectedPercent}%` }}
         />
       </div>
     </button>
@@ -328,6 +372,7 @@ function EditBudgetModal({ budget, onClose }: EditBudgetModalProps) {
   const updateBudget = useBudgetStore((s) => s.updateBudget);
   const deleteBudget = useBudgetStore((s) => s.deleteBudget);
   const toast = useToast();
+  const t = useT();
   const [amount, setAmount] = useState('');
   const [warnAt, setWarnAt] = useState(80);
   const [saving, setSaving] = useState(false);
@@ -366,7 +411,7 @@ function EditBudgetModal({ budget, onClose }: EditBudgetModalProps) {
   const handleDelete = async () => {
     const ok = await confirmDestructive({
       title: `Delete the ${budget.category} budget?`,
-      description: 'You can recreate it any time.',
+      description: t('del_budget_body'),
       confirmLabel: 'Delete',
     });
     if (!ok) return;

@@ -54,7 +54,7 @@ export function Modal({ open, onClose, title, children, footer }: Props) {
           <h2 className="font-semibold text-[15px] tracking-tight text-ink-900 truncate flex-1 min-w-0 pr-3">{title}</h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0 active:bg-cream-hairline transition-colors"
+            className="nav-icon-button border border-cream-hairline shrink-0"
             aria-label="Close"
           >
             <X size={15} className="text-ink-500" />

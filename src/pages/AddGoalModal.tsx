@@ -27,8 +27,9 @@ export function AddGoalModal({ open, onClose }: Props) {
     e.preventDefault();
     setError('');
     const amt = parseFloat(targetAmount);
-    if (!title.trim() || !amt) { setError(t('fill_all')); return; }
-    if (linkAccount && !accountId) { setError(t('fill_all')); return; }
+    if (!title.trim()) { setError(t('val_need_name')); return; }
+    if (!amt) { setError(t('val_need_amount')); return; }
+    if (linkAccount && !accountId) { setError(t('val_pick_account')); return; }
 
     // Currency comes from linked account if one is selected
     const goalCurrency = linkAccount && accountId
