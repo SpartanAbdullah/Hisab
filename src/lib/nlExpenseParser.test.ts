@@ -231,6 +231,93 @@ describe('conversational / full-sentence phrasing', () => {
   });
 });
 
+describe('roman-urdu phrasing (real-world)', () => {
+  const aed = { defaultCurrency: 'AED' };
+  it('"biryani khai 25 ki" → 25, Food, Biryani', () => {
+    const r = parseExpenseInput('biryani khai 25 ki', aed);
+    expect(r.amount).toBe(25);
+    expect(r.category).toBe('Food & Dining');
+    expect(r.label).toBe('Biryani');
+  });
+  it('"50 dirham ka lunch" → 50 AED, Food, Lunch', () => {
+    const r = parseExpenseInput('50 dirham ka lunch');
+    expect(r.amount).toBe(50);
+    expect(r.currency).toBe('AED');
+    expect(r.label).toBe('Lunch');
+  });
+  it('"doodh 10 ka" → 10, Groceries, Doodh', () => {
+    const r = parseExpenseInput('doodh 10 ka', aed);
+    expect(r.amount).toBe(10);
+    expect(r.category).toBe('Groceries');
+    expect(r.label).toBe('Doodh');
+  });
+  it('"2 hazaar ka kiraya" → 2000, Rent', () => {
+    const r = parseExpenseInput('2 hazaar ka kiraya', aed);
+    expect(r.amount).toBe(2000);
+    expect(r.category).toBe('Rent');
+    expect(r.label).toBe('Kiraya');
+  });
+  it('"ammi ko 500 bheje" → 500 expense, Family Support, Ammi', () => {
+    const r = parseExpenseInput('ammi ko 500 bheje', aed);
+    expect(r.amount).toBe(500);
+    expect(r.direction).toBe('expense');
+    expect(r.category).toBe('Family Support');
+    expect(r.label).toBe('Ammi');
+  });
+  it('"tankhwa mili 5000 aed" → income, Salary', () => {
+    const r = parseExpenseInput('tankhwa mili 5000 aed');
+    expect(r.amount).toBe(5000);
+    expect(r.direction).toBe('income');
+    expect(r.category).toBe('Salary');
+  });
+  it('"rickshaw 30" → Transport, Rickshaw', () => {
+    const r = parseExpenseInput('rickshaw 30', aed);
+    expect(r.category).toBe('Transport');
+    expect(r.label).toBe('Rickshaw');
+  });
+  it('"bijli ka bill 300 aed" → Utilities, 300', () => {
+    const r = parseExpenseInput('bijli ka bill 300 aed');
+    expect(r.amount).toBe(300);
+    expect(r.category).toBe('Utilities');
+  });
+  it('"dawai 47 ki" → Healthcare, Dawai', () => {
+    const r = parseExpenseInput('dawai 47 ki', aed);
+    expect(r.category).toBe('Healthcare');
+    expect(r.label).toBe('Dawai');
+  });
+  it('handles rupaye + lakh/hazaar magnitudes', () => {
+    expect(parseExpenseInput('5 hazaar rupaye kiraya').amount).toBe(5000);
+    expect(parseExpenseInput('500 rupaye doodh').currency).toBe('PKR');
+  });
+});
+
+describe('messy english phrasing', () => {
+  it('strips fillers — "spent like 45 on groceries ig"', () => {
+    const r = parseExpenseInput('spent like 45 on groceries ig');
+    expect(r.amount).toBe(45);
+    expect(r.category).toBe('Groceries');
+    expect(r.label).toBe('Groceries');
+  });
+  it('"coffee was 12 bucks" → 12, Food, Coffee', () => {
+    const r = parseExpenseInput('coffee was 12 bucks', { defaultCurrency: 'AED' });
+    expect(r.amount).toBe(12);
+    expect(r.category).toBe('Food & Dining');
+    expect(r.label).toBe('Coffee');
+  });
+  it('"around 100 on shopping" → 100, Shopping', () => {
+    const r = parseExpenseInput('around 100 on shopping', { defaultCurrency: 'AED' });
+    expect(r.amount).toBe(100);
+    expect(r.category).toBe('Shopping');
+    expect(r.label).toBe('Shopping');
+  });
+  it('"3.5 aed chai" → 3.5 AED, Food, Chai', () => {
+    const r = parseExpenseInput('3.5 aed chai');
+    expect(r.amount).toBe(3.5);
+    expect(r.currency).toBe('AED');
+    expect(r.label).toBe('Chai');
+  });
+});
+
 describe('totality — fuzz a range of inputs without throwing', () => {
   const inputs = [
     '', ' ', '3', 'aed', 'karak', '3 3 3', '...', '12.', '.5',

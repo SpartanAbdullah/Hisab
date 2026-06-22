@@ -23,31 +23,31 @@ const cardDesign: Record<string, {
   cash: {
     gradient: 'from-[#1a6b3c] via-[#228B50] to-[#2d9b5a]',
     iconBg: 'bg-white/15',
-    accentText: 'text-emerald-200',
+    accentText: 'text-receive-100',
     typeLabel: 'CASH',
   },
   bank: {
     gradient: 'from-[#1e3a5f] via-[#24517a] to-[#2d6a9f]',
     iconBg: 'bg-white/15',
-    accentText: 'text-blue-200',
+    accentText: 'text-info-50',
     typeLabel: 'BANK',
   },
   digital_wallet: {
     gradient: 'from-[#5b2d8e] via-[#7438b5] to-[#8e44d4]',
     iconBg: 'bg-white/15',
-    accentText: 'text-purple-200',
+    accentText: 'text-accent-100',
     typeLabel: 'DIGITAL WALLET',
   },
   savings: {
     gradient: 'from-[#b8860b] via-[#c99a1d] to-[#daa520]',
     iconBg: 'bg-white/15',
-    accentText: 'text-yellow-200',
+    accentText: 'text-warn-50',
     typeLabel: 'SAVINGS',
   },
   credit_card: {
     gradient: 'from-[#1a1a2e] via-[#16213e] to-[#1a1a2e]',
     iconBg: 'bg-white/10',
-    accentText: 'text-amber-400',
+    accentText: 'text-warn-600',
     typeLabel: 'CREDIT CARD',
   },
 };
@@ -74,7 +74,7 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
   if (isCreditCard) {
     return (
       <button onClick={onClick}
-        className="w-full relative overflow-hidden rounded-[20px] p-4 text-left transition-all active:scale-[0.98] shadow-lg shadow-slate-900/20"
+        className="w-full relative overflow-hidden rounded-[20px] p-4 text-left transition-all active:scale-[0.98] shadow-lg shadow-navy-900/20"
       >
         <div className={`absolute inset-0 bg-gradient-to-br ${design.gradient}`} />
         <div className="absolute inset-0 opacity-10" style={{ background: 'radial-gradient(circle at 80% 20%, rgba(255,255,255,0.4), transparent 60%)' }} />
@@ -83,11 +83,11 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
             <CreditCard size={20} strokeWidth={1.8} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-0.5">{design.typeLabel}</p>
+            <p className="text-[9px] font-bold text-ink-400 uppercase tracking-[0.15em] mb-0.5">{design.typeLabel}</p>
             <p className="font-semibold text-[13px] text-white truncate tracking-tight">
               {account.metadata.issuer || account.name} {last4 ? `\u2022\u2022\u2022\u2022${last4}` : ''}
             </p>
-            <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+            <p className="text-[11px] text-ink-400 mt-0.5 flex items-center gap-1">
               <span>{meta?.flag}</span>
               {t('cc_used')}: {formatMoney(used, account.currency)} / {formatMoney(creditLimit, account.currency)}
             </p>
@@ -98,10 +98,10 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-bold text-[15px] text-emerald-400 tabular-nums tracking-tight">
+            <p className={`font-bold text-[15px] tabular-nums tracking-tight ${account.balance < 0 ? 'text-pay-100' : 'text-receive-100'}`}>
               {formatSignedMoney(account.balance, account.currency)}
             </p>
-            <p className="text-[10px] text-slate-500 mt-0.5">{t('cc_available')}</p>
+            <p className="text-[10px] text-ink-500 mt-0.5">{t('cc_available')}</p>
           </div>
         </div>
         {nearestExpense && <UpcomingBadge expense={nearestExpense} />}
@@ -113,7 +113,7 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
   return (
     <button
       onClick={onClick}
-      className="w-full relative overflow-hidden rounded-[20px] p-4 text-left transition-all active:scale-[0.98] shadow-lg shadow-slate-900/10"
+      className="w-full relative overflow-hidden rounded-[20px] p-4 text-left transition-all active:scale-[0.98] shadow-lg shadow-navy-900/10"
     >
       <div className={`absolute inset-0 bg-gradient-to-br ${design.gradient}`} />
       <div className="absolute inset-0 opacity-15" style={{ background: 'radial-gradient(circle at 80% 20%, rgba(255,255,255,0.4), transparent 60%)' }} />
@@ -132,7 +132,7 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="font-bold text-[15px] text-white tabular-nums tracking-tight">
+          <p className={`font-bold text-[15px] tabular-nums tracking-tight ${account.balance < 0 ? 'text-pay-100' : 'text-white'}`}>
             {formatSignedMoney(account.balance, account.currency)}
           </p>
           <p className="text-[10px] text-white/50 mt-0.5">Balance</p>
@@ -141,9 +141,9 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
       {monthStats && (monthStats.income > 0 || monthStats.expense > 0) && (
         <div className="relative mt-2 flex items-center gap-2 text-[10px] font-medium text-white/60">
           <span>Is mahine:</span>
-          {monthStats.income > 0 && <span className="text-emerald-300">+{formatMoney(monthStats.income, account.currency)}</span>}
+          {monthStats.income > 0 && <span className="text-receive-100">+{formatMoney(monthStats.income, account.currency)}</span>}
           {monthStats.income > 0 && monthStats.expense > 0 && <span>/</span>}
-          {monthStats.expense > 0 && <span className="text-red-300">-{formatMoney(monthStats.expense, account.currency)}</span>}
+          {monthStats.expense > 0 && <span className="text-pay-100">-{formatMoney(monthStats.expense, account.currency)}</span>}
         </div>
       )}
       {nearestExpense && <UpcomingBadge expense={nearestExpense} />}
@@ -159,9 +159,9 @@ function UpcomingBadge({ expense }: { expense: UpcomingExpense }) {
   const daysLeft = Math.ceil((new Date(expense.dueDate).getTime() - now) / (1000 * 60 * 60 * 24));
   const urgent = daysLeft <= 7;
   return (
-    <div className={`relative mt-2.5 rounded-xl px-3 py-2 flex items-center gap-2 ${urgent ? 'bg-red-500/20' : 'bg-amber-400/20'}`}>
-      <AlertTriangle size={12} className={urgent ? 'text-red-300' : 'text-amber-300'} />
-      <p className={`text-[10px] font-semibold truncate flex-1 ${urgent ? 'text-red-200' : 'text-amber-200'}`}>
+    <div className={`relative mt-2.5 rounded-xl px-3 py-2 flex items-center gap-2 ${urgent ? 'bg-pay-600/20' : 'bg-warn-600/20'}`}>
+      <AlertTriangle size={12} className={urgent ? 'text-pay-100' : 'text-warn-50'} />
+      <p className={`text-[10px] font-semibold truncate flex-1 ${urgent ? 'text-pay-100' : 'text-warn-50'}`}>
         {expense.title} — {formatMoney(expense.amount, expense.currency)}
         {' — '}{daysLeft <= 0 ? 'Overdue!' : `${daysLeft} din baaqi`}
       </p>

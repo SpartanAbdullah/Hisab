@@ -15,8 +15,8 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 export const BUTTON_VARIANT_CLASSES = {
   primary: 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 active:bg-indigo-700 active:shadow-none focus-visible:ring-indigo-500',
   secondary: 'bg-slate-100 border border-slate-200 text-slate-700 active:bg-slate-200 focus-visible:ring-slate-400',
-  danger: 'bg-red-600 text-white shadow-sm shadow-red-600/20 active:bg-red-700 focus-visible:ring-red-500',
-  warning: 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20 active:bg-amber-600 focus-visible:ring-amber-500',
+  danger: 'bg-pay-600 text-white shadow-sm shadow-pay-600/20 active:bg-pay-700 focus-visible:ring-pay-600',
+  warning: 'bg-warn-600 text-white shadow-sm shadow-warn-600/20 active:bg-warn-600 focus-visible:ring-warn-600',
   ghost: 'bg-transparent text-indigo-600 active:bg-indigo-50 focus-visible:ring-indigo-500',
   gradient: 'btn-gradient shadow-md shadow-indigo-500/25 focus-visible:ring-indigo-500',
 };

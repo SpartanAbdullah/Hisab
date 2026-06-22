@@ -2,7 +2,9 @@ import { Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
+import { useNotificationStore } from '../stores/notificationStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
+import { isInboxInfoNotification } from '../lib/inboxInfo';
 
 interface InboxActionProps {
   tone?: 'on-navy' | 'on-cream';
@@ -28,7 +30,12 @@ export function InboxAction({ tone = 'on-navy', className = '' }: InboxActionPro
           (r.toUserId === userId || r.fromUserId === userId),
       ).length,
   );
-  const pendingApprovalCount = linkedPending + settlementPending;
+  // Unread informational pings (e.g. "someone added you via your code") also
+  // light up the bell so the user knows to open the Inbox.
+  const unreadInfoNotifs = useNotificationStore(
+    (s) => s.notifications.filter(isInboxInfoNotification).length,
+  );
+  const pendingApprovalCount = linkedPending + settlementPending + unreadInfoNotifs;
 
   const isOnNavy = tone === 'on-navy';
   const buttonClass = isOnNavy

@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Inbox, Send } from 'lucide-react';
+import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { usePersonStore } from '../stores/personStore';
+import { useBudgetStore } from '../stores/budgetStore';
+import { useTransactionStore } from '../stores/transactionStore';
+import { useRecurringStore } from '../stores/recurringStore';
+import { useAccountStore } from '../stores/accountStore';
+import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
+import { useNotificationStore } from '../stores/notificationStore';
+import { buildInboxInfoItems, isInboxInfoNotification, type InfoItem, type InfoIcon as InfoIconKind } from '../lib/inboxInfo';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { formatMoney } from '../lib/constants';
@@ -17,7 +25,7 @@ import { EmptyState } from '../components/EmptyState';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import type { LinkedRequest, SettlementRequest } from '../db';
 
-type Tab = 'incoming' | 'outgoing';
+type Tab = 'incoming' | 'outgoing' | 'info';
 
 type InboxItem =
   | { kind: 'linked'; item: LinkedRequest }
@@ -32,6 +40,20 @@ export function InboxPage() {
   const rejectSettlement = useSettlementRequestStore((s) => s.reject);
   const cancelSettlement = useSettlementRequestStore((s) => s.cancel);
   const persons = usePersonStore((s) => s.persons);
+  const budgets = useBudgetStore((s) => s.budgets);
+  const loadBudgets = useBudgetStore((s) => s.loadBudgets);
+  const transactions = useTransactionStore((s) => s.transactions);
+  const loadTransactions = useTransactionStore((s) => s.loadTransactions);
+  const templates = useRecurringStore((s) => s.templates);
+  const loadTemplates = useRecurringStore((s) => s.loadTemplates);
+  const accounts = useAccountStore((s) => s.accounts);
+  const loadAccounts = useAccountStore((s) => s.loadAccounts);
+  const upcoming = useUpcomingExpenseStore((s) => s.expenses);
+  const loadExpenses = useUpcomingExpenseStore((s) => s.loadExpenses);
+  const notifications = useNotificationStore((s) => s.notifications);
+  const loadNotifications = useNotificationStore((s) => s.loadNotifications);
+  const markNotificationRead = useNotificationStore((s) => s.markRead);
+  const navigate = useNavigate();
   const toast = useToast();
   const t = useT();
 
@@ -39,8 +61,12 @@ export function InboxPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    await Promise.all([loadRequests(), loadSettlements()]);
-  }, [loadRequests, loadSettlements]);
+    await Promise.all([
+      loadRequests(), loadSettlements(),
+      // Info-tab sources (cheap; most are already warm from app boot).
+      loadBudgets(), loadTransactions(), loadTemplates(), loadAccounts(), loadExpenses(), loadNotifications(),
+    ]);
+  }, [loadRequests, loadSettlements, loadBudgets, loadTransactions, loadTemplates, loadAccounts, loadExpenses, loadNotifications]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   useEffect(() => {
@@ -75,6 +101,38 @@ export function InboxPage() {
       settlements.filter((r) => r.status === 'pending' && r.fromUserId === myId).length,
     [requests, settlements, myId],
   );
+
+  const infoItems = useMemo(
+    () => buildInboxInfoItems({ budgets, transactions, templates, accounts, upcoming, today: new Date() }),
+    [budgets, transactions, templates, accounts, upcoming],
+  );
+  // Unread informational notifications (e.g. "someone added you via your code")
+  // sit at the top of the Info tab, newest first.
+  const infoNotifs = useMemo(
+    () => notifications.filter(isInboxInfoNotification).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [notifications],
+  );
+  const infoCount = infoItems.length + infoNotifs.length;
+
+  // Smart landing: once data is loaded, jump to whichever tab has the most
+  // active items. Tie-break order Incoming > Info > Outgoing (action items
+  // first). Runs once via a ref so a later store refresh — or the user's own
+  // tab tap — is never overridden.
+  const didAutoSelect = useRef(false);
+  useEffect(() => {
+    if (didAutoSelect.current || loadStatus !== 'ready') return;
+    didAutoSelect.current = true;
+    const counts: Record<Tab, number> = {
+      incoming: incomingPendingCount,
+      info: infoCount,
+      outgoing: outgoingPendingCount,
+    };
+    let best: Tab = 'incoming';
+    for (const candidate of ['incoming', 'info', 'outgoing'] as Tab[]) {
+      if (counts[candidate] > counts[best]) best = candidate;
+    }
+    if (counts[best] > 0) setTab(best);
+  }, [loadStatus, incomingPendingCount, infoCount, outgoingPendingCount]);
 
   // Phase H4: surface the actual error in each catch instead of swallowing
   // it. Previously every failure showed the same generic toast title, which
@@ -244,14 +302,16 @@ export function InboxPage() {
               setTab={setTab}
               incomingCount={incomingPendingCount}
               outgoingCount={outgoingPendingCount}
+              infoCount={infoCount}
               incomingLabel={t('ltr_tab_incoming')}
               outgoingLabel={t('ltr_tab_outgoing')}
+              infoLabel={t('ltr_tab_info')}
             />
           }
         />
         <div className="px-5 pb-7">
           <p className="text-white text-[16px] font-medium leading-snug max-w-[300px]">
-            {tab === 'incoming' ? t('ltr_incoming_hint') : t('ltr_outgoing_hint')}
+            {tab === 'incoming' ? t('ltr_incoming_hint') : tab === 'outgoing' ? t('ltr_outgoing_hint') : t('ltr_info_hint')}
           </p>
         </div>
       </NavyHero>
@@ -266,7 +326,43 @@ export function InboxPage() {
           />
         )}
 
-        {loadStatus === 'loading' && visible.length === 0 ? (
+        {tab === 'info' ? (
+          loadStatus === 'loading' && infoItems.length === 0 && infoNotifs.length === 0 ? (
+            <ListSkeleton rows={3} withAvatar={false} />
+          ) : infoItems.length === 0 && infoNotifs.length === 0 ? (
+            loadStatus === 'ready' ? (
+              <EmptyState
+                icon={Inbox}
+                tone="receive"
+                title={t('inbox_empty_info_title')}
+                description={t('inbox_empty_info_desc')}
+              />
+            ) : null
+          ) : (
+            <div className="space-y-2.5">
+              {infoNotifs.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => void markNotificationRead(n.id)}
+                  className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-accent-50">
+                    <UserPlus size={17} className="text-accent-600" strokeWidth={2} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold text-ink-900 tracking-tight truncate">{n.title || 'New connection'}</p>
+                    <p className="text-[11.5px] text-ink-500 mt-0.5 line-clamp-2">{n.body}</p>
+                  </div>
+                  <span className="w-2 h-2 rounded-full bg-accent-500 shrink-0" aria-hidden />
+                </button>
+              ))}
+              {infoItems.map((it) => (
+                <InfoCard key={it.id} item={it} onOpen={() => it.href && navigate(it.href)} />
+              ))}
+            </div>
+          )
+        ) : loadStatus === 'loading' && visible.length === 0 ? (
           <ListSkeleton rows={3} withAvatar={false} />
         ) : visible.length === 0 ? (
           loadStatus === 'ready' ? (
@@ -353,21 +449,63 @@ function PillToggle({
   setTab,
   incomingCount,
   outgoingCount,
+  infoCount,
   incomingLabel,
   outgoingLabel,
+  infoLabel,
 }: {
   tab: Tab;
   setTab: (t: Tab) => void;
   incomingCount: number;
   outgoingCount: number;
+  infoCount: number;
   incomingLabel: string;
   outgoingLabel: string;
+  infoLabel: string;
 }) {
   return (
     <div className="bg-white/10 rounded-full p-0.5 flex items-center">
       <Pill value="incoming" label={incomingLabel} count={incomingCount} activeTab={tab} onSelect={setTab} />
+      <Pill value="info" label={infoLabel} count={infoCount} activeTab={tab} onSelect={setTab} />
       <Pill value="outgoing" label={outgoingLabel} count={outgoingCount} activeTab={tab} onSelect={setTab} />
     </div>
+  );
+}
+
+const INFO_ICON: Record<InfoIconKind, typeof AlertTriangle> = {
+  budget: AlertTriangle,
+  renewal: Repeat,
+  card: CreditCard,
+  bill: CalendarClock,
+};
+
+const INFO_TONE: Record<InfoItem['tone'], { wrap: string; icon: string }> = {
+  pay: { wrap: 'bg-pay-50', icon: 'text-pay-text' },
+  warn: { wrap: 'bg-warn-50', icon: 'text-warn-600' },
+  info: { wrap: 'bg-info-50', icon: 'text-info-600' },
+  accent: { wrap: 'bg-accent-50', icon: 'text-accent-600' },
+};
+
+function InfoCard({ item, onOpen }: { item: InfoItem; onOpen: () => void }) {
+  const Icon = INFO_ICON[item.icon];
+  const tone = INFO_TONE[item.tone];
+  const tappable = !!item.href;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!tappable}
+      className={`w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 ${tappable ? 'active:scale-[0.99] transition-transform' : ''}`}
+    >
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tone.wrap}`}>
+        <Icon size={17} className={tone.icon} strokeWidth={2} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-ink-900 tracking-tight truncate">{item.title}</p>
+        <p className="text-[11.5px] text-ink-500 mt-0.5 truncate">{item.body}</p>
+      </div>
+      {tappable && <ChevronRight size={15} className="text-ink-300 shrink-0" />}
+    </button>
   );
 }
 

@@ -94,6 +94,14 @@ export const usePersonStore = create<PersonState>((set, get) => ({
     set((s) => ({
       persons: s.persons.map((p) => (p.id === personId ? { ...p, linkedProfileId: profileId } : p)),
     }));
+    // Best-effort: notify the code owner they were added (consensual — they
+    // shared their code with the caller). A failure here must NEVER surface as
+    // a link error; the link itself already succeeded.
+    try {
+      await personsDb.notifyContactLinked(profileId);
+    } catch (err) {
+      console.error('notifyContactLinked failed (non-fatal)', err);
+    }
   },
 
   unlinkFromProfile: async (personId) => {

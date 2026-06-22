@@ -4,6 +4,9 @@ import { useNotificationStore } from '../stores/notificationStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
+import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useSettlementRequestStore } from '../stores/settlementRequestStore';
+import { usePersonStore } from '../stores/personStore';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Single long-lived channel per session. Re-initialised when the user changes.
@@ -83,6 +86,51 @@ export function startGlobalRealtime(userId: string) {
       { event: '*', schema: 'public', table: 'loans', filter: `user_id=eq.${userId}` },
       () => {
         scheduleReload('loans', () => useLoanStore.getState().loadLoans());
+      },
+    )
+    // Contacts — picks up a reciprocal linked contact created server-side when
+    // someone adds this user via their shared code, so the contact appears
+    // (and becomes transactable) without a reload.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'persons', filter: `user_id=eq.${userId}` },
+      () => {
+        scheduleReload('persons', () => usePersonStore.getState().loadPersons());
+      },
+    )
+    // Linked transaction requests — a shared loan proposed BY or TO this user.
+    // Subscribing on both directions (RLS already scopes delivery to
+    // participants) keeps the Inbox list + bell badge live: a new incoming
+    // request, or an accept/reject of one this user sent, reloads the store.
+    // Debounced under one key so an accept (which fires both an update here
+    // and a notifications insert) coalesces into a single reload.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'linked_transaction_requests', filter: `to_user_id=eq.${userId}` },
+      () => {
+        scheduleReload('linkedRequests', () => useLinkedRequestStore.getState().loadRequests());
+      },
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'linked_transaction_requests', filter: `from_user_id=eq.${userId}` },
+      () => {
+        scheduleReload('linkedRequests', () => useLinkedRequestStore.getState().loadRequests());
+      },
+    )
+    // Linked settlement requests — a repayment proposed BY or TO this user.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'linked_settlement_requests', filter: `to_user_id=eq.${userId}` },
+      () => {
+        scheduleReload('linkedSettlements', () => useSettlementRequestStore.getState().loadRequests());
+      },
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'linked_settlement_requests', filter: `from_user_id=eq.${userId}` },
+      () => {
+        scheduleReload('linkedSettlements', () => useSettlementRequestStore.getState().loadRequests());
       },
     )
     .subscribe();

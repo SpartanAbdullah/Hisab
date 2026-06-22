@@ -302,7 +302,7 @@ export interface AppNotification {
   userId: string;
   groupId: string | null;
   eventId: string | null;
-  type: 'group_update' | 'invite' | 'system';
+  type: 'group_update' | 'invite' | 'system' | 'linked_request' | 'linked_settlement' | 'contact_linked';
   title: string;
   body: string;
   readAt: string | null;

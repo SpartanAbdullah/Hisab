@@ -28,10 +28,10 @@ interface Props {
 
 const TONES: Record<Tone, { halo: string; ring: string; icon: string; bloom: string }> = {
   indigo: {
-    halo: 'from-indigo-50 to-purple-50',
-    ring: 'ring-indigo-100',
-    icon: 'text-indigo-400',
-    bloom: 'before:bg-indigo-200/40',
+    halo: 'from-accent-50 to-accent-100',
+    ring: 'ring-accent-100',
+    icon: 'text-accent-600',
+    bloom: 'before:bg-accent-500/20',
   },
   accent: {
     halo: 'from-accent-50 to-accent-100',

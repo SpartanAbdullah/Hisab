@@ -110,7 +110,7 @@ export function AccountsPage() {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-[13.5px] font-semibold text-ink-900 tabular-nums tracking-tight">
+          <p className={`text-[13.5px] font-semibold tabular-nums tracking-tight ${account.balance < 0 ? 'text-pay-text' : 'text-ink-900'}`}>
             {formatMoney(account.balance, account.currency)}
           </p>
           <p className="text-[10px] text-ink-400 mt-0.5">

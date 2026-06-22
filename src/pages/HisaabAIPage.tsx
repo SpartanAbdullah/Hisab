@@ -9,6 +9,7 @@ import { useBudgetStore } from '../stores/budgetStore';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { PageErrorState } from '../components/PageErrorState';
 import { useToast } from '../components/Toast';
+import { useT } from '../lib/i18n';
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -22,7 +23,6 @@ import type { ParsedGroupExpense } from '../lib/nlGroupExpenseParser';
 import { equalSplits } from '../lib/splitMath';
 import { parseAmountExpression } from '../lib/parseAmountExpression';
 import { upcomingRenewals, detectGhosts, describeGhost } from '../lib/subscriptionMetrics';
-import { computeMonthlyWrap } from '../lib/monthlyWrap';
 import { computeLoggingStreak } from '../lib/loggingStreak';
 import { suggestCategory, type HistoryTxn } from '../lib/categorySuggest';
 import { getPersona, setPersona, flavor, type Persona } from '../lib/persona';
@@ -30,12 +30,12 @@ import { spendAnchor } from '../lib/spendAnchor';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useSplitStore } from '../stores/splitStore';
 import { getActiveGroupMembers } from '../lib/groupActiveMembers';
-import type { Account, SplitGroup, Currency } from '../db';
+import type { Account, SplitGroup } from '../db';
 
 const NAVY_BLOOM =
   'radial-gradient(120% 90% at 80% 10%, rgba(124,92,255,0.32) 0%, rgba(124,92,255,0) 55%), radial-gradient(80% 70% at 10% 100%, rgba(217,97,74,0.18) 0%, rgba(217,97,74,0) 60%)';
 
-const EXAMPLE_PROMPTS = ['add 3 aed for karak', 'How do subscriptions work?', 'Which mode should I use?'];
+const EXAMPLE_PROMPTS = ['add 3 aed for karak', 'How much was my income this month?', 'Which card did I spend most from?', 'How do subscriptions work?'];
 const SPLITS_EXAMPLES = ['How do I split a bill?', 'How do I settle up?', 'Should I use Full Tracker?'];
 
 type Msg =
@@ -65,11 +65,14 @@ function firstName(): string {
   return (localStorage.getItem('hisaab_user_name') ?? '').trim().split(/\s+/)[0] || '';
 }
 
-function timeGreeting(): string {
+// Returns an i18n key resolved at the call site (this fn is module-level and
+// can't use the useT hook). English → "Good Morning/Afternoon/Evening";
+// Roman Urdu keeps its warmer greetings.
+function timeGreetingKey(): 'greet_morning' | 'greet_afternoon' | 'greet_evening' {
   const h = new Date().getHours();
-  if (h < 12) return 'Subah bakhair'; // a little roman-Urdu warmth in the morning
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 12) return 'greet_morning';
+  if (h < 17) return 'greet_afternoon';
+  return 'greet_evening';
 }
 
 export function HisaabAIPage() {
@@ -97,6 +100,7 @@ export function HisaabAIPage() {
   };
   const navigate = useNavigate();
   const toast = useToast();
+  const t = useT();
 
   const load = useCallback(async () => {
     await Promise.all([loadAccounts(), loadTransactions(), loadGroups(), loadTemplates(), loadLoans(), loadBudgets()]);
@@ -143,10 +147,6 @@ export function HisaabAIPage() {
   );
   const renewals = useMemo(() => upcomingRenewals(templates, todayIso, 7), [templates, todayIso]);
   const ghosts = useMemo(() => detectGhosts(templates, todayIso), [templates, todayIso]);
-  const wrapAvailable = useMemo(
-    () => !!computeMonthlyWrap(transactions, (localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED'),
-    [transactions],
-  );
 
   // ── Answer "fetch my own data" questions from local stores (no LLM) ──
   const answerQuery = (q: ParsedQuery): { text: string; serious: boolean } => {
@@ -156,6 +156,8 @@ export function HisaabAIPage() {
       case 'net-balance': return { text: answerNetBalance(), serious: false };
       case 'account-balance': return { text: answerAccountBalance(), serious: false };
       case 'top-spend': return { text: answerTopSpend(), serious: false };
+      case 'account-spend': return { text: answerAccountSpend(q.accountName, q.period ?? 'this'), serious: false };
+      case 'income': return { text: answerIncome(q.period ?? 'this'), serious: false };
       case 'trend': return { text: answerTrend(), serious: false };
       case 'budget-status': {
         const text = answerBudgetStatus(q.category);
@@ -233,6 +235,66 @@ export function HisaabAIPage() {
     const rest = top.slice(1).map((c) => `${c.name} (${formatMoney(c.amt, summary.cur)})`).join(', ');
     const anchor = spendAnchor(lead.amt, summary.cur);
     return `Most of your money went to ${lead.name} this month — ${formatMoney(lead.amt, summary.cur)}, about ${pct}% of ${formatMoney(summary.spent, summary.cur)}${anchor ? ` (${anchor})` : ''}.${rest ? ` Then ${rest}.` : ''}`;
+  };
+
+  const monthYm = (period: 'this' | 'last'): string => {
+    const now = new Date();
+    return period === 'last'
+      ? new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 7)
+      : now.toISOString().slice(0, 7);
+  };
+
+  const answerIncome = (period: 'this' | 'last'): string => {
+    const cur = primaryCurrency();
+    const ym = monthYm(period);
+    const label = period === 'last' ? 'last month' : 'this month';
+    const rows = transactions.filter(
+      (t) => t.type === 'income' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym,
+    );
+    const total = rows.reduce((a, t) => a + t.amount, 0);
+    if (rows.length === 0) return `You haven't logged any ${cur} income ${label} yet.`;
+    const byCat = new Map<string, number>();
+    for (const r of rows) byCat.set(r.category || 'Other', (byCat.get(r.category || 'Other') ?? 0) + r.amount);
+    const top = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topBit = top && byCat.size > 1 ? ` Most of it from ${top[0]}.` : '';
+    const count = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`;
+    return `You brought in ${formatMoney(total, cur)} ${label} (${count}).${topBit}`;
+  };
+
+  const answerAccountSpend = (accountName: string | undefined, period: 'this' | 'last'): string => {
+    const cur = primaryCurrency();
+    const ym = monthYm(period);
+    const label = period === 'last' ? 'last month' : 'this month';
+    // A specific card/account named → answer in that account's own currency.
+    if (accountName) {
+      const acct = accounts.find((a) => a.name.toLowerCase().includes(accountName.toLowerCase()));
+      if (!acct) return `I couldn't find an account called "${accountName}". Check the name on the Accounts screen.`;
+      const total = transactions
+        .filter((t) => t.type === 'expense' && t.sourceAccountId === acct.id && (t.createdAt ?? '').slice(0, 7) === ym)
+        .reduce((a, t) => a + t.amount, 0);
+      if (total <= 0) return `No spending from ${acct.name} ${label}.`;
+      return `You spent ${formatMoney(total, acct.currency)} from ${acct.name} ${label}.`;
+    }
+    // Aggregate "which one most" — scope to the primary currency so we don't
+    // compare e.g. PKR vs AED amounts directly (a non-primary card is invisible
+    // here, matching the rest of the engine).
+    const monthExpenses = transactions.filter(
+      (t) => t.type === 'expense' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym && t.sourceAccountId,
+    );
+    if (monthExpenses.length === 0) return `No ${cur} card or account spending logged ${label} yet.`;
+    const byAcct = new Map<string, number>();
+    for (const t of monthExpenses) {
+      const id = t.sourceAccountId as string;
+      byAcct.set(id, (byAcct.get(id) ?? 0) + t.amount);
+    }
+    const ranked = [...byAcct.entries()]
+      .map(([id, amt]) => ({ acct: accounts.find((a) => a.id === id), amt }))
+      .filter((r) => r.acct)
+      .sort((a, b) => b.amt - a.amt);
+    if (ranked.length === 0) return `No ${cur} card or account spending logged ${label} yet.`;
+    const lead = ranked[0];
+    const rest = ranked.slice(1, 3).map((r) => `${r.acct!.name} (${formatMoney(r.amt, cur)})`).join(', ');
+    return `Most of your spending went through ${lead.acct!.name} — ${formatMoney(lead.amt, cur)} ${label}.${rest ? ` Then ${rest}.` : ''}`;
   };
 
   const answerAccountBalance = (): string => {
@@ -469,7 +531,7 @@ export function HisaabAIPage() {
 
           {greetName && (
             <p className="text-[12.5px] text-white/65 mt-4">
-              {timeGreeting()}, <span className="text-white font-medium">{greetName}</span> 👋
+              {t(timeGreetingKey())}, <span className="text-white font-medium">{greetName}</span> 👋
             </p>
           )}
 
@@ -612,26 +674,6 @@ export function HisaabAIPage() {
           </div>
         )}
 
-        {/* Monthly wrap teaser */}
-        {isFull && wrapAvailable && (
-          <button
-            onClick={() => navigate('/hisaab-ai/wrap')}
-            className="w-full flex items-center gap-3 rounded-2xl text-left text-white p-4 active:opacity-90 transition-opacity"
-            style={{ background: 'var(--color-navy-800)' }}
-          >
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: 'rgba(255,255,255,0.08)' }}
-            >
-              <Sparkles size={18} className="text-white animate-sparkle" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[13.5px] font-semibold">Last month, wrapped</p>
-              <p className="text-[11px] text-white/60 mt-0.5">A calm month-in-review — no scores, no judgement.</p>
-            </div>
-            <ChevronRight size={16} className="text-white/60 shrink-0" />
-          </button>
-        )}
 
         {/* ── Conversation ── */}
         <div className="space-y-3">
@@ -639,8 +681,8 @@ export function HisaabAIPage() {
           <AIBubble>
             <p>
               {isFull
-                ? `Salaam${greetName ? `, ${greetName}` : ''}! Tell me what you spent in plain words — "200 for groceries", "30 careem" — and I'll log it (always with a card to confirm first). You can also ask me things like "where did my money go?" or "how much does Ali owe me?".`
-                : `Salaam${greetName ? `, ${greetName}` : ''}! I'm your Hisaab guide. Ask me how to split a bill, settle up, or which mode fits you — and I'll point you the right way.`}
+                ? `${t('greet_hello')}${greetName ? `, ${greetName}` : ''}! Tell me what you spent in plain words — "200 for groceries", "30 careem" — and I'll log it (always with a card to confirm first). You can also ask me things like "where did my money go?" or "how much does Ali owe me?".`
+                : `${t('greet_hello')}${greetName ? `, ${greetName}` : ''}! I'm your Hisaab guide. Ask me how to split a bill, settle up, or which mode fits you — and I'll point you the right way.`}
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {(isFull ? EXAMPLE_PROMPTS : SPLITS_EXAMPLES).map((q) => (

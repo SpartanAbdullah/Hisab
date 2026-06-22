@@ -48,7 +48,7 @@ export interface ParseOptions {
 // common spoken/written forms used in the target market. ──
 const CURRENCY_WORDS: Record<string, string> = {
   aed: 'AED', dirham: 'AED', dirhams: 'AED', dhs: 'AED', dh: 'AED',
-  pkr: 'PKR', rs: 'PKR', rupee: 'PKR', rupees: 'PKR', rupya: 'PKR',
+  pkr: 'PKR', rs: 'PKR', rupee: 'PKR', rupees: 'PKR', rupya: 'PKR', rupaye: 'PKR', rupaiya: 'PKR', rupay: 'PKR',
   php: 'PHP', peso: 'PHP', pesos: 'PHP',
   sar: 'SAR', riyal: 'SAR', riyals: 'SAR',
   qar: 'QAR', omr: 'OMR', kwd: 'KWD', dinar: 'KWD', bhd: 'BHD',
@@ -110,6 +110,14 @@ const EXPENSE_KEYWORDS: Record<string, string> = {
   qist: 'Loan Payment',
   // Savings
   savings: 'Savings', deposit: 'Savings',
+  // ── Roman-Urdu everyday items (the words people actually type) ──
+  khana: 'Food & Dining', naashta: 'Food & Dining', nashta: 'Food & Dining',
+  samosa: 'Food & Dining', roti: 'Food & Dining', paratha: 'Food & Dining',
+  doodh: 'Groceries', sabzi: 'Groceries', gosht: 'Groceries', anda: 'Groceries',
+  ande: 'Groceries', atta: 'Groceries', dahi: 'Groceries',
+  rickshaw: 'Transport', rishqa: 'Transport', riksha: 'Transport',
+  bijli: 'Utilities', kiraya: 'Rent', load: 'Phone & Internet',
+  dawai: 'Healthcare', dawa: 'Healthcare', kapde: 'Shopping', kapra: 'Shopping',
 };
 
 const INCOME_KEYWORDS: Record<string, string> = {
@@ -144,6 +152,14 @@ const LABEL_STOPWORDS = new Set([
   'this', 'that', 'it', 'today', 'yesterday', 'morning', 'evening', 'night', 'tonight',
   // roman-urdu fillers
   'ka', 'ki', 'ke', 'ko', 'se', 'mein', 'par', 'liye', 'wala', 'wali', 'karo', 'kar', 'do',
+  // roman-urdu spending verbs (the action, not the merchant)
+  'piya', 'piye', 'khai', 'khaya', 'khaye', 'liya', 'li', 'kiya', 'kiye',
+  'diya', 'diye', 'di', 'bheja', 'bheji', 'bheje', 'mila', 'mili', 'milay',
+  'dilwaya', 'dlwaya', 'dilaya', 'dilwaye', 'tha', 'thi', 'the', 'hua', 'hui',
+  'kharch', 'kharcha', 'lagay', 'lage', 'lag', 'gaye', 'gaya',
+  // messy english fillers
+  'like', 'around', 'about', 'approx', 'approximately', 'roughly', 'maybe',
+  'um', 'umm', 'uh', 'uhh', 'ig', 'idk', 'bucks', 'buck', 'ok', 'okay', 'so', 'bas',
 ]);
 
 function titleCase(s: string): string {
@@ -185,7 +201,7 @@ export function parseExpenseInput(text: string, opts: ParseOptions = {}): Parsed
   const scale = (mult: number) => (_m: string, n: string) =>
     ` ${Math.round(parseFloat(n.replace(/,/g, '')) * mult)} `;
   s = s
-    .replace(/(\d+(?:\.\d+)?)\s*(?:k|thousand)\b/gi, scale(1_000))
+    .replace(/(\d+(?:\.\d+)?)\s*(?:k|thousand|hazaar|hazar|hazzar)\b/gi, scale(1_000))
     .replace(/(\d+(?:\.\d+)?)\s*(?:lakh|lac)\b/gi, scale(100_000))
     .replace(/(\d+(?:\.\d+)?)\s*(?:crore|cr)\b/gi, scale(10_000_000))
     .replace(/(\d+(?:\.\d+)?)\s*(?:m|million)\b/gi, scale(1_000_000));

@@ -9,6 +9,7 @@ import { useAppModeStore } from './stores/appModeStore';
 import { useSupabaseAuthStore } from './stores/supabaseAuthStore';
 import { usePersonStore } from './stores/personStore';
 import { useLinkedRequestStore } from './stores/linkedRequestStore';
+import { useNotificationStore } from './stores/notificationStore';
 import { useSplitStore } from './stores/splitStore';
 import { useSettlementRequestStore } from './stores/settlementRequestStore';
 import { useBudgetStore } from './stores/budgetStore';
@@ -39,11 +40,9 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ de
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m.InboxPage })));
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then(m => ({ default: m.BudgetsPage })));
-const RecurringTransactionsPage = lazy(() => import('./pages/RecurringTransactionsPage').then(m => ({ default: m.RecurringTransactionsPage })));
 const SubscriptionsPage = lazy(() => import('./pages/SubscriptionsPage').then(m => ({ default: m.SubscriptionsPage })));
 const HisaabAIPage = lazy(() => import('./pages/HisaabAIPage').then(m => ({ default: m.HisaabAIPage })));
 const InsightDetailPage = lazy(() => import('./pages/InsightDetailPage').then(m => ({ default: m.InsightDetailPage })));
-const WrapPage = lazy(() => import('./pages/WrapPage').then(m => ({ default: m.WrapPage })));
 const PublicInfoPage = lazy(() => import('./pages/PublicInfoPages').then(m => ({ default: m.PublicInfoPage })));
 
 // Quick Entry is the only modal launched globally (from the BottomNav FAB).
@@ -214,6 +213,12 @@ function AppContent() {
     void useSettlementRequestStore.getState().loadRequests().catch((err) => {
       console.error('loadSettlements failed (non-fatal)', err);
     });
+    // Boot-load notifications so the bell badge + Inbox "Info" tab reflect
+    // unread informational pings (e.g. "someone added you via your code")
+    // before the user ever opens the inbox. Realtime keeps it fresh after.
+    void useNotificationStore.getState().loadNotifications().catch((err) => {
+      console.error('loadNotifications failed (non-fatal)', err);
+    });
     // Preload groups on app boot so the QuickEntry "Group expense" picker
     // is ready the moment the user opens it from any page. Previously
     // groups only loaded on /groups visit, which made the picker show
@@ -338,11 +343,12 @@ function AppContent() {
           {/* Phase 3 features. Budgets + Recurring stay full_tracker-only
               because they presuppose accounts. */}
           <Route path="/budgets" element={mode === 'full_tracker' ? <BudgetsPage /> : <Navigate to="/" replace />} />
-          <Route path="/recurring" element={mode === 'full_tracker' ? <RecurringTransactionsPage /> : <Navigate to="/" replace />} />
+          {/* Recurring + Subscriptions consolidated into the one Subscription
+              Tracker. Old /recurring links redirect there. */}
           <Route path="/subscriptions" element={mode === 'full_tracker' ? <SubscriptionsPage /> : <Navigate to="/" replace />} />
+          <Route path="/recurring" element={<Navigate to="/subscriptions" replace />} />
           <Route path="/hisaab-ai" element={<HisaabAIPage />} />
           <Route path="/hisaab-ai/insight/:category" element={mode === 'full_tracker' ? <InsightDetailPage /> : <Navigate to="/hisaab-ai" replace />} />
-          <Route path="/hisaab-ai/wrap" element={mode === 'full_tracker' ? <WrapPage /> : <Navigate to="/hisaab-ai" replace />} />
           {/* Remittances feature retired (confused users into thinking Hisaab
               is a remittance app). Data layer kept dormant; old links redirect. */}
           <Route path="/remittances" element={<Navigate to="/" replace />} />

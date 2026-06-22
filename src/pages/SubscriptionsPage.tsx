@@ -1,10 +1,10 @@
-import { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { CreditCard, CalendarClock, Ghost, Pause, Play, Trash2, Plus } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { CreditCard, CalendarClock, Ghost, Pause, Play, Trash2, Plus, Repeat, Pencil } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
+import { AddRecurringModal } from '../components/AddRecurringModal';
 import { useRecurringStore } from '../stores/recurringStore';
 import { formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
@@ -26,7 +26,8 @@ export function SubscriptionsPage() {
   const updateTemplate = useRecurringStore((s) => s.updateTemplate);
   const deleteTemplate = useRecurringStore((s) => s.deleteTemplate);
   const toast = useToast();
-  const navigate = useNavigate();
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<RecurringTransaction | null>(null);
 
   const load = useCallback(() => loadTemplates(), [loadTemplates]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
@@ -39,10 +40,14 @@ export function SubscriptionsPage() {
   const ghostIds = new Set(ghosts.map((g) => g.template.id));
 
   // Active first, then paused; within each group soonest-due first.
-  const ordered = [...subs].sort((a, b) => {
+  const byActiveThenDue = (a: RecurringTransaction, b: RecurringTransaction) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
     return a.nextDueDate.localeCompare(b.nextDueDate);
-  });
+  };
+  const ordered = [...subs].sort(byActiveThenDue);
+  // Everything recurring that ISN'T a subscription (rent, salary, EMIs) lives
+  // here too, so this is the single recurring home — no separate page.
+  const others = templates.filter((t) => !isSubscription(t)).sort(byActiveThenDue);
 
   const togglePause = async (t: RecurringTransaction) => {
     try {
@@ -58,7 +63,7 @@ export function SubscriptionsPage() {
 
   const handleDelete = async (t: RecurringTransaction) => {
     const ok = await confirmDestructive({
-      title: `Remove "${t.label || 'this subscription'}"?`,
+      title: `Remove "${t.label || t.category}"?`,
       description: 'This stops tracking it. Charges already recorded stay.',
       confirmLabel: 'Remove',
     });
@@ -82,7 +87,7 @@ export function SubscriptionsPage() {
         back
         action={
           <button
-            onClick={() => navigate('/recurring')}
+            onClick={() => setShowAdd(true)}
             aria-label="Add subscription"
             className="nav-icon-button"
           >
@@ -112,7 +117,7 @@ export function SubscriptionsPage() {
               description={`Add a recurring expense and tag it "Subscriptions" — Netflix, Spotify, your gym. We'll total the monthly cost and nudge you before each renewal.`}
               subhint="Bhooli hui subscriptions yahin pakdenge."
               actionLabel="Add a subscription"
-              onAction={() => navigate('/recurring')}
+              onAction={() => setShowAdd(true)}
             />
           ) : null
         ) : (
@@ -200,6 +205,12 @@ export function SubscriptionsPage() {
                   </p>
                   <div className="flex items-center gap-2 mt-3">
                     <button
+                      onClick={() => setEditing(t)}
+                      className="text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                    >
+                      <Pencil size={11} /> Edit
+                    </button>
+                    <button
                       onClick={() => togglePause(t)}
                       className="text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
                     >
@@ -218,7 +229,72 @@ export function SubscriptionsPage() {
             </div>
           </>
         )}
+
+        {/* Other recurring — rent, salary, EMIs: everything that isn't a
+            subscription lives here too, so this is the one recurring home. */}
+        {others.length > 0 && (
+          <div>
+            <div className="flex items-center gap-1.5 pt-1">
+              <Repeat size={13} className="text-ink-400" />
+              <p className="text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-500">Other recurring</p>
+            </div>
+            <div className="space-y-2.5 mt-2">
+              {others.map((t) => (
+                <div
+                  key={t.id}
+                  className={`rounded-2xl bg-cream-card border border-cream-border p-4 ${!t.active ? 'opacity-60' : ''}`}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">
+                      {t.label || t.category}
+                    </p>
+                    <p
+                      className={`text-[12px] font-semibold tabular-nums shrink-0 ${
+                        t.type === 'income' ? 'text-receive-text' : 'text-pay-text'
+                      }`}
+                    >
+                      {t.type === 'income' ? '+ ' : ''}
+                      {formatMoney(t.amount, t.currency)}
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-ink-500 mt-1">
+                    {t.category} · {cadenceLabel(t)} · {statusText(t, false, todayIso)}
+                  </p>
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={() => setEditing(t)}
+                      className="text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                    >
+                      <Pencil size={11} /> Edit
+                    </button>
+                    <button
+                      onClick={() => togglePause(t)}
+                      className="text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                    >
+                      {t.active ? <Pause size={11} /> : <Play size={11} />}
+                      {t.active ? 'Pause' : 'Resume'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(t)}
+                      className="text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-2.5 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                    >
+                      <Trash2 size={11} /> Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      <AddRecurringModal
+        open={showAdd || !!editing}
+        onClose={() => { setShowAdd(false); setEditing(null); }}
+        defaultCategory="Subscriptions"
+        title="Add subscription"
+        template={editing}
+      />
     </main>
   );
 }

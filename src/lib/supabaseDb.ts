@@ -329,6 +329,13 @@ export const personsDb = {
       displayName: (row.display_name as string) ?? 'Hisaab user',
     };
   },
+  // Tell the code owner that the caller just linked them (consensual — the
+  // owner shared their code). SECURITY DEFINER RPC, guarded server-side so you
+  // can only ping someone you've actually linked. Best-effort at the call site.
+  async notifyContactLinked(profileId: string): Promise<void> {
+    const { error } = await supabase.rpc('notify_contact_linked', { target_profile_id: profileId });
+    if (error) throw error;
+  },
 };
 
 // ══════════════════════════════════════

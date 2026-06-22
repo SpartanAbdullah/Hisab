@@ -27,13 +27,13 @@ const categoryIconMap: Record<string, React.ElementType> = {
 };
 
 const categoryColorMap: Record<string, { bg: string; text: string }> = {
-  Education: { bg: 'bg-blue-100', text: 'text-blue-600' },
-  Medical: { bg: 'bg-rose-100', text: 'text-rose-600' },
-  Event: { bg: 'bg-purple-100', text: 'text-purple-600' },
-  Travel: { bg: 'bg-cyan-100', text: 'text-cyan-600' },
-  Rent: { bg: 'bg-amber-100', text: 'text-amber-600' },
-  Utilities: { bg: 'bg-yellow-100', text: 'text-yellow-600' },
-  Other: { bg: 'bg-slate-100', text: 'text-slate-600' },
+  Education: { bg: 'bg-info-50', text: 'text-info-600' },
+  Medical: { bg: 'bg-pay-100', text: 'text-pay-600' },
+  Event: { bg: 'bg-accent-100', text: 'text-accent-600' },
+  Travel: { bg: 'bg-info-50', text: 'text-info-600' },
+  Rent: { bg: 'bg-warn-50', text: 'text-warn-600' },
+  Utilities: { bg: 'bg-warn-50', text: 'text-warn-600' },
+  Other: { bg: 'bg-cream-soft', text: 'text-ink-600' },
 };
 
 export function GoalsPage() {
@@ -131,16 +131,16 @@ export function GoalsPage() {
               const hasInsufficientBalance = account ? exp.amount > account.balance : false;
 
               const CatIcon = categoryIconMap[exp.category] ?? CalendarClock;
-              const catColor = categoryColorMap[exp.category] ?? { bg: 'bg-slate-100', text: 'text-ink-500' };
+              const catColor = categoryColorMap[exp.category] ?? { bg: 'bg-cream-soft', text: 'text-ink-500' };
 
               // Color-coded card tint
               const cardTint = isOverdue || isUrgent
-                ? '!border-red-200/60 !bg-red-50/20'
+                ? '!border-pay-100/60 !bg-pay-50/20'
                 : isDueToday
-                  ? '!border-amber-200/60 !bg-amber-50/20'
+                  ? '!border-warn-50/60 !bg-warn-50/20'
                   : isSoon
-                    ? '!border-amber-100/60'
-                    : '!border-emerald-100/60 !bg-emerald-50/10';
+                    ? '!border-warn-50/60'
+                    : '!border-receive-100/60 !bg-receive-50/10';
 
               return (
                 <div key={exp.id}
@@ -162,11 +162,11 @@ export function GoalsPage() {
                         {formatMoney(exp.amount, exp.currency)}
                       </p>
                       <p className={`text-[10px] font-bold mt-0.5 ${
-                        isOverdue ? 'text-red-500' :
-                        isDueToday ? 'text-amber-600' :
-                        isUrgent ? 'text-red-400' :
-                        isSoon ? 'text-amber-500' :
-                        'text-emerald-500'
+                        isOverdue ? 'text-pay-600' :
+                        isDueToday ? 'text-warn-600' :
+                        isUrgent ? 'text-pay-text' :
+                        isSoon ? 'text-warn-600' :
+                        'text-receive-600'
                       }`}>
                         {isOverdue ? t('upcoming_overdue') :
                          isDueToday ? t('upcoming_due_today') :
@@ -177,9 +177,9 @@ export function GoalsPage() {
 
                   {/* Low balance warning */}
                   {hasInsufficientBalance && (
-                    <div className="mt-2.5 bg-red-50 rounded-xl px-3 py-2 flex items-center gap-2">
+                    <div className="mt-2.5 bg-pay-50 rounded-xl px-3 py-2 flex items-center gap-2">
                       <span className="text-[10px]">&#x26a0;&#xfe0f;</span>
-                      <p className="text-[10px] text-red-600 font-bold">
+                      <p className="text-[10px] text-pay-600 font-bold">
                         {t('upcoming_low_balance')} — {account?.name}: {formatMoney(account?.balance ?? 0, exp.currency)}
                       </p>
                     </div>
@@ -188,12 +188,12 @@ export function GoalsPage() {
                   {/* Actions */}
                   <div className="flex gap-2 mt-3">
                     <button onClick={() => markPaid(exp.id)}
-                      className="flex-1 py-2 rounded-xl border border-emerald-200 text-emerald-600 text-[11px] font-bold flex items-center justify-center gap-1.5 active:bg-emerald-50 transition-all"
+                      className="flex-1 py-2 rounded-xl border border-receive-100 text-receive-600 text-[11px] font-bold flex items-center justify-center gap-1.5 active:bg-receive-50 transition-all"
                     >
                       <CheckCircle size={12} /> {t('upcoming_status_done')}
                     </button>
                     <button onClick={() => updateStatus(exp.id, 'cancelled')}
-                      className="py-2 px-3 rounded-xl border border-red-100 text-red-400 flex items-center gap-1.5 active:bg-red-50 transition-all text-[11px] font-bold"
+                      className="py-2 px-3 rounded-xl border border-pay-100 text-pay-text flex items-center gap-1.5 active:bg-pay-50 transition-all text-[11px] font-bold"
                     >
                       <XCircle size={12} /> {t('upcoming_status_cancel')}
                     </button>
@@ -222,12 +222,12 @@ export function GoalsPage() {
           const isInternal = !g.storedInAccountId;
           return (
             <div key={g.id}
-              className={`rounded-2xl bg-cream-card border border-cream-border p-5 animate-fade-in ${isComplete ? '!border-emerald-100/60' : ''}`}
+              className={`rounded-2xl bg-cream-card border border-cream-border p-5 animate-fade-in ${isComplete ? '!border-receive-100/60' : ''}`}
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <div className="flex items-center gap-3.5">
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-                  isComplete ? 'bg-gradient-to-br from-emerald-100 to-emerald-50 text-emerald-600' : 'bg-gradient-to-br from-purple-100 to-purple-50 text-purple-600'
+                  isComplete ? 'bg-gradient-to-br from-receive-100 to-receive-50 text-receive-600' : 'bg-gradient-to-br from-accent-100 to-accent-50 text-accent-600'
                 }`}>
                   {isComplete ? <span className="text-lg">&#x1f389;</span> : <Target size={22} strokeWidth={1.8} />}
                 </div>
@@ -238,17 +238,17 @@ export function GoalsPage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className={`text-[14px] font-bold tabular-nums ${isComplete ? 'text-emerald-600' : 'text-purple-600'}`}>
+                  <p className={`text-[14px] font-bold tabular-nums ${isComplete ? 'text-receive-600' : 'text-accent-600'}`}>
                     {Math.round(progress)}%
                   </p>
-                  {isComplete && <p className="text-[10px] text-emerald-500 font-bold">{t('goal_done')}</p>}
+                  {isComplete && <p className="text-[10px] text-receive-600 font-bold">{t('goal_done')}</p>}
                 </div>
               </div>
 
-              <div className="mt-4 bg-slate-100/60 rounded-full h-2.5 overflow-hidden">
+              <div className="mt-4 bg-cream-soft/60 rounded-full h-2.5 overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-700 ${
-                    isComplete ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-purple-400 to-violet-500'
+                    isComplete ? 'bg-gradient-to-r from-receive-600 to-receive-700' : 'bg-gradient-to-r from-accent-500 to-accent-600'
                   }`}
                   style={{ width: `${Math.min(100, progress)}%` }}
                 />
@@ -260,7 +260,7 @@ export function GoalsPage() {
 
               {!isComplete && (
                 <button onClick={() => setShowContribute(true)}
-                  className="mt-4 w-full py-2.5 rounded-2xl border-2 border-dashed border-purple-200 text-purple-600 text-[12px] font-bold active:bg-purple-50 transition-all"
+                  className="mt-4 w-full py-2.5 rounded-2xl border-2 border-dashed border-accent-100 text-accent-600 text-[12px] font-bold active:bg-accent-50 transition-all"
                 >{t('goal_contribute')}</button>
               )}
             </div>

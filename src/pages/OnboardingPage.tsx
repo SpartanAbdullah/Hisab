@@ -77,7 +77,29 @@ export function OnboardingPage() {
                 </div>
               ))}
             </div>
-            <div className="mt-10 w-full max-w-[280px]">
+            {/* Language confirmation — default is English; the user can pick
+                Roman Urdu right at the start (also toggleable any time via the
+                corner button and in Settings). */}
+            <div className="mt-8 w-full max-w-[280px]">
+              <p className="text-white/50 text-[11px] font-medium uppercase tracking-widest mb-2 text-left">{t('onboard_language_label')}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(['en', 'ur'] as const).map((l) => (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => setLang(l)}
+                    className={`p-3 rounded-2xl border-2 text-center transition-all duration-200 backdrop-blur-sm ${
+                      lang === l
+                        ? 'border-white/40 bg-white/15 scale-[1.02] shadow-lg shadow-white/5'
+                        : 'border-white/10 bg-white/5 active:scale-[0.98]'
+                    }`}
+                  >
+                    <p className="font-bold text-[13px] tracking-tight text-white">{l === 'en' ? t('lang_en') : t('lang_ur')}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-6 w-full max-w-[280px]">
               <Button variant="secondary" size="lg" onClick={() => setStep(1)} icon={<ArrowRight size={16} />}>
                 {t('onboard_start')}
               </Button>

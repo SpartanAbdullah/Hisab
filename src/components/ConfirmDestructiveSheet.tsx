@@ -108,7 +108,7 @@ export function ConfirmDestructiveSheet() {
   if (!open || !options) return null;
 
   const tone = options.tone ?? 'destructive';
-  const accent = tone === 'destructive' ? 'text-pay-text' : 'text-amber-600';
+  const accent = tone === 'destructive' ? 'text-pay-text' : 'text-warn-600';
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center" onClick={() => answer(false)}>

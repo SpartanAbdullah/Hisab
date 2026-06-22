@@ -153,8 +153,8 @@ export function AnalyticsPage() {
                 onClick={() => setSelectedCurrency(currency)}
                 className={`shrink-0 rounded-xl px-3 py-1.5 text-[11px] font-bold transition-all ${
                   chartCurrency === currency
-                    ? 'bg-slate-800 text-white'
-                    : 'bg-white border border-slate-200/60 text-ink-500'
+                    ? 'bg-ink-900 text-white'
+                    : 'bg-white border border-cream-border text-ink-500'
                 }`}
               >
                 {currency}
@@ -176,7 +176,7 @@ export function AnalyticsPage() {
             <div className="px-5 pt-6">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">{t('analytics_categories')}</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
+                <span className="rounded-full bg-cream-soft px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
               </div>
               <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                 <div className="flex items-center">
@@ -191,7 +191,7 @@ export function AnalyticsPage() {
                     {categories.slice(0, 5).map(c => (
                       <div key={c.category} className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                        <span className="text-[11px] text-slate-600 truncate flex-1">{c.category}</span>
+                        <span className="text-[11px] text-ink-600 truncate flex-1">{c.category}</span>
                         <span className="text-[11px] font-bold text-ink-800 tabular-nums">{c.percentage}%</span>
                       </div>
                     ))}
@@ -206,7 +206,7 @@ export function AnalyticsPage() {
             <div className="px-5 pt-6">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">{t('analytics_trend')}</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
+                <span className="rounded-full bg-cream-soft px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
               </div>
               <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                 <ResponsiveContainer width="100%" height={160}>
@@ -214,8 +214,8 @@ export function AnalyticsPage() {
                     <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 10 }} width={40} />
                     <Tooltip formatter={(value: unknown) => formatMoney(Number(value), chartCurrency)} />
-                    <Bar dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} name="Income" />
-                    <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} name="Expense" />
+                    <Bar dataKey="income" fill="#0F9D7B" radius={[4, 4, 0, 0]} name="Income" />
+                    <Bar dataKey="expense" fill="#D9614A" radius={[4, 4, 0, 0]} name="Expense" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -227,14 +227,14 @@ export function AnalyticsPage() {
             <div className="px-5 pt-6">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">{t('analytics_daily')}</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
+                <span className="rounded-full bg-cream-soft px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
               </div>
               <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                 <ResponsiveContainer width="100%" height={120}>
                   <BarChart data={daily}>
                     <XAxis dataKey="day" tick={{ fontSize: 9 }} />
                     <Tooltip formatter={(value: unknown) => formatMoney(Number(value), chartCurrency)} />
-                    <Bar dataKey="amount" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="amount" fill="#5B47E8" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -246,9 +246,9 @@ export function AnalyticsPage() {
             <div className="px-5 pt-6">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-[11px] font-bold text-ink-500 uppercase tracking-widest">{t('analytics_top')}</h2>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
+                <span className="rounded-full bg-cream-soft px-2 py-1 text-[10px] font-bold text-ink-500">{chartCurrency}</span>
               </div>
-              <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-slate-100/60">
+              <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-cream-hairline">
                 {topExp.map(tx => {
                   const subtitle = getTransactionSubtitle(tx);
                   return (

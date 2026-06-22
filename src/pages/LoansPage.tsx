@@ -1,7 +1,9 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Plus, ChevronRight, Users, Bell, Search, X } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
+import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { AllocateRepaymentModal } from '../components/AllocateRepaymentModal';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
@@ -15,7 +17,6 @@ import { TransactionItem } from '../components/TransactionItem';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
-import { NextStepHint } from '../components/NextStepHint';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -59,6 +60,8 @@ export function LoansPage() {
   const { schedules, loadSchedules } = useEmiStore();
   const { transactions, loadTransactions } = useTransactionStore();
   const { loadAccounts } = useAccountStore();
+  const linkedRequests = useLinkedRequestStore((s) => s.requests);
+  const loadLinkedRequests = useLinkedRequestStore((s) => s.loadRequests);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const t = useT();
@@ -74,11 +77,33 @@ export function LoansPage() {
   const [reminderTarget, setReminderTarget] = useState<ReminderTarget | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAllocate, setShowAllocate] = useState(false);
 
   const load = useCallback(async () => {
-    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts()]);
-  }, [loadAccounts, loadLoans, loadSchedules, loadTransactions]);
+    // loadLinkedRequests is needed so we can exclude linked loans (which must
+    // settle via their own confirm flow) from the multi-loan allocation.
+    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts(), loadLinkedRequests()]);
+  }, [loadAccounts, loadLoans, loadSchedules, loadTransactions, loadLinkedRequests]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
+
+  // Loans mirrored to another Hisaab user (accepted linked pair) — excluded
+  // from local multi-loan allocation; they settle through the confirm flow.
+  const linkedLoanIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of linkedRequests) {
+      if (r.status !== 'accepted') continue;
+      if (r.requesterLoanId) ids.add(r.requesterLoanId);
+      if (r.responderLoanId) ids.add(r.responderLoanId);
+    }
+    return ids;
+  }, [linkedRequests]);
+
+  // Active, non-linked loans in the opened person group — the set a lump
+  // payment can be spread across.
+  const allocatableLoans = selectedGroup
+    ? selectedGroup.loans.filter((l) => l.status === 'active' && l.remainingAmount > 0.01 && !linkedLoanIds.has(l.id))
+    : [];
+  const hasLinkedInGroup = !!selectedGroup && selectedGroup.loans.some((l) => linkedLoanIds.has(l.id));
 
   const activeLoans = loans.filter((l) => l.status === 'active');
   const settledLoans = loans.filter((l) => l.status === 'settled');
@@ -409,10 +434,24 @@ export function LoansPage() {
           </div>
         )}
 
-        {/* Tab pills: Receivables / Payables / Settled */}
+        {/* Tab pills: Receivables / Payables / Settled — colour-coded by
+            financial direction (green = owed to you, coral = you owe,
+            neutral = settled). Selected = solid fill; unselected = a soft
+            tinted hint so the direction reads even when not active. */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
           {tabPills.map((p) => {
             const isActive = tab === p.value;
+            const tone = p.value === 'receivables' ? 'receive' : p.value === 'payables' ? 'pay' : 'neutral';
+            const activeClass = {
+              receive: 'bg-receive-600 text-white border-receive-600',
+              pay: 'bg-pay-600 text-white border-pay-600',
+              neutral: 'bg-ink-900 text-white border-ink-900',
+            }[tone];
+            const inactiveClass = {
+              receive: 'bg-cream-card text-receive-text border-receive-100',
+              pay: 'bg-cream-card text-pay-text border-pay-100',
+              neutral: 'bg-cream-card text-ink-600 border-cream-border',
+            }[tone];
             return (
               <button
                 key={p.value}
@@ -420,15 +459,13 @@ export function LoansPage() {
                   setSearchParams({ tab: p.value });
                   setSelectedGroup(null);
                 }}
-                className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap transition-colors ${
-                  isActive
-                    ? 'bg-ink-900 text-white'
-                    : 'bg-cream-card text-ink-500 border border-cream-border'
+                className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap border transition-colors ${
+                  isActive ? activeClass : inactiveClass
                 }`}
               >
                 {p.label}
                 {p.count > 0 && (
-                  <span className={`ml-1.5 ${isActive ? 'text-white/70' : 'text-ink-400'}`}>
+                  <span className={`ml-1.5 ${isActive ? 'text-white/75' : 'text-ink-400'}`}>
                     · {p.count}
                   </span>
                 )}
@@ -437,25 +474,17 @@ export function LoansPage() {
           })}
         </div>
 
+        {/* The net stance + receive/pay breakdown already live in the hero
+            above, so we keep only the one piece that wasn't there: a light
+            line of guidance for what to do next on this tab. */}
         {loadStatus === 'ready' && activeLoans.length > 0 && (
-          <NextStepHint
-            icon={tab === 'settled' ? Users : Bell}
-            tone={netStance > 0 ? 'receive' : netStance < 0 ? 'pay' : 'info'}
-            status={
-              netStance > 0
-                ? `You are net set to receive ${formatMoney(netStance, primaryCurrency)}.`
-                : netStance < 0
-                ? `You are net due to pay ${formatMoney(Math.abs(netStance), primaryCurrency)}.`
-                : 'Money people owe you and money you owe are balanced in your primary currency.'
-            }
-            next={
-              primaryGroups.length > 0
-                ? 'Tap a person to see individual loans, repayment progress, and reminder options.'
-                : otherGroups.length > 0
-                ? 'This tab only has other-currency loans right now; review the pocket section below.'
-                : 'Switch tabs to review the other side of your IOUs.'
-            }
-          />
+          <p className="text-[11.5px] text-ink-500 leading-relaxed px-1">
+            {primaryGroups.length > 0
+              ? 'Tap a person to see individual loans, repayment progress, and reminder options.'
+              : otherGroups.length > 0
+              ? 'This tab only has other-currency loans right now; review the pocket section below.'
+              : 'Switch tabs to review the other side of your IOUs.'}
+          </p>
         )}
 
         {/* Primary-currency people list */}
@@ -530,6 +559,21 @@ export function LoansPage() {
               reminderMeta={formatReminderMeta(getGroupReminderDate(selectedGroup))}
             />
 
+            {/* Multi-loan payment — spread one amount across these loans
+                (clear the small ones first, etc.). Only worth offering when
+                there are 2+ loans to allocate across. */}
+            {selectedGroup.status === 'active' && allocatableLoans.length >= 2 && (
+              <button
+                onClick={() => setShowAllocate(true)}
+                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform"
+              >
+                {t('alloc_title')}
+              </button>
+            )}
+            {hasLinkedInGroup && (
+              <p className="text-[11px] text-ink-500 leading-relaxed">{t('alloc_linked_note')}</p>
+            )}
+
             <div>
               <h3 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5">
                 Individual loans
@@ -567,6 +611,18 @@ export function LoansPage() {
           </div>
         ) : null}
       </Modal>
+
+      {selectedGroup && (
+        <AllocateRepaymentModal
+          open={showAllocate}
+          onClose={() => setShowAllocate(false)}
+          loans={allocatableLoans}
+          direction={selectedGroup.direction}
+          currency={selectedGroup.currency}
+          personName={selectedGroup.name}
+          onDone={() => { setShowAllocate(false); setSelectedGroup(null); void load(); }}
+        />
+      )}
 
       {reminderTarget ? (
         <PaymentReminderModal

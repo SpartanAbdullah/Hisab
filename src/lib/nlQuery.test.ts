@@ -56,6 +56,33 @@ describe('parseDataQuery — budget', () => {
   });
 });
 
+describe('parseDataQuery — income', () => {
+  it('routes "how much was my income this month" to income', () => {
+    expect(parseDataQuery('how much was my income this month')).toEqual({ kind: 'income', period: 'this' });
+  });
+  it('routes "how much did I earn last month" to income (last)', () => {
+    expect(parseDataQuery('how much did I earn last month')).toEqual({ kind: 'income', period: 'last' });
+  });
+  it('routes "my income" to income', () => {
+    expect(parseDataQuery('my income')).toEqual({ kind: 'income', period: 'this' });
+  });
+});
+
+describe('parseDataQuery — account / card spend', () => {
+  it('routes "which card did I spend most from" to account-spend (aggregate)', () => {
+    expect(parseDataQuery('which card did I spend most from')).toEqual({ kind: 'account-spend', period: 'this' });
+  });
+  it('routes "how much did I spend from my HBL" to account-spend (named)', () => {
+    expect(parseDataQuery('how much did I spend from my HBL')).toEqual({ kind: 'account-spend', accountName: 'HBL', period: 'this' });
+  });
+  it('routes "spending by card" to account-spend (aggregate)', () => {
+    expect(parseDataQuery('spending by card')).toEqual({ kind: 'account-spend', period: 'this' });
+  });
+  it('does NOT hijack "how much did I spend on food" (stays category)', () => {
+    expect(parseDataQuery('how much did I spend on food')).toEqual({ kind: 'category-spend', category: 'food' });
+  });
+});
+
 describe('parseDataQuery — does NOT hijack commands or how-to', () => {
   it('ignores an add command', () => {
     expect(parseDataQuery('add 3 aed for karak')).toBeNull();

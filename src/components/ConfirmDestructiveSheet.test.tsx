@@ -20,7 +20,7 @@ describe('ConfirmationActions', () => {
     expect(html).toContain('Cancel');
     expect(html).toContain('Remove contact');
     expect(html.indexOf('Cancel')).toBeLessThan(html.indexOf('Remove contact'));
-    expect(html).toContain('bg-red-600');
+    expect(html).toContain('bg-pay-600');
     expect(html).toContain('text-white');
   });
 
@@ -28,15 +28,15 @@ describe('ConfirmationActions', () => {
     const html = renderActions({ confirmLabel: 'Leave group', tone: 'warning' });
 
     expect(html).toContain('Leave group');
-    expect(html).toContain('bg-amber-500');
-    expect(html).toContain('text-slate-950');
+    expect(html).toContain('bg-warn-600');
+    expect(html).toContain('text-white');
   });
 
   it('keeps delete-account destructive confirmation visible', () => {
     const html = renderActions({ confirmLabel: 'Delete account' });
 
     expect(html).toContain('Delete account');
-    expect(html).toContain('bg-red-600');
+    expect(html).toContain('bg-pay-600');
   });
 
   it('keeps the confirm action readable while loading and disabled', () => {

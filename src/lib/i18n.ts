@@ -358,6 +358,7 @@ const S = {
   settings_language: { ur: "Zuban", en: "Language" },
   lang_ur: { ur: "Roman Urdu", en: "Roman Urdu" },
   lang_en: { ur: "English", en: "English" },
+  onboard_language_label: { ur: "Apni zabaan chunein", en: "Choose your language" },
 
   // Loans page title
   loans_title: { ur: "Qarz / Loans", en: "Loans" },
@@ -1104,6 +1105,14 @@ const S = {
     ur: "Confirmation ke liye bhejo",
     en: "Send for confirmation",
   },
+  ltr_repay_linked_notice: {
+    ur: "Yeh ek linked loan hai. Ise loan page se settle karein taake doosra shaks confirm kar sake.",
+    en: "This is a linked loan. Settle it from the loan page so the other person can confirm.",
+  },
+  ltr_repay_linked_cta: {
+    ur: "Loan page par settle karein",
+    en: "Settle on loan page",
+  },
 
   // Toasts
   ltr_sent_title: {
@@ -1135,6 +1144,11 @@ const S = {
   ltr_inbox_title: { ur: "Inbox", en: "Inbox" },
   ltr_tab_incoming: { ur: "Aayi hui", en: "Incoming" },
   ltr_tab_outgoing: { ur: "Bheji hui", en: "Outgoing" },
+  ltr_tab_info: { ur: "Maloomat", en: "Info" },
+  ltr_info_hint: {
+    ur: "Subscriptions, budget aur credit card ki yaad-dahaniyaan yahan.",
+    en: "Reminders for subscriptions, budgets and credit-card due dates.",
+  },
   ltr_empty_incoming: {
     ur: "Abhi koi pending request nahi.",
     en: "No pending requests right now.",
@@ -1431,6 +1445,14 @@ const S = {
     ur: "Jab koi linked contact aap ko loan ya settlement bhejega, yahan dikhega.",
     en: "When a linked contact sends you a loan or settlement to confirm, it'll show up here.",
   },
+  inbox_empty_info_title: {
+    ur: "Sab control mein",
+    en: "All caught up",
+  },
+  inbox_empty_info_desc: {
+    ur: "Koi budget alert, subscription renewal ya credit card due nahi — sab theek hai.",
+    en: "No budget alerts, upcoming renewals or credit-card dates right now. You're all set.",
+  },
   inbox_empty_outgoing_title: {
     ur: "Sab clear hai",
     en: "All clear",
@@ -1450,6 +1472,39 @@ const S = {
   splits_home_new_iou_sub: { ur: "Diya, liya, ya wapsi", en: "Gave, borrowed, paid back" },
   splits_home_new_group: { ur: "Naya Group", en: "New group" },
   splits_home_new_group_sub: { ur: "Friends ke sath split", en: "Split with friends" },
+
+  // Time-of-day greetings. English stays neutral; Roman Urdu keeps the
+  // warm/Islamic greetings. Selected via the active language by useT().
+  greet_morning: { ur: "Subah Bakhair", en: "Good Morning" },
+  greet_afternoon: { ur: "Assalam o Alaikum", en: "Good Afternoon" },
+  greet_evening: { ur: "Shaam Bakhair", en: "Good Evening" },
+  greet_night: { ur: "Shab Bakhair", en: "Good Night" },
+  greet_hello: { ur: "Salaam", en: "Hello" },
+
+  // Multi-loan repayment allocation
+  alloc_title: { ur: "Payment baantein", en: "Record a payment" },
+  alloc_intro: {
+    ur: "Ek amount likhein — hum ise neeche diye loans par laga denge.",
+    en: "Enter one amount — we'll spread it across these loans for you.",
+  },
+  alloc_lump_label: { ur: "Kitna paisa lagana hai", en: "Amount to apply" },
+  alloc_strategy_label: { ur: "Kaise lagayein", en: "How to apply it" },
+  alloc_smallest: { ur: "Chhote pehle", en: "Clear smallest first" },
+  alloc_largest: { ur: "Bade pehle", en: "Largest first" },
+  alloc_oldest: { ur: "Purane pehle", en: "Oldest first" },
+  alloc_manual: { ur: "Khud chunein", en: "Choose per loan" },
+  alloc_account_label: { ur: "Account", en: "From / to account" },
+  alloc_preview: { ur: "Yeh laga", en: "This clears" },
+  alloc_cleared: { ur: "clear", en: "cleared" },
+  alloc_leftover: { ur: "bacha hua", en: "left over (not applied)" },
+  alloc_apply: { ur: "Payment lagayein", en: "Apply payment" },
+  alloc_applying: { ur: "Lag raha hai…", en: "Applying…" },
+  alloc_done: { ur: "Payment lag gayi", en: "Payment applied" },
+  alloc_over: { ur: "Total remaining se zyada nahi ho sakta.", en: "Can't apply more than the total remaining." },
+  alloc_linked_note: {
+    ur: "Linked loans yahan shamil nahi — unhein loan page se settle karein.",
+    en: "Linked loans aren't included here — settle those from their loan page.",
+  },
 } as const;
 
 type Key = keyof typeof S;
@@ -1460,7 +1515,7 @@ interface I18nState {
 }
 
 export const useI18nStore = create<I18nState>((set) => ({
-  lang: (localStorage.getItem("hisaab_lang") as Language) || "ur",
+  lang: (localStorage.getItem("hisaab_lang") as Language) || "en",
   setLang: (lang) => {
     localStorage.setItem("hisaab_lang", lang);
     set({ lang });

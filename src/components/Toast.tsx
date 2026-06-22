@@ -32,9 +32,9 @@ export const useToast = create<ToastStore>((set) => ({
 
 const icons = { success: CheckCircle, error: AlertCircle, info: Info };
 const bgColors = {
-  success: 'bg-emerald-600 shadow-emerald-500/25',
-  error: 'bg-red-500 shadow-red-500/25',
-  info: 'bg-indigo-600 shadow-indigo-500/25',
+  success: 'bg-receive-600 shadow-receive-600/25',
+  error: 'bg-pay-600 shadow-pay-600/25',
+  info: 'bg-info-600 shadow-info-600/25',
 };
 
 function ToastItem({ toast }: { toast: ToastData }) {

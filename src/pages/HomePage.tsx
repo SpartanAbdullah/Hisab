@@ -467,16 +467,19 @@ export function HomePage() {
   }
 
   const hour = new Date().getHours();
-  const greeting =
+  // Greeting follows the selected language: neutral English ("Good Morning")
+  // vs Roman Urdu ("Subah Bakhair"). Keys live in i18n.ts.
+  const greeting = t(
     hour < 5
-      ? "Good Night"
+      ? "greet_night"
       : hour < 12
-      ? "Subah Bakhair"
+      ? "greet_morning"
       : hour < 17
-      ? "Assalam o Alaikum"
+      ? "greet_afternoon"
       : hour < 21
-      ? "Shaam Bakhair"
-      : "Good Night";
+      ? "greet_evening"
+      : "greet_night",
+  );
   const greetingEmoji =
     hour < 5
       ? "\u{1F319}"
@@ -764,12 +767,6 @@ export function HomePage() {
                 onClick={() => navigate("/budgets")}
               />
               <QuickTile
-                label="Recurring"
-                icon={Repeat}
-                iconClass="text-accent-500"
-                onClick={() => navigate("/recurring")}
-              />
-              <QuickTile
                 label="Subscriptions"
                 icon={CreditCard}
                 iconClass="text-info-600"
@@ -895,7 +892,7 @@ export function HomePage() {
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums tracking-tight leading-tight">
+                      <p className={`text-[13px] font-semibold tabular-nums tracking-tight leading-tight ${a.balance < 0 ? 'text-pay-text' : 'text-ink-900'}`}>
                         {formatMoney(a.balance, a.currency)}
                       </p>
                       <p className="text-[9.5px] text-ink-400 leading-tight mt-0.5">

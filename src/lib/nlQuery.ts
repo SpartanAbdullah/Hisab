@@ -10,6 +10,8 @@ export type QueryKind =
   | 'account-balance' // "what's my balance / how much do I have?"
   | 'category-spend' // "how much did I spend on food?"
   | 'top-spend' // "where did my money go / what did I spend most on?"
+  | 'account-spend' // "which card did I spend most from? / spending from my HBL card"
+  | 'income' // "how much was my income this month? / what did I earn?"
   | 'trend' // "am I spending more than last month?"
   | 'budget-status'; // "what's left in my budget / am I over budget on X?"
 
@@ -17,6 +19,8 @@ export interface ParsedQuery {
   kind: QueryKind;
   personName?: string;
   category?: string; // category-spend, budget-status, trend (optional)
+  accountName?: string; // account-spend: a specific named card/account (else aggregate)
+  period?: 'this' | 'last'; // income, account-spend — defaults to 'this'
 }
 
 function clean(s: string): string {
@@ -81,6 +85,25 @@ const CATEGORY_RES = [
   /^my (.+?) (?:spend|spending|expenses?)\s*$/i,
 ];
 
+const INCOME_RES = [
+  /^how much (?:was|is|did) my income(?: this month| last month)?\s*$/i,
+  /^how much (?:did i|have i) (?:earn|earned|made|make)(?: this month| last month)?\s*$/i,
+  /^what(?:'?s| was| is)? my income(?: this month| last month)?\s*$/i,
+  /^my income(?: this month| last month)?\s*$/i,
+  /^how much income(?: (?:did i|have i) (?:get|earn|make|made))?(?: this month| last month)?\s*$/i,
+];
+
+// "card"/"account" as group 1 ⇒ aggregate (which one most); a real name in
+// group 1 ⇒ that specific account. The named forms require "from"/"with" or an
+// explicit "card"/"account" word so they don't hijack category-spend ("on food").
+const ACCOUNT_SPEND_RES = [
+  /^(?:which|what) (card|account) did i (?:spend|use)(?: the)? most(?: from| on| with)?(?: this month| last month)?\s*$/i,
+  /^(?:which|what) (card|account) (?:do i|did i) (?:spend|use)(?: the)? most(?: this month| last month)?\s*$/i,
+  /^(?:my )?spending by (card|account)s?(?: this month| last month)?\s*$/i,
+  /^how much (?:did i|have i) (?:spend|spent) (?:from|with) (?:my )?(.+?)(?: this month| last month)?\s*$/i,
+  /^how much (?:did i|have i) (?:spend|spent) on (?:my )?(.+?) (card|account)(?: this month| last month)?\s*$/i,
+];
+
 function firstMatch(res: RegExp[], s: string): RegExpExecArray | null {
   for (const re of res) {
     const m = re.exec(s);
@@ -98,6 +121,21 @@ export function parseDataQuery(text: string): ParsedQuery | null {
   if (budget) {
     const cat = budget[1] ? tidy(budget[1]) : undefined;
     return { kind: 'budget-status', category: cat || undefined };
+  }
+
+  // Account/card spend before top-spend & category so "which card did I spend
+  // most from" / "spend from my HBL" don't get read as category questions.
+  const acctSpend = firstMatch(ACCOUNT_SPEND_RES, s);
+  if (acctSpend) {
+    const period: 'this' | 'last' = /last month/i.test(s) ? 'last' : 'this';
+    const g1 = acctSpend[1] ? tidy(acctSpend[1]) : '';
+    const isKeyword = /^(?:card|account)s?$/i.test(g1);
+    return { kind: 'account-spend', accountName: isKeyword || !g1 ? undefined : g1, period };
+  }
+
+  if (firstMatch(INCOME_RES, s)) {
+    const period: 'this' | 'last' = /last month/i.test(s) ? 'last' : 'this';
+    return { kind: 'income', period };
   }
 
   if (firstMatch(TOP_SPEND_RES, s)) return { kind: 'top-spend' };

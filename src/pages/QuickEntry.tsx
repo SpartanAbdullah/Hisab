@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
   HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight, Lock,
@@ -10,7 +11,7 @@ import { useGoalStore } from '../stores/goalStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { usePersonStore } from '../stores/personStore';
-import { useLinkedRequestStore } from '../stores/linkedRequestStore';
+import { useLinkedRequestStore, LINKED_REQUEST_CURRENCIES } from '../stores/linkedRequestStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useSplitStore } from '../stores/splitStore';
 import { Modal } from '../components/Modal';
@@ -78,6 +79,8 @@ export function QuickEntry({
   const groupsLoading = useSplitStore((s) => s.loading);
   const loadGroups = useSplitStore((s) => s.loadGroups);
   const appMode = useAppModeStore((s) => s.mode);
+  const linkedRequests = useLinkedRequestStore((s) => s.requests);
+  const navigate = useNavigate();
   const toast = useToast();
   const t = useT();
 
@@ -206,6 +209,13 @@ export function QuickEntry({
   const showCategory = ['income', 'expense'].includes(type);
   const isGroupExpense = type === 'group_expense';
   const selectedLoan = loans.find(l => l.id === loanId);
+  // A loan is "linked" when an accepted linked_transaction_request mirrors it
+  // to another Hisaab user. Such a loan must settle through the dedicated
+  // settlement-request flow (so the counterparty confirms) — repaying it
+  // locally here would diverge the two mirrored ledgers.
+  const selectedLoanIsLinked = !!selectedLoan && linkedRequests.some(
+    (r) => r.status === 'accepted' && (r.requesterLoanId === selectedLoan.id || r.responderLoanId === selectedLoan.id),
+  );
   const hasAccounts = accounts.length > 0;
   const filteredLoans = loans.filter((loan) => {
     if (loan.status !== 'active') return false;
@@ -295,6 +305,8 @@ export function QuickEntry({
       case 'loan_taken': return (isLedgerOnlyPersonFlow || !!destId) && !!contact.name.trim();
       case 'repayment':
         if (!loanId) return false;
+        // Linked loans settle via the loan page, not here.
+        if (selectedLoanIsLinked) return false;
         if (isLedgerOnlyPersonFlow) return true;
         return selectedLoan?.type === 'given' ? !!destId : !!sourceId;
       case 'goal_contribution': return !!sourceId && !!goalId;
@@ -326,11 +338,19 @@ export function QuickEntry({
     ? usePersonStore.getState().persons.find((p) => p.id === contact.id) ?? null
     : null;
   const branchAccount = type === 'loan_given' ? srcAccount : type === 'loan_taken' ? dstAccount : null;
+  // Currency that would carry the cross-user record: the chosen account's
+  // currency in full-tracker, the picked ledger currency in split-only.
+  const branchCurrency = isLedgerOnlyPersonFlow ? ledgerCurrency : branchAccount?.currency;
+  // In split-only the record can only be mirrored for currencies the linked
+  // request table accepts (AED/PKR); other currencies stay local. Full-tracker
+  // keeps its existing (un-gated) behaviour.
+  const branchCurrencyMirrorable = !isLedgerOnlyPersonFlow
+    || (!!branchCurrency && (LINKED_REQUEST_CURRENCIES as readonly string[]).includes(branchCurrency));
   const wouldBranchToLinked = !!(
-    appMode !== 'splits_only' &&
     (type === 'loan_given' || type === 'loan_taken') &&
     contactInStore?.linkedProfileId &&
-    branchAccount?.currency
+    branchCurrency &&
+    branchCurrencyMirrorable
   );
 
   async function ensureResolvedPerson(name: string, id: string) {
@@ -356,6 +376,16 @@ export function QuickEntry({
             : await usePersonStore.getState().findOrCreateByName(contact.name.trim()))
         : null;
 
+      // A linked loan must settle through its dedicated flow so the OTHER
+      // side confirms — never reduce it locally (that diverges the two
+      // mirrored ledgers). Bounce to the loan page's settle action.
+      if (type === 'repayment' && selectedLoan && selectedLoanIsLinked) {
+        reset();
+        onClose();
+        navigate(`/loan/${selectedLoan.id}`);
+        return;
+      }
+
       if (isLedgerOnlyPersonFlow) {
         if (type === 'repayment') {
           if (!selectedLoan) throw new Error('Loan not found');
@@ -371,6 +401,35 @@ export function QuickEntry({
             changes: [],
           });
         } else {
+          // Split-only can still mirror a loan to a linked contact. The
+          // cross-user record carries no balance movement (no account is
+          // involved), so split-only is irrelevant to it — branch exactly
+          // like full-tracker. Only AED/PKR can be mirrored; any other
+          // currency stays a local-only ledger loan.
+          if (type === 'loan_given' || type === 'loan_taken') {
+            const branch = decideLinkedBranch({
+              type,
+              person: resolvedPerson,
+              requestCurrency: ledgerCurrency,
+            });
+            if (branch.branch === true && (LINKED_REQUEST_CURRENCIES as readonly string[]).includes(ledgerCurrency)) {
+              const guard = await confirmCrossUserRequest({ amount: amt, currency: branch.currency, personName: resolvedPerson!.name });
+              if (guard.blockedReason) { toast.show({ type: 'error', title: 'Check the amount', subtitle: guard.blockedReason }); return; }
+              if (!guard.ok) return;
+              await useLinkedRequestStore.getState().createRequest({
+                toUserId: branch.toUserId,
+                personId: branch.personId,
+                kind: branch.kind,
+                amount: amt,
+                currency: branch.currency,
+                note: notes,
+              });
+              toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
+              reset();
+              onClose();
+              return;
+            }
+          }
           const loan = await createLoan({
             personName: resolvedPerson!.name,
             personId: resolvedPerson!.id,
@@ -1060,7 +1119,17 @@ export function QuickEntry({
                 )}
               </div>
             )}
-            {needsLoan && selectedLoan?.type === 'given' && (
+            {needsLoan && selectedLoanIsLinked && (
+              <div className="rounded-2xl bg-accent-50 border border-accent-100 p-3.5 space-y-2.5">
+                <p className="text-[12px] text-accent-600 leading-relaxed">{t('ltr_repay_linked_notice')}</p>
+                <button
+                  type="button"
+                  onClick={() => { if (selectedLoan) { reset(); onClose(); navigate(`/loan/${selectedLoan.id}`); } }}
+                  className="w-full rounded-xl bg-ink-900 text-white py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform"
+                >{t('ltr_repay_linked_cta')}</button>
+              </div>
+            )}
+            {needsLoan && !selectedLoanIsLinked && selectedLoan?.type === 'given' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_money_where')}</label>
                 <div className="space-y-2">
@@ -1086,7 +1155,7 @@ export function QuickEntry({
                 </div>
               </div>
             )}
-            {needsLoan && selectedLoan?.type === 'taken' && (
+            {needsLoan && !selectedLoanIsLinked && selectedLoan?.type === 'taken' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_pay_from')}</label>
                 <div className="space-y-2">

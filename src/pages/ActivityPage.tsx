@@ -35,24 +35,24 @@ const iconMap: Record<string, LucideIcon> = {
 };
 
 const styleMap: Record<string, { icon: string; card: string }> = {
-  account_created: { icon: 'text-blue-500 bg-gradient-to-br from-blue-50 to-blue-100/50', card: 'border-l-4 border-l-blue-400' },
-  account_deleted: { icon: 'text-red-500 bg-gradient-to-br from-red-50 to-red-100/50', card: 'border-l-4 border-l-red-400' },
-  transaction_created: { icon: 'text-indigo-500 bg-gradient-to-br from-indigo-50 to-indigo-100/50', card: 'border-l-4 border-l-indigo-400' },
-  opening_balance: { icon: 'text-indigo-500 bg-gradient-to-br from-indigo-50 to-indigo-100/50', card: 'border-l-4 border-l-indigo-400' },
-  loan_created: { icon: 'text-amber-500 bg-gradient-to-br from-amber-50 to-amber-100/50', card: 'border-l-4 border-l-amber-400' },
-  emi_paid: { icon: 'text-teal-500 bg-gradient-to-br from-teal-50 to-teal-100/50', card: 'border-l-4 border-l-teal-400' },
-  loan_settled: { icon: 'text-emerald-500 bg-gradient-to-br from-emerald-50 to-emerald-100/50', card: 'border-l-4 border-l-emerald-400' },
-  group_settlement: { icon: 'text-emerald-500 bg-gradient-to-br from-emerald-50 to-emerald-100/50', card: 'border-l-4 border-l-emerald-400' },
-  goal_created: { icon: 'text-purple-500 bg-gradient-to-br from-purple-50 to-purple-100/50', card: 'border-l-4 border-l-purple-400' },
-  goal_contribution: { icon: 'text-purple-500 bg-gradient-to-br from-purple-50 to-purple-100/50', card: 'border-l-4 border-l-purple-400' },
-  transaction_modified: { icon: 'text-orange-500 bg-gradient-to-br from-orange-50 to-orange-100/50', card: 'border-l-4 border-l-orange-400' },
-  transaction_deleted: { icon: 'text-red-500 bg-gradient-to-br from-red-50 to-red-100/50', card: 'border-l-4 border-l-red-400' },
-  transfer: { icon: 'text-cyan-500 bg-gradient-to-br from-cyan-50 to-cyan-100/50', card: 'border-l-4 border-l-cyan-400' },
-  group_created: { icon: 'text-pink-500 bg-gradient-to-br from-pink-50 to-pink-100/50', card: 'border-l-4 border-l-pink-400' },
-  group_expense: { icon: 'text-pink-500 bg-gradient-to-br from-pink-50 to-pink-100/50', card: 'border-l-4 border-l-pink-400' },
+  account_created: { icon: 'text-info-600 bg-gradient-to-br from-info-50 to-info-50/50', card: 'border-l-4 border-l-info-600' },
+  account_deleted: { icon: 'text-pay-600 bg-gradient-to-br from-pay-50 to-pay-100/50', card: 'border-l-4 border-l-pay-600' },
+  transaction_created: { icon: 'text-accent-600 bg-gradient-to-br from-accent-50 to-accent-100/50', card: 'border-l-4 border-l-accent-500' },
+  opening_balance: { icon: 'text-accent-600 bg-gradient-to-br from-accent-50 to-accent-100/50', card: 'border-l-4 border-l-accent-500' },
+  loan_created: { icon: 'text-warn-600 bg-gradient-to-br from-warn-50 to-warn-50/50', card: 'border-l-4 border-l-warn-600' },
+  emi_paid: { icon: 'text-receive-600 bg-gradient-to-br from-receive-50 to-receive-100/50', card: 'border-l-4 border-l-receive-600' },
+  loan_settled: { icon: 'text-receive-600 bg-gradient-to-br from-receive-50 to-receive-100/50', card: 'border-l-4 border-l-receive-600' },
+  group_settlement: { icon: 'text-receive-600 bg-gradient-to-br from-receive-50 to-receive-100/50', card: 'border-l-4 border-l-receive-600' },
+  goal_created: { icon: 'text-accent-600 bg-gradient-to-br from-accent-50 to-accent-100/50', card: 'border-l-4 border-l-accent-500' },
+  goal_contribution: { icon: 'text-accent-600 bg-gradient-to-br from-accent-50 to-accent-100/50', card: 'border-l-4 border-l-accent-500' },
+  transaction_modified: { icon: 'text-warn-600 bg-gradient-to-br from-warn-50 to-warn-50/50', card: 'border-l-4 border-l-warn-600' },
+  transaction_deleted: { icon: 'text-pay-600 bg-gradient-to-br from-pay-50 to-pay-100/50', card: 'border-l-4 border-l-pay-600' },
+  transfer: { icon: 'text-info-600 bg-gradient-to-br from-info-50 to-info-50/50', card: 'border-l-4 border-l-info-600' },
+  group_created: { icon: 'text-pay-600 bg-gradient-to-br from-pay-50 to-pay-100/50', card: 'border-l-4 border-l-pay-600' },
+  group_expense: { icon: 'text-pay-600 bg-gradient-to-br from-pay-50 to-pay-100/50', card: 'border-l-4 border-l-pay-600' },
 };
 
-const defaultStyle = { icon: 'text-ink-500 bg-cream-soft', card: 'border-l-4 border-l-slate-300' };
+const defaultStyle = { icon: 'text-ink-500 bg-cream-soft', card: 'border-l-4 border-l-cream-border' };
 
 type Tab = 'shared' | 'personal';
 
