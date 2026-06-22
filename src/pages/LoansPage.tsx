@@ -234,6 +234,28 @@ export function LoansPage() {
     otherGroups = otherGroups.filter((g) => g.name.toLowerCase().includes(q));
   }
 
+  // At-a-glance status derived from the group's unpaid schedules:
+  // 'overdue' if any unpaid instalment's dueDate is in the past, 'due-soon'
+  // if the next one falls within ~3 days, otherwise none. Groups with no
+  // EMI schedule have no status here (open-ended loans aren't "overdue").
+  // NOTE: defined before the sort/overdueCount below that call it — moving it
+  // later would put it in the temporal dead zone and crash the page.
+  type GroupStatus = 'overdue' | 'due-soon' | null;
+  const getGroupStatus = (group: LoanGroup): GroupStatus => {
+    if (group.status === 'settled') return null;
+    const loanIds = new Set(group.loans.map((l) => l.id));
+    const unpaid = schedules.filter((s) => loanIds.has(s.loanId) && s.status !== 'paid');
+    if (unpaid.length === 0) return null;
+    const anyOverdue = unpaid.some((s) => isPast(new Date(s.dueDate)));
+    if (anyOverdue) return 'overdue';
+    const next = unpaid
+      .slice()
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
+    const days = differenceInDays(new Date(next.dueDate), new Date());
+    if (days >= 0 && days <= 3) return 'due-soon';
+    return null;
+  };
+
   // Float overdue groups to the top, then due-soon, preserving the existing
   // amount-based order within each band. Settled tab keeps its own ordering.
   if (tab !== 'settled') {
@@ -286,26 +308,6 @@ export function LoansPage() {
       .filter((s) => loanIds.has(s.loanId) && s.status !== 'paid')
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
     return upcoming ?? null;
-  };
-
-  // At-a-glance status derived from the group's unpaid schedules:
-  // 'overdue' if any unpaid instalment's dueDate is in the past, 'due-soon'
-  // if the next one falls within ~3 days, otherwise none. Groups with no
-  // EMI schedule have no status here (open-ended loans aren't "overdue").
-  type GroupStatus = 'overdue' | 'due-soon' | null;
-  const getGroupStatus = (group: LoanGroup): GroupStatus => {
-    if (group.status === 'settled') return null;
-    const loanIds = new Set(group.loans.map((l) => l.id));
-    const unpaid = schedules.filter((s) => loanIds.has(s.loanId) && s.status !== 'paid');
-    if (unpaid.length === 0) return null;
-    const anyOverdue = unpaid.some((s) => isPast(new Date(s.dueDate)));
-    if (anyOverdue) return 'overdue';
-    const next = unpaid
-      .slice()
-      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
-    const days = differenceInDays(new Date(next.dueDate), new Date());
-    if (days >= 0 && days <= 3) return 'due-soon';
-    return null;
   };
 
   // Does this person-group include any loan mirrored to another Hisaab user?

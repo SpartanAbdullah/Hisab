@@ -33,12 +33,20 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       const presentation = getAppErrorPresentation(this.state.error);
+      // Give the "contact support" copy a real destination — a prefilled email
+      // with the error text so users aren't told to contact support with no way
+      // to do so. Only on the generic crash (stale-chunk just needs a refresh).
+      const supportHref = presentation.kind === 'generic'
+        ? `mailto:support@usehisaab.com?subject=${encodeURIComponent('Hisaab — something went wrong')}` +
+          `&body=${encodeURIComponent(`Hi Hisaab team,\n\nI hit an error in the app.\n\n(Details: ${this.state.error.name}: ${this.state.error.message})\n\nWhat I was doing:\n`)}`
+        : undefined;
       return (
         <PageErrorState
           title={presentation.title}
           message={presentation.message}
           secondaryText={presentation.secondaryText}
           actionLabel={presentation.actionLabel}
+          supportHref={supportHref}
           onRetry={() => {
             if (presentation.kind === 'stale-chunk') {
               void recoverFromStaleApp();

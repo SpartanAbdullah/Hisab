@@ -1556,6 +1556,7 @@ const S = {
   // Generic dialog actions
   cancel: { ur: "Cancel", en: "Cancel" },
   confirm_generic: { ur: "Theek hai", en: "Confirm" },
+  err_contact_support: { ur: "Support se rabta karein", en: "Contact support" },
 
   // ── UX localization pass ──
   // Generic actions / nav

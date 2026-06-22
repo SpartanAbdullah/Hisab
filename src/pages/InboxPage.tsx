@@ -112,7 +112,11 @@ export function InboxPage() {
     () => notifications.filter(isInboxInfoNotification).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notifications],
   );
-  const infoCount = infoItems.length + infoNotifs.length;
+  // The Info badge counts only clearable unread notifications. The live
+  // derived signals below (budget / credit-card / subscription) are
+  // informational content — they must NOT drive a red count the user can
+  // never clear (that was the "stays at 1 after reading" bug).
+  const infoCount = infoNotifs.length;
 
   // Smart landing: once data is loaded, jump to whichever tab has the most
   // active items. Tie-break order Incoming > Info > Outgoing (action items

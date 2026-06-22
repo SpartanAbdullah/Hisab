@@ -1,4 +1,4 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Mail } from 'lucide-react';
 import { useT } from '../lib/i18n';
 
 interface Props {
@@ -8,6 +8,9 @@ interface Props {
   actionLabel?: string;
   onRetry?: () => void;
   variant?: 'full' | 'inline';
+  // When set, a "Contact support" link renders under the retry action — gives
+  // the user a real way to act on "contact support" copy instead of a dead end.
+  supportHref?: string;
 }
 
 // Single source of truth for "this page/section failed to load" UI. `full`
@@ -21,6 +24,7 @@ export function PageErrorState({
   actionLabel,
   onRetry,
   variant = 'full',
+  supportHref,
 }: Props) {
   const t = useT();
   // Localized fallbacks — callers can still override with explicit copy.
@@ -67,6 +71,14 @@ export function PageErrorState({
           >
             <RefreshCw size={14} /> {resolvedActionLabel}
           </button>
+        )}
+        {supportHref && (
+          <a
+            href={supportHref}
+            className="mt-3 inline-flex items-center justify-center gap-1.5 w-full rounded-2xl py-3 text-[13px] font-semibold text-accent-600 active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
+          >
+            <Mail size={13} /> {t('err_contact_support')}
+          </a>
         )}
       </div>
     </div>
