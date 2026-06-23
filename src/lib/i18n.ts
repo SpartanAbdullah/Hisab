@@ -900,6 +900,22 @@ const S = {
     ur: "Koi ads nahi · Aap ka data private · Hamesha free shuru",
     en: "No ads · Your data stays private · Free to start",
   },
+  // Live password checklist (signup)
+  pw_check_length: { ur: "Kam se kam 8 characters", en: "At least 8 characters" },
+  pw_check_letter: { ur: "Ek harf (a–z)", en: "A letter (a–z)" },
+  pw_check_number: { ur: "Ek number (0–9)", en: "A number (0–9)" },
+  // "Check your email" screen
+  verify_title: { ur: "Apna email check karein", en: "Check your email" },
+  verify_body: { ur: "Humne tasdeeq ka link yahan bheja hai:", en: "We sent a confirmation link to" },
+  verify_instruction: { ur: "Use khol kar account activate karein, phir wapas aa kar login karein.", en: "Open it to activate your account, then come back and log in." },
+  verify_spam: { ur: "Nahi mila? Spam ya promotions folder dekhein.", en: "Don't see it? Check spam or promotions." },
+  verify_resend: { ur: "Email dobara bhejein", en: "Resend email" },
+  verify_resending: { ur: "Bhej raha hai…", en: "Sending…" },
+  verify_resent: { ur: "Bhej diya! Inbox check karein.", en: "Sent — check your inbox." },
+  verify_back_login: { ur: "Login par wapas", en: "Back to login" },
+  verify_diff_email: { ur: "Doosra email use karein", en: "Use a different email" },
+  verify_done_refresh: { ur: "Tasdeeq ho gayi — refresh karein", en: "I've verified — refresh" },
+  verify_diff_account: { ur: "Doosra account use karein", en: "Use a different account" },
   onboard_tagline_sub: {
     ur: "Pakistani expats ke liye banaya — AED ya PKR, dono mein chalta hai.",
     en: "Built for Pakistani expats — works in AED, PKR, and across GCC.",

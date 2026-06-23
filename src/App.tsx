@@ -93,40 +93,44 @@ function UnverifiedEmailScreen({ email }: { email: string }) {
   };
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-navy-900 text-white px-8">
-      <div className="w-16 h-16 rounded-3xl bg-white/10 flex items-center justify-center mb-6 backdrop-blur-sm border border-white/10">
-        <span className="text-2xl">✉️</span>
+    <div className="min-h-dvh flex flex-col items-center justify-center bg-navy-bloom text-white px-8 text-center">
+      <div className="w-20 h-20 rounded-3xl bg-receive-600/25 flex items-center justify-center mb-6 backdrop-blur-sm border border-receive-600/30">
+        <span className="text-3xl">📩</span>
       </div>
-      <h1 className="text-2xl font-bold tracking-tight mb-3">Verify your email</h1>
-      <p className="text-white/60 text-[13px] text-center max-w-xs leading-relaxed mb-1">
-        We sent a verification link to
+      <h1 className="text-2xl font-bold tracking-tight mb-3">Check your email</h1>
+      <p className="text-white/60 text-[13px] max-w-[300px] leading-relaxed">
+        We sent a confirmation link to
       </p>
-      <p className="text-white text-[13px] font-medium mb-6">{email || 'your email address'}</p>
-      <p className="text-white/40 text-[11px] text-center max-w-xs leading-relaxed mb-8">
-        Click the link to activate your account. You can close this and come back after confirming.
+      <p className="text-white text-[14px] font-semibold mt-1.5 break-all max-w-[300px]">{email || 'your email address'}</p>
+      <p className="text-white/45 text-[12px] max-w-[290px] leading-relaxed mt-4">
+        Open it to activate your account, then continue here.
+      </p>
+      <p className="text-white/35 text-[11px] max-w-[290px] leading-relaxed mt-2">
+        Don't see it? Check spam or promotions.
       </p>
 
-      <button
-        onClick={resend}
-        disabled={resending || !email}
-        className="bg-white text-navy-900 rounded-2xl px-6 py-3 text-[13px] font-semibold disabled:opacity-40 mb-3"
-      >
-        {resending ? 'Sending...' : 'Resend verification email'}
-      </button>
-
-      <button onClick={() => signOut()} className="text-white/50 text-[11px] underline">
-        Use a different account
-      </button>
+      <div className="w-full max-w-[300px] mt-8 space-y-3">
+        <button
+          onClick={() => window.location.reload()}
+          className="w-full bg-white text-navy-900 rounded-2xl py-4 text-[14px] font-semibold active:scale-[0.98] transition-all shadow-lg shadow-white/10"
+        >
+          I've verified — continue
+        </button>
+        <button
+          onClick={resend}
+          disabled={resending || !email}
+          className="w-full bg-white/10 border border-white/15 text-white rounded-2xl py-3.5 text-[13px] font-semibold active:scale-[0.98] transition-all disabled:opacity-50 backdrop-blur-sm"
+        >
+          {resending ? 'Sending…' : 'Resend confirmation email'}
+        </button>
+      </div>
 
       {resendMessage && (
-        <p className="text-white/70 text-[11px] mt-4 text-center max-w-xs">{resendMessage}</p>
+        <p className="text-receive-50 text-[12px] mt-4 max-w-[290px] leading-relaxed">{resendMessage}</p>
       )}
 
-      <button
-        onClick={() => window.location.reload()}
-        className="mt-8 text-white/40 text-[11px] underline"
-      >
-        I've verified — refresh
+      <button onClick={() => signOut()} className="text-white/45 text-[11px] underline mt-6 min-h-[44px]">
+        Use a different account
       </button>
     </div>
   );

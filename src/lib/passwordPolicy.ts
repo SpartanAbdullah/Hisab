@@ -23,6 +23,21 @@ export interface PasswordValidationResult {
   valid: boolean;
 }
 
+// Per-condition results for a live signup checklist (each turns green as met).
+export interface PasswordChecks {
+  length: boolean;
+  letter: boolean;
+  number: boolean;
+}
+
+export function passwordChecks(password: string): PasswordChecks {
+  return {
+    length: password.length >= PASSWORD_MIN_LENGTH,
+    letter: /[A-Za-z]/.test(password),
+    number: /\d/.test(password),
+  };
+}
+
 export function validatePassword(password: string): PasswordValidationResult {
   if (password.length < PASSWORD_MIN_LENGTH) {
     return { code: "too_short", valid: false };

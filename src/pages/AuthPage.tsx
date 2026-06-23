@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Wallet, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Wallet, Mail, Lock, ArrowRight, Eye, EyeOff, Check, MailCheck } from 'lucide-react';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
+import { supabase } from '../lib/supabase';
 import { useT, useI18nStore } from '../lib/i18n';
 import { Globe } from 'lucide-react';
-import { validatePassword, PASSWORD_MIN_LENGTH } from '../lib/passwordPolicy';
+import { validatePassword, passwordChecks } from '../lib/passwordPolicy';
 
 export function AuthPage() {
   const t = useT();
@@ -15,6 +16,34 @@ export function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  // After a successful signup we swap the form for a prominent "check your
+  // email" screen instead of a faint message line.
+  const [signupSent, setSignupSent] = useState(false);
+  const [sentEmail, setSentEmail] = useState('');
+  const [resending, setResending] = useState(false);
+  const [resentMsg, setResentMsg] = useState('');
+
+  const checks = passwordChecks(password);
+
+  const resendVerification = async () => {
+    if (!sentEmail) return;
+    setResending(true);
+    setResentMsg('');
+    try {
+      const { error: resendError } = await supabase.auth.resend({ type: 'signup', email: sentEmail });
+      setResentMsg(resendError ? resendError.message : t('verify_resent'));
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const backToLogin = () => {
+    setSignupSent(false);
+    setMode('login');
+    setPassword('');
+    setMessage('');
+    setResentMsg('');
+  };
 
   const handleSubmit = async () => {
     if (!email) return;
@@ -33,7 +62,12 @@ export function AuthPage() {
 
     if (mode === 'signup') {
       const result = await signUp(email, password);
-      setMessage(result.message);
+      if (result.success) {
+        setSentEmail(email);
+        setSignupSent(true);
+      } else {
+        setMessage(result.message);
+      }
     } else if (mode === 'reset') {
       const result = await requestPasswordReset(email);
       setMessage(result.message);
@@ -59,6 +93,35 @@ export function AuthPage() {
         <Globe size={11} /> {lang === 'ur' ? 'EN' : 'UR'}
       </button>
 
+      {/* Prominent "check your email" screen after a successful signup. */}
+      {signupSent && (
+        <div className="relative text-white flex flex-col items-center justify-center min-h-dvh px-8 text-center animate-fade-in">
+          <div className="w-20 h-20 rounded-3xl bg-receive-600/25 flex items-center justify-center mb-6 backdrop-blur-sm border border-receive-600/30 animate-bounce-in">
+            <MailCheck size={36} className="text-receive-50" strokeWidth={1.5} />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight mb-3">{t('verify_title')}</h1>
+          <p className="text-white/60 text-[13px] leading-relaxed max-w-[300px]">{t('verify_body')}</p>
+          <p className="text-white text-[14px] font-semibold mt-1.5 break-all max-w-[300px]">{sentEmail}</p>
+          <p className="text-white/45 text-[12px] leading-relaxed max-w-[290px] mt-4">{t('verify_instruction')}</p>
+          <p className="text-white/35 text-[11px] leading-relaxed max-w-[290px] mt-2">{t('verify_spam')}</p>
+
+          <div className="w-full max-w-[300px] mt-8 space-y-3">
+            <button onClick={backToLogin}
+              className="w-full bg-white text-navy-900 rounded-2xl py-4 text-[14px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-white/10">
+              {t('verify_back_login')} <ArrowRight size={16} />
+            </button>
+            <button onClick={resendVerification} disabled={resending}
+              className="w-full bg-white/10 border border-white/15 text-white rounded-2xl py-3.5 text-[13px] font-semibold active:scale-[0.98] transition-all disabled:opacity-50 backdrop-blur-sm">
+              {resending ? t('verify_resending') : t('verify_resend')}
+            </button>
+          </div>
+          {resentMsg && <p className="text-receive-50 text-[12px] mt-4 max-w-[290px] leading-relaxed">{resentMsg}</p>}
+          <button onClick={() => { setSignupSent(false); setMode('signup'); setResentMsg(''); }}
+            className="text-white/45 text-[11px] underline mt-6 min-h-[44px]">{t('verify_diff_email')}</button>
+        </div>
+      )}
+
+      {!signupSent && (
       <div className="relative text-white flex flex-col min-h-dvh px-8">
         {/* Logo */}
         <div className="flex flex-col items-center pt-16 mb-8">
@@ -111,15 +174,20 @@ export function AuthPage() {
                 </button>
               </div>
               {mode === 'signup' && (
-                <p className="text-white/50 text-[11px] leading-relaxed">
-                  {password.length === 0
-                    ? t('password_hint_12')
-                    : password.length < PASSWORD_MIN_LENGTH
-                      ? t('password_too_short')
-                      : validatePassword(password).valid
-                        ? t('password_hint_12')
-                        : t('password_missing_complexity')}
-                </p>
+                <div className="space-y-1.5 pt-0.5">
+                  {([
+                    { ok: checks.length, label: t('pw_check_length') },
+                    { ok: checks.letter, label: t('pw_check_letter') },
+                    { ok: checks.number, label: t('pw_check_number') },
+                  ]).map((c, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-colors ${c.ok ? 'bg-receive-600 text-white' : 'bg-white/10 text-transparent border border-white/15'}`}>
+                        <Check size={10} strokeWidth={3.2} />
+                      </span>
+                      <span className={`text-[11.5px] transition-colors ${c.ok ? 'text-receive-50 font-medium' : 'text-white/45'}`}>{c.label}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </>
           )}
@@ -175,6 +243,7 @@ export function AuthPage() {
           )}
         </p>
       </div>
+      )}
     </div>
   );
 }
