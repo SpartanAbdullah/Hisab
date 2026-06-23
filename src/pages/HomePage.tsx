@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Wallet2,
+  Coins,
   Plus,
   BarChart3,
   HandCoins,
@@ -968,7 +969,7 @@ export function HomePage() {
               />
               <QuickTile
                 label={t("kameti_title")}
-                icon={Users}
+                icon={Coins}
                 iconClass="text-accent-600"
                 onClick={() => navigate("/kameti")}
               />

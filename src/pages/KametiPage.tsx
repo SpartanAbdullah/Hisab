@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Plus, Users, ChevronRight, Shield } from 'lucide-react';
+import { Plus, Coins, ChevronRight, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useCommitteeStore } from '../stores/committeeStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
@@ -57,7 +57,7 @@ export function KametiPage() {
           <ListSkeleton rows={3} />
         ) : committees.length === 0 ? (
           <EmptyState
-            icon={Users}
+            icon={Coins}
             tone="accent"
             title={t('kameti_empty_title')}
             description={t('kameti_empty_desc')}
@@ -80,7 +80,7 @@ export function KametiPage() {
               >
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-100 to-accent-50 text-accent-600 flex items-center justify-center shrink-0">
-                    <Users size={20} strokeWidth={1.8} />
+                    <Coins size={20} strokeWidth={1.8} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">

@@ -1,15 +1,16 @@
 // Single source of truth for password policy.
 //
-// Rules (Phase H2 hardening — Android prod):
-// 1. At least 12 characters.
+// Rules:
+// 1. At least 8 characters.
 // 2. Must contain at least one letter AND at least one digit.
 //
-// We deliberately do not enforce special-character complexity. The 12-char
-// minimum is the stronger guard against brute-force; forcing symbols is
-// well-documented to encourage weaker, more memorable passwords. This
-// matches current NIST SP 800-63B guidance.
+// 8 is the signup-friction sweet spot — still solidly secure given Supabase
+// hashes + rate-limits auth, but far less of a wall at the moment of signup.
+// We deliberately do not enforce special-character complexity; forcing symbols
+// is well-documented to encourage weaker, more memorable passwords (NIST
+// SP 800-63B).
 
-export const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MIN_LENGTH = 8;
 
 export type PasswordValidationCode =
   | "ok"

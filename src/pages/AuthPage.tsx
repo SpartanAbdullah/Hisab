@@ -44,7 +44,7 @@ export function AuthPage() {
     setLoading(false);
   };
 
-  const inputClass = "w-full bg-white/8 border border-white/15 rounded-2xl px-4 py-4 pl-12 text-white placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30 text-[15px] tracking-tight backdrop-blur-sm transition-all";
+  const inputClass = "w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-4 pl-12 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-white/25 focus:border-white/35 text-[15px] tracking-tight backdrop-blur-sm transition-all";
 
   return (
     <div className="min-h-dvh relative overflow-hidden bg-navy-bloom">
@@ -66,7 +66,10 @@ export function AuthPage() {
             <Wallet size={28} strokeWidth={1.5} />
           </div>
           <h1 className="text-3xl font-bold tracking-tighter">Hisaab</h1>
-          <p className="text-white/50 text-[13px] mt-1">{t('onboard_tagline')}</p>
+          <p className="text-white/55 text-[13px] mt-1 text-center max-w-[280px] leading-relaxed">{t('onboard_tagline')}</p>
+          {/* Trust line — the no-ads / privacy promise belongs on the very
+              first screen, not hidden until after onboarding. */}
+          <p className="text-white/40 text-[10.5px] mt-3 tracking-wide">{t('auth_trust')}</p>
         </div>
 
         {/* Toggle */}

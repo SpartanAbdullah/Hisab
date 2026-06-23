@@ -15,6 +15,7 @@ import { UserAvatar } from '../components/UserAvatar';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { useToast } from '../components/Toast';
 import { ContactDetailSheet } from './ContactDetailSheet';
+import { MyConnectCode } from '../components/MyConnectCode';
 import { useT } from '../lib/i18n';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
@@ -197,6 +198,10 @@ export function ContactsPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+        {/* Your own connect code — front and centre so sharing it to get
+            connected is the easiest thing on the page. */}
+        {!showSearch && !showAdd && <MyConnectCode />}
+
         {showSearch && (
           <div className="relative">
             <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />

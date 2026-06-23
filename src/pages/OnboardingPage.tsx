@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Language } from '../lib/i18n';
-import { Wallet, ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle } from 'lucide-react';
+import { Wallet, ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle, Sparkles } from 'lucide-react';
+import { MODE_QUIZ, recommendMode } from '../lib/modeQuiz';
 import { useOnboardingStore } from '../stores/onboardingStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useI18nStore, useT } from '../lib/i18n';
@@ -50,6 +51,19 @@ export function OnboardingPage() {
   const [currency, setCurrency] = useState<Currency>('AED');
   const [selectedMode, setSelectedMode] = useState<AppMode>('full_tracker');
   const [loading, setLoading] = useState(false);
+
+  // Mode quiz state. Each answer leans toward a mode; on completion we suggest
+  // one (the user can still pick either). Skip jumps straight to the cards.
+  const [quizAnswers, setQuizAnswers] = useState<AppMode[]>([]);
+  const [quizSkipped, setQuizSkipped] = useState(false);
+  const quizComplete = quizAnswers.length === MODE_QUIZ.length;
+  const quizDone = quizComplete || quizSkipped;
+  const recommended = recommendMode(quizAnswers);
+  const answerQuiz = (leansTo: AppMode) => {
+    const next = [...quizAnswers, leansTo];
+    setQuizAnswers(next);
+    if (next.length === MODE_QUIZ.length) setSelectedMode(recommendMode(next));
+  };
 
   const handleStart = async () => {
     if (!name.trim()) return;
@@ -206,72 +220,120 @@ export function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 3: Mode Selection */}
+        {/* Step 3: Mode quiz → recommendation */}
         {step === 3 && (
           <div className="flex-1 flex flex-col px-8 pt-16 animate-fade-in">
-            <div className="mb-6">
-              <StepDots current={3} />
-              <h2 className="text-2xl font-bold tracking-tight text-white">{t('mode_select_title')}</h2>
-              <p className="text-white/60 text-[13px] mt-2">{t('mode_select_sub')}</p>
-            </div>
+            <StepDots current={3} />
 
-            <div className="space-y-4 flex-1">
-              {/* Full Tracker — listed first to match the default selectedMode and
-                  carry the "Recommended" pill. */}
-              <button onClick={() => setSelectedMode('full_tracker')}
-                className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'full_tracker' ? 'border-warn-600/60 bg-warn-600/20 scale-[1.02] shadow-lg shadow-warn-600/15 ring-1 ring-warn-600/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${selectedMode === 'full_tracker' ? 'bg-warn-600/30' : 'bg-warn-600/20'}`}>
-                    <BarChart3 size={20} className={`transition-colors ${selectedMode === 'full_tracker' ? 'text-warn-50' : 'text-warn-50'}`} strokeWidth={1.5} />
+            {!quizDone ? (
+              /* ── Quiz: one fun question at a time ── */
+              <>
+                <div className="mb-5">
+                  <h2 className="text-2xl font-bold tracking-tight text-white">{t('quiz_title')}</h2>
+                  <p className="text-white/60 text-[13px] mt-2 leading-relaxed">{t('quiz_sub')}</p>
+                </div>
+                <p className="text-white/40 text-[11px] font-semibold uppercase tracking-widest mb-4">
+                  {t('quiz_progress').replace('{n}', String(quizAnswers.length + 1)).replace('{total}', String(MODE_QUIZ.length))}
+                </p>
+                <div className="flex-1">
+                  <p className="text-white text-[17px] font-bold mb-5 leading-snug">{t(MODE_QUIZ[quizAnswers.length].promptKey as Parameters<typeof t>[0])}</p>
+                  <div className="space-y-3">
+                    {MODE_QUIZ[quizAnswers.length].options.map((opt) => (
+                      <button
+                        key={opt.labelKey}
+                        onClick={() => answerQuiz(opt.leansTo)}
+                        className="w-full flex items-center gap-3.5 rounded-2xl border-2 border-white/10 bg-white/5 px-4 py-4 text-left active:scale-[0.98] transition-all backdrop-blur-sm"
+                      >
+                        <span className="text-2xl shrink-0">{opt.emoji}</span>
+                        <span className="text-[13.5px] text-white/90 font-medium leading-snug">{t(opt.labelKey as Parameters<typeof t>[0])}</span>
+                      </button>
+                    ))}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className={`font-bold text-[14px] tracking-tight transition-colors ${selectedMode === 'full_tracker' ? 'text-white' : 'text-white/80'}`}>{t('mode_full_title')}</p>
-                      <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-600">
-                        {t('onboard_recommended')}
-                      </span>
+                </div>
+                <div className="pb-6">
+                  <button onClick={() => setQuizSkipped(true)} className="text-[12px] text-white/45 w-full text-center min-h-[44px] font-medium">{t('quiz_skip')}</button>
+                  <button onClick={() => setStep(2)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
+                </div>
+              </>
+            ) : (
+              /* ── Result: recommendation + both mode cards (still selectable) ── */
+              <>
+                <div className="mb-4">
+                  <h2 className="text-2xl font-bold tracking-tight text-white">{t('mode_select_title')}</h2>
+                </div>
+
+                {!quizSkipped && (
+                  <div className="mb-4 flex items-start gap-2.5 rounded-2xl bg-accent-500/20 border border-accent-500/30 px-4 py-3 backdrop-blur-sm animate-fade-in">
+                    <Sparkles size={15} className="text-accent-100 shrink-0 mt-0.5" />
+                    <p className="text-[12px] text-white/90 font-medium leading-snug">
+                      {t('quiz_reco')}{' '}
+                      <span className="font-bold text-white">{recommended === 'full_tracker' ? t('mode_full_title') : t('mode_splits_title')}</span>
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-4 flex-1">
+                  {/* Full Tracker */}
+                  <button onClick={() => setSelectedMode('full_tracker')}
+                    className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'full_tracker' ? 'border-warn-600/60 bg-warn-600/20 scale-[1.02] shadow-lg shadow-warn-600/15 ring-1 ring-warn-600/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${selectedMode === 'full_tracker' ? 'bg-warn-600/30' : 'bg-warn-600/20'}`}>
+                        <BarChart3 size={20} className="text-warn-50" strokeWidth={1.5} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className={`font-bold text-[14px] tracking-tight ${selectedMode === 'full_tracker' ? 'text-white' : 'text-white/80'}`}>{t('mode_full_title')}</p>
+                          {!quizSkipped && recommended === 'full_tracker' && (
+                            <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-600">{t('quiz_for_you')}</span>
+                          )}
+                        </div>
+                        <p className={`text-[11px] ${selectedMode === 'full_tracker' ? 'text-warn-50/85' : 'text-white/40'}`}>{t('mode_full_sub')}</p>
+                      </div>
                     </div>
-                    <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-warn-50/85' : 'text-white/40'}`}>{t('mode_full_sub')}</p>
-                  </div>
-                </div>
-                <div className="space-y-1.5 ml-14">
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_1')}</p>
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_2')}</p>
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_3')}</p>
-                </div>
-              </button>
+                    <div className="space-y-1.5 ml-14">
+                      <p className={`text-[11px] ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_1')}</p>
+                      <p className={`text-[11px] ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_2')}</p>
+                      <p className={`text-[11px] ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_3')}</p>
+                    </div>
+                  </button>
 
-              {/* Splits Only */}
-              <button onClick={() => setSelectedMode('splits_only')}
-                className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'splits_only' ? 'border-accent-500/60 bg-accent-500/20 scale-[1.02] shadow-lg shadow-accent-500/15 ring-1 ring-accent-500/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${selectedMode === 'splits_only' ? 'bg-accent-500/30' : 'bg-accent-500/20'}`}>
-                    <Users size={20} className={`transition-colors ${selectedMode === 'splits_only' ? 'text-accent-100' : 'text-accent-100'}`} strokeWidth={1.5} />
-                  </div>
-                  <div>
-                    <p className={`font-bold text-[14px] tracking-tight transition-colors ${selectedMode === 'splits_only' ? 'text-white' : 'text-white/80'}`}>{t('mode_splits_title')}</p>
-                    <p className={`text-[11px] transition-colors ${selectedMode === 'splits_only' ? 'text-accent-100/70' : 'text-white/40'}`}>{t('mode_splits_sub')}</p>
-                  </div>
-                </div>
-                <div className="space-y-1.5 ml-14">
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_1')}</p>
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_2')}</p>
-                  <p className={`text-[11px] transition-colors ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_3')}</p>
-                </div>
-              </button>
+                  {/* Splits Only */}
+                  <button onClick={() => setSelectedMode('splits_only')}
+                    className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'splits_only' ? 'border-accent-500/60 bg-accent-500/20 scale-[1.02] shadow-lg shadow-accent-500/15 ring-1 ring-accent-500/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${selectedMode === 'splits_only' ? 'bg-accent-500/30' : 'bg-accent-500/20'}`}>
+                        <Users size={20} className="text-accent-100" strokeWidth={1.5} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className={`font-bold text-[14px] tracking-tight ${selectedMode === 'splits_only' ? 'text-white' : 'text-white/80'}`}>{t('mode_splits_title')}</p>
+                          {!quizSkipped && recommended === 'splits_only' && (
+                            <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-600">{t('quiz_for_you')}</span>
+                          )}
+                        </div>
+                        <p className={`text-[11px] ${selectedMode === 'splits_only' ? 'text-accent-100/70' : 'text-white/40'}`}>{t('mode_splits_sub')}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 ml-14">
+                      <p className={`text-[11px] ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_1')}</p>
+                      <p className={`text-[11px] ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_2')}</p>
+                      <p className={`text-[11px] ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_3')}</p>
+                    </div>
+                  </button>
 
-              {/* Reassurance — switching modes is non-destructive and lives in Settings. */}
-              <p className="text-white/45 text-[11px] text-center px-2">{t('onboard_switch_anytime')}</p>
-            </div>
+                  <p className="text-white/45 text-[11px] text-center px-2">{t('onboard_switch_anytime')}</p>
+                </div>
 
-            <div className="pb-4">
-              <Button variant="secondary" size="lg" onClick={() => setStep(4)} icon={<ArrowRight size={16} />}>
-                {t('onboard_next')}
-              </Button>
-              <button onClick={() => setStep(2)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] mt-2 font-medium">
-                {t('onboard_back')}
-              </button>
-            </div>
+                <div className="pb-4">
+                  <Button variant="secondary" size="lg" onClick={() => setStep(4)} icon={<ArrowRight size={16} />}>
+                    {t('onboard_next')}
+                  </Button>
+                  <button onClick={() => { setQuizAnswers([]); setQuizSkipped(false); }} className="text-[11px] text-white/40 w-full text-center min-h-[44px] mt-2 font-medium">
+                    {t('quiz_retake')}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 

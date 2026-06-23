@@ -893,8 +893,12 @@ const S = {
   // ── Onboarding extras ──
   onboard_step_of: { ur: "ka", en: "of" },
   onboard_tagline: {
-    ur: "Qarz, kharche, remittance, splits — sab ek jaga, sab clear.",
-    en: "Loans, expenses, remittances, splits — all in one place, all clear.",
+    ur: "Qarz, kharche, kameti, splits — sab ek jaga, sab clear.",
+    en: "Loans, expenses, committees, splits — all in one place, all clear.",
+  },
+  auth_trust: {
+    ur: "Koi ads nahi · Aap ka data private · Hamesha free shuru",
+    en: "No ads · Your data stays private · Free to start",
   },
   onboard_tagline_sub: {
     ur: "Pakistani expats ke liye banaya — AED ya PKR, dono mein chalta hai.",
@@ -1354,6 +1358,12 @@ const S = {
 
   // ── Phase G7: minor standalone UI strings ──
   contacts_title: { ur: "Aap ke Contacts", en: "Your Contacts" },
+  connect_my_code: { ur: "Aap ka connect code", en: "Your connect code" },
+  connect_my_code_desc: { ur: "Ye share karein taake log aap ko add aur connect kar sakein", en: "Share it so people can add and connect with you" },
+  connect_share: { ur: "Share", en: "Share" },
+  connect_share_text: { ur: "Mujhe Hisaab par add karein — mera code hai", en: "Add me on Hisaab — my code is" },
+  connect_code_copied: { ur: "Code copy ho gaya", en: "Code copied" },
+  connect_code_copy_failed: { ur: "Copy nahi hua", en: "Couldn't copy" },
   contacts_empty: { ur: "Abhi koi contact nahi.", en: "No contacts yet." },
   contacts_link_help: {
     ur: "Dusra person say kahain wo Hisaab use kare aur apna code ap kay sath share kare. Phir yahan link karne ke baad app connect ho jaogy aur loan/split approvals bheje ja sakte hain.",
@@ -1473,12 +1483,12 @@ const S = {
 
   // Password policy hint — surfaced inline on signup + change.
   password_hint_12: {
-    ur: "Kam se kam 12 chars. Harf aur number dono shamil ho.",
-    en: "At least 12 characters with letters and numbers.",
+    ur: "Kam se kam 8 chars. Harf aur number dono shamil ho.",
+    en: "At least 8 characters, with letters and numbers.",
   },
   password_too_short: {
-    ur: "Password chhota hai. 12+ chars use karein.",
-    en: "Password too short. Use 12 or more characters.",
+    ur: "Password chhota hai. 8+ chars use karein.",
+    en: "A bit short — use 8 or more characters.",
   },
   password_missing_complexity: {
     ur: "Password mein harf aur number dono honay chahiye.",
@@ -1826,6 +1836,24 @@ const S = {
   tx_search_placeholder: { ur: "Notes, category, banda, amount dhoondo", en: "Search notes, category, person, amount" },
   // Onboarding
   onboard_recommended: { ur: "Tajweez karda", en: "Recommended" },
+  // ── Onboarding mode quiz ──
+  quiz_title: { ur: "Chalein aap ka mode dhoondte hain", en: "Let's find your fit" },
+  quiz_sub: { ur: "3 quick taps — hum ek mode tajweez karenge (aap phir bhi koi bhi chun sakte hain)", en: "3 quick taps — we'll suggest a mode (you can still pick either)" },
+  quiz_progress: { ur: "Sawal {n} / {total}", en: "Question {n} of {total}" },
+  quiz_q1: { ur: "Hisaab aap ke liye kis liye hai?", en: "What's Hisaab for you?" },
+  quiz_q1_a: { ur: "Apna saara paisa track karna — kharche, budget, accounts", en: "Track all my money — spending, budgets, accounts" },
+  quiz_q1_b: { ur: "Sirf len-den — doston ke saath bill split", en: "Just who-owes-who — splitting bills with friends" },
+  quiz_q1_c: { ur: "Sach kahun to, thoda dono", en: "Honestly, a bit of both" },
+  quiz_q2: { ur: "Kya aap ke paas cash ya bank accounts hain jo aap dekhna chahein?", en: "Do you keep cash or bank accounts you'd like to see?" },
+  quiz_q2_a: { ur: "Haan — mujhe mere balances dikhao", en: "Yes — show me my balances" },
+  quiz_q2_b: { ur: "Nahi — main bas logon se hisaab barabar karta hun", en: "Nope — I just settle up with people" },
+  quiz_q3: { ur: "Budget aur spending insights chahiye?", en: "Want budgets & spending insights?" },
+  quiz_q3_a: { ur: "Haan, mujhe track par rakho", en: "Yes, help me stay on track" },
+  quiz_q3_b: { ur: "Nahi, simple rakho — sirf IOUs aur splits", en: "No, keep it simple — just IOUs & splits" },
+  quiz_skip: { ur: "Skip — main khud chun lunga", en: "Skip — I'll choose myself" },
+  quiz_reco: { ur: "Aap ke jawabat ke mutabiq, hum tajweez karte hain:", en: "Based on your answers, we suggest:" },
+  quiz_retake: { ur: "Quiz dobara karein", en: "Retake quiz" },
+  quiz_for_you: { ur: "Aap ke liye", en: "For you" },
   onboard_switch_anytime: { ur: "Settings mein kabhi bhi badal sakte ho.", en: "You can switch anytime in Settings." },
   // Inbox
   confirm_settle_cta: { ur: "Settlement confirm karo", en: "Confirm settlement" },
