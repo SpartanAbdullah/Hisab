@@ -45,6 +45,10 @@ export interface Transaction {
   reconciledBy?: string | null;
   updatedAt?: string;
   deletedAt?: string | null;
+  // Storage path of an attached receipt photo in the private `receipts`
+  // bucket ({user_id}/{transaction_id}.jpg). Null = no receipt. Displayed via
+  // a short-lived signed URL — see receiptStorage.ts.
+  receiptPath?: string | null;
 }
 
 export type LoanType = 'given' | 'taken';

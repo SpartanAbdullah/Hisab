@@ -1,6 +1,6 @@
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  HandCoins, Handshake, RotateCcw, Target, Landmark, Check,
+  HandCoins, Handshake, RotateCcw, Target, Landmark, Check, Paperclip,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { MouseEvent } from 'react';
@@ -168,9 +168,14 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
         <Icon size={15} strokeWidth={1.8} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium text-ink-900 truncate tracking-tight">
-          {title}
-          {!labelHasPerson && personName ? ` · ${personName}` : ''}
+        <p className="text-[13px] font-medium text-ink-900 tracking-tight flex items-center gap-1">
+          <span className="truncate">
+            {title}
+            {!labelHasPerson && personName ? ` · ${personName}` : ''}
+          </span>
+          {transaction.receiptPath ? (
+            <Paperclip size={11} className="text-ink-400 shrink-0" aria-label={t('receipt_attached')} />
+          ) : null}
         </p>
         <p className="text-[10.5px] text-ink-500 mt-0.5 truncate">
           {detailParts.join(' · ')}

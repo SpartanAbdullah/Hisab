@@ -9,6 +9,7 @@ import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
 import { confirmDestructive } from './ConfirmDestructiveSheet';
 import { CategoryPicker } from './CategoryPicker';
+import { ReceiptField } from './ReceiptField';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { parseInternalNote } from '../lib/internalNotes';
@@ -25,6 +26,7 @@ interface Props {
 export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const { accounts, loadAccounts } = useAccountStore();
   const { updateTransaction, deleteTransaction } = useTransactionStore();
+  const persistReceiptPath = useTransactionStore((s) => s.setReceiptPath);
   const loans = useLoanStore((s) => s.loans);
   const toast = useToast();
   const t = useT();
@@ -36,6 +38,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const [originalPersonId, setOriginalPersonId] = useState<string | null>(null);
   const [category, setCategory] = useState('');
   const [notes, setNotes] = useState('');
+  const [receiptPath, setReceiptPath] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -62,7 +65,21 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
     setOriginalPersonId(hydratedId);
     setCategory(transaction.category ?? '');
     setNotes(parsedNote.visibleNote);
+    setReceiptPath(transaction.receiptPath ?? null);
   }, [transaction, open]);
+
+  // Persist a receipt attach/remove immediately (it's a side attachment, not
+  // part of the amount/category edit) so it survives even if the form is
+  // closed without saving.
+  const handleReceiptChange = async (path: string | null) => {
+    if (!transaction) return;
+    setReceiptPath(path);
+    try {
+      await persistReceiptPath(transaction.id, path);
+    } catch {
+      toast.show({ type: 'error', title: t('receipt_failed') });
+    }
+  };
 
   if (!transaction) return null;
 
@@ -371,6 +388,12 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
             placeholder="Optional..."
           />
         </div>
+
+        <ReceiptField
+          transactionId={transaction.id}
+          receiptPath={receiptPath}
+          onChange={(path) => void handleReceiptChange(path)}
+        />
       </div>
     </Modal>
   );

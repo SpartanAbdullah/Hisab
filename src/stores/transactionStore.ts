@@ -96,6 +96,9 @@ interface TransactionState {
     options?: { allowLinkedGroupExpense?: boolean }
   ) => Promise<Transaction>;
   setReconciled: (id: string, isReconciled: boolean) => Promise<void>;
+  // Attach/detach a receipt photo (storage path or null). Lightweight — patches
+  // only receipt_path, never re-runs balance logic (unlike updateTransaction).
+  setReceiptPath: (id: string, receiptPath: string | null) => Promise<void>;
   deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean }) => Promise<void>;
   // Used by rollback paths that need to re-insert a transaction with its
   // original id and re-apply the matching balance delta. Not for general use.
@@ -1040,6 +1043,19 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       transactions: state.transactions.map(transaction =>
         transaction.id === id ? updated : transaction
       ),
+    }));
+  },
+
+  setReceiptPath: async (id, receiptPath) => {
+    const existing = get().transactions.find((t) => t.id === id) ?? await transactionsDb.get(id);
+    if (!existing) throw new Error('Transaction not found');
+    const changes: Partial<Transaction> = { receiptPath, updatedAt: new Date().toISOString() };
+    await transactionsDb.update(id, changes);
+    const updated = { ...existing, ...changes };
+    await mirrorPut(db.transactions, updated);
+    markMirrorStale('transactions');
+    set(state => ({
+      transactions: state.transactions.map(t => (t.id === id ? updated : t)),
     }));
   },
 

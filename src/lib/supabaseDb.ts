@@ -160,6 +160,7 @@ export const transactionsDb = {
       is_reconciled: t.isReconciled ?? false,
       reconciled_at: t.reconciledAt ?? null,
       reconciled_by: t.reconciledBy ?? null,
+      receipt_path: t.receiptPath ?? null,
       deleted_at: null,
     });
     if (error) throw error;
@@ -181,6 +182,7 @@ export const transactionsDb = {
     if (changes.isReconciled !== undefined) row.is_reconciled = changes.isReconciled;
     if (changes.reconciledAt !== undefined) row.reconciled_at = changes.reconciledAt;
     if (changes.reconciledBy !== undefined) row.reconciled_by = changes.reconciledBy;
+    if (changes.receiptPath !== undefined) row.receipt_path = changes.receiptPath;
     const { error } = await supabase.from('transactions').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
@@ -1234,6 +1236,7 @@ function mapTransaction(r: Record<string, unknown>): Transaction {
     isReconciled: Boolean(r.is_reconciled),
     reconciledAt: (r.reconciled_at as string) ?? null,
     reconciledBy: (r.reconciled_by as string) ?? null,
+    receiptPath: (r.receipt_path as string) ?? null,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
     deletedAt: (r.deleted_at as string) ?? null,
   };
