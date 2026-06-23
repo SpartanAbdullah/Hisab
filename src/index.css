@@ -295,6 +295,19 @@ html.dark .border-slate-200 { border-color: var(--color-cream-border); }
   .animate-sparkle { animation: none; }
 }
 
+/* Rolling die for the Kameti ballot draw — tumbles and bounces. */
+@keyframes dice-roll {
+  0%   { transform: rotate(0deg) scale(1) translateY(0); }
+  25%  { transform: rotate(200deg) scale(1.15) translateY(-12px); }
+  50%  { transform: rotate(360deg) scale(0.95) translateY(0); }
+  75%  { transform: rotate(560deg) scale(1.15) translateY(-12px); }
+  100% { transform: rotate(720deg) scale(1) translateY(0); }
+}
+.animate-dice { animation: dice-roll 0.95s cubic-bezier(0.45, 0, 0.55, 1) infinite; transform-origin: center; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-dice { animation: none; }
+}
+
 /* ========== APP LOADING SCREEN ========== */
 .app-loading-screen {
   background:

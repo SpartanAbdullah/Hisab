@@ -1106,6 +1106,13 @@ export function SettingsPage() {
           <div className={sectionClass}>
             <button
               onClick={async () => {
+                const ok = await confirmDestructive({
+                  title: t("logout_confirm_title"),
+                  description: t("logout_confirm_body"),
+                  confirmLabel: t("logout_confirm_yes"),
+                  tone: "warning",
+                });
+                if (!ok) return;
                 await signOut();
                 window.location.reload();
               }}

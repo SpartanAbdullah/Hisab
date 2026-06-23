@@ -26,8 +26,11 @@ export function KametiDetailPage() {
 
   const getCommittee = useCommitteeStore((s) => s.getCommittee);
   const committee = useCommitteeStore((s) => s.committees.find((c) => c.id === id));
-  const membersOf = useCommitteeStore((s) => s.membersOf);
-  const paymentsOf = useCommitteeStore((s) => s.paymentsOf);
+  // Subscribe to the RAW members/payments arrays (not the selector functions)
+  // so the page re-renders the instant a payment toggles or a payout is
+  // confirmed — otherwise the store updates but the UI stays stale.
+  const allMembers = useCommitteeStore((s) => s.members);
+  const allPayments = useCommitteeStore((s) => s.payments);
   const loadAll = useCommitteeStore((s) => s.loadAll);
   const runBallot = useCommitteeStore((s) => s.runBallot);
   const ensureShareToken = useCommitteeStore((s) => s.ensureShareToken);
@@ -38,8 +41,11 @@ export function KametiDetailPage() {
   const load = useCallback(async () => { if (!getCommittee(id)) await loadAll(); }, [getCommittee, id, loadAll]);
   const { status } = useAsyncLoad(load);
 
-  const members = useMemo(() => (committee ? membersOf(committee.id) : []), [committee, membersOf]);
-  const payments = useMemo(() => (committee ? paymentsOf(committee.id) : []), [committee, paymentsOf]);
+  const members = useMemo(
+    () => allMembers.filter((m) => m.committeeId === id).sort((a, b) => (a.slot ?? 999) - (b.slot ?? 999) || a.createdAt.localeCompare(b.createdAt)),
+    [allMembers, id],
+  );
+  const payments = useMemo(() => allPayments.filter((p) => p.committeeId === id), [allPayments, id]);
 
   const liveRound = committee ? currentRound(committee.startDate, committee.cadence, committee.totalRounds) : 1;
   const [viewRound, setViewRound] = useState<number | null>(null);
@@ -65,8 +71,13 @@ export function KametiDetailPage() {
 
   const handleDraw = async () => {
     setDrawing(true);
+    const start = Date.now();
     try {
       await runBallot(committee.id);
+      // Hold the rolling-dice animation for a minimum beat so the draw feels
+      // like an event, not an instant jump.
+      const elapsed = Date.now() - start;
+      if (elapsed < 1900) await new Promise((r) => setTimeout(r, 1900 - elapsed));
       toast.show({ type: 'success', title: t('kameti_draw_done') });
     } catch {
       toast.show({ type: 'error', title: t('error') });
@@ -131,6 +142,16 @@ export function KametiDetailPage() {
     <main className="min-h-dvh bg-cream-bg pb-28">
       <PageHeader title={committee.name} back />
 
+      {/* Rolling-dice overlay while the ballot draws — turns the draw into a
+          little moment of suspense. */}
+      {drawing && (
+        <div className="fixed inset-0 z-[70] bg-navy-900/85 backdrop-blur-sm flex flex-col items-center justify-center px-8 text-center">
+          <span className="text-[64px] leading-none animate-dice inline-block" aria-hidden>🎲</span>
+          <p className="text-white text-[15px] font-bold mt-7">{t('kameti_drawing')}</p>
+          <p className="text-white/55 text-[12px] mt-2 max-w-[280px] leading-relaxed">{t('kameti_draw_fair_note')}</p>
+        </div>
+      )}
+
       <div className="px-5 pt-2 space-y-4">
         {/* Pool + round + trust badges */}
         <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
@@ -193,7 +214,7 @@ export function KametiDetailPage() {
               </div>
               <button
                 onClick={() => confirmPayout(recipient.id, !recipient.payoutReceivedAt)}
-                className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 ${recipient.payoutReceivedAt ? 'bg-receive-600 text-white' : 'bg-white text-ink-900 border border-cream-border'}`}
+                className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 ${recipient.payoutReceivedAt ? 'bg-receive-600 text-white' : 'bg-cream-card text-ink-900 border border-cream-border'}`}
               >
                 <Check size={12} strokeWidth={2.8} /> {recipient.payoutReceivedAt ? t('kameti_received') : t('kameti_mark_received')}
               </button>
@@ -211,6 +232,7 @@ export function KametiDetailPage() {
               <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">{t('kameti_this_round')}</h2>
               <span className="text-[11px] font-semibold text-ink-700 tabular-nums">{t('kameti_collected').replace('{paid}', String(collected)).replace('{total}', String(members.length))}</span>
             </div>
+            <p className="text-[11px] text-ink-500 mb-2.5 -mt-1">{t('kameti_tap_mark_paid')}</p>
             <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-cream-hairline overflow-hidden">
               {members.map((m) => {
                 const paid = hasPaid(payments, m.id, round);
