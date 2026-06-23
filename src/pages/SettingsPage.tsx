@@ -25,6 +25,7 @@ import {
   Tags,
   Moon,
   Coins,
+  Lightbulb,
   Database,
   RefreshCw,
   FileText,
@@ -139,6 +140,7 @@ export function SettingsPage() {
   const [showCategories, setShowCategories] = useState(false);
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
+  const [dailyQuoteOn, setDailyQuoteOn] = useState(() => localStorage.getItem("hisaab_daily_quote_enabled") !== "false");
   const [email] = useState(
     () => user?.email ?? localStorage.getItem("hisaab_email") ?? "",
   );
@@ -593,6 +595,31 @@ export function SettingsPage() {
                 {m === "light" ? t("theme_light") : m === "dark" ? t("theme_dark") : t("theme_system")}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Daily money wisdom */}
+        <div className={sectionClass}>
+          <div className={rowClass}>
+            <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+              <Lightbulb size={16} className="text-accent-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">{t("settings_daily_quote")}</p>
+              <p className="text-[11px] text-ink-500">{t("settings_daily_quote_desc")}</p>
+            </div>
+            <button
+              onClick={() => {
+                const next = !dailyQuoteOn;
+                setDailyQuoteOn(next);
+                localStorage.setItem("hisaab_daily_quote_enabled", next ? "true" : "false");
+              }}
+              aria-pressed={dailyQuoteOn}
+              aria-label={t("settings_daily_quote")}
+              className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${dailyQuoteOn ? "bg-receive-600" : "bg-cream-border"}`}
+            >
+              <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${dailyQuoteOn ? "left-6" : "left-1"}`} />
+            </button>
           </div>
         </div>
 

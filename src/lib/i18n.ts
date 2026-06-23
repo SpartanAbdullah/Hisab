@@ -1717,6 +1717,13 @@ const S = {
   coach_log_t: { ur: "{days} din ho gaye", en: "It's been {days} days" },
   coach_log_b: { ur: "Ek chhoti entry add karein", en: "Log a quick entry to stay on top" },
   ai_understood: { ur: "Samajh gaya:", en: "Got it:" },
+  // Daily money-wisdom popup
+  quote_daily_title: { ur: "Aaj ki maali baat", en: "Daily money wisdom" },
+  quote_got_it: { ur: "Theek hai", en: "Got it" },
+  quote_share: { ur: "Share", en: "Share" },
+  quote_turn_off: { ur: "Rozana baat band karein", en: "Turn off daily wisdom" },
+  settings_daily_quote: { ur: "Rozana maali baat", en: "Daily money wisdom" },
+  settings_daily_quote_desc: { ur: "Rozana ek chhoti, powerful maali baat", en: "A short money quote, once a day" },
 
   // ── Kameti / Committee ──
   kameti_title: { ur: "Kameti", en: "Kameti" },

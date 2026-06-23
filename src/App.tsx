@@ -64,6 +64,7 @@ import { AddGroupExpenseModal } from './pages/AddGroupExpenseModal';
 import { CreateGroupModal } from './pages/CreateGroupModal';
 import { RecurringDuePrompt } from './components/RecurringDuePrompt';
 import { MonthlyWrapModal } from './components/MonthlyWrapModal';
+import { DailyQuote } from './components/DailyQuote';
 import { OfflineBanner } from './components/OfflineBanner';
 import { AppLoadingScreen } from './components/AppLoadingScreen';
 import { GlobalChunkRecoveryOverlay } from './components/GlobalChunkRecoveryOverlay';
@@ -432,6 +433,9 @@ function AppContent() {
       {/* Phase 3: end-of-month "Hisaab Wrap" — Spotify Wrapped for the
           user's money. Self-triggers on the first session of a new month. */}
       <MonthlyWrapModal />
+      {/* Once-a-day money-wisdom popup. Self-triggers on the first app open of
+          each day; can be turned off in Settings. */}
+      <DailyQuote />
       {/* Create-then-expense chain: when CreateGroupModal returns the new
           group, we immediately open AddGroupExpenseModal with the amount
           the user originally typed in QuickEntry. */}
