@@ -1,5 +1,5 @@
 ﻿import { useMemo, useState } from 'react';
-import { Copy, Share2 } from 'lucide-react';
+import { Copy, Share2, MessageCircle } from 'lucide-react';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
 import { formatMoney } from '../lib/constants';
@@ -12,6 +12,7 @@ import {
   type ReminderAge,
   type ReminderTemplateMap,
 } from '../lib/paymentReminders';
+import { buildWhatsAppUrl, hasWhatsAppNumber } from '../lib/whatsappReminder';
 import type { Currency } from '../db';
 
 interface Props {
@@ -26,6 +27,10 @@ interface Props {
   // a neutral "open for N days" is shown instead. Defaults to true to preserve
   // existing call-site behaviour.
   hasDueDate?: boolean;
+  // The contact's phone, when we have it on file. Lets the WhatsApp button open
+  // their chat directly; when absent we fall back to WhatsApp's contact picker.
+  // The recipient does NOT need to be a Hisaab user.
+  phone?: string | null;
 }
 
 function copyWithFallback(text: string): Promise<void> {
@@ -76,7 +81,7 @@ function formatMeta(age: ReminderAge, t: ReturnType<typeof useT>, hasDueDate: bo
   return t('reminder_open_days').replace('{count}', String(age.days));
 }
 
-export function PaymentReminderModal({ open, onClose, personName, amount, currency, direction, startedAt, hasDueDate = true }: Props) {
+export function PaymentReminderModal({ open, onClose, personName, amount, currency, direction, startedAt, hasDueDate = true, phone = null }: Props) {
   const t = useT();
   const toast = useToast();
   const [tone, setTone] = useState<PaymentReminderTone>('friendly');
@@ -87,6 +92,7 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
   const amountText = formatMoney(amount, currency);
   const duration = formatDuration(age, t);
   const shareAvailable = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const knownNumber = hasWhatsAppNumber(phone);
 
   const templates: ReminderTemplateMap = {
     receivable: {
@@ -108,6 +114,10 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
     direction,
     tone,
   }, templates);
+
+  // The WhatsApp deep link carries the live message (so it respects the chosen
+  // tone). Recomputed each render — cheap, and keeps it in sync with `tone`.
+  const whatsappUrl = buildWhatsAppUrl(phone, message);
 
   const handleCopy = async () => {
     setCopying(true);
@@ -141,23 +151,39 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
       onClose={onClose}
       title={t('reminder_title')}
       footer={
-        <div className="flex gap-2.5">
-          <button
-            onClick={handleCopy}
-            disabled={copying}
-            className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-30"
+        <div className="flex flex-col gap-2.5">
+          {/* WhatsApp is the primary action — it's how this audience actually
+              chases payments, and it works whether or not the contact uses
+              Hisaab. Rendered as an anchor so Android hands it to the
+              WhatsApp intent (chat when we know the number, picker when not). */}
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => toast.show({ type: 'success', title: t('reminder_wa_opening') })}
+            className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            style={{ background: '#1FA855' }}
           >
-            <Copy size={15} /> {copying ? t('quick_processing') : t('reminder_copy')}
-          </button>
-          {shareAvailable ? (
+            <MessageCircle size={16} strokeWidth={2.4} /> {t('reminder_whatsapp')}
+          </a>
+          <div className="flex gap-2.5">
             <button
-              onClick={handleShare}
-              disabled={sharing}
-              className="px-4 rounded-2xl py-3.5 text-sm font-bold bg-cream-soft text-ink-700 flex items-center justify-center gap-2 active:bg-slate-200 disabled:opacity-40"
+              onClick={handleCopy}
+              disabled={copying}
+              className="flex-1 bg-cream-soft text-ink-700 rounded-2xl py-3 text-[13px] font-bold flex items-center justify-center gap-2 active:bg-cream-border disabled:opacity-30"
             >
-              <Share2 size={15} /> {t('reminder_share')}
+              <Copy size={14} /> {copying ? t('quick_processing') : t('reminder_copy')}
             </button>
-          ) : null}
+            {shareAvailable ? (
+              <button
+                onClick={handleShare}
+                disabled={sharing}
+                className="px-4 rounded-2xl py-3 text-[13px] font-bold bg-cream-soft text-ink-700 flex items-center justify-center gap-2 active:bg-cream-border disabled:opacity-40"
+              >
+                <Share2 size={14} /> {t('reminder_share')}
+              </button>
+            ) : null}
+          </div>
         </div>
       }
     >
@@ -193,7 +219,9 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
           <div className="rounded-2xl bg-cream-soft border border-cream-hairline p-4">
             <p className="text-[13px] text-ink-800 leading-relaxed whitespace-pre-line">{message}</p>
           </div>
-          <p className="text-[10px] text-ink-500 mt-2">{t('reminder_manual_only')}</p>
+          <p className="text-[10px] text-ink-500 mt-2">
+            {(knownNumber ? t('reminder_wa_to_name') : t('reminder_wa_pick')).replace('{name}', personName)}
+          </p>
         </div>
       </div>
     </Modal>

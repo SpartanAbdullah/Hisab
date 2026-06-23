@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Plus, ChevronRight, Users, Bell, Search, X, AlertCircle, Clock, Link2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
+import { usePersonStore } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
@@ -57,10 +58,13 @@ type ReminderTarget = {
   direction: PaymentReminderDirection;
   startedAt: string | null;
   hasDueDate: boolean;
+  phone: string | null;
 };
 
 export function LoansPage() {
   const { loans, loadLoans } = useLoanStore();
+  const persons = usePersonStore((s) => s.persons);
+  const loadPersons = usePersonStore((s) => s.loadPersons);
   const { schedules, loadSchedules } = useEmiStore();
   const { transactions, loadTransactions } = useTransactionStore();
   const { loadAccounts } = useAccountStore();
@@ -89,8 +93,9 @@ export function LoansPage() {
   const load = useCallback(async () => {
     // loadLinkedRequests is needed so we can exclude linked loans (which must
     // settle via their own confirm flow) from the multi-loan allocation.
-    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts(), loadLinkedRequests(), loadSettlementRequests()]);
-  }, [loadAccounts, loadLoans, loadSchedules, loadTransactions, loadLinkedRequests, loadSettlementRequests]);
+    // loadPersons gives us phone numbers for the WhatsApp reminder deep-link.
+    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts(), loadLinkedRequests(), loadSettlementRequests(), loadPersons()]);
+  }, [loadAccounts, loadLoans, loadSchedules, loadTransactions, loadLinkedRequests, loadSettlementRequests, loadPersons]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   // Loans mirrored to another Hisaab user (accepted linked pair) — excluded
@@ -314,6 +319,22 @@ export function LoansPage() {
   const groupHasLinked = (group: LoanGroup) =>
     group.loans.some((l) => linkedLoanIds.has(l.id));
 
+  // Best phone we have for the group, so the WhatsApp reminder can open the
+  // contact's chat directly. Prefer a personId match (exact contact); fall
+  // back to a name match for loans created before the contact existed. Null
+  // ⇒ the reminder opens WhatsApp's picker instead — still works for non-users.
+  const groupPhone = (group: LoanGroup): string | null => {
+    for (const l of group.loans) {
+      if (!l.personId) continue;
+      const p = persons.find((x) => x.id === l.personId);
+      if (p?.phone) return p.phone;
+    }
+    const byName = persons.find(
+      (p) => p.name.trim().toLowerCase() === group.name.trim().toLowerCase(),
+    );
+    return byName?.phone ?? null;
+  };
+
   // A loan only has a real due date when it carries at least one unpaid EMI
   // schedule. Open-ended loans (no schedule) must NOT be called "overdue" —
   // they're simply "open for N days".
@@ -339,6 +360,7 @@ export function LoansPage() {
       direction: group.direction === 'given' ? 'receivable' : 'payable',
       startedAt: getGroupReminderDate(group),
       hasDueDate: groupHasDueDate(group),
+      phone: groupPhone(group),
     });
   };
 
@@ -758,6 +780,7 @@ export function LoansPage() {
           direction={reminderTarget.direction}
           startedAt={reminderTarget.startedAt}
           hasDueDate={reminderTarget.hasDueDate}
+          phone={reminderTarget.phone}
         />
       ) : null}
 

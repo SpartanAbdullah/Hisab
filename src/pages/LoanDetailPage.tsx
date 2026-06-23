@@ -535,6 +535,7 @@ export function LoanDetailPage() {
         direction={loan.type === 'given' ? 'receivable' : 'payable'}
         startedAt={reminderStartedAt}
         hasDueDate={totalCount > 0}
+        phone={(loan.personId ? persons.find((x) => x.id === loan.personId)?.phone : null) ?? null}
       />
       {isLinkedLoan && (
         <SettleLinkedLoanModal

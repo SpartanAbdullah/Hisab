@@ -197,6 +197,16 @@ const S = {
   reminder_cta: { ur: "Remind", en: "Remind" },
   reminder_copy: { ur: "Copy", en: "Copy" },
   reminder_share: { ur: "Share", en: "Share" },
+  reminder_whatsapp: { ur: "WhatsApp pe bhejo", en: "Send on WhatsApp" },
+  reminder_wa_opening: { ur: "WhatsApp khul raha hai…", en: "Opening WhatsApp…" },
+  reminder_wa_to_name: {
+    ur: "{name} ke saath WhatsApp chat khulegi — bas Send dabana hai.",
+    en: "Opens a WhatsApp chat with {name} — just tap send.",
+  },
+  reminder_wa_pick: {
+    ur: "Number save nahi — WhatsApp mein {name} ko chunna hoga.",
+    en: "No number saved — you'll pick {name} in WhatsApp.",
+  },
   reminder_copied: { ur: "Reminder copied", en: "Reminder copied" },
   reminder_copy_failed: { ur: "Copy nahi ho saka", en: "Could not copy" },
   reminder_share_failed: { ur: "Share nahi ho saka", en: "Could not share" },
