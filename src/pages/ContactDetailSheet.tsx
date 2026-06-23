@@ -154,6 +154,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
 
   const handleSyncPastRecords = async () => {
     if (!person) return;
+    const ok = await confirmDestructive({
+      title: t('contact_sync_confirm_title').replace('{name}', person.name),
+      description: t('contact_sync_confirm_body'),
+      confirmLabel: t('contact_sync_confirm_cta'),
+      cancelLabel: t('cancel'),
+      tone: 'warning',
+    });
+    if (!ok) return;
     setSyncing(true);
     try {
       const result = await syncPastRecords(person.id);
@@ -222,6 +230,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   };
 
   const handleUnlink = async () => {
+    const ok = await confirmDestructive({
+      title: t('contact_unlink_confirm_title').replace('{name}', person.name),
+      description: t('contact_unlink_confirm_body'),
+      confirmLabel: t('contact_unlink_confirm_cta'),
+      cancelLabel: t('cancel'),
+      tone: 'warning',
+    });
+    if (!ok) return;
     setSaving(true);
     setError('');
     try {

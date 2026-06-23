@@ -70,6 +70,14 @@ export function KametiDetailPage() {
   const collected = paymentsForRound(payments, round).length;
 
   const handleDraw = async () => {
+    const ok = await confirmDestructive({
+      title: t('kameti_draw_confirm_title'),
+      description: t('kameti_draw_confirm_body'),
+      confirmLabel: t('kameti_draw_confirm_cta'),
+      cancelLabel: t('cancel'),
+      tone: 'warning',
+    });
+    if (!ok) return;
     setDrawing(true);
     const start = Date.now();
     try {

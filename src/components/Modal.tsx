@@ -8,11 +8,22 @@ interface Props {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  // Optional gate for dismissal (backdrop tap / X). Return false (or a Promise
+  // resolving false) to KEEP the modal open — used to guard unsaved changes.
+  confirmClose?: () => boolean | Promise<boolean>;
 }
 
-export function Modal({ open, onClose, title, children, footer }: Props) {
+export function Modal({ open, onClose, title, children, footer, confirmClose }: Props) {
   const [show, setShow] = useState(false);
   const { openModal, closeModal } = useUIStore();
+
+  const requestClose = async () => {
+    if (confirmClose) {
+      const ok = await confirmClose();
+      if (!ok) return;
+    }
+    onClose();
+  };
 
   useEffect(() => {
     if (open) {
@@ -39,7 +50,7 @@ export function Modal({ open, onClose, title, children, footer }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end justify-center" onClick={requestClose}>
       <div className={`modal-backdrop ${show ? 'opacity-100' : 'opacity-0'}`} />
       <div
         className={`modal-sheet ${show ? 'translate-y-0' : 'translate-y-full'}`}
@@ -53,7 +64,7 @@ export function Modal({ open, onClose, title, children, footer }: Props) {
         <div className="modal-header">
           <h2 className="font-semibold text-[15px] tracking-tight text-ink-900 truncate flex-1 min-w-0 pr-3">{title}</h2>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="nav-icon-button border border-cream-hairline shrink-0"
             aria-label="Close"
           >

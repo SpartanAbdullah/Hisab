@@ -1,8 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
-import { CheckCircle, AlertCircle, Info, X } from 'lucide-react';
+import { CheckCircle, AlertCircle, Info, X, Undo2 } from 'lucide-react';
 import { create } from 'zustand';
 
 type ToastType = 'success' | 'error' | 'info';
+
+// An optional inline action — used mainly for "Undo" so reversible actions can
+// happen instantly with a way back, instead of a blocking confirmation.
+interface ToastAction {
+  label: string;
+  onPress: () => void;
+}
 
 interface ToastData {
   id: string;
@@ -10,6 +17,7 @@ interface ToastData {
   title: string;
   subtitle?: string;
   duration?: number;
+  action?: ToastAction;
 }
 
 interface ToastStore {
@@ -49,9 +57,10 @@ function ToastItem({ toast }: { toast: ToastData }) {
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
-    const timer = setTimeout(handleDismiss, toast.duration ?? 3000);
+    // Give people longer to react when there's an action to take (e.g. Undo).
+    const timer = setTimeout(handleDismiss, toast.duration ?? (toast.action ? 6000 : 3000));
     return () => clearTimeout(timer);
-  }, [handleDismiss, toast.duration]);
+  }, [handleDismiss, toast.duration, toast.action]);
 
   const Icon = icons[toast.type];
 
@@ -66,6 +75,18 @@ function ToastItem({ toast }: { toast: ToastData }) {
         <p className="text-[13px] font-semibold tracking-tight">{toast.title}</p>
         {toast.subtitle && <p className="text-xs opacity-75 mt-0.5">{toast.subtitle}</p>}
       </div>
+      {toast.action && (
+        <button
+          onClick={() => {
+            toast.action?.onPress();
+            handleDismiss();
+          }}
+          className="relative shrink-0 -my-1 px-2.5 py-1.5 rounded-lg bg-white/20 active:bg-white/30 text-white text-[12px] font-bold flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+        >
+          <Undo2 size={13} strokeWidth={2.6} />
+          {toast.action.label}
+        </button>
+      )}
       <button
         onClick={handleDismiss}
         aria-label="Dismiss"

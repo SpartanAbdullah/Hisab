@@ -276,7 +276,15 @@ export function SettingsPage() {
     setPin2("");
   };
 
-  const handleRemovePin = () => {
+  const handleRemovePin = async () => {
+    const ok = await confirmDestructive({
+      title: t("pin_remove_confirm_title"),
+      description: t("pin_remove_confirm_body"),
+      confirmLabel: t("pin_remove_confirm_cta"),
+      cancelLabel: t("cancel"),
+      tone: "warning",
+    });
+    if (!ok) return;
     removePin();
     toast.show({ type: "success", title: t("pin_removed") });
   };

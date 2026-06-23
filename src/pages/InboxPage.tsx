@@ -193,6 +193,14 @@ export function InboxPage() {
     }
   };
   const handleReject = async (id: string) => {
+    const ok = await confirmDestructive({
+      title: t('inbox_reject_confirm_title'),
+      description: t('inbox_reject_confirm_body'),
+      confirmLabel: t('inbox_reject_confirm_cta'),
+      cancelLabel: t('not_now'),
+      tone: 'warning',
+    });
+    if (!ok) return;
     setBusyId(id);
     try {
       await reject(id);
@@ -204,6 +212,14 @@ export function InboxPage() {
     }
   };
   const handleCancel = async (id: string) => {
+    const ok = await confirmDestructive({
+      title: t('inbox_cancel_confirm_title'),
+      description: t('inbox_cancel_confirm_body'),
+      confirmLabel: t('inbox_cancel_confirm_cta'),
+      cancelLabel: t('not_now'),
+      tone: 'warning',
+    });
+    if (!ok) return;
     setBusyId(id);
     try {
       await cancel(id);
@@ -243,6 +259,14 @@ export function InboxPage() {
     }
   };
   const handleRejectSettlement = async (id: string) => {
+    const ok = await confirmDestructive({
+      title: t('inbox_reject_confirm_title'),
+      description: t('inbox_reject_confirm_body'),
+      confirmLabel: t('inbox_reject_confirm_cta'),
+      cancelLabel: t('not_now'),
+      tone: 'warning',
+    });
+    if (!ok) return;
     setBusyId(id);
     try {
       await rejectSettlement(id);
@@ -254,6 +278,14 @@ export function InboxPage() {
     }
   };
   const handleCancelSettlement = async (id: string) => {
+    const ok = await confirmDestructive({
+      title: t('inbox_cancel_confirm_title'),
+      description: t('inbox_cancel_confirm_body'),
+      confirmLabel: t('inbox_cancel_confirm_cta'),
+      cancelLabel: t('not_now'),
+      tone: 'warning',
+    });
+    if (!ok) return;
     setBusyId(id);
     try {
       await cancelSettlement(id);

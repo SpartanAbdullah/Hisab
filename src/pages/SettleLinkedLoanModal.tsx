@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { usePersonStore } from '../stores/personStore';
@@ -101,6 +102,15 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
       setError(t('stl_amount_invalid'));
       return;
     }
+
+    const ok = await confirmDestructive({
+      title: t('stl_confirm_title'),
+      description: `${t('stl_confirm_body').replace('{amount}', formatMoney(amt, loan.currency))}${applyToBalance ? ' ' + t('stl_confirm_balance_note') : ''}`,
+      confirmLabel: t('stl_confirm_cta'),
+      cancelLabel: t('cancel'),
+      tone: 'warning',
+    });
+    if (!ok) return;
 
     // Determine which side of the pair belongs to the current user (the
     // debtor in 2C-A). The request-row fields are "requester" / "responder"
