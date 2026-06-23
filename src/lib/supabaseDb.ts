@@ -1558,6 +1558,9 @@ export const committeesDb = {
     if (changes.status !== undefined) row.status = changes.status;
     if (changes.notes !== undefined) row.notes = changes.notes;
     if (changes.drawnAt !== undefined) row.drawn_at = changes.drawnAt;
+    if (changes.drawSeed !== undefined) row.draw_seed = changes.drawSeed;
+    if (changes.drawCommitment !== undefined) row.draw_commitment = changes.drawCommitment;
+    if (changes.shareToken !== undefined) row.share_token = changes.shareToken;
     const { error } = await supabase.from('committees').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
@@ -1565,6 +1568,35 @@ export const committeesDb = {
     // Hard delete — FKs cascade members + payments.
     const { error } = await supabase.from('committees').delete().eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
+  },
+  // Read-only witness snapshot via the anon SECURITY DEFINER RPC. No auth
+  // required — used by the public witness page. Returns null for a bad token.
+  async getWitness(token: string): Promise<{ committee: Committee; members: CommitteeMember[]; payments: CommitteePayment[] } | null> {
+    const { data, error } = await supabase.rpc('get_committee_witness', { p_token: token });
+    if (error) throw error;
+    if (!data) return null;
+    const raw = data as { committee: Record<string, unknown>; members: Record<string, unknown>[]; payments: { memberId: string; round: number }[] };
+    const c = raw.committee;
+    const committee: Committee = {
+      id: c.id as string, name: c.name as string, currency: c.currency as Currency,
+      contributionAmount: Number(c.contributionAmount), memberCount: Number(c.memberCount),
+      cadence: c.cadence as Committee['cadence'], totalRounds: Number(c.totalRounds),
+      startDate: c.startDate as string, payoutMethod: c.payoutMethod as Committee['payoutMethod'],
+      status: c.status as Committee['status'], notes: '',
+      drawnAt: (c.drawnAt as string) ?? null, drawSeed: (c.drawSeed as string) ?? null,
+      drawCommitment: (c.drawCommitment as string) ?? null,
+      createdAt: c.createdAt as string,
+    };
+    const members: CommitteeMember[] = raw.members.map((m) => ({
+      id: m.id as string, committeeId: committee.id, name: m.name as string, phone: null, personId: null,
+      slot: m.slot != null ? Number(m.slot) : null, isOrganizer: Boolean(m.isOrganizer),
+      payoutReceivedAt: (m.payoutReceivedAt as string) ?? null, exitedAt: (m.exitedAt as string) ?? null,
+      createdAt: '',
+    }));
+    const payments: CommitteePayment[] = raw.payments.map((p, i) => ({
+      id: `${p.memberId}-${p.round}-${i}`, committeeId: committee.id, memberId: p.memberId, round: p.round, paidAt: '',
+    }));
+    return { committee, members, payments };
   },
 };
 
@@ -1641,6 +1673,9 @@ function mapCommittee(r: Record<string, unknown>): Committee {
     status: r.status as Committee['status'],
     notes: (r.notes as string) ?? '',
     drawnAt: (r.drawn_at as string) ?? null,
+    drawSeed: (r.draw_seed as string) ?? null,
+    drawCommitment: (r.draw_commitment as string) ?? null,
+    shareToken: (r.share_token as string) ?? null,
     createdAt: r.created_at as string,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };

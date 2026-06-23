@@ -439,6 +439,11 @@ export interface Committee {
   status: CommitteeStatus;
   notes: string;
   drawnAt?: string | null;    // when the order/ballot was set
+  // Provably-fair ballot (commit-reveal): the seed and its SHA-256 commitment.
+  drawSeed?: string | null;
+  drawCommitment?: string | null;
+  // Read-only "witness link" token (phase 2 transparency).
+  shareToken?: string | null;
   createdAt: string;
   updatedAt?: string;
 }

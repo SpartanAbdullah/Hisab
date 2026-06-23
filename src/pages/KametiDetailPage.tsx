@@ -1,16 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCommitteeStore } from '../stores/committeeStore';
 import { PageHeader } from '../components/PageHeader';
 import { PageErrorState } from '../components/PageErrorState';
+import { CommitteeVerifyDraw } from '../components/CommitteeVerifyDraw';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { buildWhatsAppUrl } from '../lib/whatsappReminder';
+import { buildAppShareUrl } from '../lib/collaboration';
 import {
   poolAmount, currentRound, roundDate, recipientForRound, hasPaid,
   paymentsForRound, slotKind, buildSchedule,
@@ -28,6 +30,7 @@ export function KametiDetailPage() {
   const paymentsOf = useCommitteeStore((s) => s.paymentsOf);
   const loadAll = useCommitteeStore((s) => s.loadAll);
   const runBallot = useCommitteeStore((s) => s.runBallot);
+  const ensureShareToken = useCommitteeStore((s) => s.ensureShareToken);
   const setPaid = useCommitteeStore((s) => s.setPaid);
   const confirmPayout = useCommitteeStore((s) => s.confirmPayout);
   const deleteCommittee = useCommitteeStore((s) => s.deleteCommittee);
@@ -100,6 +103,20 @@ export function KametiDetailPage() {
       try { await navigator.share({ text }); return; } catch { /* fall through */ }
     }
     window.open(buildWhatsAppUrl(null, text), '_blank');
+  };
+
+  const shareWitness = async () => {
+    try {
+      const token = await ensureShareToken(committee.id);
+      const url = `${buildAppShareUrl()}/kameti/witness/${token}`;
+      const text = t('kameti_witness_msg').replace('{committee}', committee.name).replace('{url}', url);
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        try { await navigator.share({ text, url }); return; } catch { /* fall through */ }
+      }
+      window.open(buildWhatsAppUrl(null, text), '_blank');
+    } catch {
+      toast.show({ type: 'error', title: t('error') });
+    }
   };
 
   const handleDelete = async () => {
@@ -184,6 +201,9 @@ export function KametiDetailPage() {
           </div>
         )}
 
+        {/* Provably-fair draw — verify the ballot wasn't rigged */}
+        {isDrawn && <CommitteeVerifyDraw committee={committee} members={members} />}
+
         {/* This round's collection list */}
         {isDrawn && (
           <div>
@@ -230,7 +250,10 @@ export function KametiDetailPage() {
         )}
 
         {/* Footer actions */}
-        <div className="flex gap-2 pt-1">
+        <button onClick={shareWitness} className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[12.5px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+          <Eye size={14} /> {t('kameti_share_witness')}
+        </button>
+        <div className="flex gap-2">
           <button onClick={shareStatement} className="flex-1 py-3 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[12.5px] font-semibold flex items-center justify-center gap-2 active:bg-cream-soft">
             <Share2 size={14} /> {t('kameti_share_statement')}
           </button>

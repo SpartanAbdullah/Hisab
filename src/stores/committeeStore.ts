@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { committeesDb, committeeMembersDb, committeePaymentsDb } from '../lib/supabaseDb';
-import { ballotOrder } from '../lib/committeeMath';
+import { generateSeed, commitmentFor, drawOrder } from '../lib/committeeDraw';
 import type {
   Committee, CommitteeMember, CommitteePayment,
   CommitteeCadence, CommitteePayoutMethod, Currency,
@@ -32,6 +32,7 @@ interface CommitteeState {
   createCommittee: (input: CreateCommitteeInput) => Promise<Committee>;
   deleteCommittee: (id: string) => Promise<void>;
   runBallot: (committeeId: string) => Promise<void>;
+  ensureShareToken: (committeeId: string) => Promise<string>;
   setFixedOrder: (committeeId: string, orderedMemberIds: string[]) => Promise<void>;
   setPaid: (committeeId: string, memberId: string, round: number, paid: boolean) => Promise<void>;
   confirmPayout: (memberId: string, received: boolean) => Promise<void>;
@@ -112,15 +113,28 @@ export const useCommitteeStore = create<CommitteeState>((set, get) => ({
 
   runBallot: async (committeeId) => {
     const members = get().members.filter((m) => m.committeeId === committeeId);
-    const order = ballotOrder(members.map((m) => m.id), Math.random);
+    // Provably-fair commit-reveal: a random seed + its SHA-256 commitment are
+    // stored with the draw so any member can later recompute and verify it.
+    const seed = generateSeed();
+    const commitment = await commitmentFor(seed);
+    const order = drawOrder(members.map((m) => m.id), seed);
     const slotById = new Map(order.map((id, i) => [id, i + 1]));
     const drawnAt = new Date().toISOString();
     await Promise.all(members.map((m) => committeeMembersDb.update(m.id, { slot: slotById.get(m.id) ?? null })));
-    await committeesDb.update(committeeId, { payoutMethod: 'ballot', drawnAt });
+    await committeesDb.update(committeeId, { payoutMethod: 'ballot', drawnAt, drawSeed: seed, drawCommitment: commitment });
     set((s) => ({
-      committees: s.committees.map((c) => (c.id === committeeId ? { ...c, payoutMethod: 'ballot', drawnAt } : c)),
+      committees: s.committees.map((c) => (c.id === committeeId ? { ...c, payoutMethod: 'ballot', drawnAt, drawSeed: seed, drawCommitment: commitment } : c)),
       members: s.members.map((m) => (m.committeeId === committeeId ? { ...m, slot: slotById.get(m.id) ?? m.slot } : m)),
     }));
+  },
+
+  ensureShareToken: async (committeeId) => {
+    const existing = get().committees.find((c) => c.id === committeeId);
+    if (existing?.shareToken) return existing.shareToken;
+    const token = generateSeed() + generateSeed(); // 256-bit hex
+    await committeesDb.update(committeeId, { shareToken: token });
+    set((s) => ({ committees: s.committees.map((c) => (c.id === committeeId ? { ...c, shareToken: token } : c)) }));
+    return token;
   },
 
   setFixedOrder: async (committeeId, orderedMemberIds) => {

@@ -45,6 +45,7 @@ const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then(m => ({ defaul
 const SubscriptionsPage = lazy(() => import('./pages/SubscriptionsPage').then(m => ({ default: m.SubscriptionsPage })));
 const KametiPage = lazy(() => import('./pages/KametiPage').then(m => ({ default: m.KametiPage })));
 const KametiDetailPage = lazy(() => import('./pages/KametiDetailPage').then(m => ({ default: m.KametiDetailPage })));
+const KametiWitnessPage = lazy(() => import('./pages/KametiWitnessPage').then(m => ({ default: m.KametiWitnessPage })));
 const HisaabAIPage = lazy(() => import('./pages/HisaabAIPage').then(m => ({ default: m.HisaabAIPage })));
 const InsightDetailPage = lazy(() => import('./pages/InsightDetailPage').then(m => ({ default: m.InsightDetailPage })));
 const PublicInfoPage = lazy(() => import('./pages/PublicInfoPages').then(m => ({ default: m.PublicInfoPage })));
@@ -295,6 +296,17 @@ function AppContent() {
     });
     if (resumePath) navigate(resumePath, { replace: true });
   }, [completed, location.pathname, navigate, user]);
+
+  // Public witness route — a read-only committee record reachable WITHOUT an
+  // account (for non-app members/relatives). Checked before every other gate
+  // so the share link opens directly in any browser.
+  if (location.pathname.startsWith('/kameti/witness/')) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <KametiWitnessPage />
+      </Suspense>
+    );
+  }
 
   if (authLoading || onboardingLoading) {
     return <AppLoadingScreen />;
