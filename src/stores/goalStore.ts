@@ -8,7 +8,8 @@ interface CreateGoalInput {
   title: string;
   targetAmount: number;
   currency: Currency;
-  storedInAccountId: string; // empty string = internal tracking
+  storedInAccountId?: string; // optional label; '' = tracked internally
+  targetDate?: string | null; // optional YYYY-MM-DD deadline
 }
 
 interface GoalState {
@@ -48,8 +49,9 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       targetAmount: input.targetAmount,
       savedAmount: 0,
       currency: input.currency,
-      storedInAccountId: input.storedInAccountId,
+      storedInAccountId: input.storedInAccountId ?? '',
       createdAt: new Date().toISOString(),
+      targetDate: input.targetDate ?? null,
     };
     await goalsDb.add(goal);
     set((s) => ({ goals: [...s.goals, goal] }));
@@ -65,7 +67,8 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   addContribution: async (goalId, amount) => {
     const goal = get().goals.find((g) => g.id === goalId);
     if (!goal) throw new Error(`Goal ${goalId} not found`);
-    const newSaved = Math.round((goal.savedAmount + amount) * 100) / 100;
+    // Clamp at 0 — a "take out" can never push the saved total negative.
+    const newSaved = Math.max(0, Math.round((goal.savedAmount + amount) * 100) / 100);
     await goalsDb.update(goalId, { savedAmount: newSaved });
     set((s) => ({
       goals: s.goals.map((g) => (g.id === goalId ? { ...g, savedAmount: newSaved } : g)),

@@ -568,6 +568,7 @@ export const goalsDb = {
       id: g.id, user_id: getUserId(), title: g.title,
       target_amount: g.targetAmount, saved_amount: g.savedAmount,
       currency: g.currency, stored_in_account_id: g.storedInAccountId,
+      target_date: g.targetDate ?? null,
       created_at: g.createdAt,
     });
     if (error) throw error;
@@ -576,6 +577,8 @@ export const goalsDb = {
     const row: Record<string, unknown> = {};
     if (changes.savedAmount !== undefined) row.saved_amount = changes.savedAmount;
     if (changes.title !== undefined) row.title = changes.title;
+    if (changes.targetAmount !== undefined) row.target_amount = changes.targetAmount;
+    if (changes.targetDate !== undefined) row.target_date = changes.targetDate ?? null;
     const { error } = await supabase.from('goals').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
@@ -1277,6 +1280,7 @@ function mapGoal(r: Record<string, unknown>): Goal {
     currency: r.currency as Goal['currency'],
     storedInAccountId: (r.stored_in_account_id as string) ?? '',
     createdAt: r.created_at as string,
+    targetDate: (r.target_date as string) ?? null,
   };
 }
 

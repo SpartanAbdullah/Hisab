@@ -1562,6 +1562,21 @@ const S = {
   cc_used_pct: { ur: "{n}% istemal", en: "{n}% used" },
   acct_cash_owed: { ur: "{cash} cash · {owed} dena", en: "{cash} cash · {owed} owed" },
 
+  // ── Savings goals (simple tracker + optional deadline) ──
+  goal_intro: { ur: "Kisi cheez ke liye paise alag rakho aur progress dekho. Yahan paise dalna sirf track karta hai — accounts ke darmiyan paisa move nahi karta.", en: "Set aside money for something and watch it grow. Adding money here just tracks your progress — it doesn't move money between your accounts." },
+  goal_target_date: { ur: "Tareekh (optional)", en: "Target date (optional)" },
+  goal_target_date_help: { ur: "Tareekh dalo to Hisaab bata dega har mah kitna bachana hai.", en: "Add a date and Hisaab will suggest how much to save each month." },
+  goal_add_money: { ur: "Paise dalo", en: "Add money" },
+  goal_add_to: { ur: "{title} mein dalo", en: "Add to {title}" },
+  goal_take_out: { ur: "Nikaalo", en: "Take out" },
+  goal_track_note: { ur: "Yeh sirf aapki bachat track karta hai — accounts ke darmiyan paisa move nahi karta.", en: "This just tracks your saving — it won't move money between your accounts." },
+  goal_by_date: { ur: "{date} tak", en: "By {date}" },
+  goal_save_monthly: { ur: "~{amount}/mah bachao", en: "save ~{amount}/mo" },
+  goal_on_track: { ur: "Theek ja raha", en: "On track" },
+  goal_behind: { ur: "Peeche", en: "Behind" },
+  goal_date_passed: { ur: "Tareekh guzar gayi", en: "Date passed" },
+  goal_amount_label: { ur: "Kitne paise?", en: "How much?" },
+
   // ── UX localization pass ──
   // Generic actions / nav
   action_view: { ur: "Dekho", en: "View" },

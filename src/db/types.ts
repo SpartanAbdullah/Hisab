@@ -151,6 +151,9 @@ export interface Goal {
   currency: Currency;
   storedInAccountId: string; // empty string = tracked internally
   createdAt: string;
+  // Optional deadline (YYYY-MM-DD). When set, the goal can suggest a monthly
+  // save amount and show an on-track / behind signal. Null = open-ended.
+  targetDate?: string | null;
 }
 
 export type UpcomingExpenseStatus = 'upcoming' | 'done' | 'cancelled';

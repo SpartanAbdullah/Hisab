@@ -14,7 +14,9 @@ import { useT } from '../lib/i18n';
 import { differenceInDays, format } from 'date-fns';
 import { AddGoalModal } from './AddGoalModal';
 import { AddUpcomingExpenseModal } from './AddUpcomingExpenseModal';
-import { QuickEntry } from './QuickEntry';
+import { Modal } from '../components/Modal';
+import { useToast } from '../components/Toast';
+import type { Goal } from '../db';
 
 const categoryIconMap: Record<string, React.ElementType> = {
   Education: GraduationCap,
@@ -37,13 +39,19 @@ const categoryColorMap: Record<string, { bg: string; text: string }> = {
 };
 
 export function GoalsPage() {
-  const { goals, loadGoals } = useGoalStore();
+  const { goals, loadGoals, addContribution } = useGoalStore();
   const { accounts, loadAccounts } = useAccountStore();
   const { expenses, loadExpenses, markPaid, updateStatus } = useUpcomingExpenseStore();
   const t = useT();
+  const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
-  const [showContribute, setShowContribute] = useState(false);
+  // "Add money" sheet for a specific goal — a simple set-aside that grows the
+  // saved bar. It does NOT move money between accounts (keeps the model clear).
+  const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
+  const [addAmount, setAddAmount] = useState('');
+  const [addMode, setAddMode] = useState<'add' | 'out'>('add');
+  const [savingAdd, setSavingAdd] = useState(false);
 
   const load = useCallback(async () => {
     await Promise.all([loadGoals(), loadAccounts(), loadExpenses()]);
@@ -53,6 +61,27 @@ export function GoalsPage() {
   const upcomingExpenses = expenses
     .filter(e => e.status === 'upcoming')
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  const closeAdd = () => {
+    setSelectedGoal(null);
+    setAddAmount('');
+    setAddMode('add');
+  };
+  const submitAdd = async () => {
+    if (!selectedGoal) return;
+    const amt = parseFloat(addAmount);
+    if (!amt || amt <= 0) return;
+    setSavingAdd(true);
+    try {
+      await addContribution(selectedGoal.id, addMode === 'out' ? -amt : amt);
+      toast.show({ type: 'success', title: addMode === 'out' ? t('goal_take_out') : t('goal_add_money') });
+      closeAdd();
+    } catch (err) {
+      toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : t('err_could_not_save') });
+    } finally {
+      setSavingAdd(false);
+    }
+  };
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -219,7 +248,6 @@ export function GoalsPage() {
           const progress = g.targetAmount > 0 ? (g.savedAmount / g.targetAmount) * 100 : 0;
           const account = g.storedInAccountId ? accounts.find(a => a.id === g.storedInAccountId) : null;
           const isComplete = progress >= 100;
-          const isInternal = !g.storedInAccountId;
           // "How much more" + a soft pace estimate from the average saved per
           // month since the goal was created.
           const remaining = Math.max(0, g.targetAmount - g.savedAmount);
@@ -229,6 +257,20 @@ export function GoalsPage() {
           );
           const pace = g.savedAmount / monthsElapsed;
           const monthsToGo = pace > 0 ? Math.ceil(remaining / pace) : 0;
+          // Deadline (optional): suggest a monthly save + an on-track/behind
+          // signal based on linear expected progress from createdAt → target.
+          const targetDate = g.targetDate ? new Date(g.targetDate) : null;
+          const daysToTarget = targetDate ? differenceInDays(targetDate, new Date()) : null;
+          const monthsLeft = daysToTarget != null ? Math.max(0, daysToTarget / 30) : null;
+          const monthlyNeeded = monthsLeft != null && monthsLeft > 0 ? remaining / monthsLeft : remaining;
+          const onTrack = (() => {
+            if (!targetDate) return null;
+            const totalDays = differenceInDays(targetDate, new Date(g.createdAt));
+            if (totalDays <= 0) return g.savedAmount >= g.targetAmount;
+            const elapsed = differenceInDays(new Date(), new Date(g.createdAt));
+            const expected = g.targetAmount * Math.min(1, Math.max(0, elapsed / totalDays));
+            return g.savedAmount >= expected - 0.01;
+          })();
           return (
             <div key={g.id}
               className={`rounded-2xl bg-cream-card border border-cream-border p-5 animate-fade-in ${isComplete ? '!border-receive-100/60' : ''}`}
@@ -243,7 +285,7 @@ export function GoalsPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-[14px] text-ink-900 tracking-tight">{g.title}</p>
                   <p className="text-[11px] text-ink-500 mt-0.5">
-                    {account ? `${account.name} — ${g.currency}` : isInternal ? t('goal_internal') : `${g.currency}`}
+                    {account ? `${account.name} · ${g.currency}` : g.currency}
                   </p>
                 </div>
                 <div className="text-right">
@@ -268,22 +310,43 @@ export function GoalsPage() {
               </div>
 
               {!isComplete && (
-                <div className="flex items-center justify-between gap-2 mt-2">
-                  <p className="text-[11px] font-semibold text-ink-700 tabular-nums">
-                    {t('goal_to_go').replace('{amount}', formatMoney(remaining, g.currency))}
-                  </p>
-                  {pace > 0 && (
-                    <p className="text-[11px] text-ink-400 tabular-nums">
-                      {t('goal_pace').replace('{n}', String(monthsToGo))}
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-semibold text-ink-700 tabular-nums">
+                      {t('goal_to_go').replace('{amount}', formatMoney(remaining, g.currency))}
+                    </p>
+                    {targetDate ? (
+                      daysToTarget != null && daysToTarget < 0 ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-pay-50 text-pay-text px-2 py-0.5 text-[10px] font-semibold">
+                          {t('goal_date_passed')}
+                        </span>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${onTrack ? 'bg-receive-50 text-receive-text' : 'bg-warn-50 text-warn-700'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${onTrack ? 'bg-receive-600' : 'bg-warn-600'}`} />
+                          {onTrack ? t('goal_on_track') : t('goal_behind')}
+                        </span>
+                      )
+                    ) : pace > 0 ? (
+                      <p className="text-[11px] text-ink-400 tabular-nums">
+                        {t('goal_pace').replace('{n}', String(monthsToGo))}
+                      </p>
+                    ) : null}
+                  </div>
+                  {targetDate && (
+                    <p className="text-[10.5px] text-ink-400 tabular-nums">
+                      {t('goal_by_date').replace('{date}', format(targetDate, 'd MMM yyyy'))}
+                      {daysToTarget != null && daysToTarget >= 0 && remaining > 0 && (
+                        <> · {t('goal_save_monthly').replace('{amount}', formatMoney(Math.ceil(monthlyNeeded), g.currency))}</>
+                      )}
                     </p>
                   )}
                 </div>
               )}
 
               {!isComplete && (
-                <button onClick={() => setShowContribute(true)}
-                  className="mt-4 w-full py-2.5 rounded-2xl border-2 border-dashed border-accent-100 text-accent-600 text-[12px] font-bold active:bg-accent-50 transition-all"
-                >{t('goal_contribute')}</button>
+                <button onClick={() => setSelectedGoal(g)}
+                  className="mt-4 w-full py-2.5 rounded-2xl border-2 border-dashed border-accent-100 text-accent-600 text-[12px] font-bold active:bg-accent-50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
+                >{t('goal_add_money')}</button>
               )}
             </div>
           );
@@ -294,7 +357,54 @@ export function GoalsPage() {
 
       <AddGoalModal open={showAdd} onClose={() => setShowAdd(false)} />
       <AddUpcomingExpenseModal open={showAddExpense} onClose={() => setShowAddExpense(false)} />
-      <QuickEntry open={showContribute} onClose={() => setShowContribute(false)} />
+      <Modal
+        open={!!selectedGoal}
+        onClose={closeAdd}
+        title={selectedGoal ? t('goal_add_to').replace('{title}', selectedGoal.title) : ''}
+        footer={
+          <button
+            onClick={submitAdd}
+            disabled={savingAdd || !(parseFloat(addAmount) > 0)}
+            className="cta-primary"
+          >
+            {savingAdd ? t('goal_creating') : addMode === 'out' ? t('goal_take_out') : t('goal_add_money')}
+          </button>
+        }
+      >
+        {selectedGoal && (
+          <div className="space-y-4">
+            <div className="bg-cream-soft/80 rounded-2xl p-3.5 border border-cream-hairline flex items-center justify-between">
+              <span className="text-[12px] text-ink-600">{t('goal_saved')}</span>
+              <span className="text-[14px] font-bold tabular-nums text-ink-900">
+                {formatMoney(selectedGoal.savedAmount, selectedGoal.currency)} / {formatMoney(selectedGoal.targetAmount, selectedGoal.currency)}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setAddMode('add')}
+                className={`justify-center text-[12.5px] font-semibold ${addMode === 'add' ? 'selector-base selector-selected' : 'selector-base'}`}
+              >{t('goal_add_money')}</button>
+              <button type="button" onClick={() => setAddMode('out')}
+                className={`justify-center text-[12.5px] font-semibold ${addMode === 'out' ? 'selector-base selector-selected' : 'selector-base'}`}
+              >{t('goal_take_out')}</button>
+            </div>
+            <div>
+              <label className="form-label">{t('goal_amount_label')} ({selectedGoal.currency})</label>
+              <input
+                type="number"
+                step="0.01"
+                value={addAmount}
+                onChange={(e) => setAddAmount(e.target.value)}
+                placeholder="0.00"
+                autoFocus
+                className="input-field text-center text-xl font-bold tabular-nums"
+              />
+            </div>
+            <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
+              {t('goal_track_note')}
+            </p>
+          </div>
+        )}
+      </Modal>
     </main>
   );
 }
