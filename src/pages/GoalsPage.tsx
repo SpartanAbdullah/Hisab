@@ -16,7 +16,10 @@ import { AddGoalModal } from './AddGoalModal';
 import { AddUpcomingExpenseModal } from './AddUpcomingExpenseModal';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import type { Goal } from '../db';
+
+const GOAL_MILESTONES = [25, 50, 75, 100];
 
 const categoryIconMap: Record<string, React.ElementType> = {
   Education: GraduationCap,
@@ -71,10 +74,39 @@ export function GoalsPage() {
     if (!selectedGoal) return;
     const amt = parseFloat(addAmount);
     if (!amt || amt <= 0) return;
+
+    // Commitment-aware take-out: a dated goal that hasn't reached its date yet
+    // gets a gentle confirm so savings aren't raided on impulse (a soft "lock"
+    // built on the existing targetDate — no schema, behavioural friction only).
+    if (addMode === 'out' && selectedGoal.targetDate) {
+      const td = new Date(selectedGoal.targetDate);
+      if (differenceInDays(td, new Date()) > 0) {
+        const ok = await confirmDestructive({
+          title: t('goal_locked_title'),
+          description: t('goal_locked_body').replace('{date}', format(td, 'd MMM yyyy')),
+          confirmLabel: t('goal_take_out'),
+          tone: 'warning',
+        });
+        if (!ok) return;
+      }
+    }
+
     setSavingAdd(true);
     try {
+      const beforePct = selectedGoal.targetAmount > 0 ? (selectedGoal.savedAmount / selectedGoal.targetAmount) * 100 : 0;
       await addContribution(selectedGoal.id, addMode === 'out' ? -amt : amt);
-      toast.show({ type: 'success', title: addMode === 'out' ? t('goal_take_out') : t('goal_add_money') });
+      // Celebrate crossing a milestone on the way up (25/50/75/100%).
+      const crossed = addMode === 'add' && selectedGoal.targetAmount > 0
+        ? GOAL_MILESTONES.filter((m) => beforePct < m && ((selectedGoal.savedAmount + amt) / selectedGoal.targetAmount) * 100 >= m).pop()
+        : undefined;
+      if (crossed) {
+        toast.show({
+          type: 'success',
+          title: crossed >= 100 ? t('goal_reached') : t('goal_milestone').replace('{pct}', String(crossed)),
+        });
+      } else {
+        toast.show({ type: 'success', title: addMode === 'out' ? t('goal_take_out') : t('goal_add_money') });
+      }
       closeAdd();
     } catch (err) {
       toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : t('err_could_not_save') });
@@ -335,9 +367,17 @@ export function GoalsPage() {
                   {targetDate && (
                     <p className="text-[10.5px] text-ink-400 tabular-nums">
                       {t('goal_by_date').replace('{date}', format(targetDate, 'd MMM yyyy'))}
-                      {daysToTarget != null && daysToTarget >= 0 && remaining > 0 && (
+                      {daysToTarget != null && daysToTarget >= 0 && remaining > 0 && onTrack !== false && (
                         <> · {t('goal_save_monthly').replace('{amount}', formatMoney(Math.ceil(monthlyNeeded), g.currency))}</>
                       )}
+                    </p>
+                  )}
+                  {/* When behind, the recomputed monthlyNeeded IS the catch-up
+                      amount (remaining ÷ months-left rises as you fall behind).
+                      Surface it as a clear, self-correcting nudge. */}
+                  {targetDate && onTrack === false && daysToTarget != null && daysToTarget >= 0 && remaining > 0 && (
+                    <p className="text-[10.5px] font-semibold text-warn-700 tabular-nums">
+                      {t('goal_catch_up').replace('{amount}', formatMoney(Math.ceil(monthlyNeeded), g.currency))}
                     </p>
                   )}
                 </div>

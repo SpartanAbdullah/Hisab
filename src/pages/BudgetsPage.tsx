@@ -4,7 +4,6 @@ import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
-import { NextStepHint } from '../components/NextStepHint';
 import { Modal } from '../components/Modal';
 import { useBudgetStore, computeBudgetUsages } from '../stores/budgetStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -40,6 +39,23 @@ export function BudgetsPage() {
   );
   const overLimitCount = usages.filter((usage) => usage.overLimit).length;
   const overWarnCount = usages.filter((usage) => usage.overWarn && !usage.overLimit).length;
+
+  // "Left to spend this month" up front — the envelope mental model. Budgets are
+  // per-currency, so we total each currency separately (primary first) rather
+  // than mixing them into one meaningless number.
+  const primaryCurrency = (localStorage.getItem('hisaab_primary_currency') as Currency) ?? 'AED';
+  const leftSummary = useMemo(() => {
+    const byCurrency = new Map<Currency, { budget: number; spent: number }>();
+    for (const u of usages) {
+      const entry = byCurrency.get(u.budget.currency) ?? { budget: 0, spent: 0 };
+      entry.budget += u.budget.monthlyAmount;
+      entry.spent += u.spent;
+      byCurrency.set(u.budget.currency, entry);
+    }
+    return [...byCurrency.entries()]
+      .map(([currency, v]) => ({ currency, budget: v.budget, spent: v.spent, left: v.budget - v.spent }))
+      .sort((a, b) => (a.currency === primaryCurrency ? -1 : b.currency === primaryCurrency ? 1 : b.budget - a.budget));
+  }, [usages, primaryCurrency]);
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -93,25 +109,26 @@ export function BudgetsPage() {
           </div>
         )}
 
-        {loadStatus === 'ready' && usages.length > 0 && (
-          <NextStepHint
-            icon={overLimitCount > 0 || overWarnCount > 0 ? AlertTriangle : Wallet2}
-            tone={overLimitCount > 0 ? 'pay' : overWarnCount > 0 ? 'warn' : 'receive'}
-            status={
-              overLimitCount > 0
-                ? `${overLimitCount} budget ${overLimitCount === 1 ? 'is' : 'are'} over the monthly cap.`
-                : overWarnCount > 0
-                ? `${overWarnCount} budget ${overWarnCount === 1 ? 'is' : 'are'} past the warning line.`
-                : 'All budgets are currently under their warning lines.'
-            }
-            next={
-              overLimitCount > 0 || overWarnCount > 0
-                ? 'Tap the highlighted category to adjust its cap or check if spending needs attention this month.'
-                : 'Add another budget for any category you want Hisaab to watch quietly in the background.'
-            }
-            actionLabel="Add budget"
-            onAction={() => setShowAdd(true)}
-          />
+        {loadStatus === 'ready' && leftSummary.length > 0 && (
+          <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+            <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+              {t('budget_left_title')}
+            </p>
+            <div className="mt-2 space-y-2">
+              {leftSummary.map((s) => (
+                <div key={s.currency} className="flex items-baseline justify-between gap-2">
+                  <span className={`text-[22px] font-bold tabular-nums tracking-tight ${s.left < 0 ? 'text-pay-text' : 'text-ink-900'}`}>
+                    {s.left < 0 ? '−' : ''}{formatMoney(Math.abs(s.left), s.currency)}
+                  </span>
+                  <span className="text-[11px] text-ink-500 tabular-nums">
+                    {t('budget_spent_of')
+                      .replace('{spent}', formatMoney(s.spent, s.currency))
+                      .replace('{total}', formatMoney(s.budget, s.currency))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {loadStatus === 'loading' && usages.length === 0 ? (

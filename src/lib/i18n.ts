@@ -1625,6 +1625,11 @@ const S = {
   goal_save_monthly: { ur: "~{amount}/mah bachao", en: "save ~{amount}/mo" },
   goal_on_track: { ur: "Theek ja raha", en: "On track" },
   goal_behind: { ur: "Peeche", en: "Behind" },
+  goal_catch_up: { ur: "Track par aane ke liye is mahine {amount} rakho", en: "Set aside {amount} this month to catch up" },
+  goal_milestone: { ur: "{pct}% ho gaya — shabash! \u{1F389}", en: "{pct}% there — keep going! \u{1F389}" },
+  goal_reached: { ur: "Goal pura ho gaya! \u{1F389}", en: "Goal reached! \u{1F389}" },
+  goal_locked_title: { ur: "Abhi nikalna hai?", en: "Take out early?" },
+  goal_locked_body: { ur: "Ye goal {date} tak ke liye hai. Phir bhi nikalna chahte hain?", en: "This goal runs until {date}. Take money out anyway?" },
   goal_date_passed: { ur: "Tareekh guzar gayi", en: "Date passed" },
   goal_amount_label: { ur: "Kitne paise?", en: "How much?" },
 
@@ -1649,6 +1654,8 @@ const S = {
   budget_over: { ur: "{n} over", en: "{n} over" },
   budget_near: { ur: "{n} limit ke kareeb", en: "{n} near limit" },
   budget_on_track: { ur: "Sab theek", en: "All on track" },
+  budget_left_title: { ur: "Is mahine kharch karne ko bacha", en: "Left to spend this month" },
+  budget_spent_of: { ur: "{spent} / {total} use hua", en: "{spent} of {total} used" },
   budget_over_by_short: { ur: "{amount} over", en: "{amount} over" },
   budget_over_by: { ur: "{amount} se zyada ho gaya", en: "over by {amount}" },
   // Loan / QuickEntry helpers
