@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useGoalStore } from '../stores/goalStore';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
@@ -14,6 +15,7 @@ interface Props { open: boolean; onClose: () => void; }
 export function AddGoalModal({ open, onClose }: Props) {
   const { createGoal } = useGoalStore();
   const t = useT();
+  const guardClose = useDiscardGuard();
 
   const [title, setTitle] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
@@ -51,8 +53,11 @@ export function AddGoalModal({ open, onClose }: Props) {
     finally { setSaving(false); }
   };
 
+  const isDirty = !!title.trim() || !!targetAmount.trim() || !!targetDate;
+
   return (
     <Modal open={open} onClose={onClose} title={t('goal_new')}
+      confirmClose={() => guardClose(isDirty)}
       footer={
         <button type="submit" form="goal-form" disabled={saving || !canSubmit} className="cta-primary">
           {saving ? t('goal_creating') : t('goal_create')}

@@ -1,5 +1,6 @@
 ﻿import { useEffect, useState } from 'react';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSplitStore } from '../stores/splitStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useAppModeStore } from '../stores/appModeStore';
@@ -40,6 +41,7 @@ function sameDisplayName(a: string | null | undefined, b: string | null | undefi
 export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, recentExpenses }: Props) {
   const t = useT();
   const toast = useToast();
+  const guardClose = useDiscardGuard();
   const { addGroupExpense } = useSplitStore();
   const { accounts, loadAccounts } = useAccountStore();
   const appMode = useAppModeStore((s) => s.mode);
@@ -246,7 +248,9 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
   const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   return (
-    <Modal open={open} onClose={onClose} title={t('group_expense_add')} footer={
+    <Modal open={open} onClose={onClose} title={t('group_expense_add')}
+      confirmClose={() => guardClose(!!description.trim() || !!amount.trim() || splitType !== 'equal')}
+      footer={
       <div className="space-y-2.5">
         {submitError && (
           <p

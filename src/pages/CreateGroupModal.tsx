@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { X, UserPlus, Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSplitStore, type ResolvedMemberInput } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
@@ -27,6 +28,7 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
   const t = useT();
   const toast = useToast();
   const navigate = useNavigate();
+  const guardClose = useDiscardGuard();
   const { createGroup } = useSplitStore();
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('✈️');
@@ -108,7 +110,9 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
   const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all";
 
   return (
-    <Modal open={open} onClose={onClose} title={t('group_new')} footer={
+    <Modal open={open} onClose={onClose} title={t('group_new')}
+      confirmClose={() => guardClose(!!name.trim() || members.length > 0 || !!codeInput.trim() || emoji !== '✈️')}
+      footer={
       <button onClick={handleSubmit} disabled={saving || !name.trim()}
         className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
         {saving ? t('group_creating') : t('group_create')}

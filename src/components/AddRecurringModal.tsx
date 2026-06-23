@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useRecurringStore } from '../stores/recurringStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from './Toast';
@@ -27,6 +28,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
   const updateTemplate = useRecurringStore((s) => s.updateTemplate);
   const accounts = useAccountStore((s) => s.accounts);
   const toast = useToast();
+  const guardClose = useDiscardGuard();
   const isEdit = !!template;
   const seedCategory =
     defaultCategory && (EXPENSE_CATEGORIES as readonly string[]).includes(defaultCategory)
@@ -147,8 +149,19 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
   // if it was a custom category later deleted (edit mode).
   const categoryList = withCurrentValue(useCategoryOptions(type), category);
 
+  const isDirty = template
+    ? label !== (template.label ?? '') ||
+      amount !== String(template.amount) ||
+      accountId !== (template.sourceAccountId ?? template.destinationAccountId ?? '') ||
+      category !== template.category ||
+      cadence !== template.cadence ||
+      nextDueDate !== template.nextDueDate ||
+      type !== (template.type === 'income' ? 'income' : 'expense')
+    : !!label.trim() || !!amount.trim() || !!accountId;
+
   return (
-    <Modal open={open} onClose={onClose} title={isEdit ? 'Edit recurring entry' : (title ?? 'New recurring entry')}>
+    <Modal open={open} onClose={onClose} title={isEdit ? 'Edit recurring entry' : (title ?? 'New recurring entry')}
+      confirmClose={() => guardClose(isDirty)}>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-2">
           <button

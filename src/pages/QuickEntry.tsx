@@ -15,6 +15,7 @@ import { useLinkedRequestStore, LINKED_REQUEST_CURRENCIES } from '../stores/link
 import { useAppModeStore } from '../stores/appModeStore';
 import { useSplitStore } from '../stores/splitStore';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
@@ -84,6 +85,7 @@ export function QuickEntry({
   const navigate = useNavigate();
   const toast = useToast();
   const t = useT();
+  const guardClose = useDiscardGuard();
 
   const [step, setStep] = useState(0);
   const [intent, setIntent] = useState<EntryIntent | null>(null);
@@ -634,6 +636,7 @@ export function QuickEntry({
   return (
     <>
       <Modal open={open && !showInlineAccount} onClose={handleClose}
+        confirmClose={() => guardClose(step > 0 || !!amount.trim())}
         title={step === 0 ? t('quick_how_much') : step === 1 ? t('quick_what_type') : t('quick_details')}
         footer={step === 0 ? (
           <button

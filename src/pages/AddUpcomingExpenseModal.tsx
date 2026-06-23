@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { useToast } from '../components/Toast';
@@ -36,6 +37,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
   const { createExpense } = useUpcomingExpenseStore();
   const toast = useToast();
   const t = useT();
+  const guardClose = useDiscardGuard();
 
   const [step, setStep] = useState(0);
   const [title, setTitle] = useState('');
@@ -48,6 +50,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
   const [saving, setSaving] = useState(false);
 
   const selectedAccount = accounts.find(a => a.id === accountId);
+  const isDirty = step > 0 || !!title.trim() || !!category || !!amount.trim() || !!dueDate || !!accountId || !!notes.trim();
 
   const reset = () => {
     setStep(0); setTitle(''); setCategory(''); setAmount(''); setDueDate('');
@@ -112,7 +115,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
   );
 
   return (
-    <Modal open={open} onClose={handleClose} title={stepTitles[step]} footer={footer}>
+    <Modal open={open} onClose={handleClose} title={stepTitles[step]} footer={footer} confirmClose={() => guardClose(isDirty)}>
       {/* Step progress */}
       <div className="flex gap-1.5 mb-5">
         {[0, 1, 2, 3].map(i => (

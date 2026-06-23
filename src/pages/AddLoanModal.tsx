@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Users, Lock } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useEmiStore } from '../stores/emiStore';
@@ -27,6 +28,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   const isLedgerOnlyMode = appMode === 'splits_only';
   const toast = useToast();
   const t = useT();
+  const guardClose = useDiscardGuard();
 
   const [loanType, setLoanType] = useState<LoanType>('given');
   const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
@@ -74,6 +76,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   const amountValid = Number.isFinite(parsedAmount) && parsedAmount > 0;
   const emiConfigured = !hasEmi || (parseInt(installments) > 0 && !!startDate);
   const canSubmit = !!contact.name.trim() && amountValid && (isLedgerOnlyMode || !!accountId) && emiConfigured;
+  const isDirty = !!contact.name.trim() || !!amount.trim() || !!notes.trim() || hasEmi;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -168,6 +171,7 @@ export function AddLoanModal({ open, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title={t('loan_new')}
+      confirmClose={() => guardClose(isDirty)}
       footer={
         <button type="submit" form="loan-form" disabled={saving || !canSubmit}
           className="cta-primary"

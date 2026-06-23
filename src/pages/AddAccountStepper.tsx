@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react';
 import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
 import { StepIndicator } from '../components/StepIndicator';
@@ -48,6 +49,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const { accounts, createAccount, loadAccounts } = useAccountStore();
   const toast = useToast();
   const t = useT();
+  const guardClose = useDiscardGuard();
   const primaryCurrency = ((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
 
   const [step, setStep] = useState(0);
@@ -148,6 +150,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   };
 
   const isCreditCard = accountType === 'credit_card';
+  const isDirty = step > 0 || !!name.trim() || !!balance.trim() || !!bankName || !!walletType || !!ccIssuer.trim() || !!ccLast4 || !!ccLimit || !!ccDueDay;
   const title = inline ? t('acct_create_first') : step === 0 ? t('acct_what_type') : step === 1 ? t('acct_details') : t('acct_opening');
 
   const footerContent = step === 1 ? (
@@ -171,7 +174,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   ) : undefined;
 
   return (
-    <Modal open={open} onClose={handleClose} title={title} footer={footerContent}>
+    <Modal open={open} onClose={handleClose} title={title} footer={footerContent} confirmClose={() => guardClose(isDirty)}>
       <div className="space-y-4">
         <StepIndicator steps={['Type', 'Details', ...(isCreditCard ? [] : ['Balance'])]} current={step} />
 

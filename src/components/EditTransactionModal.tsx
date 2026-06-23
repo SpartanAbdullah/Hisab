@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Modal } from './Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { ContactPicker, type ContactValue } from './ContactPicker';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -29,6 +30,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const loans = useLoanStore((s) => s.loans);
   const toast = useToast();
   const t = useT();
+  const guardClose = useDiscardGuard();
 
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
@@ -93,6 +95,17 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const selectedCashAdvanceCard = availableCashAdvanceCards.find((account) => account.id === cashAdvanceCardId);
 
   const editableAmount = parseFloat(amount);
+  // Dirty = any editable field differs from the hydrated transaction (receipt
+  // changes persist immediately, so they're excluded).
+  const origAccountId = transaction.type === 'loan_taken' ? (transaction.destinationAccountId ?? '') : (transaction.sourceAccountId ?? '');
+  const origCashAdvance = transaction.type === 'loan_taken' ? (transaction.sourceAccountId ?? '') : '';
+  const isDirty =
+    amount !== String(transaction.amount) ||
+    accountId !== origAccountId ||
+    cashAdvanceCardId !== origCashAdvance ||
+    category !== (transaction.category ?? '') ||
+    notes !== parseInternalNote(transaction.notes).visibleNote ||
+    (contact.id ?? null) !== originalPersonId;
   const isExpense = transaction.type === 'expense';
   const isLoanGiven = transaction.type === 'loan_given';
   const isLoanTaken = transaction.type === 'loan_taken';
@@ -253,6 +266,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
       open={open}
       onClose={onClose}
       title={t('edit_entry_title')}
+      confirmClose={() => guardClose(isDirty)}
       footer={(
         <div className="flex gap-2">
           <button

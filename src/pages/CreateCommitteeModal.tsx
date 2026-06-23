@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, X, Trash2, Shield } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useToast } from '../components/Toast';
 import { useCommitteeStore, type NewCommitteeMember } from '../stores/committeeStore';
 import { currencyMeta } from '../lib/design-tokens';
@@ -20,6 +21,7 @@ type Row = { name: string; phone: string };
 export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
   const t = useT();
   const toast = useToast();
+  const guardClose = useDiscardGuard();
   const createCommittee = useCommitteeStore((s) => s.createCommittee);
 
   const myName = localStorage.getItem('hisaab_user_name') || '';
@@ -52,6 +54,7 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
   // Disable-until-valid: a name, a positive contribution, and at least one
   // named member (you're added as organizer automatically).
   const canCreate = !!name.trim() && amt > 0 && rows.some((r) => r.name.trim());
+  const isDirty = !!name.trim() || !!amount.trim() || rows.some((r) => r.name.trim() || r.phone.trim());
 
   const handleCreate = async () => {
     if (!name.trim()) { toast.show({ type: 'error', title: t('kameti_name') }); return; }
@@ -87,6 +90,7 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
       open={open}
       onClose={onClose}
       title={t('kameti_new')}
+      confirmClose={() => guardClose(isDirty)}
       footer={
         <button onClick={handleCreate} disabled={saving || !canCreate} className="cta-primary">
           {saving ? t('kameti_creating') : t('kameti_create')}

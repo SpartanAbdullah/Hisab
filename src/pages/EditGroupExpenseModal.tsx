@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSplitStore } from '../stores/splitStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useAppModeStore } from '../stores/appModeStore';
@@ -33,6 +34,7 @@ function sameDisplayName(a: string | null | undefined, b: string | null | undefi
 export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) {
   const t = useT();
   const toast = useToast();
+  const guardClose = useDiscardGuard();
   const { updateGroupExpense, deleteGroupExpense } = useSplitStore();
   const { accounts, loadAccounts } = useAccountStore();
   const appMode = useAppModeStore((s) => s.mode);
@@ -175,7 +177,14 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit Expense" footer={
+    <Modal open={open} onClose={onClose} title="Edit Expense"
+      confirmClose={() => guardClose(!!expense && (
+        description !== expense.description ||
+        amount !== String(expense.amount) ||
+        paidBy !== expense.paidBy ||
+        splitType !== expense.splitType
+      ))}
+      footer={
       <div className="flex gap-2">
         <button onClick={handleDelete} className="px-4 py-3.5 rounded-2xl bg-pay-50 text-pay-text active:bg-pay-100 transition-all">
           <Trash2 size={16} />
