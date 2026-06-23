@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -7,6 +7,7 @@ import { useLoanStore } from '../stores/loanStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useToast } from '../components/Toast';
 import { resolveProfileByCode } from '../lib/collaboration';
+import { buildWhatsAppUrl, hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { formatMoney } from '../lib/constants';
 import { computeTrustScore, trustLevelStyle } from '../lib/trustScore';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
@@ -29,7 +30,7 @@ type Mode = 'idle' | 'entering' | 'resolved';
 // "Link to Hisaab user" or "Unlink". The code lookup only runs on explicit
 // Resolve button press, never on keystrokes.
 export function ContactDetailSheet({ open, person, onClose }: Props) {
-  const { linkToProfile, unlinkFromProfile, archiveIfSettled } = usePersonStore();
+  const { linkToProfile, unlinkFromProfile, archiveIfSettled, updatePhone } = usePersonStore();
   const syncableBreakdownFor = useLinkedRequestStore((s) => s.syncableBreakdownFor);
   const syncPastRecords = useLinkedRequestStore((s) => s.syncPastRecords);
   // Subscribe to requests so the syncable count updates after a sync fires.
@@ -52,6 +53,23 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [showMoneyEntry, setShowMoneyEntry] = useState(false);
   const [moneyPreset, setMoneyPreset] = useState<QuickEntryPreset | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneDraft, setPhoneDraft] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
+
+  const savePhone = async () => {
+    if (!person) return;
+    setSavingPhone(true);
+    try {
+      await updatePhone(person.id, phoneDraft);
+      setEditingPhone(false);
+      toast.show({ type: 'success', title: phoneDraft.trim() ? t('contact_whatsapp_saved') : t('contact_whatsapp_removed') });
+    } catch {
+      toast.show({ type: 'error', title: t('err_could_not_save') });
+    } finally {
+      setSavingPhone(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) {
@@ -64,6 +82,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       setSaving(false);
       setSyncing(false);
       setArchiving(false);
+      setEditingPhone(false);
     }
   }, [open]);
 
@@ -292,6 +311,46 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
               ))}
             </div>
           )}
+        </div>
+
+        {/* WhatsApp number — add it once so payment reminders go straight to
+            their chat, and so the contact list shows the WhatsApp badge. */}
+        <div className="rounded-2xl bg-cream-card border border-cream-border p-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${hasWhatsAppNumber(person.phone) ? 'bg-receive-50' : 'bg-cream-soft'}`}>
+              <MessageCircle size={16} strokeWidth={2} style={{ color: hasWhatsAppNumber(person.phone) ? '#1FA855' : 'var(--color-ink-400)' }} />
+            </div>
+            {editingPhone ? (
+              <div className="flex-1 flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={phoneDraft}
+                  onChange={(e) => setPhoneDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void savePhone(); } if (e.key === 'Escape') setEditingPhone(false); }}
+                  placeholder="+971 50 123 4567"
+                  inputMode="tel"
+                  className="flex-1 min-w-0 bg-cream-soft border border-cream-border rounded-lg px-3 py-2 text-[13px] text-ink-900 outline-none focus:border-accent-500"
+                />
+                <button type="button" disabled={savingPhone} onClick={() => void savePhone()} className="text-receive-600 active:scale-90 disabled:opacity-40" aria-label={t('cat_save')}><Check size={16} strokeWidth={2.8} /></button>
+                <button type="button" onClick={() => setEditingPhone(false)} className="text-ink-400 active:scale-90" aria-label={t('cancel')}><X size={16} /></button>
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-semibold text-ink-900">{t('contact_whatsapp')}</p>
+                  <p className="text-[11px] text-ink-500 truncate">{person.phone || t('contact_whatsapp_none')}</p>
+                </div>
+                {hasWhatsAppNumber(person.phone) && (
+                  <a href={buildWhatsAppUrl(person.phone, '')} target="_blank" rel="noopener noreferrer" className="shrink-0 active:scale-90" style={{ color: '#1FA855' }} aria-label="WhatsApp">
+                    <MessageCircle size={17} />
+                  </a>
+                )}
+                <button type="button" onClick={() => { setPhoneDraft(person.phone ?? ''); setEditingPhone(true); }} className="text-accent-600 text-[11px] font-semibold shrink-0">
+                  {person.phone ? t('contact_whatsapp_edit') : t('contact_whatsapp_add')}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <div>

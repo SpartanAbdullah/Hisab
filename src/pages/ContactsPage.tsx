@@ -7,7 +7,9 @@ import {
   CheckCircle2,
   Sparkles,
   Info,
+  MessageCircle,
 } from 'lucide-react';
+import { hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { usePersonStore } from '../stores/personStore';
 import { useLoanStore } from '../stores/loanStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
@@ -461,6 +463,11 @@ export function ContactsPage() {
                         <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
                           {person.name}
                         </p>
+                        {/* WhatsApp badge — at a glance, whether this contact
+                            has a number saved for reminders. */}
+                        {hasWhatsAppNumber(person.phone) && (
+                          <MessageCircle size={13} strokeWidth={2.2} className="shrink-0" style={{ color: '#1FA855' }} aria-label="WhatsApp added" />
+                        )}
                         {person.linkedProfileId ? (
                           <span className="text-[10px] font-semibold uppercase tracking-[0.08em] rounded-full bg-accent-100 text-accent-600 px-1.5 py-0.5 shrink-0">
                             linked

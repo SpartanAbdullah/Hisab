@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useState, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
 import { ToastContainer } from './components/Toast';
@@ -300,6 +300,20 @@ function AppContent() {
     });
     if (resumePath) navigate(resumePath, { replace: true });
   }, [completed, location.pathname, navigate, user]);
+
+  // Scroll back to the top on every route change so returning to a page never
+  // lands you halfway down where you left the previous one.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+
+  // On logout, reset the URL to Home so the next login lands on Home — not the
+  // page the user was on when they signed out (e.g. Settings).
+  const wasAuthed = useRef(false);
+  useEffect(() => {
+    if (wasAuthed.current && !user) navigate('/', { replace: true });
+    wasAuthed.current = !!user;
+  }, [user, navigate]);
 
   // Public witness route — a read-only committee record reachable WITHOUT an
   // account (for non-app members/relatives). Checked before every other gate

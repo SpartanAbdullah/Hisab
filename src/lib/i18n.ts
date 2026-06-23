@@ -1380,6 +1380,12 @@ const S = {
   connect_share_text: { ur: "Mujhe Hisaab par add karein — mera code hai", en: "Add me on Hisaab — my code is" },
   connect_code_copied: { ur: "Code copy ho gaya", en: "Code copied" },
   connect_code_copy_failed: { ur: "Copy nahi hua", en: "Couldn't copy" },
+  contact_whatsapp: { ur: "WhatsApp number", en: "WhatsApp number" },
+  contact_whatsapp_none: { ur: "Add nahi kiya", en: "Not added" },
+  contact_whatsapp_add: { ur: "Add", en: "Add" },
+  contact_whatsapp_edit: { ur: "Edit", en: "Edit" },
+  contact_whatsapp_saved: { ur: "WhatsApp number save ho gaya", en: "WhatsApp number saved" },
+  contact_whatsapp_removed: { ur: "Number hata diya", en: "Number removed" },
   contacts_empty: { ur: "Abhi koi contact nahi.", en: "No contacts yet." },
   contacts_link_help: {
     ur: "Dusra person say kahain wo Hisaab use kare aur apna code ap kay sath share kare. Phir yahan link karne ke baad app connect ho jaogy aur loan/split approvals bheje ja sakte hain.",
@@ -1624,6 +1630,8 @@ const S = {
   // At-a-glance status labels
   status_overdue: { ur: "Overdue", en: "Overdue" },
   status_due_soon: { ur: "Jald due", en: "Due soon" },
+  loan_age_today: { ur: "Aaj", en: "Today" },
+  loan_age_days: { ur: "{n} din", en: "{n}d" },
   status_settled: { ur: "Settled", en: "Settled" },
   status_unsettled: { ur: "Baqaya", en: "Unsettled" },
   status_pending_reply: { ur: "Jawab ka intezar", en: "Awaiting reply" },

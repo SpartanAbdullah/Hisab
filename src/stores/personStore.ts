@@ -13,6 +13,7 @@ interface PersonState {
   findOrCreateByName: (name: string) => Promise<Person>;
   linkToProfile: (personId: string, profileId: string) => Promise<void>;
   unlinkFromProfile: (personId: string) => Promise<void>;
+  updatePhone: (personId: string, phone: string | null) => Promise<void>;
   archiveIfSettled: (personId: string) => Promise<ArchiveContactResult>;
   reset: () => void;
 }
@@ -108,6 +109,14 @@ export const usePersonStore = create<PersonState>((set, get) => ({
     await personsDb.setLinkedProfileId(personId, null);
     set((s) => ({
       persons: s.persons.map((p) => (p.id === personId ? { ...p, linkedProfileId: null } : p)),
+    }));
+  },
+
+  updatePhone: async (personId, phone) => {
+    const next = phone && phone.trim() ? phone.trim() : null;
+    await personsDb.setPhone(personId, next);
+    set((s) => ({
+      persons: s.persons.map((p) => (p.id === personId ? { ...p, phone: next } : p)),
     }));
   },
 

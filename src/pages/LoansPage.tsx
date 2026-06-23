@@ -385,6 +385,12 @@ export function LoansPage() {
       : 0;
     const status = getGroupStatus(group);
     const isLinked = groupHasLinked(group);
+    // Age of the oldest loan in this group, so the user can see what's been
+    // outstanding longest and prioritise. Colour-coded: fresh (green) →
+    // ageing (amber) → stale (coral).
+    const firstLoanDate = getOldestIsoDate(group.loans.map((l) => l.createdAt));
+    const daysOld = firstLoanDate ? Math.max(0, differenceInDays(new Date(), new Date(firstLoanDate))) : null;
+    const ageBucket = daysOld == null ? null : daysOld > 30 ? 'pay' : daysOld >= 7 ? 'warn' : 'receive';
 
     return (
       <button
@@ -413,6 +419,22 @@ export function LoansPage() {
                   <Clock size={10} strokeWidth={2.4} />
                 )}
                 {status === 'overdue' ? t('status_overdue') : t('status_due_soon')}
+              </span>
+            )}
+            {/* Age of the oldest loan — colour-coded so the longest-standing
+                debts stand out for prioritising. */}
+            {!isSettled && daysOld != null && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold shrink-0 tabular-nums ${
+                  ageBucket === 'pay'
+                    ? 'bg-pay-50 text-pay-text'
+                    : ageBucket === 'warn'
+                    ? 'bg-warn-50 text-warn-700'
+                    : 'bg-receive-50 text-receive-text'
+                }`}
+              >
+                <Clock size={10} strokeWidth={2.4} />
+                {daysOld === 0 ? t('loan_age_today') : t('loan_age_days').replace('{n}', String(daysOld))}
               </span>
             )}
           </div>

@@ -305,6 +305,12 @@ export const personsDb = {
       .eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
+  async setPhone(id: string, phone: string | null) {
+    const { error } = await supabase
+      .from('persons').update({ phone })
+      .eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
   async archiveIfSettled(id: string): Promise<ArchiveContactResult> {
     const { data, error } = await supabase.rpc('archive_contact_if_settled', {
       p_contact_id: id,
