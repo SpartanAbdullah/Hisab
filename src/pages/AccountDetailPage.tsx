@@ -465,6 +465,7 @@ export function AccountDetailPage() {
                   Cancel
                 </button>
                 <button
+                  disabled={!newName.trim() || newName.trim() === account.name}
                   onClick={async () => {
                     if (newName.trim() && newName.trim() !== account.name) {
                       await renameAccount(account.id, newName.trim());
@@ -472,7 +473,7 @@ export function AccountDetailPage() {
                     }
                     setShowRename(false);
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold"
+                  className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30 transition-opacity"
                 >
                   Save
                 </button>

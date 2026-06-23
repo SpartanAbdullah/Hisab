@@ -70,6 +70,10 @@ export function OnboardingPage() {
   const [acctType, setAcctType] = useState<AccountType>('cash');
   const [acctName, setAcctName] = useState('');
   const [acctBalance, setAcctBalance] = useState('');
+  // Opening balance may be blank (= 0) but never negative or non-numeric.
+  const acctBalanceValid =
+    acctBalance.trim() === '' ||
+    (Number.isFinite(parseFloat(acctBalance)) && parseFloat(acctBalance) >= 0);
 
   // Finish onboarding. For full_tracker, optionally create the first account so
   // the user lands ready; account creation is best-effort and never blocks.
@@ -80,7 +84,7 @@ export function OnboardingPage() {
     if (withAccount && selectedMode === 'full_tracker' && acctName.trim()) {
       try {
         await useAccountStore.getState().createAccount({
-          name: acctName.trim(), type: acctType, currency, balance: parseFloat(acctBalance) || 0,
+          name: acctName.trim(), type: acctType, currency, balance: Math.max(0, parseFloat(acctBalance) || 0),
         });
       } catch (err) {
         console.error('onboarding account create failed (non-fatal)', err);
@@ -387,6 +391,7 @@ export function OnboardingPage() {
                   <input type="number" inputMode="decimal" value={acctBalance} onChange={e => setAcctBalance(e.target.value)} placeholder="0.00"
                     className="w-full bg-white/8 border border-white/15 rounded-2xl pl-16 pr-4 py-4 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30 text-[15px] tabular-nums backdrop-blur-sm" />
                 </div>
+                {!acctBalanceValid && <p className="text-[11px] text-[#F2967C] mt-1.5 font-medium">{t('val_balance_invalid')}</p>}
               </div>
             </div>
             {loading && (
@@ -396,7 +401,7 @@ export function OnboardingPage() {
               </div>
             )}
             <div className="pb-6 space-y-1">
-              <Button variant="secondary" size="lg" onClick={() => handleFinish(true)} disabled={loading || !acctName.trim()} icon={<ArrowRight size={16} />}>
+              <Button variant="secondary" size="lg" onClick={() => handleFinish(true)} disabled={loading || !acctName.trim() || !acctBalanceValid} icon={<ArrowRight size={16} />}>
                 {t('onboard_acct_create')}
               </Button>
               <button onClick={() => handleFinish(false)} disabled={loading} className="text-[12px] text-white/45 w-full text-center min-h-[44px] font-medium">{t('onboard_acct_skip')}</button>

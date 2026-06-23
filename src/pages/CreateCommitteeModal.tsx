@@ -49,11 +49,17 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
   const addRow = () => setRows((rs) => [...rs, { name: '', phone: '' }]);
   const removeRow = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
 
+  // Disable-until-valid: a name, a positive contribution, and at least one
+  // named member (you're added as organizer automatically).
+  const canCreate = !!name.trim() && amt > 0 && rows.some((r) => r.name.trim());
+
   const handleCreate = async () => {
     if (!name.trim()) { toast.show({ type: 'error', title: t('kameti_name') }); return; }
     if (!(amt > 0)) { toast.show({ type: 'error', title: t('val_need_amount') }); return; }
     const named = rows.filter((r) => r.name.trim());
-    if (named.length < 1) { toast.show({ type: 'error', title: t('kameti_min_members') }); return; }
+    // You're added automatically as organizer, so one named row = 2 people.
+    // (The old copy said "add 2 members" which didn't match this threshold.)
+    if (named.length < 1) { toast.show({ type: 'error', title: t('kameti_need_one_member') }); return; }
 
     const members: NewCommitteeMember[] = [
       { name: organizerName.trim() || t('kameti_you_organizer'), isOrganizer: true },
@@ -82,7 +88,7 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
       onClose={onClose}
       title={t('kameti_new')}
       footer={
-        <button onClick={handleCreate} disabled={saving} className="cta-primary">
+        <button onClick={handleCreate} disabled={saving || !canCreate} className="cta-primary">
           {saving ? t('kameti_creating') : t('kameti_create')}
         </button>
       }

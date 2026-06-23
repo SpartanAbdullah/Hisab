@@ -253,7 +253,17 @@ export function GoalsPage() {
                     >
                       <CheckCircle size={12} /> {t('upcoming_status_done')}
                     </button>
-                    <button onClick={() => updateStatus(exp.id, 'cancelled')}
+                    <button onClick={() => {
+                        // Instant cancel with an Undo — the Cancel button sits
+                        // right next to Done, so a mis-tap should be painless.
+                        const prev = exp.status;
+                        void updateStatus(exp.id, 'cancelled');
+                        toast.show({
+                          type: 'success',
+                          title: t('upcoming_cancelled'),
+                          action: { label: t('undo'), onPress: () => void updateStatus(exp.id, prev) },
+                        });
+                      }}
                       className="min-h-[44px] py-2 px-3 rounded-xl border border-pay-100 text-pay-text flex items-center gap-1.5 active:bg-pay-50 transition-all text-[11px] font-bold"
                     >
                       <XCircle size={12} /> {t('upcoming_status_cancel')}

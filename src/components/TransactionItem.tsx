@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import type { Transaction } from '../db';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useToast } from './Toast';
 import { useLoanStore } from '../stores/loanStore';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -60,6 +61,7 @@ interface Props {
 
 export function TransactionItem({ transaction, accountContextId, onClick }: Props) {
   const t = useT();
+  const toast = useToast();
   const [savingReconciliation, setSavingReconciliation] = useState(false);
   const accounts = useAccountStore((state) => state.accounts);
   const loans = useLoanStore((state) => state.loans);
@@ -131,6 +133,9 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
       await setReconciled(transaction.id, !isReconciled);
     } catch (err) {
       console.error('Failed to update reconciliation', err);
+      // The checkmark optimistically flips back; tell the user it didn't stick
+      // instead of silently desyncing.
+      toast.show({ type: 'error', title: t('reconcile_failed') });
     } finally {
       setSavingReconciliation(false);
     }

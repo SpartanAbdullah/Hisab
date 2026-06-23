@@ -189,6 +189,9 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
           <p className="text-[11px] text-ink-500 mt-1.5">
             {t('stl_amount_hint').replace('{remaining}', formatMoney(loan.remainingAmount, loan.currency))}
           </p>
+          {Number.isFinite(parseFloat(amount)) && parseFloat(amount) - loan.remainingAmount > 0.00001 && (
+            <p className="text-[11px] text-pay-text mt-1 font-semibold">{t('stl_amount_over')}</p>
+          )}
         </div>
 
         <div>

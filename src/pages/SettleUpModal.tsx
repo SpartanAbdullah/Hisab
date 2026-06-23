@@ -110,6 +110,8 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
     ? Math.round((selectedDebt.amount - enteredAmount) * 100) / 100
     : selectedDebt?.amount ?? 0;
   const fullySettled = selectedDebt ? remainingAfter <= 0.005 : false;
+  // Disable-until-valid: a positive amount that doesn't exceed what's owed.
+  const canSettle = hasValidAmount && !!selectedDebt && enteredAmount - selectedDebt.amount <= 0.005;
 
   const selectDebt = (d: Debt) => {
     setSelectedDebt(d);
@@ -134,7 +136,7 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
   return (
     <Modal open={open} onClose={onClose} title={t('group_settle_title')} footer={
       selectedDebt ? (
-        <button onClick={handleSettle} disabled={saving}
+        <button onClick={handleSettle} disabled={saving || !canSettle}
           className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
           {saving ? t('quick_processing') : t('group_settle_save')}
         </button>

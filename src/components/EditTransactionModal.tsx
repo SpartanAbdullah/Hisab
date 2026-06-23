@@ -7,7 +7,6 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
 import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
-import { confirmDestructive } from './ConfirmDestructiveSheet';
 import { CategoryPicker } from './CategoryPicker';
 import { ReceiptField } from './ReceiptField';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
@@ -25,7 +24,7 @@ interface Props {
 
 export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const { accounts, loadAccounts } = useAccountStore();
-  const { updateTransaction, deleteTransaction } = useTransactionStore();
+  const { updateTransaction, deleteTransaction, restoreTransaction } = useTransactionStore();
   const persistReceiptPath = useTransactionStore((s) => s.setReceiptPath);
   const loans = useLoanStore((s) => s.loans);
   const toast = useToast();
@@ -171,18 +170,26 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   };
 
   const handleDelete = async () => {
-    const ok = await confirmDestructive({
-      title: t('del_tx_title'),
-      description: t('del_tx_body'),
-      confirmLabel: 'Delete',
-    });
-    if (!ok) return;
-
+    // Deleting a single entry is fully reversible (restoreTransaction re-adds
+    // the row and re-applies balances), so instead of a blocking "are you
+    // sure?" we delete instantly and offer Undo in the toast.
+    const snapshot = transaction;
     setSaving(true);
     try {
       await deleteTransaction(transaction.id);
-      toast.show({ type: 'success', title: 'Entry deleted' });
       onClose();
+      toast.show({
+        type: 'success',
+        title: t('tx_deleted'),
+        action: {
+          label: t('undo'),
+          onPress: () => {
+            void restoreTransaction(snapshot).catch(() =>
+              toast.show({ type: 'error', title: t('undo_failed') }),
+            );
+          },
+        },
+      });
     } catch (error) {
       toast.show({
         type: 'error',

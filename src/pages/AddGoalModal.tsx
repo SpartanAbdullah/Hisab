@@ -24,12 +24,18 @@ export function AddGoalModal({ open, onClose }: Props) {
 
   const today = new Date().toISOString().slice(0, 10);
 
+  // Disable-until-valid: a name and a finite, positive target (a bare `!amt`
+  // check lets negatives and "12abc" through).
+  const parsedTarget = parseFloat(targetAmount);
+  const targetValid = Number.isFinite(parsedTarget) && parsedTarget > 0;
+  const canSubmit = !!title.trim() && targetValid;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     const amt = parseFloat(targetAmount);
     if (!title.trim()) { setError(t('val_need_name')); return; }
-    if (!amt) { setError(t('val_need_amount')); return; }
+    if (!targetValid) { setError(t('val_need_amount')); return; }
 
     setSaving(true);
     try {
@@ -48,7 +54,7 @@ export function AddGoalModal({ open, onClose }: Props) {
   return (
     <Modal open={open} onClose={onClose} title={t('goal_new')}
       footer={
-        <button type="submit" form="goal-form" disabled={saving} className="cta-primary">
+        <button type="submit" form="goal-form" disabled={saving || !canSubmit} className="cta-primary">
           {saving ? t('goal_creating') : t('goal_create')}
         </button>
       }

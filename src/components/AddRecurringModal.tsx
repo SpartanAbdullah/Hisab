@@ -64,6 +64,13 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
     }
   }, [open, template, seedCategory]);
 
+  // Disable-until-valid: a positive amount and a chosen account (matches the
+  // budget modal), so Save isn't a dead tap on an empty form.
+  const canSave = (() => {
+    const n = Number(amount);
+    return Number.isFinite(n) && n > 0 && !!accountId;
+  })();
+
   const handleSave = async () => {
     const numeric = Number(amount);
     if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -238,7 +245,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
           </div>
         </div>
 
-        <button onClick={handleSave} disabled={saving} className="cta-primary">
+        <button onClick={handleSave} disabled={saving || !canSave} className="cta-primary">
           {saving ? 'Saving…' : isEdit ? 'Update' : 'Save'}
         </button>
       </div>

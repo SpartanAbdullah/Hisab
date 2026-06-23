@@ -67,14 +67,23 @@ export function AddLoanModal({ open, onClose }: Props) {
     requestCurrency
   );
 
+  // Disable-until-valid: a positive amount, a name, an account (when tracking),
+  // and — if an EMI plan is toggled on — both EMI fields, so the user can't
+  // think they set up instalments and silently get none.
+  const parsedAmount = parseFloat(amount);
+  const amountValid = Number.isFinite(parsedAmount) && parsedAmount > 0;
+  const emiConfigured = !hasEmi || (parseInt(installments) > 0 && !!startDate);
+  const canSubmit = !!contact.name.trim() && amountValid && (isLedgerOnlyMode || !!accountId) && emiConfigured;
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
     const amt = parseFloat(amount);
     const trimmedName = contact.name.trim();
-    if (!amt) { setError(t('val_need_amount')); return; }
+    if (!amountValid) { setError(t('val_need_amount')); return; }
     if (!trimmedName) { setError(t('val_need_name')); return; }
     if (!isLedgerOnlyMode && !accountId) { setError(t('val_pick_account')); return; }
+    if (!emiConfigured) { setError(t('val_emi_incomplete')); return; }
     setSaving(true);
     try {
       const person = contact.id
@@ -160,7 +169,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   return (
     <Modal open={open} onClose={onClose} title={t('loan_new')}
       footer={
-        <button type="submit" form="loan-form" disabled={saving}
+        <button type="submit" form="loan-form" disabled={saving || !canSubmit}
           className="cta-primary"
         >{saving ? t('loan_creating') : wouldBranchToLinked ? t('ltr_branch_cta') : t('loan_create')}</button>
       }
@@ -286,6 +295,9 @@ export function AddLoanModal({ open, onClose }: Props) {
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-field" required />
             </div>
           </div>
+        )}
+        {hasEmi && !emiConfigured && (
+          <p className="text-[11px] text-warn-700 -mt-1.5">{t('val_emi_incomplete')}</p>
         )}
 
         {/* Glanceable confirm/private chip near the Save CTA — mirrors

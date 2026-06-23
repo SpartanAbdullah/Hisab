@@ -96,7 +96,16 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
     return name.trim().length > 0;
   };
 
+  // Opening balance may be left blank (= 0) but never negative or non-numeric.
+  const balanceValid = (() => {
+    const tb = balance.trim();
+    if (tb === '') return true;
+    const n = parseFloat(tb);
+    return Number.isFinite(n) && n >= 0;
+  })();
+
   const handleSubmit = async () => {
+    if (!balanceValid) { toast.show({ type: 'error', title: t('val_balance_invalid') }); return; }
     setSaving(true);
     try {
       const metadata: Record<string, string> = {};
@@ -155,7 +164,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   ) : step === 2 ? (
     <div className="flex gap-2.5">
       <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft">&#x2190;</button>
-      <button onClick={handleSubmit} disabled={saving || !name.trim()}
+      <button onClick={handleSubmit} disabled={saving || !name.trim() || !balanceValid}
         className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
       >{saving ? t('acct_creating') : <><Check size={16} /> {t('acct_create')}</>}</button>
     </div>
@@ -328,6 +337,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                 autoFocus
               />
               <p className="text-[11px] text-ink-500 text-center mt-1.5">{t('acct_leave_empty')}</p>
+              {!balanceValid && <p className="text-[11px] text-pay-text text-center mt-1 font-semibold">{t('val_balance_invalid')}</p>}
             </div>
           </div>
         )}

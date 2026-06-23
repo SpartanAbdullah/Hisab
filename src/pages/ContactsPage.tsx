@@ -137,6 +137,12 @@ export function ContactsPage() {
     setNewPhone('');
   };
 
+  // Soft warning (not a block — two real people can share a name): a duplicate
+  // contact name collides with the name-based loan matching used elsewhere.
+  const duplicateName =
+    newName.trim().length > 0 &&
+    persons.some((p) => p.name.trim().toLowerCase() === newName.trim().toLowerCase());
+
   const handleCreate = async () => {
     const trimmed = newName.trim();
     if (!trimmed) return;
@@ -265,6 +271,12 @@ export function ContactsPage() {
                 autoFocus
                 className="w-full bg-cream-bg border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
               />
+              {duplicateName && (
+                <p className="text-[11px] text-warn-700 mt-1.5 flex items-start gap-1">
+                  <span aria-hidden>&#x26a0;&#xfe0f;</span>
+                  {t('contact_dup_warning').replace('{name}', newName.trim())}
+                </p>
+              )}
             </div>
 
             <div>

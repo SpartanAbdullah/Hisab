@@ -411,6 +411,11 @@ const S = {
   discard_body: { ur: "Aap ke un-save kiye hue changes chale jayenge.", en: "Your unsaved changes will be lost." },
   discard_yes: { ur: "Chhoṛ dein", en: "Discard" },
   discard_keep: { ur: "Editing jari rakhein", en: "Keep editing" },
+  // Undo (toast action) — used for reversible deletes/cancels
+  undo: { ur: "Undo", en: "Undo" },
+  undo_failed: { ur: "Undo nahi ho saka", en: "Couldn't undo" },
+  tx_deleted: { ur: "Entry delete ho gayi", en: "Entry deleted" },
+  upcoming_cancelled: { ur: "Cancel kar diya", en: "Marked cancelled" },
   // Inbox reject / withdraw confirms (shared by loan requests + settlements)
   inbox_reject_confirm_title: { ur: "Yeh request decline karein?", en: "Decline this request?" },
   inbox_reject_confirm_body: { ur: "Yeh haṭ jayega aur dusre shakhs ko pata chal jayega ke aap ne decline kiya.", en: "It'll be removed and the other person will see that you declined." },
@@ -427,6 +432,8 @@ const S = {
   stl_confirm_body: { ur: "{amount} dusre shakhs ko confirm karne ke liye jayega. Dono loans tabhi settled honge jab woh accept karenge.", en: "{amount} will be sent to the other person to confirm. Both loans are marked settled only after they accept." },
   stl_confirm_balance_note: { ur: "Unke accept karte hi aap ke account ka balance update ho jayega.", en: "Your account balance updates once they accept." },
   stl_confirm_cta: { ur: "Request bhejein", en: "Send request" },
+  stl_amount_over: { ur: "Yeh baqi raqam se zyada hai.", en: "That's more than what's left to settle." },
+  reconcile_failed: { ur: "Reconcile update nahi hua — dobara koshish karein.", en: "Couldn't update — tap to try again." },
   settings_appearance_desc: { ur: "Light, dark ya system", en: "Light, dark, or match system" },
   theme_light: { ur: "Light", en: "Light" },
   theme_dark: { ur: "Dark", en: "Dark" },
@@ -1652,6 +1659,9 @@ const S = {
   val_need_amount: { ur: "Pehle amount likho", en: "Enter an amount first" },
   val_need_name: { ur: "Ek naam do", en: "Give it a name" },
   val_pick_account: { ur: "Account chuno", en: "Choose an account" },
+  val_emi_incomplete: { ur: "Instalments aur start date dono bharein.", en: "Add the number of instalments and a start date." },
+  val_balance_invalid: { ur: "Opening balance negative ya ghalat nahi ho sakta.", en: "Opening balance can't be negative." },
+  contact_dup_warning: { ur: "Aap ke pass pehle se “{name}” naam ka contact hai. Dusra banane se loan matching confuse ho sakti hai.", en: "You already have a contact named “{name}”. Adding another can make loan matching ambiguous." },
   val_pick_member: { ur: "Kam se kam ek banda chuno jiske sath bantna hai", en: "Pick at least one person to split with" },
   val_shares_zero: { ur: "Kam se kam ek banday ko hissa do", en: "Give at least one person a share" },
   // Repayment CTA (direction-aware)
@@ -1784,6 +1794,7 @@ const S = {
   kameti_member_phone_ph: { ur: "WhatsApp number (optional)", en: "WhatsApp number (optional)" },
   kameti_you_organizer: { ur: "Aap (organizer)", en: "You (organizer)" },
   kameti_min_members: { ur: "Kam az kam 2 members add karein", en: "Add at least 2 members" },
+  kameti_need_one_member: { ur: "Kam az kam ek member add karein (aap khud organizer hain)", en: "Add at least one member (you're the organizer)" },
   kameti_pool: { ur: "Har baari ka pool", en: "Pool each round" },
   kameti_round_of: { ur: "Baari {r} / {n}", en: "Round {r} of {n}" },
   kameti_no_custody: { ur: "Hisaab paisa nahi rakhta", en: "Hisaab never holds the money" },
