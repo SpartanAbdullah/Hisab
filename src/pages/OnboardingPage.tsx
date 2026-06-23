@@ -4,9 +4,10 @@ import { Wallet, ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle,
 import { MODE_QUIZ, recommendMode } from '../lib/modeQuiz';
 import { useOnboardingStore } from '../stores/onboardingStore';
 import { useAppModeStore } from '../stores/appModeStore';
+import { useAccountStore } from '../stores/accountStore';
 import { useI18nStore, useT } from '../lib/i18n';
 import { Button } from '../components/Button';
-import { SUPPORTED_CURRENCIES, type Currency, type AppMode } from '../db';
+import { SUPPORTED_CURRENCIES, type Currency, type AppMode, type AccountType } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
 
 // Hoisted out of OnboardingPage — components defined inside a parent render
@@ -65,10 +66,26 @@ export function OnboardingPage() {
     if (next.length === MODE_QUIZ.length) setSelectedMode(recommendMode(next));
   };
 
-  const handleStart = async () => {
+  // First-account fields — only used (and only shown) for full_tracker.
+  const [acctType, setAcctType] = useState<AccountType>('cash');
+  const [acctName, setAcctName] = useState('');
+  const [acctBalance, setAcctBalance] = useState('');
+
+  // Finish onboarding. For full_tracker, optionally create the first account so
+  // the user lands ready; account creation is best-effort and never blocks.
+  const handleFinish = async (withAccount: boolean) => {
     if (!name.trim()) return;
     setLoading(true);
     setMode(selectedMode);
+    if (withAccount && selectedMode === 'full_tracker' && acctName.trim()) {
+      try {
+        await useAccountStore.getState().createAccount({
+          name: acctName.trim(), type: acctType, currency, balance: parseFloat(acctBalance) || 0,
+        });
+      } catch (err) {
+        console.error('onboarding account create failed (non-fatal)', err);
+      }
+    }
     await completeOnboarding(name.trim(), currency, selectedMode);
   };
 
@@ -337,8 +354,59 @@ export function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 4: Fresh Start */}
-        {step === 4 && (
+        {/* Step 4 (full_tracker): create the first account so the user lands ready */}
+        {step === 4 && selectedMode === 'full_tracker' && (
+          <div className="flex-1 flex flex-col px-8 pt-16 animate-fade-in">
+            <div className="mb-6">
+              <StepDots current={4} />
+              <h2 className="text-2xl font-bold tracking-tight text-white">{name.trim()}, {t('onboard_acct_title')}</h2>
+              <p className="text-white/60 text-[13px] mt-2 leading-relaxed">{t('onboard_acct_sub')}</p>
+            </div>
+            <div className="space-y-5 flex-1">
+              <div>
+                <label className="block text-[11px] text-white/50 font-medium uppercase tracking-widest mb-2">{t('onboard_acct_type')}</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([['cash', '\u{1F4B5}', 'acct_type_cash'], ['bank', '\u{1F3E6}', 'acct_type_bank'], ['digital_wallet', '\u{1F4F1}', 'acct_type_wallet']] as const).map(([ty, emoji, key]) => (
+                    <button key={ty} type="button" onClick={() => setAcctType(ty)}
+                      className={`p-3 rounded-2xl border-2 text-center transition-all backdrop-blur-sm ${acctType === ty ? 'border-white/40 bg-white/15 scale-[1.02]' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
+                      <span className="text-xl">{emoji}</span>
+                      <p className="font-bold text-[12px] mt-1 text-white">{t(key)}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] text-white/50 font-medium uppercase tracking-widest mb-2">{t('onboard_acct_name')}</label>
+                <input value={acctName} onChange={e => setAcctName(e.target.value)} placeholder={t('onboard_acct_name_ph')}
+                  className="w-full bg-white/8 border border-white/15 rounded-2xl px-4 py-4 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30 text-[15px] backdrop-blur-sm" autoFocus />
+              </div>
+              <div>
+                <label className="block text-[11px] text-white/50 font-medium uppercase tracking-widest mb-2">{t('onboard_acct_balance')}</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 text-[13px] font-semibold">{currency}</span>
+                  <input type="number" inputMode="decimal" value={acctBalance} onChange={e => setAcctBalance(e.target.value)} placeholder="0.00"
+                    className="w-full bg-white/8 border border-white/15 rounded-2xl pl-16 pr-4 py-4 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30 text-[15px] tabular-nums backdrop-blur-sm" />
+                </div>
+              </div>
+            </div>
+            {loading && (
+              <div className="text-center py-4">
+                <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin mx-auto" />
+                <p className="text-[12px] text-white/50 mt-3">{t('onboard_loading')}</p>
+              </div>
+            )}
+            <div className="pb-6 space-y-1">
+              <Button variant="secondary" size="lg" onClick={() => handleFinish(true)} disabled={loading || !acctName.trim()} icon={<ArrowRight size={16} />}>
+                {t('onboard_acct_create')}
+              </Button>
+              <button onClick={() => handleFinish(false)} disabled={loading} className="text-[12px] text-white/45 w-full text-center min-h-[44px] font-medium">{t('onboard_acct_skip')}</button>
+              <button onClick={() => setStep(3)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4 (splits_only): fresh start — no account needed */}
+        {step === 4 && selectedMode === 'splits_only' && (
           <div className="flex-1 flex flex-col px-8 pt-20 animate-fade-in">
             <div className="mb-8">
               <StepDots current={4} />
@@ -347,7 +415,7 @@ export function OnboardingPage() {
               <p className="text-receive-50 text-[12px] font-semibold mt-3">{t('onboard_start_instruction')}</p>
             </div>
             <div className="space-y-4 flex-1">
-              <button onClick={handleStart} disabled={loading}
+              <button onClick={() => handleFinish(false)} disabled={loading}
                 className="w-full bg-white/8 border-2 border-receive-600/50 rounded-3xl p-6 text-left transition-all active:scale-[0.98] backdrop-blur-sm hover:bg-white/12 shadow-lg shadow-receive-600/15">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-11 h-11 rounded-2xl bg-receive-600/25 flex items-center justify-center backdrop-blur-sm">

@@ -1870,6 +1870,18 @@ const S = {
   quiz_reco: { ur: "Aap ke jawabat ke mutabiq, hum tajweez karte hain:", en: "Based on your answers, we suggest:" },
   quiz_retake: { ur: "Quiz dobara karein", en: "Retake quiz" },
   quiz_for_you: { ur: "Aap ke liye", en: "For you" },
+  // ── Onboarding first-account step (full_tracker only) ──
+  onboard_acct_title: { ur: "apna pehla account banayein", en: "add your first account" },
+  onboard_acct_sub: { ur: "Taake aap ke balances pehle din se tayyar hon.", en: "So your balances are ready from day one." },
+  onboard_acct_type: { ur: "Account ki qisam", en: "Account type" },
+  acct_type_cash: { ur: "Cash", en: "Cash" },
+  acct_type_bank: { ur: "Bank", en: "Bank" },
+  acct_type_wallet: { ur: "Wallet", en: "Wallet" },
+  onboard_acct_name: { ur: "Account ka naam", en: "Account name" },
+  onboard_acct_name_ph: { ur: "e.g. Cash, Meezan, JazzCash", en: "e.g. Cash, Meezan, JazzCash" },
+  onboard_acct_balance: { ur: "Mojooda balance (optional)", en: "Opening balance (optional)" },
+  onboard_acct_create: { ur: "Account banayein aur shuru karein", en: "Create account & start" },
+  onboard_acct_skip: { ur: "Abhi rehne dein", en: "Skip for now" },
   onboard_switch_anytime: { ur: "Settings mein kabhi bhi badal sakte ho.", en: "You can switch anytime in Settings." },
   // Inbox
   confirm_settle_cta: { ur: "Settlement confirm karo", en: "Confirm settlement" },

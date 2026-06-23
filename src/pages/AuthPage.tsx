@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useT, useI18nStore } from '../lib/i18n';
 import { Globe } from 'lucide-react';
 import { validatePassword, passwordChecks } from '../lib/passwordPolicy';
+import { isValidEmail } from '../lib/validateEmail';
 
 export function AuthPage() {
   const t = useT();
@@ -160,7 +161,13 @@ export function AuthPage() {
           <div className="relative">
             <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('settings_email')}
-              className={inputClass} autoFocus />
+              className={inputClass + ' pr-11'} autoFocus />
+            {/* Green tick the moment the email format looks valid. */}
+            {isValidEmail(email) && (
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-receive-600 flex items-center justify-center animate-scale-in">
+                <Check size={12} strokeWidth={3.2} className="text-white" />
+              </span>
+            )}
           </div>
 
           {mode !== 'reset' && (
