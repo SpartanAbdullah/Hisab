@@ -42,10 +42,10 @@ export function BottomNav({ onQuickEntry }: Props) {
     <nav
       className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-40"
       style={{
-        // Tailwind's bg-white/92 doesn't exist; using the exact Sukoon value
-        // keeps the cream body just barely visible through the surface so the
-        // nav doesn't feel detached from the rest of the page.
-        background: 'rgba(255,255,255,0.92)',
+        // Theme-aware surface (see --nav-surface in index.css): a near-opaque
+        // cream in light, near-opaque dark in dark mode, so the body stays
+        // just barely visible through it without the nav feeling detached.
+        background: 'var(--nav-surface)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
         borderTop: '1px solid var(--color-cream-border)',

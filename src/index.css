@@ -114,7 +114,13 @@
  * translucent `bg-white/10`-style overlays used on the navy hero are a
  * different utility and intentionally stay translucent.
  * ======================================================== */
+/* Floating bottom-nav surface — an inline style in BottomNav reads this var so
+ * it can flip in dark mode (a plain rgba white can't). */
+:root { --nav-surface: rgba(255, 255, 255, 0.92); }
+
 html.dark {
+  --nav-surface: rgba(22, 23, 29, 0.92);
+
   /* Warm-neutral dark surfaces — mirrors the cream ramp (bg → card → soft). */
   --color-cream-bg:       #131419;
   --color-cream-card:     #1E1F27;
@@ -190,6 +196,38 @@ html.dark .state-hint-info { color: #C9CBFF; background: rgba(124, 92, 255, 0.12
 html.dark .state-hint-warn { color: var(--color-warn-700); background: rgba(217, 165, 46, 0.12); }
 html.dark .state-hint-error { color: var(--color-pay-text); background: var(--color-pay-50); }
 html.dark .glass { background: rgba(30, 31, 39, 0.72); }
+
+/* SYSTEMIC FIX for the "dark primary button" idiom (bg-ink-900/800 + text-white).
+ * The ink ramp inverts in dark, so bg-ink-900 becomes LIGHT — but text-white
+ * stays white → white-on-light = invisible. Targeting both classes on the same
+ * element (no space), we flip the TEXT to dark so the button stays a proper
+ * high-contrast filled button (dark text on a light fill, iOS-style). This
+ * fixes ~70 buttons app-wide (nav-adjacent toggles, selected pills, CTAs) in
+ * one rule. Non-layered, so it beats the text-white utility. */
+html.dark .bg-ink-900.text-white,
+html.dark .bg-ink-800.text-white,
+html.dark .bg-ink-700.text-white {
+  color: var(--color-cream-bg);
+}
+
+/* Safety-net for residual non-token light tints a few shared components still
+ * use (e.g. the <Button> secondary/ghost variants, focus/hover flashes). Unlike
+ * `bg-white`, solid slate/indigo tints are never used as CTAs on the navy hero,
+ * so darkening them blanket-style is safe (translucent variants like
+ * bg-slate-900/40 are a different class and stay as dark scrims). */
+html.dark .bg-slate-50,
+html.dark .bg-slate-100 { background-color: var(--color-cream-soft); }
+html.dark .bg-slate-200 { background-color: var(--color-cream-border); }
+html.dark .bg-indigo-50 { background-color: var(--color-accent-50); }
+html.dark .text-slate-400 { color: var(--color-ink-400); }
+html.dark .text-slate-500,
+html.dark .text-slate-600 { color: var(--color-ink-500); }
+html.dark .text-slate-700,
+html.dark .text-slate-800,
+html.dark .text-slate-900 { color: var(--color-ink-900); }
+html.dark .text-indigo-600 { color: var(--color-accent-500); }
+html.dark .border-slate-100,
+html.dark .border-slate-200 { border-color: var(--color-cream-border); }
 
 /* NOTE: solid `bg-white` body surfaces are converted to `bg-cream-card` at the
  * call sites (so they flip via the token override) rather than blanket-mapped
