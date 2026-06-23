@@ -1666,6 +1666,24 @@ const S = {
   gs_cta_log: { ur: "Add karein", en: "Log" },
   gs_progress: { ur: "{done} / {total}", en: "{done} of {total}" },
 
+  // Proactive coach cards
+  coach_title: { ur: "Aap ke liye", en: "For you" },
+  coach_budget_over_t: { ur: "{category} budget se zyada", en: "{category} over budget" },
+  coach_budget_over_b: { ur: "Cap se {amount} upar", en: "{amount} over the cap" },
+  coach_overdue_t: { ur: "Aap ke paise rukay hain", en: "Money owed to you" },
+  coach_overdue_b: { ur: "{count} log late hain — yaad dilayein", en: "{count} overdue — send a nudge" },
+  coach_pace_t: { ur: "{category} tezi se khatam", en: "Pacing fast on {category}" },
+  coach_pace_b: { ur: "{pct}% use, {days} din baqi", en: "{pct}% used, {days} days left" },
+  coach_renew_t: { ur: "{count} renewals aane wale", en: "{count} renewals soon" },
+  coach_renew_b: { ur: "Agle kuch dinon mein {amount}", en: "{amount} in the next few days" },
+  coach_goal_t: { ur: "{title} peeche hai", en: "{title} is behind" },
+  coach_goal_b: { ur: "Track par aane ko {amount} rakhein", en: "Set aside {amount} to catch up" },
+  coach_top_t: { ur: "{category} jama ho raha", en: "{category} adds up" },
+  coach_top_b: { ur: "Is mahine {count}× — {amount}", en: "{count}× this month — {amount}" },
+  coach_log_t: { ur: "{days} din ho gaye", en: "It's been {days} days" },
+  coach_log_b: { ur: "Ek chhoti entry add karein", en: "Log a quick entry to stay on top" },
+  ai_understood: { ur: "Samajh gaya:", en: "Got it:" },
+
   // ── Kameti / Committee ──
   kameti_title: { ur: "Kameti", en: "Kameti" },
   kameti_tile_desc: { ur: "Committee / BC track karein", en: "Track a committee / BC" },

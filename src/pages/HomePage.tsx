@@ -43,6 +43,8 @@ import { MoneyDisplay } from "../components/MoneyDisplay";
 import { GlobalSearch } from "../components/GlobalSearch";
 import { NextStepHint } from "../components/NextStepHint";
 import { GettingStartedCard } from "../components/GettingStartedCard";
+import { CoachCards } from "../components/CoachCards";
+import { buildCoachCards } from "../lib/coachInsights";
 import { AddAccountStepper } from "./AddAccountStepper";
 import { QuickEntry } from "./QuickEntry";
 import { formatMoney } from "../lib/constants";
@@ -198,6 +200,62 @@ export function HomePage() {
     return income > 0 || expense > 0 ? { income, expense } : null;
   };
   const activeLoans = loans.filter((l) => l.status === "active");
+
+  // Proactive coach cards — deterministic insights from data we already have.
+  const coachCards = useMemo(() => {
+    const now = new Date();
+    const dayOfMonth = now.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const expectedPct = (dayOfMonth / daysInMonth) * 100;
+    const dayMs = 86400000;
+
+    const budgetOver = budgetUsages
+      .filter((u) => u.overLimit)
+      .map((u) => ({ category: u.budget.category, amount: Math.abs(u.remaining), currency: u.budget.currency }));
+    const budgetPace = budgetUsages
+      .filter((u) => !u.overLimit && u.percent >= 50 && u.percent > expectedPct + 15)
+      .map((u) => ({ category: u.budget.category, pct: Math.round(u.percent), daysLeft: daysInMonth - dayOfMonth }));
+
+    // Top expense category this month (primary currency).
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const catMap = new Map<string, { count: number; amount: number }>();
+    for (const tx of transactions) {
+      if (tx.type !== "expense" || tx.currency !== primaryCurrency || new Date(tx.createdAt) < monthStart) continue;
+      const key = tx.category || "Other";
+      const e = catMap.get(key) ?? { count: 0, amount: 0 };
+      e.count += 1; e.amount += tx.amount; catMap.set(key, e);
+    }
+    const topEntry = [...catMap.entries()].sort((a, b) => b[1].amount - a[1].amount)[0];
+    const topCategory = topEntry ? { category: topEntry[0], count: topEntry[1].count, amount: topEntry[1].amount, currency: primaryCurrency } : null;
+
+    // Recurring renewals within 5 days.
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const soon = recurringTemplates.filter((r) => {
+      if (!r.active) return false;
+      const due = new Date(r.nextDueDate).getTime();
+      return due >= todayStart && due - todayStart <= 5 * dayMs;
+    });
+    const renewalsSoon = soon.length > 0
+      ? { count: soon.length, amount: soon.filter((r) => r.currency === primaryCurrency).reduce((s, r) => s + r.amount, 0), currency: primaryCurrency }
+      : null;
+
+    // Overdue receivables: distinct people with active given loans older than 14 days.
+    const cutoff = now.getTime() - 14 * dayMs;
+    const overduePeople = new Set(
+      loans
+        .filter((l) => l.status === "active" && l.type === "given" && l.remainingAmount > 0 && new Date(l.createdAt).getTime() < cutoff)
+        .map((l) => l.personId ?? l.personName.trim().toLowerCase()),
+    );
+
+    const lastTs = transactions.reduce((max, tx) => Math.max(max, new Date(tx.createdAt).getTime()), 0);
+    const daysSinceLastEntry = lastTs > 0 ? Math.floor((now.getTime() - lastTs) / dayMs) : null;
+
+    return buildCoachCards({
+      budgetOver, budgetPace, renewalsSoon, topCategory,
+      overdueReceivableCount: overduePeople.size, goalsBehind: [], daysSinceLastEntry,
+    });
+  }, [budgetUsages, transactions, primaryCurrency, recurringTemplates, loans]);
+
   // Distinct people who still have an open balance — drives the Contacts
   // quick-tile badge (an "unsettled" count). Keyed by personId when present,
   // else by normalised name so name-only loans still de-dupe.
@@ -768,6 +826,12 @@ export function HomePage() {
             onAddAccount={() => setShowAddAccount(true)}
             onLogEntry={() => navigate("/transactions")}
           />
+        )}
+
+        {/* Proactive coach — surfaces what needs attention (over budget,
+            overdue money, renewals…) for users who are past setup. */}
+        {dataReady && accountCount > 0 && transactions.length > 0 && (
+          <CoachCards cards={coachCards} />
         )}
 
         {/* 2-up: To Receive | To Pay */}

@@ -511,6 +511,26 @@ export function HisaabAIPage() {
     setInput('');
   };
 
+  // Live "I understood you" preview as the user types — parses the current
+  // input locally (cheap, no LLM) and shows the amount/category it captured
+  // before they even hit send. The full editable chip still appears on submit.
+  const livePreview = useMemo(() => {
+    const text = input.trim();
+    if (!isFull || text.length < 3) return null;
+    try {
+      const reply = routeAssistantInput(text, { mode, defaultCurrency: primaryCurrency() });
+      if (reply.kind === 'command' && reply.command && reply.command.canPost) {
+        const c = reply.command;
+        if (c.amount != null) {
+          return { direction: c.direction, amount: c.amount, currency: c.currency ?? primaryCurrency(), category: c.category };
+        }
+      }
+    } catch {
+      // Parser hiccup — just show no preview.
+    }
+    return null;
+  }, [input, isFull, mode]);
+
   const confirmChip = async (chipId: number, input: ReturnType<typeof buildTransactionFromDraft>, summaryText: string) => {
     if (!input) return;
     setBusyChipId(chipId);
@@ -845,6 +865,18 @@ export function HisaabAIPage() {
         className="fixed left-1/2 -translate-x-1/2 w-full max-w-[480px] px-5 z-30"
         style={{ bottom: 'calc(70px + env(safe-area-inset-bottom))' }}
       >
+        {livePreview && (
+          <div className="mb-2 flex items-center gap-2 rounded-2xl bg-accent-50 border border-accent-100 px-3 py-2 animate-fade-in">
+            <Sparkles size={12} className="text-accent-600 shrink-0" />
+            <span className="text-[10.5px] text-ink-500 shrink-0">{t('ai_understood')}</span>
+            <span className="text-[11.5px] font-semibold text-ink-900 truncate">
+              <span className={livePreview.direction === 'income' ? 'text-receive-text' : 'text-pay-text'}>
+                {livePreview.direction === 'income' ? '+' : '−'}{formatMoney(livePreview.amount, livePreview.currency)}
+              </span>
+              {livePreview.category ? <span className="text-ink-500"> · {livePreview.category}</span> : null}
+            </span>
+          </div>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();
