@@ -105,7 +105,7 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
     } finally { setSaving(false); }
   };
 
-  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-white transition-all";
+  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all";
 
   return (
     <Modal open={open} onClose={onClose} title={t('group_new')} footer={
@@ -142,7 +142,7 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
               const meta = currencyMeta[c];
               return (
                 <button key={c} onClick={() => setCurrency(c)}
-                  className={`p-3 rounded-2xl border text-left transition-all ${currency === c ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-white'}`}>
+                  className={`p-3 rounded-2xl border text-left transition-all ${currency === c ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'}`}>
                   <p className="text-lg font-bold">{meta?.flag} {c}</p>
                   <p className="text-[10px] text-ink-500">{meta?.name}</p>
                 </button>

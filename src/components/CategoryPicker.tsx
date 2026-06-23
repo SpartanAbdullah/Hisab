@@ -79,7 +79,7 @@ export function CategoryPicker({ type, value, onChange, includeCurrent = false, 
       )}
 
       {allowCreate && adding && (
-        <span className="inline-flex items-center gap-1.5 rounded-xl border border-accent-500 bg-white pl-2.5 pr-1.5 py-1">
+        <span className="inline-flex items-center gap-1.5 rounded-xl border border-accent-500 bg-cream-card pl-2.5 pr-1.5 py-1">
           <input
             autoFocus
             value={draft}

@@ -205,7 +205,7 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
                 type="button"
                 onClick={() => setTone(nextTone)}
                 className={`py-2.5 rounded-xl text-[11px] font-bold border transition-all active:scale-95 ${
-                  tone === nextTone ? 'bg-ink-900 text-white border-ink-900' : 'bg-white text-ink-500 border-cream-border'
+                  tone === nextTone ? 'bg-ink-900 text-white border-ink-900' : 'bg-cream-card text-ink-500 border-cream-border'
                 }`}
               >
                 {nextTone === 'friendly' ? t('reminder_tone_friendly') : nextTone === 'neutral' ? t('reminder_tone_neutral') : t('reminder_tone_formal')}

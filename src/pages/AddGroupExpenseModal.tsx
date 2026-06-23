@@ -243,7 +243,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
     }
   };
 
-  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-white transition-all';
+  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   return (
     <Modal open={open} onClose={onClose} title={t('group_expense_add')} footer={
@@ -302,7 +302,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
               {accounts.map(account => (
                 <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                    paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
+                    paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
                   }`}>
                   <div>
                     <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
@@ -355,7 +355,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
             {splitType === 'exact' && selectedMembers.map(id => (
               <div key={id} className="flex items-center gap-2">
                 <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
-                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
+                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-cream-card" type="number" inputMode="decimal"
                   value={exactAmounts[id] || ''} onChange={e => setExactAmounts({ ...exactAmounts, [id]: e.target.value })} placeholder="0" />
               </div>
             ))}
@@ -368,7 +368,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
             {splitType === 'percentage' && selectedMembers.map(id => (
               <div key={id} className="flex items-center gap-2">
                 <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
-                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="decimal"
+                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-cream-card" type="number" inputMode="decimal"
                   value={percentages[id] || ''} onChange={e => setPercentages({ ...percentages, [id]: e.target.value })} placeholder="%" />
                 <span className="text-[11px] text-ink-500">%</span>
               </div>
@@ -381,7 +381,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
             {splitType === 'shares' && selectedMembers.map(id => (
               <div key={id} className="flex items-center gap-2">
                 <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
-                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-white" type="number" inputMode="numeric"
+                <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-cream-card" type="number" inputMode="numeric"
                   value={shares[id] || '1'} onChange={e => setShares({ ...shares, [id]: e.target.value })} placeholder="1" />
                 <span className="text-[11px] text-ink-500">shares</span>
               </div>

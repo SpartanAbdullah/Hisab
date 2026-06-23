@@ -418,7 +418,7 @@ export function RepaymentModal({
                 )}
               </div>
               {conversionRate && parseFloat(conversionRate) > 0 && parseFloat(amount) > 0 ? (
-                <div className="bg-white rounded-xl p-3 text-center border border-blue-100/60 animate-fade-in">
+                <div className="bg-cream-card rounded-xl p-3 text-center border border-blue-100/60 animate-fade-in">
                   <p className="text-[10px] text-ink-500">{isGiven ? t('conv_will_get') : 'Will deduct'}</p>
                   <p className="text-lg font-bold text-receive-text tabular-nums">
                     {isGiven

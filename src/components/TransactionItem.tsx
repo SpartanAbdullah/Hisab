@@ -159,7 +159,7 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
         className={`relative w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:opacity-60 before:absolute before:-inset-2.5 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 ${
           isReconciled
             ? 'bg-receive-600 border-receive-600 text-white'
-            : 'bg-white border-cream-border text-transparent hover:border-receive-600'
+            : 'bg-cream-card border-cream-border text-transparent hover:border-receive-600'
         }`}
       >
         <Check size={12} strokeWidth={3} />

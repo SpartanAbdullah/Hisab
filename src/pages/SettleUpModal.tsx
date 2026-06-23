@@ -101,7 +101,7 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
     finally { setSaving(false); }
   };
 
-  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-white transition-all";
+  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all";
 
   // Live "remaining after this" figure for the amount step.
   const enteredAmount = Number(amount);

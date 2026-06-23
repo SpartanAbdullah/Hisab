@@ -143,7 +143,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
                 return (
                   <button key={cat.value} type="button" onClick={() => setCategory(cat.value)}
                     className={`p-3 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${
-                      active ? `bg-gradient-to-br ${cat.gradient} text-white border-transparent shadow-md` : `bg-white ${cat.soft}`
+                      active ? `bg-gradient-to-br ${cat.gradient} text-white border-transparent shadow-md` : `bg-cream-card ${cat.soft}`
                     }`}
                   >
                     <CatIcon size={20} strokeWidth={active ? 2.2 : 1.5} />
@@ -221,7 +221,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
                 return (
                   <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
                     className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                      accountId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
+                      accountId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -247,7 +247,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
               {REMINDER_OPTIONS.map(opt => (
                 <button key={opt.value} type="button" onClick={() => setReminderDays(opt.value)}
                   className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all active:scale-95 ${
-                    reminderDays === opt.value ? 'bg-ink-900 text-white border-ink-900 shadow-sm' : 'bg-white text-ink-500 border-cream-border'
+                    reminderDays === opt.value ? 'bg-ink-900 text-white border-ink-900 shadow-sm' : 'bg-cream-card text-ink-500 border-cream-border'
                   }`}
                 >{opt.label}</button>
               ))}

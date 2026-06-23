@@ -391,6 +391,11 @@ const S = {
 
   // Settings / Language
   settings_language: { ur: "Zuban", en: "Language" },
+  settings_appearance: { ur: "Look", en: "Appearance" },
+  settings_appearance_desc: { ur: "Light, dark ya system", en: "Light, dark, or match system" },
+  theme_light: { ur: "Light", en: "Light" },
+  theme_dark: { ur: "Dark", en: "Dark" },
+  theme_system: { ur: "System", en: "System" },
   lang_ur: { ur: "Roman Urdu", en: "Roman Urdu" },
   lang_en: { ur: "English", en: "English" },
   onboard_language_label: { ur: "Apni zabaan chunein", en: "Choose your language" },

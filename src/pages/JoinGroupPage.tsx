@@ -137,7 +137,7 @@ export function JoinGroupPage() {
         {!joined && !failure && (
           <div className="rounded-2xl bg-cream-soft border border-cream-border/70 px-4 py-3 mt-5 text-left">
             <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-xl bg-white border border-cream-border/70 flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-cream-card border border-cream-border/70 flex items-center justify-center shrink-0">
                 <Link2 size={16} className="text-ink-500" />
               </div>
               <div>

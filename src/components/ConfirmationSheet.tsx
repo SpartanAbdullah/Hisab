@@ -70,7 +70,7 @@ export function ConfirmationSheet({ open, onClose, title, description, balanceCh
     <div className="fixed inset-0 z-[60] flex items-end justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" />
       <div
-        className={`relative bg-white w-full max-w-[480px] rounded-t-3xl overflow-hidden transition-transform duration-400 shadow-2xl ${
+        className={`relative bg-cream-card w-full max-w-[480px] rounded-t-3xl overflow-hidden transition-transform duration-400 shadow-2xl ${
           show ? 'translate-y-0' : 'translate-y-full'
         }`}
         style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}

@@ -849,7 +849,7 @@ function LoanGroupSummary({
           <button
             type="button"
             onClick={onRemind}
-            className="rounded-xl px-3 py-1.5 text-[11px] font-semibold bg-white text-ink-900 active:scale-95 transition-all flex items-center gap-1.5 border border-cream-border"
+            className="rounded-xl px-3 py-1.5 text-[11px] font-semibold bg-cream-card text-ink-900 active:scale-95 transition-all flex items-center gap-1.5 border border-cream-border"
           >
             <Bell size={11} /> {t('reminder_cta')}
           </button>

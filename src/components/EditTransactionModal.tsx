@@ -290,7 +290,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                     if (cashAdvanceCardId === account.id) setCashAdvanceCardId('');
                   }}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    isSelected ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
+                    isSelected ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -315,7 +315,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                 type="button"
                 onClick={() => setCashAdvanceCardId('')}
                 className={`w-full p-3 rounded-2xl border text-left text-[12px] font-semibold transition-all ${
-                  !selectedCashAdvanceCard ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-white text-ink-500'
+                  !selectedCashAdvanceCard ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-cream-card text-ink-500'
                 }`}
               >
                 No credit card
@@ -326,7 +326,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                   type="button"
                   onClick={() => setCashAdvanceCardId(account.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    selectedCashAdvanceCard?.id === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
+                    selectedCashAdvanceCard?.id === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
                   }`}
                 >
                   <div>

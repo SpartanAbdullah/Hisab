@@ -208,7 +208,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                       return (
                         <button key={p.name} type="button" onClick={() => selectCcIssuer(p)}
                           className={`p-3 rounded-2xl border-2 text-left transition-all active:scale-[0.97] ${
-                            ccIssuer === p.name ? 'border-accent-500 bg-accent-50 shadow-sm' : 'border-cream-border bg-white'
+                            ccIssuer === p.name ? 'border-accent-500 bg-accent-50 shadow-sm' : 'border-cream-border bg-cream-card'
                           }`}
                         >
                           <p className="font-semibold text-[12px] text-ink-800 tracking-tight">{p.name}</p>
@@ -247,7 +247,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                       return (
                         <button key={c} type="button" onClick={() => setCurrency(c)}
                           className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white text-ink-500'
+                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card text-ink-500'
                           }`}
                         >{meta?.flag} {c}</button>
                       );
@@ -267,7 +267,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                         return (
                           <button key={p.name} onClick={() => selectPreset(p)}
                             className={`p-3.5 rounded-2xl border-2 text-left transition-all active:scale-[0.97] ${
-                              name === p.name ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
+                              name === p.name ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
                             }`}
                           >
                             <p className="font-semibold text-[12px] text-ink-800 tracking-tight">{p.name}</p>
@@ -297,7 +297,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                       return (
                         <button key={c} type="button" onClick={() => setCurrency(c)}
                           className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white text-ink-500'
+                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card text-ink-500'
                           }`}
                         >{meta?.flag} {c}</button>
                       );

@@ -172,7 +172,7 @@ export function AddLoanModal({ open, onClose }: Props) {
               className={`flex-1 py-3 rounded-2xl text-[13px] font-bold border-2 transition-all active:scale-[0.97] ${
                 loanType === tp
                   ? tp === 'given' ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white border-transparent shadow-md' : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-transparent shadow-md'
-                  : 'bg-white text-ink-500 border-cream-border'
+                  : 'bg-cream-card text-ink-500 border-cream-border'
               }`}
             >{tp === 'given' ? t('loan_i_gave') : t('loan_i_took')}</button>
           ))}
@@ -242,7 +242,7 @@ export function AddLoanModal({ open, onClose }: Props) {
                 type="button"
                 onClick={() => setCashAdvanceSourceId('')}
                 className={`w-full p-3 rounded-2xl border text-left text-[12px] font-semibold transition-all ${
-                  !cashAdvanceSourceId ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-white text-ink-500'
+                  !cashAdvanceSourceId ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-cream-card text-ink-500'
                 }`}
               >
                 No credit card
@@ -250,7 +250,7 @@ export function AddLoanModal({ open, onClose }: Props) {
               {availableCashAdvanceCards.map(a => (
                 <button key={a.id} type="button" onClick={() => setCashAdvanceSourceId(a.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    cashAdvanceSourceId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-white'
+                    cashAdvanceSourceId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
                   }`}
                 >
                   <span className="text-[13px] font-semibold text-ink-800">{a.name}</span>

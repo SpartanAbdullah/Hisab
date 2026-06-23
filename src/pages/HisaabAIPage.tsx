@@ -669,7 +669,7 @@ export function HisaabAIPage() {
                 key={p}
                 onClick={() => changePersona(p)}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize transition-colors ${
-                  persona === p ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'
+                  persona === p ? 'bg-cream-card text-ink-900 shadow-sm' : 'text-ink-500'
                 }`}
               >
                 {p}
@@ -850,7 +850,7 @@ export function HisaabAIPage() {
             e.preventDefault();
             submit(input);
           }}
-          className="flex items-center gap-2 rounded-2xl bg-white border border-cream-border p-2 pl-4"
+          className="flex items-center gap-2 rounded-2xl bg-cream-card border border-cream-border p-2 pl-4"
           style={{ boxShadow: '0 8px 24px -12px rgba(11,14,42,0.35)' }}
         >
           <Sparkles size={16} className="text-accent-600 shrink-0" />

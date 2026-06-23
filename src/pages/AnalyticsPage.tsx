@@ -200,7 +200,7 @@ export function AnalyticsPage() {
                 className={`shrink-0 rounded-xl px-3 py-1.5 text-[11px] font-bold transition-all ${
                   chartCurrency === currency
                     ? 'bg-ink-900 text-white'
-                    : 'bg-white border border-cream-border text-ink-500'
+                    : 'bg-cream-card border border-cream-border text-ink-500'
                 }`}
               >
                 {currency}

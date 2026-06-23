@@ -68,7 +68,7 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
 
   const inputClass =
     className ??
-    'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-white transition-all';
+    'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-cream-card transition-all';
 
   return (
     <div ref={wrapperRef} className="relative">
@@ -87,7 +87,7 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
       />
 
       {showDropdown && (
-        <div className="absolute left-0 right-0 mt-1 z-20 rounded-2xl border border-slate-200/70 bg-white shadow-lg overflow-hidden">
+        <div className="absolute left-0 right-0 mt-1 z-20 rounded-2xl border border-slate-200/70 bg-cream-card shadow-lg overflow-hidden">
           {matches.map((p) => (
             <button
               type="button"
@@ -100,16 +100,16 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
               className="w-full text-left px-4 py-2.5 hover:bg-indigo-50/60 active:bg-indigo-100/60 transition-colors border-b border-slate-100/60 last:border-0"
             >
               <span className="flex items-center gap-2 min-w-0">
-                <span className="text-[13px] font-medium text-slate-700 truncate">{p.name}</span>
+                <span className="text-[13px] font-medium text-ink-900 truncate">{p.name}</span>
                 <span className={`text-[9px] font-bold uppercase tracking-wider rounded-full px-1.5 py-0.5 shrink-0 ${
                   p.linkedProfileId
                     ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-slate-100 text-slate-600'
+                    : 'bg-cream-soft text-ink-500'
                 }`}>
                   {getContactTypeLabel(p)}
                 </span>
               </span>
-              <span className="block text-[10.5px] text-slate-500 mt-0.5 truncate">
+              <span className="block text-[10.5px] text-ink-500 mt-0.5 truncate">
                 {getContactSecondaryText(p)}
               </span>
             </button>

@@ -137,7 +137,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
       : 'Invite link'
     : '';
 
-  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-white transition-all";
+  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all";
 
   return (
     <Modal
@@ -182,7 +182,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
         // takes a deliberate second tap before actually joining.
         <div className="space-y-4">
           <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-cream-card flex items-center justify-center shrink-0">
               {confirming.kind === 'group_code'
                 ? <KeyRound size={18} className="text-accent-600" />
                 : <Link2 size={18} className="text-accent-600" />}
@@ -211,7 +211,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
         // Step 1 — lookup.
         <div className="space-y-4">
           <div className="rounded-2xl bg-accent-100/60 border border-cream-border px-4 py-3 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-cream-card flex items-center justify-center shrink-0">
               <Info size={14} className="text-accent-600" />
             </div>
             <div className="min-w-0">

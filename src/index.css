@@ -99,6 +99,103 @@
   --animate-shake: shake 0.4s ease-out;
 }
 
+/* ========================================================
+ * DARK THEME — opt-in (html.dark)
+ *
+ * Light mode is the default and stays byte-identical: every rule here is
+ * scoped to html.dark. The token VALUES are overridden so all token-based
+ * utilities (bg-cream-*, text-ink-*, receive/pay/accent tints) flip
+ * automatically. The hardcoded component-layer classes (.card-base,
+ * .input-field, …) bake in white/slate hex, so they get explicit dark
+ * overrides below. These overrides are NON-layered, so they win over the
+ * @layer components defaults regardless of source order.
+ *
+ * NOTE: only SOLID `bg-white` is remapped to a dark card surface; the
+ * translucent `bg-white/10`-style overlays used on the navy hero are a
+ * different utility and intentionally stay translucent.
+ * ======================================================== */
+html.dark {
+  /* Warm-neutral dark surfaces — mirrors the cream ramp (bg → card → soft). */
+  --color-cream-bg:       #131419;
+  --color-cream-card:     #1E1F27;
+  --color-cream-border:   #2E2F3A;
+  --color-cream-hairline: #262731;
+  --color-cream-soft:     #191A21;
+
+  /* Ink ramp inverts: low numbers = dark surfaces/borders, high = light text. */
+  --color-ink-200: #2C2D38;
+  --color-ink-300: #3C3E4C;
+  --color-ink-400: #6B6D82;
+  --color-ink-500: #9092A8;
+  --color-ink-600: #B4B6C8;
+  --color-ink-700: #CFD0DD;
+  --color-ink-800: #E6E6EF;
+  --color-ink-900: #F5F5F9;
+
+  /* Accent — brighter on dark. */
+  --color-accent-50:  #221C36;
+  --color-accent-100: #2A2342;
+  --color-accent-500: #8E72FF;
+  --color-accent-600: #7459F0;
+
+  /* Receive — money in. Dark green tints; lighter green text. */
+  --color-receive-50:   #12271F;
+  --color-receive-100:  #163528;
+  --color-receive-600:  #14B891;
+  --color-receive-700:  #0E8E6E;
+  --color-receive-text: #3FD7A6;
+
+  /* Pay — money out (coral, never red). */
+  --color-pay-50:   #2A1611;
+  --color-pay-100:  #371C15;
+  --color-pay-600:  #E5705A;
+  --color-pay-700:  #C2543C;
+  --color-pay-text: #F2967C;
+
+  /* Functional. */
+  --color-warn-50:  #2A2410;
+  --color-warn-600: #D9A52E;
+  --color-warn-700: #E8C063;
+  --color-info-50:  #15203A;
+  --color-info-600: #6B92F5;
+}
+
+html.dark body {
+  background: var(--color-cream-bg);
+  color: var(--color-ink-900);
+}
+
+/* Component-layer classes bake in white/slate — re-point them at tokens. */
+html.dark .input-field,
+html.dark .card-base,
+html.dark .card-premium,
+html.dark .chip-base,
+html.dark .selector-base,
+html.dark .row-card,
+html.dark .sheet-transient {
+  background: var(--color-cream-card);
+  border-color: var(--color-cream-border);
+}
+html.dark .input-field { color: var(--color-ink-900); }
+html.dark .form-label { color: var(--color-ink-500); }
+html.dark .chip-base { color: var(--color-ink-500); }
+html.dark .selector-selected { background: var(--color-accent-50); border-color: var(--color-accent-500); }
+html.dark .toggle-row { background: var(--color-cream-soft); border-color: var(--color-cream-hairline); }
+html.dark .cta-secondary { background: var(--color-cream-soft); color: var(--color-ink-600); }
+html.dark .cta-secondary:active { background: var(--color-cream-border); }
+html.dark .cta-destructive { background: var(--color-pay-50); color: var(--color-pay-text); }
+html.dark .cta-destructive:active { background: var(--color-pay-100); }
+html.dark .modal-header { background: rgba(19, 20, 25, 0.9); }
+html.dark .state-hint-info { color: #C9CBFF; background: rgba(124, 92, 255, 0.12); }
+html.dark .state-hint-warn { color: var(--color-warn-700); background: rgba(217, 165, 46, 0.12); }
+html.dark .state-hint-error { color: var(--color-pay-text); background: var(--color-pay-50); }
+html.dark .glass { background: rgba(30, 31, 39, 0.72); }
+
+/* NOTE: solid `bg-white` body surfaces are converted to `bg-cream-card` at the
+ * call sites (so they flip via the token override) rather than blanket-mapped
+ * here — a blanket rule wrongly darkens intentional white CTAs/overlays that
+ * sit on the always-dark navy hero (e.g. the login button). */
+
 /* ========== KEYFRAMES ========== */
 @keyframes slide-up {
   from { transform: translateY(100%); opacity: 0; }

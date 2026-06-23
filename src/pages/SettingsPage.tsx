@@ -23,6 +23,7 @@ import {
   Wallet2,
   Repeat,
   Tags,
+  Moon,
   Database,
   RefreshCw,
   FileText,
@@ -38,6 +39,7 @@ import { useAuthStore } from "../stores/authStore";
 import { useToast } from "../components/Toast";
 import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
 import { ManageCategoriesModal } from "../components/ManageCategoriesModal";
+import { useThemeStore, type ThemeMode } from "../stores/themeStore";
 import { useT, useI18nStore } from "../lib/i18n";
 import { validatePassword, PASSWORD_MIN_LENGTH } from "../lib/passwordPolicy";
 import { exportAllData, importData, downloadJSON } from "../lib/dataExport";
@@ -134,6 +136,8 @@ export function SettingsPage() {
   const [exporting, setExporting] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
+  const themeMode = useThemeStore((s) => s.mode);
+  const setThemeMode = useThemeStore((s) => s.setMode);
   const [email] = useState(
     () => user?.email ?? localStorage.getItem("hisaab_email") ?? "",
   );
@@ -511,7 +515,7 @@ export function SettingsPage() {
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder={`New password (min ${PASSWORD_MIN_LENGTH} chars)`}
-                      className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all bg-white"
+                      className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all bg-cream-card"
                     />
                     <p className={`text-[10.5px] leading-relaxed ${
                       newPassword.length === 0 ? 'text-ink-500'
@@ -565,6 +569,30 @@ export function SettingsPage() {
             </div>
             <ChevronRight size={16} className="text-ink-300" />
           </button>
+        </div>
+
+        {/* Appearance */}
+        <div className={sectionClass}>
+          <div className={rowClass}>
+            <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+              <Moon size={16} className="text-accent-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">{t("settings_appearance")}</p>
+              <p className="text-[11px] text-ink-500">{t("settings_appearance_desc")}</p>
+            </div>
+          </div>
+          <div className="p-4 pt-0 flex gap-2">
+            {(["light", "dark", "system"] as ThemeMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setThemeMode(m)}
+                className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${themeMode === m ? "bg-ink-900 text-white" : "bg-cream-soft text-ink-500"}`}
+              >
+                {m === "light" ? t("theme_light") : m === "dark" ? t("theme_dark") : t("theme_system")}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* App Mode */}
