@@ -312,6 +312,21 @@ export interface AppNotification {
   createdAt: string;
 }
 
+// ── Custom Categories ──
+// A user-defined expense/income category name that extends the built-in lists
+// (EXPENSE_CATEGORIES / INCOME_CATEGORIES). Only the NAME is stored here — the
+// transaction/budget/recurring rows keep categories as plain strings, so the
+// app just merges built-in + custom names at read time. See mergedCategories.ts.
+export type CustomCategoryType = 'expense' | 'income';
+
+export interface CustomCategory {
+  id: string;
+  type: CustomCategoryType;
+  name: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 // ── Budgets ──
 // A monthly spending cap per (category, currency). Multiple budgets per
 // category are NOT supported on purpose — one user, one currency, one

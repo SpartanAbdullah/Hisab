@@ -22,6 +22,7 @@ import {
   Copy,
   Wallet2,
   Repeat,
+  Tags,
   Database,
   RefreshCw,
   FileText,
@@ -36,6 +37,7 @@ import { useAccountStore } from "../stores/accountStore";
 import { useAuthStore } from "../stores/authStore";
 import { useToast } from "../components/Toast";
 import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
+import { ManageCategoriesModal } from "../components/ManageCategoriesModal";
 import { useT, useI18nStore } from "../lib/i18n";
 import { validatePassword, PASSWORD_MIN_LENGTH } from "../lib/passwordPolicy";
 import { exportAllData, importData, downloadJSON } from "../lib/dataExport";
@@ -131,6 +133,7 @@ export function SettingsPage() {
   const [pin2, setPin2] = useState("");
   const [exporting, setExporting] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
   const [email] = useState(
     () => user?.email ?? localStorage.getItem("hisaab_email") ?? "",
   );
@@ -732,6 +735,19 @@ export function SettingsPage() {
               </div>
               <ChevronRight size={16} className="text-ink-300" />
             </button>
+            <button
+              onClick={() => setShowCategories(true)}
+              className={rowClass + " w-full text-left"}
+            >
+              <div className="w-9 h-9 rounded-xl bg-receive-50 flex items-center justify-center">
+                <Tags size={16} className="text-receive-text" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold text-ink-900">{t('cat_manage_row')}</p>
+                <p className="text-[11px] text-ink-500">{t('cat_manage_sub')}</p>
+              </div>
+              <ChevronRight size={16} className="text-ink-300" />
+            </button>
           </div>
         )}
 
@@ -1045,6 +1061,7 @@ export function SettingsPage() {
         </div>
       </div>
 
+      <ManageCategoriesModal open={showCategories} onClose={() => setShowCategories(false)} />
     </main>
   );
 }

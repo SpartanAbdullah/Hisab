@@ -21,7 +21,8 @@ import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { SpendingWarningModal } from '../components/SpendingWarningModal';
 import { useToast } from '../components/Toast';
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatMoney, formatSignedMoney } from '../lib/constants';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
+import { CategoryPicker } from '../components/CategoryPicker';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { SUPPORTED_CURRENCIES, type Currency, type TransactionType, type SplitGroup } from '../db';
@@ -1262,15 +1263,11 @@ export function QuickEntry({
             {showCategory && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('category')}</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {(type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(c => (
-                    <button key={c} type="button" onClick={() => setCategory(c)}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-colors active:scale-95 ${
-                        category === c ? 'bg-ink-900 text-white border-ink-900' : 'bg-cream-card text-ink-600 border-cream-border'
-                      }`}
-                    >{c}</button>
-                  ))}
-                </div>
+                <CategoryPicker
+                  type={type === 'income' ? 'income' : 'expense'}
+                  value={category}
+                  onChange={setCategory}
+                />
               </div>
             )}
 

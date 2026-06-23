@@ -9,6 +9,7 @@ import { Modal } from '../components/Modal';
 import { useBudgetStore, computeBudgetUsages } from '../stores/budgetStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { EXPENSE_CATEGORIES, formatMoney } from '../lib/constants';
+import { useCategoryOptions } from '../lib/mergedCategories';
 import { SUPPORTED_CURRENCIES, type Currency, type Budget } from '../db';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
@@ -244,6 +245,9 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
   );
   const [warnAt, setWarnAt] = useState(80);
   const [saving, setSaving] = useState(false);
+  // Merged built-in + custom expense categories, so a user can budget against
+  // their own categories (e.g. "Pet Food").
+  const categoryOptions = useCategoryOptions('expense');
 
   const reset = useCallback(() => {
     setCategory(EXPENSE_CATEGORIES[0]);
@@ -297,7 +301,7 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
             onChange={(e) => setCategory(e.target.value)}
             className="input-field"
           >
-            {EXPENSE_CATEGORIES.map((c) => (
+            {categoryOptions.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>

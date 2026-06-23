@@ -13,6 +13,7 @@ import { useNotificationStore } from './stores/notificationStore';
 import { useSplitStore } from './stores/splitStore';
 import { useSettlementRequestStore } from './stores/settlementRequestStore';
 import { useBudgetStore } from './stores/budgetStore';
+import { useCustomCategoryStore } from './stores/customCategoryStore';
 import { useRecurringStore } from './stores/recurringStore';
 import { runRecurringExpansion } from './lib/recurringRunner';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
@@ -231,6 +232,11 @@ function AppContent() {
     // the expansion runner can decide which entries are due.
     void useBudgetStore.getState().loadBudgets().catch((err) => {
       console.error('loadBudgets failed (non-fatal)', err);
+    });
+    // Custom categories feed every category picker; load early so the merged
+    // (built-in + custom) lists are ready before the user opens an entry form.
+    void useCustomCategoryStore.getState().loadCategories().catch((err) => {
+      console.error('loadCategories failed (non-fatal)', err);
     });
     void useRecurringStore.getState().loadTemplates().then(() => {
       // Defer expansion to next tick so the first paint isn't blocked by

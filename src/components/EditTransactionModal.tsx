@@ -8,7 +8,8 @@ import { useLoanStore } from '../stores/loanStore';
 import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
 import { confirmDestructive } from './ConfirmDestructiveSheet';
-import { EXPENSE_CATEGORIES, formatMoney, formatSignedMoney } from '../lib/constants';
+import { CategoryPicker } from './CategoryPicker';
+import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { parseInternalNote } from '../lib/internalNotes';
 import { useT } from '../lib/i18n';
@@ -357,20 +358,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
         {isExpense && (
           <div>
             <label className="form-label">{t('category')}</label>
-            <div className="flex flex-wrap gap-1.5">
-              {EXPENSE_CATEGORIES.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setCategory(item)}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all active:scale-95 ${
-                    category === item ? 'bg-ink-900 text-white border-ink-900 shadow-sm shadow-indigo-500/20' : 'bg-white text-ink-500 border-cream-border'
-                  }`}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
+            <CategoryPicker type="expense" value={category} onChange={setCategory} includeCurrent />
           </div>
         )}
 

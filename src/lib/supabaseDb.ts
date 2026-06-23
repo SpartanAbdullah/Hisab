@@ -4,7 +4,7 @@ import type {
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
   GroupMember, GroupInvite, GroupEvent, AppNotification, Person,
   LinkedRequest, LinkedRequestKind, SettlementRequest, Currency,
-  Budget, RecurringTransaction, Remittance,
+  Budget, RecurringTransaction, Remittance, CustomCategory,
 } from '../db';
 
 export interface DeletedRow {
@@ -1474,6 +1474,53 @@ function mapBudget(r: Record<string, unknown>): Budget {
     createdAt: r.created_at as string,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
     deletedAt: (r.deleted_at as string) ?? null,
+  };
+}
+
+// ══════════════════════════════════════
+// CUSTOM CATEGORIES (user-defined expense/income names)
+// Hard-delete table — see supabase-migration-custom-categories.sql.
+// ══════════════════════════════════════
+export const customCategoriesDb = {
+  async getAll(): Promise<CustomCategory[]> {
+    const { data, error } = await supabase
+      .from('custom_categories').select('*')
+      .eq('user_id', getUserId())
+      .order('type', { ascending: true })
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapCustomCategory);
+  },
+  async add(c: CustomCategory) {
+    const { error } = await supabase.from('custom_categories').insert({
+      id: c.id, user_id: getUserId(), type: c.type, name: c.name,
+      created_at: c.createdAt, updated_at: c.updatedAt ?? c.createdAt,
+    });
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<CustomCategory>) {
+    const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (changes.name !== undefined) row.name = changes.name;
+    const { error } = await supabase
+      .from('custom_categories').update(row)
+      .eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    const { error } = await supabase
+      .from('custom_categories').delete()
+      .eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+function mapCustomCategory(r: Record<string, unknown>): CustomCategory {
+  return {
+    id: r.id as string,
+    type: r.type as CustomCategory['type'],
+    name: r.name as string,
+    createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };
 }
 

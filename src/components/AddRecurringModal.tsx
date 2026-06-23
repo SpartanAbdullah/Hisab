@@ -5,6 +5,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useToast } from './Toast';
 import { confirmDestructive } from './ConfirmDestructiveSheet';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../lib/constants';
+import { useCategoryOptions, withCurrentValue } from '../lib/mergedCategories';
 import { validateRecurringStart } from '../lib/recurringStartValidation';
 import type { RecurringCadence, RecurringTransaction } from '../db';
 
@@ -135,7 +136,9 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
     }
   };
 
-  const categoryList = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  // Merged built-in + custom categories; keep the current value visible even
+  // if it was a custom category later deleted (edit mode).
+  const categoryList = withCurrentValue(useCategoryOptions(type), category);
 
   return (
     <Modal open={open} onClose={onClose} title={isEdit ? 'Edit recurring entry' : (title ?? 'New recurring entry')}>

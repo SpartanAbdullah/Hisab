@@ -10,11 +10,8 @@ import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { PageErrorState } from '../components/PageErrorState';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
-import {
-  EXPENSE_CATEGORIES,
-  INCOME_CATEGORIES,
-  formatMoney,
-} from '../lib/constants';
+import { formatMoney } from '../lib/constants';
+import { useCategoryOptions } from '../lib/mergedCategories';
 import { type ParsedExpense, type Direction } from '../lib/nlExpenseParser';
 import { pickAccountForDraft, buildTransactionFromDraft } from '../lib/nlExpenseToTransaction';
 import { routeAssistantInput } from '../lib/hisaabAssistant';
@@ -1027,7 +1024,7 @@ function ChipCard({ draft, accounts, history, resolved, busy, onConfirm, onCance
   const [amount, setAmount] = useState(String(draft.amount ?? ''));
   const defaultAccount = useMemo(() => pickAccountForDraft(draft, accounts), [draft, accounts]);
   const [accountId, setAccountId] = useState(defaultAccount?.id ?? '');
-  const cats: readonly string[] = direction === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const cats: readonly string[] = useCategoryOptions(direction === 'income' ? 'income' : 'expense');
   // Your own history wins over the parser's cold-start seed: if you've logged
   // this kind of thing before, reuse the category you chose then.
   const [category, setCategory] = useState<string>(() => {
