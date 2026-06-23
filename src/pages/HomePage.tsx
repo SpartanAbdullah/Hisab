@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
   ArrowDownLeft,
-  Wallet,
   Wallet2,
   Plus,
   BarChart3,
@@ -43,6 +42,7 @@ import { InboxAction } from "../components/InboxAction";
 import { MoneyDisplay } from "../components/MoneyDisplay";
 import { GlobalSearch } from "../components/GlobalSearch";
 import { NextStepHint } from "../components/NextStepHint";
+import { GettingStartedCard } from "../components/GettingStartedCard";
 import { AddAccountStepper } from "./AddAccountStepper";
 import { QuickEntry } from "./QuickEntry";
 import { formatMoney } from "../lib/constants";
@@ -629,17 +629,9 @@ export function HomePage() {
   const collapsedReminderHref = collapsedBanners[0]?.href ?? "/";
 
   const homeHint =
-    accountCount === 0
+    // The Getting Started card covers the no-account and no-transaction cases.
+    accountCount === 0 || transactions.length === 0
       ? null
-      : transactions.length === 0
-      ? {
-          icon: Plus,
-          tone: "accent" as const,
-          status: "Accounts are ready, but there is no activity yet.",
-          next: "Add your first income or expense so Hisaab can start showing spending flow, budgets, and recent activity.",
-          actionLabel: "Add transaction",
-          onAction: () => navigate("/transactions"),
-        }
       : hasAttentionBanner
       ? // A concrete strip/banner is already covering the active signal(s) —
         // don't echo it as a hint. (Kept null rather than removed so the
@@ -767,25 +759,15 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Add-account CTA when the user has zero accounts. */}
-        {dataReady && accountCount === 0 && (
-          <button
-            onClick={() => setShowAddAccount(true)}
-            className="w-full rounded-[18px] bg-cream-card border border-cream-border p-5 flex items-center gap-3 text-left active:scale-[0.99] transition-transform"
-          >
-            <div className="w-11 h-11 rounded-2xl bg-accent-100 flex items-center justify-center shrink-0">
-              <Wallet size={20} className="text-accent-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[14px] font-semibold text-ink-900 tracking-tight">
-                {t("home_create_account")}
-              </p>
-              <p className="text-[12px] text-ink-500 mt-0.5">
-                {t("home_no_accounts_desc")}
-              </p>
-            </div>
-            <ChevronRight size={16} className="text-ink-400 shrink-0" />
-          </button>
+        {/* Guided first-win: add an account, then log the first entry. Shows
+            progress and disappears once both are done. */}
+        {dataReady && (accountCount === 0 || transactions.length === 0) && (
+          <GettingStartedCard
+            accountCount={accountCount}
+            transactionCount={transactions.length}
+            onAddAccount={() => setShowAddAccount(true)}
+            onLogEntry={() => navigate("/transactions")}
+          />
         )}
 
         {/* 2-up: To Receive | To Pay */}
@@ -937,8 +919,6 @@ export function HomePage() {
             tone={homeHint.tone}
             status={homeHint.status}
             next={homeHint.next}
-            actionLabel={homeHint.actionLabel}
-            onAction={homeHint.onAction}
           />
         )}
 

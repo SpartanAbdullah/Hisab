@@ -1657,6 +1657,15 @@ const S = {
   budget_left_title: { ur: "Is mahine kharch karne ko bacha", en: "Left to spend this month" },
   budget_spent_of: { ur: "{spent} / {total} use hua", en: "{spent} of {total} used" },
 
+  // Getting-started first-win card
+  gs_title: { ur: "Chalein, shuru karein", en: "Let's get you set up" },
+  gs_subtitle: { ur: "Do chhote step — phir aap tayyar hain", en: "Two quick steps and you're ready" },
+  gs_step_account: { ur: "Pehla account banayein", en: "Add your first account" },
+  gs_step_entry: { ur: "Pehli entry add karein", en: "Log your first entry" },
+  gs_cta_add: { ur: "Banayein", en: "Add" },
+  gs_cta_log: { ur: "Add karein", en: "Log" },
+  gs_progress: { ur: "{done} / {total}", en: "{done} of {total}" },
+
   // ── Kameti / Committee ──
   kameti_title: { ur: "Kameti", en: "Kameti" },
   kameti_tile_desc: { ur: "Committee / BC track karein", en: "Track a committee / BC" },
@@ -1739,6 +1748,9 @@ const S = {
   // Analytics
   analytics_showing: { ur: "Dikha rahe", en: "Showing" },
   analytics_net: { ur: "Net", en: "Net" },
+  analytics_spend_trend: { ur: "Kharcha", en: "Spending" },
+  analytics_vs_prev: { ur: "pichle se", en: "vs previous" },
+  analytics_no_change: { ur: "lagbhag barabar", en: "about the same" },
   analytics_empty_desc: { ur: "Thoda kharcha aur amdani likho, phir aapke spend trends, categories aur net flow yahan dikhne lagenge.", en: "Log a few expenses and income, and your spend trends, categories and net flow show up here." },
   analytics_empty_cta: { ur: "Transaction add karo", en: "Add a transaction" },
   // Group expense split

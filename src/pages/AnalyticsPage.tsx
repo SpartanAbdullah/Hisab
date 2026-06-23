@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { ChevronRight, TrendingUp } from 'lucide-react';
+import { ChevronRight, TrendingUp, TrendingDown } from 'lucide-react';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useSplitStore } from '../stores/splitStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
@@ -28,6 +28,18 @@ function getDateRange(period: Period): [Date, Date] {
 function inRange(tx: Transaction, start: Date, end: Date) {
   const date = new Date(tx.createdAt);
   return date >= start && date <= end;
+}
+
+// The comparable window immediately before the selected period — used for the
+// "vs previous period" spend trend.
+function previousRange(period: Period): [Date, Date] {
+  const now = new Date();
+  switch (period) {
+    case 'this_month': return [new Date(now.getFullYear(), now.getMonth() - 1, 1), new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)];
+    case 'last_month': return [new Date(now.getFullYear(), now.getMonth() - 2, 1), new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59)];
+    case '3months': return [new Date(now.getFullYear(), now.getMonth() - 5, 1), new Date(now.getFullYear(), now.getMonth() - 2, 0, 23, 59, 59)];
+    case 'year': return [new Date(now.getFullYear() - 1, 0, 1), new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59)];
+  }
 }
 
 function sumByCurrency(transactions: Transaction[], type: 'expense' | 'income', start: Date, end: Date) {
@@ -103,6 +115,15 @@ export function AnalyticsPage() {
   const daily = useMemo(() => dailySpending(chartTransactions, start, end), [chartTransactions, start, end]);
   const topExp = useMemo(() => topExpenses(chartTransactions, start, end), [chartTransactions, start, end]);
 
+  // Spend trend vs the previous comparable window, in the chart currency.
+  const spendCompare = useMemo(() => {
+    const [pStart, pEnd] = previousRange(period);
+    const cur = chartTransactions.filter((tx) => tx.type === 'expense' && inRange(tx, start, end)).reduce((s, tx) => s + tx.amount, 0);
+    const prev = chartTransactions.filter((tx) => tx.type === 'expense' && inRange(tx, pStart, pEnd)).reduce((s, tx) => s + tx.amount, 0);
+    if (prev <= 0) return null;
+    return { pct: Math.round(((cur - prev) / prev) * 100) };
+  }, [chartTransactions, period, start, end]);
+
   const spentByCurrency = useMemo(() => sumByCurrency(transactions, 'expense', start, end), [transactions, start, end]);
   const incomeByCurrency = useMemo(() => sumByCurrency(transactions, 'income', start, end), [transactions, start, end]);
   const hasAnyData = spentByCurrency.length > 0 || incomeByCurrency.length > 0;
@@ -165,6 +186,24 @@ export function AnalyticsPage() {
           <MoneyLines totals={incomeByCurrency} tone="income" />
         </div>
       </div>
+
+      {/* Spend trend vs the previous comparable period (chart currency). For
+          spending, up is coral (watch out), down is green (nice). */}
+      {spendCompare && (
+        <div className="px-5 pt-2.5">
+          <div className="rounded-2xl bg-cream-card border border-cream-border px-4 py-3 flex items-center justify-between gap-2">
+            <p className="text-[11px] text-ink-500 font-semibold uppercase tracking-widest">{t('analytics_spend_trend')} · {chartCurrency}</p>
+            {spendCompare.pct === 0 ? (
+              <span className="text-[12px] font-semibold text-ink-500">{t('analytics_no_change')}</span>
+            ) : (
+              <span className={`inline-flex items-center gap-1 text-[12.5px] font-bold ${spendCompare.pct > 0 ? 'text-pay-text' : 'text-receive-text'}`}>
+                {spendCompare.pct > 0 ? <TrendingUp size={13} strokeWidth={2.4} /> : <TrendingDown size={13} strokeWidth={2.4} />}
+                {Math.abs(spendCompare.pct)}% {t('analytics_vs_prev')}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Net (income − spent) per currency. Coloured + signed so it's never
           colour-only: a leading +/− pairs with the receive/pay tint. */}
