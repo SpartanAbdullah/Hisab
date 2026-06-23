@@ -419,5 +419,51 @@ export interface Remittance {
   createdAt: string;
 }
 
+// ── Kameti / Committee (ROSCA) ──
+// A no-custody rotating-savings committee tracker. Hisaab records the structure
+// and who paid; it never holds the pool. See supabase-migration-committees.sql.
+export type CommitteeCadence = 'daily' | 'weekly' | 'monthly';
+export type CommitteePayoutMethod = 'fixed' | 'ballot';
+export type CommitteeStatus = 'active' | 'completed';
+
+export interface Committee {
+  id: string;
+  name: string;
+  currency: Currency;
+  contributionAmount: number;
+  memberCount: number;        // N slots
+  cadence: CommitteeCadence;
+  totalRounds: number;        // usually = memberCount
+  startDate: string;          // YYYY-MM-DD
+  payoutMethod: CommitteePayoutMethod;
+  status: CommitteeStatus;
+  notes: string;
+  drawnAt?: string | null;    // when the order/ballot was set
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface CommitteeMember {
+  id: string;
+  committeeId: string;
+  name: string;
+  phone?: string | null;
+  personId?: string | null;
+  slot?: number | null;       // payout round (1..N); null until assigned
+  isOrganizer: boolean;
+  payoutReceivedAt?: string | null;
+  exitedAt?: string | null;
+  createdAt: string;
+}
+
+// One row per paid (member, round). Absence of a row = not paid.
+export interface CommitteePayment {
+  id: string;
+  committeeId: string;
+  memberId: string;
+  round: number;
+  paidAt: string;
+}
+
 // ── App Mode ──
 export type AppMode = 'splits_only' | 'full_tracker';

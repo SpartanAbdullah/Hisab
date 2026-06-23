@@ -24,6 +24,7 @@ import {
   Repeat,
   Tags,
   Moon,
+  Coins,
   Database,
   RefreshCw,
   FileText,
@@ -795,6 +796,19 @@ export function SettingsPage() {
               <p className="text-[11px] text-ink-500">
                 {t("settings_contacts_tile_desc")}
               </p>
+            </div>
+            <ChevronRight size={16} className="text-ink-300" />
+          </button>
+          <button
+            onClick={() => navigate('/kameti')}
+            className={rowClass + " w-full text-left"}
+          >
+            <div className="w-9 h-9 rounded-xl bg-receive-50 flex items-center justify-center">
+              <Coins size={16} className="text-receive-text" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">{t('kameti_title')}</p>
+              <p className="text-[11px] text-ink-500">{t('kameti_tile_desc')}</p>
             </div>
             <ChevronRight size={16} className="text-ink-300" />
           </button>

@@ -1,0 +1,244 @@
+import { useCallback, useMemo, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle } from 'lucide-react';
+import { format } from 'date-fns';
+import { useCommitteeStore } from '../stores/committeeStore';
+import { PageHeader } from '../components/PageHeader';
+import { PageErrorState } from '../components/PageErrorState';
+import { useToast } from '../components/Toast';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
+import { formatMoney } from '../lib/constants';
+import { useT } from '../lib/i18n';
+import { buildWhatsAppUrl } from '../lib/whatsappReminder';
+import {
+  poolAmount, currentRound, roundDate, recipientForRound, hasPaid,
+  paymentsForRound, slotKind, buildSchedule,
+} from '../lib/committeeMath';
+
+export function KametiDetailPage() {
+  const { id = '' } = useParams();
+  const navigate = useNavigate();
+  const t = useT();
+  const toast = useToast();
+
+  const getCommittee = useCommitteeStore((s) => s.getCommittee);
+  const committee = useCommitteeStore((s) => s.committees.find((c) => c.id === id));
+  const membersOf = useCommitteeStore((s) => s.membersOf);
+  const paymentsOf = useCommitteeStore((s) => s.paymentsOf);
+  const loadAll = useCommitteeStore((s) => s.loadAll);
+  const runBallot = useCommitteeStore((s) => s.runBallot);
+  const setPaid = useCommitteeStore((s) => s.setPaid);
+  const confirmPayout = useCommitteeStore((s) => s.confirmPayout);
+  const deleteCommittee = useCommitteeStore((s) => s.deleteCommittee);
+
+  const load = useCallback(async () => { if (!getCommittee(id)) await loadAll(); }, [getCommittee, id, loadAll]);
+  const { status } = useAsyncLoad(load);
+
+  const members = useMemo(() => (committee ? membersOf(committee.id) : []), [committee, membersOf]);
+  const payments = useMemo(() => (committee ? paymentsOf(committee.id) : []), [committee, paymentsOf]);
+
+  const liveRound = committee ? currentRound(committee.startDate, committee.cadence, committee.totalRounds) : 1;
+  const [viewRound, setViewRound] = useState<number | null>(null);
+  const [drawing, setDrawing] = useState(false);
+  const round = viewRound ?? liveRound;
+
+  if (status === 'loading' && !committee) {
+    return <main className="min-h-dvh bg-cream-bg"><PageHeader title={t('kameti_title')} back /></main>;
+  }
+  if (!committee) {
+    return (
+      <main className="min-h-dvh bg-cream-bg">
+        <PageHeader title={t('kameti_title')} back />
+        <div className="px-5 pt-8"><PageErrorState variant="inline" title={t('kameti_title')} message="Not found." /></div>
+      </main>
+    );
+  }
+
+  const pool = poolAmount(committee.contributionAmount, committee.memberCount);
+  const isDrawn = !!committee.drawnAt && members.some((m) => m.slot != null);
+  const recipient = recipientForRound(members, round);
+  const collected = paymentsForRound(payments, round).length;
+
+  const handleDraw = async () => {
+    setDrawing(true);
+    try {
+      await runBallot(committee.id);
+      toast.show({ type: 'success', title: t('kameti_draw_done') });
+    } catch {
+      toast.show({ type: 'error', title: t('error') });
+    } finally {
+      setDrawing(false);
+    }
+  };
+
+  const remind = (name: string, phone: string | null | undefined) => {
+    const text = t('kameti_reminder_text')
+      .replace('{name}', name)
+      .replace('{committee}', committee.name)
+      .replace('{amount}', formatMoney(committee.contributionAmount, committee.currency));
+    window.open(buildWhatsAppUrl(phone ?? null, text), '_blank');
+  };
+
+  const shareStatement = async () => {
+    const lines: string[] = [];
+    lines.push(`${committee.name} — ${formatMoney(committee.contributionAmount, committee.currency)} ${t(`kameti_cadence_${committee.cadence}` as 'kameti_cadence_monthly')}`);
+    lines.push(`${t('kameti_pool')}: ${formatMoney(pool, committee.currency)} · ${members.length} ${t('kameti_members').toLowerCase()}`);
+    lines.push('');
+    lines.push(`${t('kameti_schedule')}:`);
+    for (const row of buildSchedule(committee, members)) {
+      const m = members.find((x) => x.id === row.recipientId);
+      const got = m?.payoutReceivedAt ? ' ✓' : '';
+      lines.push(`  ${row.round}. ${m?.name ?? '—'} — ${format(row.date, 'd MMM yyyy')}${got}`);
+    }
+    lines.push('');
+    lines.push(`${t('kameti_round_of').replace('{r}', String(round)).replace('{n}', String(committee.totalRounds))} · ${t('kameti_collected').replace('{paid}', String(collected)).replace('{total}', String(members.length))}`);
+    lines.push('');
+    lines.push(`🔒 ${t('kameti_no_custody')}`);
+    const text = lines.join('\n');
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try { await navigator.share({ text }); return; } catch { /* fall through */ }
+    }
+    window.open(buildWhatsAppUrl(null, text), '_blank');
+  };
+
+  const handleDelete = async () => {
+    const ok = await confirmDestructive({ title: t('kameti_delete'), description: t('kameti_delete_confirm'), confirmLabel: t('kameti_delete') });
+    if (!ok) return;
+    await deleteCommittee(committee.id);
+    toast.show({ type: 'success', title: t('kameti_deleted') });
+    navigate('/kameti');
+  };
+
+  return (
+    <main className="min-h-dvh bg-cream-bg pb-28">
+      <PageHeader title={committee.name} back />
+
+      <div className="px-5 pt-2 space-y-4">
+        {/* Pool + round + trust badges */}
+        <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <div>
+              <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">{t('kameti_pool')}</p>
+              <p className="text-[26px] font-bold text-ink-900 tabular-nums tracking-tight leading-tight">{formatMoney(pool, committee.currency)}</p>
+            </div>
+            <p className="text-[12px] text-ink-500 tabular-nums">{t('kameti_round_of').replace('{r}', String(liveRound)).replace('{n}', String(committee.totalRounds))}</p>
+          </div>
+          <p className="text-[11px] text-ink-500 mt-1 tabular-nums">
+            {formatMoney(committee.contributionAmount, committee.currency)} × {members.length} {t(`kameti_cadence_${committee.cadence}` as 'kameti_cadence_monthly').toLowerCase()}
+          </p>
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            <span className="inline-flex items-center gap-1 rounded-full bg-receive-50 text-receive-text px-2 py-1 text-[10px] font-semibold">
+              <Shield size={10} strokeWidth={2.4} /> {t('kameti_no_custody')}
+            </span>
+            <span className="inline-flex items-center rounded-full bg-accent-50 text-accent-600 px-2 py-1 text-[10px] font-semibold">{t('kameti_sood_free')}</span>
+          </div>
+        </div>
+
+        {/* Undrawn ballot → draw CTA */}
+        {!isDrawn && (
+          <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4 text-center">
+            <Dices size={26} className="text-accent-600 mx-auto" strokeWidth={1.8} />
+            <p className="text-[13px] font-semibold text-ink-900 mt-2">{t('kameti_undrawn')}</p>
+            <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">{t('kameti_method_ballot_desc')}</p>
+            <button onClick={handleDraw} disabled={drawing} className="mt-3 w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+              {drawing ? t('kameti_drawing') : t('kameti_run_ballot')}
+            </button>
+          </div>
+        )}
+
+        {/* Round navigator */}
+        {isDrawn && (
+          <div className="flex items-center justify-between">
+            <button onClick={() => setViewRound(Math.max(1, round - 1))} disabled={round <= 1} className="nav-icon-button disabled:opacity-30" aria-label="Previous round">
+              <ChevronLeft size={16} className="text-ink-600" />
+            </button>
+            <div className="text-center">
+              <p className="text-[13px] font-bold text-ink-900">{t('kameti_round_of').replace('{r}', String(round)).replace('{n}', String(committee.totalRounds))}</p>
+              <p className="text-[10.5px] text-ink-500 tabular-nums">{format(roundDate(committee.startDate, committee.cadence, round), 'd MMM yyyy')}</p>
+            </div>
+            <button onClick={() => setViewRound(Math.min(committee.totalRounds, round + 1))} disabled={round >= committee.totalRounds} className="nav-icon-button disabled:opacity-30" aria-label="Next round">
+              <ChevronRight size={16} className="text-ink-600" />
+            </button>
+          </div>
+        )}
+
+        {/* This round's recipient (baari) */}
+        {isDrawn && recipient && (
+          <div className="rounded-2xl bg-gradient-to-br from-accent-100 to-accent-50 border border-accent-100 p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/70 flex items-center justify-center shrink-0">
+                <Gift size={18} className="text-accent-600" strokeWidth={1.9} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-semibold text-accent-600 uppercase tracking-wide">{t('kameti_baari_label')}</p>
+                <p className="text-[15px] font-bold text-ink-900 truncate">{recipient.name}{recipient.isOrganizer ? '' : ''}</p>
+              </div>
+              <button
+                onClick={() => confirmPayout(recipient.id, !recipient.payoutReceivedAt)}
+                className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 ${recipient.payoutReceivedAt ? 'bg-receive-600 text-white' : 'bg-white text-ink-900 border border-cream-border'}`}
+              >
+                <Check size={12} strokeWidth={2.8} /> {recipient.payoutReceivedAt ? t('kameti_received') : t('kameti_mark_received')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* This round's collection list */}
+        {isDrawn && (
+          <div>
+            <div className="flex items-center justify-between mb-2.5">
+              <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">{t('kameti_this_round')}</h2>
+              <span className="text-[11px] font-semibold text-ink-700 tabular-nums">{t('kameti_collected').replace('{paid}', String(collected)).replace('{total}', String(members.length))}</span>
+            </div>
+            <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-cream-hairline overflow-hidden">
+              {members.map((m) => {
+                const paid = hasPaid(payments, m.id, round);
+                const kind = m.slot ? slotKind(m.slot, committee.totalRounds) : 'mid';
+                return (
+                  <div key={m.id} className="flex items-center gap-2.5 px-3.5 py-3">
+                    <button
+                      onClick={() => setPaid(committee.id, m.id, round, !paid)}
+                      className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 ${paid ? 'bg-receive-600 border-receive-600 text-white' : 'bg-cream-card border-cream-border text-transparent'}`}
+                      aria-pressed={paid}
+                      aria-label={paid ? t('kameti_paid_badge') : t('kameti_unpaid_badge')}
+                    >
+                      <Check size={13} strokeWidth={3} />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-ink-900 truncate flex items-center gap-1.5">
+                        {m.name}
+                        {m.isOrganizer && <Crown size={11} className="text-accent-600 shrink-0" aria-label={t('kameti_you_organizer')} />}
+                        {m.slot != null && <span className="text-[9px] text-ink-400 font-semibold shrink-0">#{m.slot}</span>}
+                      </p>
+                      {m.slot != null && (kind === 'early' || kind === 'late') && (
+                        <p className="text-[10px] text-ink-400">{t(kind === 'early' ? 'kameti_slot_early' : 'kameti_slot_late')}</p>
+                      )}
+                    </div>
+                    {paid ? (
+                      <span className="text-[10px] font-semibold text-receive-text bg-receive-50 rounded-full px-2 py-0.5 shrink-0">{t('kameti_paid_badge')}</span>
+                    ) : (
+                      <button onClick={() => remind(m.name, m.phone)} className="text-[10.5px] font-semibold text-receive-600 flex items-center gap-1 shrink-0 active:opacity-70" style={{ color: '#1FA855' }}>
+                        <MessageCircle size={12} /> {t('kameti_remind')}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Footer actions */}
+        <div className="flex gap-2 pt-1">
+          <button onClick={shareStatement} className="flex-1 py-3 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[12.5px] font-semibold flex items-center justify-center gap-2 active:bg-cream-soft">
+            <Share2 size={14} /> {t('kameti_share_statement')}
+          </button>
+          <button onClick={handleDelete} className="px-4 py-3 rounded-2xl bg-cream-card border border-cream-border text-pay-text flex items-center justify-center active:bg-pay-50" aria-label={t('kameti_delete')}>
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}

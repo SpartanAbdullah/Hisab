@@ -14,6 +14,7 @@ import { useSplitStore } from './stores/splitStore';
 import { useSettlementRequestStore } from './stores/settlementRequestStore';
 import { useBudgetStore } from './stores/budgetStore';
 import { useCustomCategoryStore } from './stores/customCategoryStore';
+import { useCommitteeStore } from './stores/committeeStore';
 import { useRecurringStore } from './stores/recurringStore';
 import { runRecurringExpansion } from './lib/recurringRunner';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
@@ -42,6 +43,8 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const InboxPage = lazy(() => import('./pages/InboxPage').then(m => ({ default: m.InboxPage })));
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then(m => ({ default: m.BudgetsPage })));
 const SubscriptionsPage = lazy(() => import('./pages/SubscriptionsPage').then(m => ({ default: m.SubscriptionsPage })));
+const KametiPage = lazy(() => import('./pages/KametiPage').then(m => ({ default: m.KametiPage })));
+const KametiDetailPage = lazy(() => import('./pages/KametiDetailPage').then(m => ({ default: m.KametiDetailPage })));
 const HisaabAIPage = lazy(() => import('./pages/HisaabAIPage').then(m => ({ default: m.HisaabAIPage })));
 const InsightDetailPage = lazy(() => import('./pages/InsightDetailPage').then(m => ({ default: m.InsightDetailPage })));
 const PublicInfoPage = lazy(() => import('./pages/PublicInfoPages').then(m => ({ default: m.PublicInfoPage })));
@@ -238,6 +241,9 @@ function AppContent() {
     void useCustomCategoryStore.getState().loadCategories().catch((err) => {
       console.error('loadCategories failed (non-fatal)', err);
     });
+    void useCommitteeStore.getState().loadAll().catch((err) => {
+      console.error('loadCommittees failed (non-fatal)', err);
+    });
     void useRecurringStore.getState().loadTemplates().then(() => {
       // Defer expansion to next tick so the first paint isn't blocked by
       // potentially many confirmation prompts. The runner only prompts;
@@ -353,6 +359,10 @@ function AppContent() {
               Tracker. Old /recurring links redirect there. */}
           <Route path="/subscriptions" element={mode === 'full_tracker' ? <SubscriptionsPage /> : <Navigate to="/" replace />} />
           <Route path="/recurring" element={<Navigate to="/subscriptions" replace />} />
+          {/* Kameti / committee — a no-custody tracker; needs no accounts, so
+              available in both modes. */}
+          <Route path="/kameti" element={<KametiPage />} />
+          <Route path="/kameti/:id" element={<KametiDetailPage />} />
           <Route path="/hisaab-ai" element={<HisaabAIPage />} />
           <Route path="/hisaab-ai/insight/:category" element={mode === 'full_tracker' ? <InsightDetailPage /> : <Navigate to="/hisaab-ai" replace />} />
           {/* Remittances feature retired (confused users into thinking Hisaab

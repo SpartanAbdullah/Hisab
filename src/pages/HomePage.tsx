@@ -920,6 +920,12 @@ export function HomePage() {
                 badgeTextClass="text-warn-700"
                 onClick={() => navigate("/contacts")}
               />
+              <QuickTile
+                label={t("kameti_title")}
+                icon={Users}
+                iconClass="text-accent-600"
+                onClick={() => navigate("/kameti")}
+              />
             </div>
           </div>
         )}

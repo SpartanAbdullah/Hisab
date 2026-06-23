@@ -5,6 +5,7 @@ import type {
   GroupMember, GroupInvite, GroupEvent, AppNotification, Person,
   LinkedRequest, LinkedRequestKind, SettlementRequest, Currency,
   Budget, RecurringTransaction, Remittance, CustomCategory,
+  Committee, CommitteeMember, CommitteePayment,
 } from '../db';
 
 export interface DeletedRow {
@@ -1524,6 +1525,149 @@ function mapCustomCategory(r: Record<string, unknown>): CustomCategory {
     name: r.name as string,
     createdAt: r.created_at as string,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
+  };
+}
+
+// ══════════════════════════════════════
+// KAMETI / COMMITTEES (no-custody ROSCA tracker)
+// See supabase-migration-committees.sql.
+// ══════════════════════════════════════
+export const committeesDb = {
+  async getAll(): Promise<Committee[]> {
+    const { data, error } = await supabase
+      .from('committees').select('*')
+      .eq('user_id', getUserId())
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapCommittee);
+  },
+  async add(c: Committee) {
+    const { error } = await supabase.from('committees').insert({
+      id: c.id, user_id: getUserId(), name: c.name, currency: c.currency,
+      contribution_amount: c.contributionAmount, member_count: c.memberCount,
+      cadence: c.cadence, total_rounds: c.totalRounds, start_date: c.startDate,
+      payout_method: c.payoutMethod, status: c.status, notes: c.notes,
+      drawn_at: c.drawnAt ?? null, created_at: c.createdAt,
+    });
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<Committee>) {
+    const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (changes.name !== undefined) row.name = changes.name;
+    if (changes.payoutMethod !== undefined) row.payout_method = changes.payoutMethod;
+    if (changes.status !== undefined) row.status = changes.status;
+    if (changes.notes !== undefined) row.notes = changes.notes;
+    if (changes.drawnAt !== undefined) row.drawn_at = changes.drawnAt;
+    const { error } = await supabase.from('committees').update(row).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    // Hard delete — FKs cascade members + payments.
+    const { error } = await supabase.from('committees').delete().eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+export const committeeMembersDb = {
+  async getAll(): Promise<CommitteeMember[]> {
+    const { data, error } = await supabase
+      .from('committee_members').select('*')
+      .eq('user_id', getUserId())
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapCommitteeMember);
+  },
+  async addMany(members: CommitteeMember[]) {
+    if (members.length === 0) return;
+    const rows = members.map((m) => ({
+      id: m.id, committee_id: m.committeeId, user_id: getUserId(), name: m.name,
+      phone: m.phone ?? null, person_id: m.personId ?? null, slot: m.slot ?? null,
+      is_organizer: m.isOrganizer, payout_received_at: m.payoutReceivedAt ?? null,
+      exited_at: m.exitedAt ?? null, created_at: m.createdAt,
+    }));
+    const { error } = await supabase.from('committee_members').insert(rows);
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<CommitteeMember>) {
+    const row: Record<string, unknown> = {};
+    if (changes.name !== undefined) row.name = changes.name;
+    if (changes.phone !== undefined) row.phone = changes.phone;
+    if (changes.slot !== undefined) row.slot = changes.slot;
+    if (changes.payoutReceivedAt !== undefined) row.payout_received_at = changes.payoutReceivedAt;
+    if (changes.exitedAt !== undefined) row.exited_at = changes.exitedAt;
+    const { error } = await supabase.from('committee_members').update(row).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    const { error } = await supabase.from('committee_members').delete().eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+export const committeePaymentsDb = {
+  async getAll(): Promise<CommitteePayment[]> {
+    const { data, error } = await supabase
+      .from('committee_payments').select('*')
+      .eq('user_id', getUserId());
+    if (error) throw error;
+    return (data ?? []).map(mapCommitteePayment);
+  },
+  async add(p: CommitteePayment) {
+    const { error } = await supabase.from('committee_payments').insert({
+      id: p.id, committee_id: p.committeeId, user_id: getUserId(),
+      member_id: p.memberId, round: p.round, paid_at: p.paidAt,
+    });
+    if (error) throw error;
+  },
+  async remove(memberId: string, round: number) {
+    const { error } = await supabase
+      .from('committee_payments').delete()
+      .eq('user_id', getUserId()).eq('member_id', memberId).eq('round', round);
+    if (error) throw error;
+  },
+};
+
+function mapCommittee(r: Record<string, unknown>): Committee {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    currency: r.currency as Currency,
+    contributionAmount: Number(r.contribution_amount),
+    memberCount: Number(r.member_count),
+    cadence: r.cadence as Committee['cadence'],
+    totalRounds: Number(r.total_rounds),
+    startDate: r.start_date as string,
+    payoutMethod: r.payout_method as Committee['payoutMethod'],
+    status: r.status as Committee['status'],
+    notes: (r.notes as string) ?? '',
+    drawnAt: (r.drawn_at as string) ?? null,
+    createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
+  };
+}
+
+function mapCommitteeMember(r: Record<string, unknown>): CommitteeMember {
+  return {
+    id: r.id as string,
+    committeeId: r.committee_id as string,
+    name: r.name as string,
+    phone: (r.phone as string) ?? null,
+    personId: (r.person_id as string) ?? null,
+    slot: r.slot != null ? Number(r.slot) : null,
+    isOrganizer: Boolean(r.is_organizer),
+    payoutReceivedAt: (r.payout_received_at as string) ?? null,
+    exitedAt: (r.exited_at as string) ?? null,
+    createdAt: r.created_at as string,
+  };
+}
+
+function mapCommitteePayment(r: Record<string, unknown>): CommitteePayment {
+  return {
+    id: r.id as string,
+    committeeId: r.committee_id as string,
+    memberId: r.member_id as string,
+    round: Number(r.round),
+    paidAt: r.paid_at as string,
   };
 }
 
