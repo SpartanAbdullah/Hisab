@@ -1068,10 +1068,10 @@ function ChipCard({ draft, accounts, history, resolved, busy, onConfirm, onCance
   const labelIsEcho = !!draft.category && draft.label.toLowerCase() === draft.category.toLowerCase();
   const [note, setNote] = useState(labelIsEcho ? '' : draft.label);
 
-  // Keep the category valid when the user flips direction.
-  useEffect(() => {
-    if (!cats.includes(category)) setCategory('Other');
-  }, [direction, cats, category]);
+  // Keep the category valid when the user flips direction. Adjust during render
+  // (React's supported pattern) instead of in an effect — it converges because
+  // 'Other' is always a valid category.
+  if (!cats.includes(category)) setCategory('Other');
 
   if (resolved === 'cancelled') {
     return <AIBubble>No problem — I didn&rsquo;t save that. Tell me again whenever you&rsquo;re ready.</AIBubble>;
