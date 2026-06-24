@@ -16,17 +16,17 @@ Hisaab is a personal finance record-keeping app. It is not a bank, wallet custod
 | Name and profile settings | `profiles`, onboarding, Settings, local storage cache | Name and core settings required for setup; optional phone value may be entered in Settings | App functionality, personalization, support |
 | Financial information | Accounts, balances, income, expenses, transfers, loans, repayments, goals, budgets, recurring entries, remittance records, notes, categories, and currencies | Optional user-created records, but core to app functionality when used | App functionality, sync, reports, summaries |
 | Collaboration records | Groups, members, split expenses, settlements, invite records, linked loan and settlement requests | Optional, only when collaboration features are used | App functionality, user-requested sharing |
-| Manually entered contacts | `persons` table and optional contact phone field | Optional | App functionality for loans and linked records |
+| Manually entered contacts | `persons` table; the optional contact **phone number IS cloud-synced** to Supabase (`persons.phone`, + committee member phone) — disclose Phone number = collected | Optional | App functionality for loans and linked records |
 | In-app notification records | `notifications` table for group updates and requests | Generated when applicable | App functionality |
 | Local app data | Local storage settings, Supabase browser session persistence, local PIN hash, IndexedDB/Dexie mirror and outbox tables | Generated as needed | Session persistence, local app lock, reliability, offline sync scaffolding |
-| Crash and diagnostic context | Optional Sentry integration enabled only when `VITE_SENTRY_DSN` is configured | Optional and environment-dependent | Debugging, security, service reliability |
+| Crash and diagnostic context | Sentry — **ENABLED in this build** (`VITE_SENTRY_DSN` is configured). Sends exceptions, stack traces & diagnostic context to Sentry GmbH (EU region). `sendDefaultPii: false`; no user ID attached at any current call site | Collected; **shared with Sentry** | Debugging, security, service reliability |
 
 ## Sharing
 
 - Hisaab does not include advertising SDKs and the codebase does not show sale of user data.
 - Supabase processes authentication and cloud data storage on Hisaab's behalf.
 - Vercel processes hosting and delivery traffic needed to serve the web app.
-- Sentry may process crash and diagnostic information only if `VITE_SENTRY_DSN` is configured in production.
+- Sentry (Sentry GmbH, EU region) processes crash and diagnostic information. **This build has `VITE_SENTRY_DSN` configured, so crash data IS collected and shared with Sentry.** `sendDefaultPii: false`; no user ID is attached at any current call site (keep it that way or re-disclose).
 - Users intentionally share limited records with other Hisaab users when they use groups, invites, linked loan requests, or linked settlement requests.
 - User-exported JSON backups leave the app only when the user downloads and shares them.
 
@@ -55,7 +55,7 @@ Current code review found:
 
 - **Analytics:** no product analytics SDK found.
 - **Ads:** no advertising SDK found.
-- **Crash reporting:** optional Sentry integration exists; confirm whether `VITE_SENTRY_DSN` is configured in production.
+- **Crash reporting:** Sentry integration is **enabled** (`VITE_SENTRY_DSN` configured). Crash/diagnostic data is collected and shared with Sentry GmbH (EU). `sendDefaultPii: false`; no user ID attached at current call sites.
 - **Push notifications:** no Android push-notification SDK found. The app has database-backed in-app notifications.
 - **Device identifiers:** no dedicated device identifier SDK found.
 - **Location:** no location or geolocation SDK usage found.
@@ -67,9 +67,9 @@ Current code review found:
 
 ## Human Review Before Submission
 
-1. Confirm whether Sentry is enabled in production and document its exact data handling.
+1. ✅ Resolved: Sentry **is enabled** (`VITE_SENTRY_DSN` configured). Crash logs + diagnostics are collected and shared with Sentry GmbH (EU); `sendDefaultPii: false`, no user ID attached at any current call site — keep it that way or re-disclose.
 2. Apply `supabase-migration-p0-launch-blockers.sql`, run `supabase-p0-security-verification.sql`, and confirm provider backup retention after permanent Auth identity deletion.
-3. Confirm whether the optional phone value in Settings is stored only locally or synced in any production path.
+3. ✅ Resolved: contact phone **IS cloud-synced** (`persons.phone` in Supabase). `hisaab_mobile` in Settings is local-only, but `persons.phone` syncs — so **Phone number = Collected** must be disclosed.
 4. Confirm the final Android manifest permissions after regenerating the complete Android wrapper.
 5. Confirm that the published privacy policy and deletion page match the production RPC deployed in Supabase.
 6. Review Google Play's current Data Safety definitions before completing the console form.

@@ -18,9 +18,9 @@ we always know who's on what. Pair this with the step-by-step in
 | C4 | Design the consistent Hisaab logo (pick a concept) | ✅ | Concept A chosen (navy squircle, cream H, violet bar) |
 | C5 | Produce ALL icon assets from the chosen logo | ✅ | favicon, PWA (+ real maskable), apple-touch, Android mipmaps, in-app mark — via `scripts/generate-icons.mjs` |
 | C6 | Hardware back button closes an open modal first | ✅ | Done; **verify on device** (RELEASE.md smoke test) |
-| C7 | Draft Play store listing copy (short + full description) | ⏳ | Framed as expense/khata tracking, no lending language |
+| C7 | Draft Play store listing copy (short + full description) | ✅ | `docs/play-store-listing.md` — en + Roman-Urdu + release notes + ASO keywords |
 | C8 | Draft the 1024×500 feature graphic (SVG) | ⏳ | You export to PNG |
-| C9 | Correct the 3 Data Safety doc details (phone, Sentry) | ⏳ | So declared = actual |
+| C9 | Correct the Data Safety doc details (phone, Sentry) | ✅ | Phone=collected, crash logs=shared w/ Sentry. Verified: **no user ID is sent to Sentry** (capability dormant) |
 | C10 | Sentry wiring matches final decision | ✅ | Code wired (reads `VITE_SENTRY_DSN`); you provide the DSN (Y12) |
 
 ## 🧑 You — operational, hosting & Play Console (only you can do these)

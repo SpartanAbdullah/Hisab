@@ -128,7 +128,7 @@ This is a draft for Play Console and must be reviewed against the final Android 
 |---|---|---|---|
 | Personal info - Email address | Yes | Collected for app functionality, account management | Supabase Auth email login |
 | Personal info - Name | Yes | Collected for app functionality and account management | Name/display name/profile name; shared in groups |
-| Personal info - Phone number | Possibly yes | Disclose if Settings mobile/contact phone is used in production | `hisaab_mobile` and `Person.phone` exist |
+| Personal info - Phone number | **Yes** | Collected for app functionality (optional, user-entered) | Contact phone is **cloud-synced** to Supabase `persons.phone` (+ committee member phone); `hisaab_mobile` in Settings is local-only |
 | Personal info - User IDs | Yes | Collected for app functionality/account management | Supabase user ids, profile ids, group member profile ids |
 | Financial info - User payment info | No evidence | Do not disclose unless payment cards/bank credentials are added | App stores account names/balances, not payment credentials |
 | Financial info - Purchase history | No evidence | Not collected | No purchase flow found |
@@ -145,7 +145,11 @@ This is a draft for Play Console and must be reviewed against the final Android 
 | Health and fitness | No evidence | Not collected | No health data found |
 | Messages | No SMS/email body collection | Not collected | In-app notifications/notes are app content, not SMS |
 | Device or other IDs | Possibly | Review Supabase/browser/device identifiers in final native build | No advertising ID found; Supabase/session/browser identifiers may apply |
-| App info and performance - Crash logs/diagnostics | No current evidence | Not collected unless hosting/native SDK adds diagnostics | Vercel/Supabase logs may exist server-side outside app code |
+| App info and performance - Crash logs/diagnostics | **Yes** | Collected for diagnostics; **shared with Sentry** (third party) | Sentry enabled via `VITE_SENTRY_DSN` (EU region); `sendDefaultPii: false`, no user ID attached at current call sites |
+
+**Third-party data processors (mark BOTH as "shared with third parties" in the Data Safety form):**
+- **Supabase** (Supabase Inc.) — auth + Postgres database + realtime; receives all cloud-synced user, financial and contact data (incl. `persons.phone`).
+- **Sentry GmbH** (EU region) — crash & diagnostic reporting, **now enabled** (`VITE_SENTRY_DSN` set). Receives exception/stack-trace/diagnostic context. `sendDefaultPii: false`; no user ID is attached at any current call site, so **no User ID is presently transmitted to Sentry** — if any future `reportError` call starts passing `context.userId`, update this disclosure.
 
 Google Play sources reviewed: Play Console Data safety guidance and User Data policy. Google requires clear, accurate Data Safety disclosures and a publicly accessible privacy policy consistent with app behavior.
 
