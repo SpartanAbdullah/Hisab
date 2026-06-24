@@ -28,7 +28,11 @@ export function AppLoadingScreen() {
       <div className="app-loading-content">
         <div className="app-loading-brand">
           <div className="app-loading-mark" aria-hidden="true">
-            <span>H</span>
+            <svg width="24" height="24" viewBox="0 0 512 512">
+              <rect x="160" y="146" width="56" height="220" rx="10" fill="#F4F2EC" />
+              <rect x="296" y="146" width="56" height="220" rx="10" fill="#F4F2EC" />
+              <rect x="160" y="229" width="192" height="54" rx="10" fill="#7C5CFF" />
+            </svg>
           </div>
           <h1>Hisaab</h1>
         </div>
