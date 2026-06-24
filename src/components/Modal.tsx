@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUIStore } from '../stores/uiStore';
 
 interface Props {
@@ -25,10 +25,21 @@ export function Modal({ open, onClose, title, children, footer, confirmClose }: 
     onClose();
   };
 
+  // Register a STABLE close handler on the modal stack so the hardware back
+  // button can dismiss this modal. The ref keeps it pointing at the latest
+  // requestClose (which closes over the current confirmClose/onClose) without
+  // changing identity, so push/pop stay balanced across re-renders.
+  const requestCloseRef = useRef(requestClose);
+  const closeHandlerRef = useRef(() => { void requestCloseRef.current(); });
   useEffect(() => {
+    requestCloseRef.current = requestClose;
+  });
+
+  useEffect(() => {
+    const closeHandler = closeHandlerRef.current;
     if (open) {
       document.body.style.overflow = 'hidden';
-      openModal();
+      openModal(closeHandler);
       requestAnimationFrame(() => setShow(true));
     } else {
       // Intentional: `show` is an animation flag synchronized with the
@@ -37,12 +48,12 @@ export function Modal({ open, onClose, title, children, footer, confirmClose }: 
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setShow(false);
       document.body.style.overflow = '';
-      closeModal();
+      closeModal(closeHandler);
     }
     return () => {
       if (open) {
         document.body.style.overflow = '';
-        closeModal();
+        closeModal(closeHandler);
       }
     };
   }, [open, openModal, closeModal]);

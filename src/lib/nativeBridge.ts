@@ -12,6 +12,7 @@
 // hot-reload — every listener registration tracks its handle and re-uses it.
 
 import { isNativeRuntime } from './runtime';
+import { useUIStore } from '../stores/uiStore';
 
 type NavigateFn = (to: string, opts?: { replace?: boolean }) => void;
 type CanGoBackFn = () => boolean;
@@ -46,6 +47,10 @@ export async function initNativeBridge(opts: {
     // otherwise exit the app. This is the single most important Capacitor
     // wire-up: without it, every back press kills the app immediately.
     CapApp.addListener('backButton', () => {
+      // A back press first dismisses the topmost open modal (closing it, or
+      // prompting to discard unsaved input) instead of navigating the page
+      // underneath. Only when nothing is open do we pop history / exit.
+      if (useUIStore.getState().closeTopModal()) return;
       if (opts.canGoBack()) {
         window.history.back();
       } else {
