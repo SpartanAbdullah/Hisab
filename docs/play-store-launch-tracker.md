@@ -30,11 +30,11 @@ we always know who's on what. Pair this with the step-by-step in
 | Y1 | Run `supabase-p0-security-verification.sql` in prod | ⏳ | Expect: "P0 security catalog verification passed" |
 | Y2 | Decide: Sentry crash reporting yes/no for v1 | ✅ | Decided: **YES** |
 | Y12 | Create Sentry account + set `VITE_SENTRY_DSN` in prod env | ✅ | DSN added to local `.env`; dashboard shows "Waiting for first event" |
-| Y3 | Generate the upload keystore + **back it up offline** | ⏳ | `RELEASE.md` §1–2. Losing it = can't ever update the app |
-| Y4 | Create `android/keystore.properties` | ⏳ | `RELEASE.md` §2 (gitignored) |
-| Y5 | Build signed AAB (`./gradlew bundleRelease`) | 🚧 | Needs Y3/Y4 |
+| Y3 | Generate the upload keystore + **back it up offline** | ✅ | `hisaab-upload.jks` created, backed up to Google Drive. Cert: `CN=abdullah … C=AE` |
+| Y4 | Create `android/keystore.properties` | ✅ | Filled with the upload password (gitignored) |
+| Y5 | Build signed AAB (`./gradlew bundleRelease`) | ✅ | **`app-release.aab` (3.4 MB)**, signed with the upload key. Built in user's own terminal (agent sandbox blocks Gradle's loopback socket) |
 | Y6 | Host `/privacy`, `/terms`, `/delete-account`, `/contact` (HTTP 200, no login wall) | ⏳ | Confirm canonical host: apex vs www |
-| Y7 | Host `/.well-known/assetlinks.json` (upload + Play signing fingerprints) | 🚧 | Needs Y3 + Play App Signing enrolled |
+| Y7 | Host `/.well-known/assetlinks.json` (upload + Play signing fingerprints) | 🚧 | Needs Play App Signing enrolled. **Upload-key SHA-256:** `0B:B6:45:86:3D:98:A4:E4:91:10:D5:FD:F0:66:34:F4:EA:FE:2D:71:08:77:02:F1:C5:93:5B:82:9D:47:6D:A5` |
 | Y8 | Create the app in Play Console ($25 acct) | ⏳ | Together — see below |
 | Y9 | Capture ≥2 phone screenshots | ⏳ | On a device/emulator; en + ur ideal |
 | Y10 | Create reviewer test account + seed data | ⏳ | `RELEASE.md` §7 |
