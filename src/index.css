@@ -304,8 +304,12 @@ html.dark .border-slate-200 { border-color: var(--color-cream-border); }
   100% { transform: rotate(720deg) scale(1) translateY(0); }
 }
 .animate-dice { animation: dice-roll 0.95s cubic-bezier(0.45, 0, 0.55, 1) infinite; transform-origin: center; }
+/* Reduced motion (and many Android emulators that turn off animations) would
+   leave the die completely static — fall back to a gentle opacity pulse so the
+   draw still reads as "in progress" without vestibular-triggering motion. */
+@keyframes dice-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) {
-  .animate-dice { animation: none; }
+  .animate-dice { animation: dice-pulse 1.1s ease-in-out infinite; }
 }
 
 /* ========== APP LOADING SCREEN ========== */
