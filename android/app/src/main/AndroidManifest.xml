@@ -36,9 +36,9 @@
               a browser (graceful fallback) but the system disambiguation
               dialog will list Hisaab as an option.
 
-              See RELEASE.md → "Deep links / Android App Links" for the
-              assetlinks.json format and how to derive the SHA-256
-              fingerprint from android/app/keystore.properties.
+              See RELEASE.md sections 5-6 for the assetlinks.json format and
+              how to derive the SHA-256 fingerprint (the signing config is read
+              from android/keystore.properties).
             -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />

@@ -76,6 +76,22 @@ dependencies {
     implementation project(':capacitor-cordova-android-plugins')
 }
 
+// Safety net: fail a RELEASE build loudly if the upload keystore is absent,
+// instead of silently producing a debug-signed AAB/APK that Play will reject
+// (or worse, that looks valid locally). Debug builds (`cap run android`) are
+// unaffected. See RELEASE.md sections 1-2 to generate the keystore.
+gradle.taskGraph.whenReady { graph ->
+    def buildingRelease = graph.allTasks.any { task ->
+        task.name == 'bundleRelease' || task.name == 'assembleRelease'
+    }
+    if (buildingRelease && !hasReleaseKeystore) {
+        throw new GradleException(
+            "Release build requested but android/keystore.properties is missing — " +
+            "this would produce a debug-signed artifact Play cannot accept. " +
+            "Generate the upload keystore first (see RELEASE.md sections 1-2).")
+    }
+}
+
 apply from: 'capacitor.build.gradle'
 
 try {
