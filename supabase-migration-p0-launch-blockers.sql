@@ -54,12 +54,16 @@ CREATE TRIGGER profiles_protect_security_fields
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.tg_profiles_protect_security_fields();
 
+-- Drop BOTH the legacy name and the new name so this migration is safely
+-- re-runnable (CREATE POLICY errors with 42710 if the policy already exists).
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can view own active profile" ON public.profiles;
 CREATE POLICY "Users can view own active profile"
   ON public.profiles FOR SELECT TO authenticated
   USING (auth.uid() = id AND public.is_current_profile_active());
 
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own active profile" ON public.profiles;
 CREATE POLICY "Users can update own active profile"
   ON public.profiles FOR UPDATE TO authenticated
   USING (auth.uid() = id AND public.is_current_profile_active())
