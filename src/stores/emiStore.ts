@@ -4,6 +4,7 @@ import { emiSchedulesDb } from '../lib/supabaseDb';
 import type { EmiSchedule, EmiStatus } from '../db';
 import { addMonths, format } from 'date-fns';
 import { useActivityStore } from './activityStore';
+import { uncoveredToPaidIds } from '../lib/emiCoverage';
 
 interface GenerateEmiInput {
   loanId: string;
@@ -19,6 +20,10 @@ interface EmiState {
   generateSchedule: (input: GenerateEmiInput) => Promise<void>;
   markPaid: (emiId: string) => Promise<void>;
   markAllPaidForLoan: (loanId: string) => Promise<void>;
+  // Reconcile-only: flip instalments already covered by money repaid (no money
+  // moves). Returns how many it marked. Used to fix a schedule that desynced
+  // from the loan's paid-down balance.
+  reconcileCovered: (loanId: string, paidAmount: number) => Promise<number>;
   deleteByLoan: (loanId: string) => Promise<void>;
   getByLoan: (loanId: string) => EmiSchedule[];
   reset: () => void;
@@ -110,6 +115,34 @@ export const useEmiStore = create<EmiState>((set, get) => ({
       loanId,
       'loan'
     );
+  },
+
+  reconcileCovered: async (loanId, paidAmount) => {
+    const ids = uncoveredToPaidIds(
+      get().schedules.filter((e) => e.loanId === loanId),
+      paidAmount,
+    );
+    if (ids.length === 0) return 0;
+    const idSet = new Set(ids);
+    await Promise.all(ids.map((id) => emiSchedulesDb.update(id, { status: 'paid' as EmiStatus })));
+    set((s) => ({
+      schedules: s.schedules.map((e) => (idSet.has(e.id) ? { ...e, status: 'paid' as EmiStatus } : e)),
+    }));
+    // Activity log is best-effort — the status is already persisted and a log
+    // failure must not surface as a failed reconcile.
+    try {
+      await useActivityStore.getState().logActivity(
+        'emi_paid',
+        ids.length === 1
+          ? 'Instalment reconciled to a payment already made'
+          : `${ids.length} instalments reconciled to payments already made`,
+        loanId,
+        'loan',
+      );
+    } catch (err) {
+      console.error('logActivity failed in reconcileCovered (non-fatal)', err);
+    }
+    return ids.length;
   },
 
   deleteByLoan: async (loanId) => {

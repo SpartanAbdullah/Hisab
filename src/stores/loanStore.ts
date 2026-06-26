@@ -6,6 +6,7 @@ import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib
 import { assertLinkedLoanEditAllowed, assertLinkedLoanDeleteAllowed } from '../lib/linkedLoanGuards';
 import type { Loan, LoanType, Currency } from '../db';
 import { useActivityStore } from './activityStore';
+import { useEmiStore } from './emiStore';
 
 export interface CreateLoanInput {
   personName: string;
@@ -109,6 +110,18 @@ export const useLoanStore = create<LoanState>((set, get) => ({
         loanId,
         'loan'
       );
+    }
+    // Ledger-only (splits_only) path: this bypasses processTransaction, so
+    // reconcile any EMI schedule to the new paid-down balance here too —
+    // otherwise a partial (or even full) repayment would orphan the schedule.
+    // Best-effort: a reconcile failure must not fail the repayment.
+    try {
+      await useEmiStore.getState().reconcileCovered(
+        loanId,
+        Math.round((loan.totalAmount - newRemaining) * 100) / 100,
+      );
+    } catch (err) {
+      console.error('reconcileCovered failed after applyRepayment (non-fatal)', err);
     }
   },
 

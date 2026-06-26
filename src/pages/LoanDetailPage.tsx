@@ -27,12 +27,13 @@ import { RepaymentModal } from './RepaymentModal';
 import { SettleLinkedLoanModal } from './SettleLinkedLoanModal';
 import { resolvePersonName } from '../lib/resolvePersonName';
 import { getOldestIsoDate } from '../lib/paymentReminders';
+import { uncoveredToPaidIds } from '../lib/emiCoverage';
 import type { EmiSchedule, Transaction, SettlementRequest } from '../db';
 
 export function LoanDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { loans, loadLoans } = useLoanStore();
-  const { schedules, loadSchedules } = useEmiStore();
+  const { schedules, loadSchedules, reconcileCovered } = useEmiStore();
   const { loadTransactions, getByLoan } = useTransactionStore();
   const { loadAccounts, accounts } = useAccountStore();
   const linkedRequests = useLinkedRequestStore((s) => s.requests);
@@ -43,6 +44,7 @@ export function LoanDetailPage() {
   const t = useT();
   const toast = useToast();
   const [cancellingSettlementId, setCancellingSettlementId] = useState<string | null>(null);
+  const [reconciling, setReconciling] = useState(false);
   const [showRepayment, setShowRepayment] = useState(false);
   const [showSettleLinked, setShowSettleLinked] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
@@ -119,7 +121,11 @@ export function LoanDetailPage() {
 
   const paidCount = enrichedEmis.filter((s) => s.status === 'paid').length;
   const totalCount = enrichedEmis.length;
-  const nextInstalment = enrichedEmis.find((s) => s.status !== 'paid') ?? null;
+  // Instalments the loan's paid-down balance already covers but that still show
+  // unpaid (the desync). These can be marked paid with no money movement.
+  const paidDownAmount = Math.round((loan.totalAmount - loan.remainingAmount) * 100) / 100;
+  const coveredUnpaidIds = new Set(uncoveredToPaidIds(emiItems, paidDownAmount));
+  const nextInstalment = enrichedEmis.find((s) => s.status !== 'paid' && !coveredUnpaidIds.has(s.id)) ?? null;
   const daysToNext = nextInstalment ? differenceInDays(new Date(nextInstalment.dueDate), new Date()) : null;
   const progressPct = (loan.totalAmount - loan.remainingAmount) / loan.totalAmount;
 
@@ -135,6 +141,33 @@ export function LoanDetailPage() {
     void loadSchedules();
     void loadTransactions();
     void loadAccounts();
+  };
+
+  // Reconcile-only: mark instalments the loan's paid-down balance already
+  // covers as paid, WITHOUT moving any money. Fixes a schedule that desynced
+  // from the balance (e.g. a repayment recorded via Quick Entry that never
+  // targeted a specific instalment). Works on settled loans too.
+  const handleReconcile = async () => {
+    setReconciling(true);
+    try {
+      const marked = await reconcileCovered(loan.id, paidDownAmount);
+      if (marked > 0) {
+        toast.show({
+          type: 'success',
+          title: marked === 1 ? 'Instalment marked paid' : `${marked} instalments marked paid`,
+          subtitle: 'Matched to money you already repaid — nothing was charged.',
+        });
+      }
+      refreshLoanDetail();
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('error'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setReconciling(false);
+    }
   };
 
   // Cancel a pending settlement request the current user sent. Confirms first
@@ -257,6 +290,33 @@ export function LoanDetailPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+        {/* Reconcile banner — the loan's paid-down balance already covers
+            instalments that still show unpaid (a desync, e.g. a repayment
+            recorded via Quick Entry that never targeted an instalment). Offer
+            a no-money "mark paid" instead of forcing another payment. Shown
+            even on settled loans so an orphaned instalment is never stuck. */}
+        {coveredUnpaidIds.size > 0 && (
+          <div className="rounded-[20px] bg-receive-50 border border-receive-100 p-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle size={15} className="text-receive-text shrink-0" strokeWidth={2.2} />
+              <p className="text-[13px] font-semibold text-ink-900">Already paid?</p>
+            </div>
+            <p className="text-[11.5px] text-ink-600 mt-1.5 leading-relaxed">
+              You've repaid {formatMoney(paidDownAmount, loan.currency)} on this loan, but{' '}
+              {coveredUnpaidIds.size} instalment{coveredUnpaidIds.size > 1 ? 's' : ''} still show
+              {coveredUnpaidIds.size > 1 ? '' : 's'} unpaid. Mark{' '}
+              {coveredUnpaidIds.size > 1 ? 'them' : 'it'} paid without paying again.
+            </p>
+            <button
+              onClick={handleReconcile}
+              disabled={reconciling}
+              className="mt-3 w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
+            >
+              {reconciling ? 'Marking…' : `Mark ${coveredUnpaidIds.size} as paid`}
+            </button>
+          </div>
+        )}
+
         {/* Next instalment card — shown only when EMI plan exists and
             there's an unpaid instalment. Without an EMI plan, the same
             actions surface as full-width buttons in the next section. */}
@@ -421,14 +481,23 @@ export function LoanDetailPage() {
                       >
                         {formatMoney(schedule.amount, loan.currency)}
                       </p>
-                      {!isPaid && loan.status === 'active' && (
+                      {!isPaid && coveredUnpaidIds.has(schedule.id) ? (
+                        // Already covered by money repaid → reconcile, no charge.
+                        <button
+                          onClick={handleReconcile}
+                          disabled={reconciling}
+                          className="text-[10px] text-receive-text font-semibold mt-0.5 active:opacity-70 disabled:opacity-50"
+                        >
+                          {t('loan_mark_paid')}
+                        </button>
+                      ) : !isPaid && loan.status === 'active' ? (
                         <button
                           onClick={() => setSelectedEmi(schedule)}
                           className="text-[10px] text-accent-600 font-semibold mt-0.5 active:opacity-70"
                         >
                           {t('loan_mark_paid')}
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 );

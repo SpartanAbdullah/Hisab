@@ -11,6 +11,7 @@ import { useEmiStore } from './emiStore';
 import { useActivityStore } from './activityStore';
 import { useAppModeStore } from './appModeStore';
 import { parseInternalNote } from '../lib/internalNotes';
+import { uncoveredToPaidIds } from '../lib/emiCoverage';
 import { MutationScope, runSafeMutation } from '../lib/mutationSafety';
 
 interface BaseTransactionInput {
@@ -312,19 +313,30 @@ async function trackedMarkEmiPaid(scope: MutationScope, emiId: string): Promise<
   }
 }
 
-async function trackedMarkAllEmisPaid(scope: MutationScope, loanId: string): Promise<void> {
-  // Snapshot every schedule we're about to flip so we can restore per-id
-  // statuses exactly. Also bypass store.markAllPaidForLoan for the same
-  // reason as trackedMarkEmiPaid (embedded logActivity).
-  const before = useEmiStore.getState().schedules
-    .filter(e => e.loanId === loanId && e.status !== 'paid')
+async function trackedMarkCoveredEmisPaid(scope: MutationScope, loanId: string): Promise<void> {
+  // Reconcile the loan's binary EMI schedule to its paid-down balance. After a
+  // repayment that carried no specific emiId, mark the oldest instalments now
+  // fully covered by (totalAmount - remainingAmount) as paid. This must run
+  // AFTER trackedApplyRepayment so remainingAmount is already current.
+  //
+  // Subsumes the old "full settlement marks everything" branch — a full payoff
+  // covers every instalment. Snapshots exact prior status (incl. 'late') so
+  // rollback restores it. Bypasses store.markPaid for the same reason as
+  // trackedMarkEmiPaid (embedded logActivity would throw before compensation).
+  const loan = useLoanStore.getState().loans.find(l => l.id === loanId);
+  if (!loan) return;
+  const schedules = useEmiStore.getState().schedules.filter(e => e.loanId === loanId);
+  if (schedules.length === 0) return;
+  const paid = Math.round((loan.totalAmount - loan.remainingAmount) * 100) / 100;
+  const ids = uncoveredToPaidIds(schedules, paid);
+  if (ids.length === 0) return;
+  const idSet = new Set(ids);
+  const before = schedules
+    .filter(e => idSet.has(e.id))
     .map(e => ({ id: e.id, status: e.status, installmentNumber: e.installmentNumber }));
-  if (before.length === 0) return;
   await Promise.all(before.map(s => emiSchedulesDb.update(s.id, { status: 'paid' as EmiStatus })));
   useEmiStore.setState(state => ({
-    schedules: state.schedules.map(e =>
-      e.loanId === loanId && e.status !== 'paid' ? { ...e, status: 'paid' as EmiStatus } : e,
-    ),
+    schedules: state.schedules.map(e => (idSet.has(e.id) ? { ...e, status: 'paid' as EmiStatus } : e)),
   }));
   scope.register(async () => {
     await Promise.all(before.map(s => emiSchedulesDb.update(s.id, { status: s.status })));
@@ -340,12 +352,12 @@ async function trackedMarkAllEmisPaid(scope: MutationScope, loanId: string): Pro
       'emi_paid',
       before.length === 1
         ? `EMI #${before[0].installmentNumber} paid`
-        : `${before.length} EMIs marked paid after full repayment`,
+        : `${before.length} EMIs marked paid after repayment`,
       loanId,
       'loan',
     );
   } catch (err) {
-    console.error('logActivity failed in trackedMarkAllEmisPaid (non-fatal)', err);
+    console.error('logActivity failed in trackedMarkCoveredEmisPaid (non-fatal)', err);
   }
 }
 
@@ -636,7 +648,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             relatedPerson = loan.personName;
             personId = loan.personId ?? null;
             currency = loan.currency;
-            const shouldSettleRemainingEmis = !input.emiId && loan.remainingAmount - input.amount <= 0.00001;
 
             if (loan.type === 'given') {
               if (!input.destinationAccountId) throw new Error('Destination account required');
@@ -695,8 +706,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             await trackedApplyRepayment(scope, input.loanId, input.amount);
             if (input.emiId) {
               await trackedMarkEmiPaid(scope, input.emiId);
-            } else if (shouldSettleRemainingEmis) {
-              await trackedMarkAllEmisPaid(scope, input.loanId);
+            } else {
+              // No specific instalment was targeted (generic / partial repayment,
+              // multi-loan allocation, full payoff). Reconcile the schedule to the
+              // new paid-down balance so instalments don't orphan.
+              await trackedMarkCoveredEmisPaid(scope, input.loanId);
             }
             break;
           }
