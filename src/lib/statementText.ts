@@ -15,6 +15,14 @@ export function netBalanceLabel(partyName: string, closing: number, currency: st
   return `Settled up with ${partyName}`;
 }
 
+// Roman-Urdu companion to netBalanceLabel, for the bilingual hero line on the
+// PDF (the audience is Pakistan/Gulf and the doc is sent over WhatsApp).
+export function netBalanceLabelUrdu(partyName: string, closing: number, currency: string): string {
+  if (closing > 0.005) return `${partyName} aap ko ${formatMoney(closing, currency)} dena hai`;
+  if (closing < -0.005) return `Aap ko ${partyName} ko ${formatMoney(Math.abs(closing), currency)} dena hai`;
+  return `${partyName} ke saath hisaab barabar hai`;
+}
+
 function signedAmount(delta: number, currency: string): string {
   const sign = delta < 0 ? '−' : '+'; // − vs +
   return `${sign}${formatMoney(Math.abs(delta), currency)}`;

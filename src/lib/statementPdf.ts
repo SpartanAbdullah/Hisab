@@ -7,25 +7,41 @@
 // script (Urdu/Arabic included) render correctly, and the output matches the
 // app's look without embedding fonts. jsPDF + modern-screenshot are lazy
 // dynamic-imported so they never touch the initial app bundle.
+//
+// The layout is grounded in fintech/accounting/typography research (see the
+// design notes): one HERO net number first, a canonical Debit/Credit/Balance
+// ledger, a CVD-safe color system (teal-green #047857 owed-to-you / vermillion
+// #C2410C you-owe, always paired with a sign + label so color is never the sole
+// cue — WCAG 1.4.1), tabular figures with the currency stated once, restraint
+// over ornament (hairlines, no zebra), and honest trust scaffolding (statement
+// number, period, E&OE) with no fake verification marks.
 
-import { formatMoney } from './constants';
-import { netBalanceLabel } from './statementText';
+import { netBalanceLabel, netBalanceLabelUrdu } from './statementText';
 import { trimSection } from './statementOfAccount';
-import type { Statement, StatementLine } from './statementOfAccount';
+import type { Statement, StatementLine, StatementSection } from './statementOfAccount';
 
+// Frame / neutrals
 const NAVY = '#0B0E2A';
 const INK = '#1A1A24';
-const MUTED = '#6B6B66';
+const MUTED = '#6B6B66'; // ~5:1 on white — passes WCAG 4.5:1 (was #9A9A93 ≈ 2.9:1)
 const HAIRLINE = '#E7E3D6';
-const RECEIVE_BG = '#E1F5EE';
-const RECEIVE_TEXT = '#0F6E56';
-const PAY_BG = '#FCEBEB';
-const PAY_TEXT = '#A32D2D';
+const ROWLINE = '#F0ECE0';
+// Direction (CVD-safe: differ in hue AND luminance; always paired with sign + label)
+const POS = '#047857'; // owed-to-you / money in  (~4.9:1 on white)
+const NEG = '#C2410C'; // you-owe / money out      (~5.0:1 on white)
+const NEUTRAL = '#4B5563'; // zero / settled        (~7:1 on white)
+const POS_LABEL = '#036249'; // darker teal for small labels on tinted fills
+// Hero tints (fill only — never the sole carrier of meaning)
+const POS_TINT = '#ECFDF5';
+const NEG_TINT = '#FEF2F2';
+const SETTLED_TINT = '#F1EFE8';
 
-// A4 at 96dpi is ~794 × 1123 CSS px. We build at that width so the raster maps
-// cleanly onto the PDF page.
+// A4 at 96dpi ≈ 794 × 1123 CSS px. Building at that size lets the raster map
+// cleanly onto the page and lets the footer pin to the bottom edge so the page
+// reads as framed and filled, not a screenshot with white space below.
 const PAGE_W = 794;
-const MAX_ROWS_PER_SECTION = 18;
+const PAGE_H = 1123;
+const MAX_ROWS_PER_SECTION = 16;
 
 function esc(s: string): string {
   return s
@@ -41,6 +57,12 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function fmtDateShort(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+
 function fmtDateTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
@@ -49,65 +71,136 @@ function fmtDateTime(iso: string): string {
   });
 }
 
-function signed(delta: number, currency: string): string {
-  const sign = delta < 0 ? '−' : '+';
-  return `${sign}${formatMoney(Math.abs(delta), currency)}`;
+// Bare number, grouped, fixed 2dp — currency is declared once per section, not
+// per row (Butterick / accounting convention), so ledger cells stay aligned.
+function fmtAmount(n: number): string {
+  return Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function rowHtml(line: StatementLine, currency: string): string {
-  const desc = line.note ? `${esc(line.description)} · ${esc(line.note)}` : esc(line.description);
-  const deltaColor = line.delta < 0 ? MUTED : RECEIVE_TEXT;
+// Signed, color-coded balance. Color is redundant with the +/− sign so a
+// grayscale print or a color-blind reader loses nothing.
+function balanceCellHtml(n: number): string {
+  if (n > 0.005) return `<span style="color:${POS};">+${fmtAmount(n)}</span>`;
+  if (n < -0.005) return `<span style="color:${NEG};">−${fmtAmount(n)}</span>`;
+  return `<span style="color:${NEUTRAL};">${fmtAmount(0)}</span>`;
+}
+
+// Deterministic, human-readable statement number (no persisted sequence). Same
+// party + same as-of day ⇒ same number, so a re-generated statement is stable.
+function statementNumber(statement: Statement, override?: string): string {
+  if (override) return override;
+  const d = new Date(statement.asOf);
+  const ym = Number.isNaN(d.getTime())
+    ? '000000'
+    : `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const seed = statement.partyName + statement.asOf.slice(0, 10);
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const suffix = h.toString(36).toUpperCase().slice(0, 4).padStart(4, '0');
+  return `HIS-${ym}-${suffix}`;
+}
+
+function periodLabel(statement: Statement): string | null {
+  const dates = statement.sections.flatMap((s) => s.lines.map((l) => l.date)).filter(Boolean);
+  if (dates.length === 0) return null;
+  const from = dates.reduce((a, b) => (a.localeCompare(b) <= 0 ? a : b));
+  return `${fmtDate(from)} – ${fmtDate(statement.asOf)}`;
+}
+
+function heroRowHtml(statement: Statement, section: StatementSection, big: boolean): string {
+  const positive = section.closing > 0.005;
+  const settled = Math.abs(section.closing) <= 0.005;
+  const tint = settled ? SETTLED_TINT : positive ? POS_TINT : NEG_TINT;
+  const color = settled ? NEUTRAL : positive ? POS : NEG;
+  const labelColor = settled ? MUTED : positive ? POS_LABEL : NEG;
+  const sign = positive ? '+ ' : section.closing < -0.005 ? '− ' : '';
+  const numSize = big ? 34 : 23;
+  const english = netBalanceLabel(statement.partyName, section.closing, section.currency);
+  const urdu = netBalanceLabelUrdu(statement.partyName, section.closing, section.currency);
+  return `<div style="background:${tint};border-radius:8px;padding:15px 18px;">
+    <p style="margin:0;font-size:10px;color:${labelColor};letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">Net outstanding · ${section.currency}</p>
+    <p style="margin:4px 0 0;font-size:${numSize}px;font-weight:700;color:${color};letter-spacing:-0.01em;">${sign}${fmtAmount(section.closing)}</p>
+    <p style="margin:5px 0 0;font-size:13px;color:${INK};">${esc(english)} · <span style="color:${MUTED};">${esc(urdu)}</span></p>
+  </div>`;
+}
+
+function heroBlockHtml(statement: Statement): string {
+  if (!statement.hasActivity) {
+    return `<div style="margin:18px 44px 0;background:${SETTLED_TINT};border-radius:8px;padding:16px 18px;">
+      <p style="margin:0;font-size:15px;font-weight:600;color:${MUTED};">Settled up with ${esc(statement.partyName)} — nothing outstanding.</p>
+    </div>`;
+  }
+  const big = statement.sections.length === 1;
+  const rows = statement.sections.map((s) => heroRowHtml(statement, s, big)).join('');
+  return `<div style="margin:18px 44px 0;display:flex;flex-direction:column;gap:10px;">${rows}</div>`;
+}
+
+function ledgerRowHtml(line: StatementLine): string {
+  // Description prefers the human note (kills the repeated "Loan given ·");
+  // the Debit/Credit column position already encodes the entry type.
+  const desc = line.note ? esc(line.note) : esc(line.description);
+  const debit = line.delta > 0.005 ? fmtAmount(line.delta) : '';
+  const credit = line.delta < -0.005 ? fmtAmount(line.delta) : '';
   return `<tr>
-    <td style="padding:8px 0;color:${MUTED};white-space:nowrap;vertical-align:top;">${fmtDate(line.date)}</td>
-    <td style="padding:8px 12px;color:${INK};vertical-align:top;">${desc}</td>
-    <td style="padding:8px 0;text-align:right;color:${deltaColor};white-space:nowrap;font-variant-numeric:tabular-nums;">${signed(line.delta, currency)}</td>
-    <td style="padding:8px 0;text-align:right;color:${INK};white-space:nowrap;font-variant-numeric:tabular-nums;">${formatMoney(line.balance, currency)}</td>
+    <td style="padding:7px 6px 7px 0;color:${MUTED};white-space:nowrap;vertical-align:top;border-top:1px solid ${ROWLINE};">${fmtDateShort(line.date)}</td>
+    <td style="padding:7px 6px;color:${INK};vertical-align:top;border-top:1px solid ${ROWLINE};">${desc}</td>
+    <td style="padding:7px 6px;text-align:right;color:${INK};white-space:nowrap;border-top:1px solid ${ROWLINE};">${debit}</td>
+    <td style="padding:7px 6px;text-align:right;color:${INK};white-space:nowrap;border-top:1px solid ${ROWLINE};">${credit}</td>
+    <td style="padding:7px 0 7px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};">${balanceCellHtml(line.balance)}</td>
   </tr>`;
 }
 
-function sectionHtml(statement: Statement, section: Statement['sections'][number]): string {
-  const positive = section.closing > 0.005;
-  const settled = Math.abs(section.closing) <= 0.005;
-  const bg = settled ? '#F1EFE8' : positive ? RECEIVE_BG : PAY_BG;
-  const fg = settled ? MUTED : positive ? RECEIVE_TEXT : PAY_TEXT;
-  const label = netBalanceLabel(statement.partyName, section.closing, section.currency);
-
+function sectionHtml(section: StatementSection): string {
   const { opening, lines } = trimSection(section, MAX_ROWS_PER_SECTION);
-  const openingRow = opening
-    ? `<tr>
-        <td style="padding:8px 0;color:${MUTED};white-space:nowrap;vertical-align:top;">—</td>
-        <td style="padding:8px 12px;color:${MUTED};vertical-align:top;">Balance brought forward · ${opening.count} earlier ${opening.count === 1 ? 'entry' : 'entries'}</td>
-        <td style="padding:8px 0;text-align:right;color:${MUTED};white-space:nowrap;"></td>
-        <td style="padding:8px 0;text-align:right;color:${INK};white-space:nowrap;font-variant-numeric:tabular-nums;">${formatMoney(opening.balance, section.currency)}</td>
-      </tr>`
-    : '';
+  const openingBalance = opening ? opening.balance : 0;
+  const openingLabel = opening
+    ? `Balance brought forward · ${opening.count} earlier ${opening.count === 1 ? 'entry' : 'entries'}`
+    : 'Opening balance';
+
+  // Period totals over the VISIBLE rows so opening + debits − credits = closing
+  // reconciles exactly with what's printed.
+  let totalDebit = 0;
+  let totalCredit = 0;
+  for (const l of lines) {
+    if (l.delta > 0.005) totalDebit += l.delta;
+    else if (l.delta < -0.005) totalCredit += -l.delta;
+  }
 
   const estimatedNote = section.estimated
-    ? `<p style="margin:8px 0 0;font-size:12px;color:${MUTED};">Balance only — itemised repayment history is not tracked for these loans.</p>`
+    ? `<p style="margin:8px 0 0;font-size:11px;color:${MUTED};">Balance only — itemised repayment history isn't tracked for these loans.</p>`
     : '';
 
-  return `<div style="margin-top:22px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;background:${bg};border-radius:8px;padding:12px 16px;">
-      <span style="font-size:13px;font-weight:600;color:${fg};">${esc(label)}</span>
-      <span style="font-size:11px;font-weight:600;color:${fg};letter-spacing:0.04em;">${section.currency}</span>
+  return `<div style="padding:16px 44px 0;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid ${HAIRLINE};padding-bottom:6px;">
+      <span style="font-size:10px;color:${MUTED};letter-spacing:0.06em;text-transform:uppercase;font-weight:600;">Activity</span>
+      <span style="font-size:10px;color:${MUTED};">All amounts in ${section.currency}</span>
     </div>
-    <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:13px;">
+    <table style="width:100%;border-collapse:collapse;margin-top:2px;font-size:12.5px;font-variant-numeric:tabular-nums;">
       <thead>
-        <tr style="color:${MUTED};text-align:left;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;">
-          <th style="font-weight:600;padding:0 0 8px;">Date</th>
-          <th style="font-weight:600;padding:0 12px 8px;">Description</th>
-          <th style="font-weight:600;padding:0 0 8px;text-align:right;">Amount</th>
-          <th style="font-weight:600;padding:0 0 8px;text-align:right;">Balance</th>
+        <tr style="color:${MUTED};font-size:10px;letter-spacing:0.05em;text-transform:uppercase;">
+          <th style="font-weight:600;text-align:left;padding:8px 6px 6px 0;">Date</th>
+          <th style="font-weight:600;text-align:left;padding:8px 6px 6px;">Description</th>
+          <th style="font-weight:600;text-align:right;padding:8px 6px 6px;">Debit</th>
+          <th style="font-weight:600;text-align:right;padding:8px 6px 6px;">Credit</th>
+          <th style="font-weight:600;text-align:right;padding:8px 0 6px 6px;">Balance</th>
         </tr>
       </thead>
-      <tbody style="border-top:1px solid ${HAIRLINE};">
-        ${openingRow}
-        ${lines.map((l) => rowHtml(l, section.currency)).join('')}
+      <tbody>
+        <tr>
+          <td style="padding:7px 6px 7px 0;color:${MUTED};border-top:1px solid ${ROWLINE};">—</td>
+          <td style="padding:7px 6px;color:${MUTED};font-style:italic;border-top:1px solid ${ROWLINE};">${openingLabel}</td>
+          <td style="border-top:1px solid ${ROWLINE};"></td>
+          <td style="border-top:1px solid ${ROWLINE};"></td>
+          <td style="padding:7px 0 7px 6px;text-align:right;border-top:1px solid ${ROWLINE};">${balanceCellHtml(openingBalance)}</td>
+        </tr>
+        ${lines.map(ledgerRowHtml).join('')}
       </tbody>
       <tfoot>
-        <tr style="border-top:2px solid ${HAIRLINE};">
-          <td colspan="3" style="padding:11px 0 0;font-weight:600;color:${INK};">Outstanding balance</td>
-          <td style="padding:11px 0 0;text-align:right;font-weight:600;color:${fg};white-space:nowrap;font-variant-numeric:tabular-nums;">${esc(formatMoney(Math.abs(section.closing), section.currency))}</td>
+        <tr style="border-top:2px solid ${NAVY};">
+          <td colspan="2" style="padding:10px 6px 0 0;font-weight:600;color:${INK};">Outstanding balance</td>
+          <td style="padding:10px 6px 0;text-align:right;font-weight:600;color:${NEUTRAL};">${fmtAmount(totalDebit)}</td>
+          <td style="padding:10px 6px 0;text-align:right;font-weight:600;color:${NEUTRAL};">${fmtAmount(totalCredit)}</td>
+          <td style="padding:10px 0 0 6px;text-align:right;font-weight:700;">${balanceCellHtml(section.closing)}</td>
         </tr>
       </tfoot>
     </table>
@@ -116,72 +209,80 @@ function sectionHtml(statement: Statement, section: Statement['sections'][number
 }
 
 export interface StatementPdfOptions {
-  fromName?: string; // the current user's display name, shown as "Prepared by"
+  fromName?: string; // current user's display name, shown as "Prepared by"
   phone?: string | null; // counterparty phone, shown under their name when known
-  refCode?: string; // short reference id, e.g. an account/public code
+  refCode?: string; // override the auto statement number
 }
 
-function buildNode(statement: Statement, opts: StatementPdfOptions): HTMLElement {
-  const el = document.createElement('div');
-  el.style.cssText = [
-    'position:fixed',
-    'left:-10000px',
-    'top:0',
-    `width:${PAGE_W}px`,
-    'box-sizing:border-box',
-    'padding:44px 48px',
-    'background:#ffffff',
-    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans','Noto Nastaliq Urdu',sans-serif",
-    `color:${INK}`,
-    'pointer-events:none',
-  ].join(';');
+// Inline styles for the offscreen page node. Exported so a dev harness / test
+// can render the exact same markup a browser rasterises into the PDF.
+export const STATEMENT_NODE_STYLE = [
+  `width:${PAGE_W}px`,
+  `min-height:${PAGE_H}px`,
+  'display:flex',
+  'flex-direction:column',
+  'box-sizing:border-box',
+  'background:#ffffff',
+  "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans','Noto Nastaliq Urdu',sans-serif",
+  `color:${INK}`,
+  'font-variant-numeric:tabular-nums',
+].join(';');
 
-  const asOf = fmtDate(statement.asOf);
-  const sectionsHtml = statement.hasActivity
-    ? statement.sections.map((s) => sectionHtml(statement, s)).join('')
-    : `<div style="margin-top:22px;background:#F1EFE8;border-radius:8px;padding:16px;">
-        <span style="font-size:14px;font-weight:600;color:${MUTED};">Settled up with ${esc(statement.partyName)} — nothing outstanding.</span>
-      </div>`;
-
-  const partyPhone = opts.phone ? `<p style="margin:1px 0 0;font-size:13px;color:${MUTED};">${esc(opts.phone)}</p>` : '';
+// The full inner markup of the statement page. Pure string → deterministic and
+// unit-testable; buildNode wraps it in the offscreen node for rasterisation.
+export function renderStatementInnerHtml(statement: Statement, opts: StatementPdfOptions = {}): string {
+  const stmtNo = statementNumber(statement, opts.refCode);
+  const period = periodLabel(statement);
+  const partyPhone = opts.phone
+    ? `<p style="margin:1px 0 0;font-size:12px;color:${MUTED};">${esc(opts.phone)}</p>`
+    : '';
   const preparedBy = opts.fromName
-    ? `<div>
-        <p style="margin:0;font-size:10px;color:#9A9A93;letter-spacing:0.05em;text-transform:uppercase;">Prepared by</p>
-        <p style="margin:3px 0 0;font-size:14px;font-weight:600;color:${INK};">${esc(opts.fromName)}</p>
+    ? `<div style="text-align:right;">
+        <p style="margin:0;font-size:10px;color:${MUTED};letter-spacing:0.06em;text-transform:uppercase;">Prepared by</p>
+        <p style="margin:3px 0 0;font-size:13px;font-weight:600;color:${INK};">${esc(opts.fromName)}</p>
       </div>`
     : '';
-  const refHtml = opts.refCode
-    ? `<p style="margin:2px 0 0;font-size:11px;color:#9A9A93;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">Ref ${esc(opts.refCode)}</p>`
-    : '';
 
-  el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid ${HAIRLINE};padding-bottom:16px;">
+  return `
+    <div style="background:${NAVY};padding:20px 44px;display:flex;justify-content:space-between;align-items:flex-start;">
       <div>
-        <div style="font-size:20px;font-weight:700;color:${NAVY};letter-spacing:-0.01em;">Hisaab</div>
-        <p style="margin:4px 0 0;font-size:13px;color:${MUTED};">Statement of account</p>
+        <div style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.01em;">Hisaab</div>
+        <div style="font-size:12px;color:#9DA2C0;margin-top:2px;">Statement of account</div>
       </div>
-      <div style="text-align:right;">
-        <p style="margin:0;font-size:13px;color:${MUTED};">As of ${asOf}</p>
-        ${refHtml}
+      <div style="text-align:right;line-height:1.5;color:#ffffff;">
+        <div style="font-size:11px;color:#C7CAE0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">No. ${esc(stmtNo)}</div>
+        <div style="font-size:12px;margin-top:2px;">As of ${fmtDate(statement.asOf)}</div>
+        ${period ? `<div style="font-size:11px;color:#9DA2C0;">Period ${period}</div>` : ''}
       </div>
     </div>
 
-    <div style="display:flex;justify-content:space-between;gap:16px;margin-top:16px;">
+    <div style="padding:18px 44px 0;display:flex;justify-content:space-between;gap:20px;">
       <div>
-        <p style="margin:0;font-size:10px;color:#9A9A93;letter-spacing:0.05em;text-transform:uppercase;">Account of</p>
+        <p style="margin:0;font-size:10px;color:${MUTED};letter-spacing:0.06em;text-transform:uppercase;">Account of</p>
         <p style="margin:3px 0 0;font-size:15px;font-weight:600;color:${INK};">${esc(statement.partyName)}</p>
         ${partyPhone}
       </div>
       ${preparedBy}
     </div>
 
-    ${sectionsHtml}
+    ${heroBlockHtml(statement)}
 
-    <div style="margin-top:26px;border-top:1px solid ${HAIRLINE};padding-top:12px;">
-      <p style="margin:0;font-size:11px;color:#9A9A93;">Generated by Hisaab on ${fmtDateTime(statement.asOf)}. A summary of recorded transactions, not a legal document.</p>
+    ${statement.hasActivity ? statement.sections.map(sectionHtml).join('') : ''}
+
+    <div style="margin-top:auto;padding:14px 44px;background:${SETTLED_TINT};border-top:1px solid ${HAIRLINE};display:flex;justify-content:space-between;align-items:flex-end;gap:16px;">
+      <p style="margin:0;font-size:10px;color:${MUTED};line-height:1.6;">
+        <span style="color:${POS};font-weight:600;">+ they owe you</span> &nbsp;·&nbsp; <span style="color:${NEG};font-weight:600;">− you owe them</span> &nbsp;·&nbsp; Debit adds to the balance, Credit reduces it<br>
+        Generated by Hisaab on ${fmtDateTime(statement.asOf)} · A summary of recorded transactions, not a legal document. E&amp;OE.
+      </p>
+      <p style="margin:0;font-size:10px;color:${MUTED};white-space:nowrap;">Page 1 of 1</p>
     </div>
   `;
+}
 
+function buildNode(statement: Statement, opts: StatementPdfOptions): HTMLElement {
+  const el = document.createElement('div');
+  el.style.cssText = `position:fixed;left:-10000px;top:0;pointer-events:none;${STATEMENT_NODE_STYLE}`;
+  el.innerHTML = renderStatementInnerHtml(statement, opts);
   return el;
 }
 
@@ -215,7 +316,7 @@ export async function generateStatementPdf(
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const rect = node.getBoundingClientRect();
     cssWidth = rect.width || PAGE_W;
-    cssHeight = rect.height || PAGE_W * 1.414;
+    cssHeight = rect.height || PAGE_H;
     dataUrl = await domToPng(node, {
       scale: 2,
       backgroundColor: '#ffffff',
@@ -231,8 +332,8 @@ export async function generateStatementPdf(
   const pageH = 841.89;
   const pdf = new JsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
 
-  // Fit the rendered image to the page width; if that overflows the page
-  // height, clamp to height instead so it always stays a single page.
+  // Fit to page width; if that overflows the page height (a very long ledger),
+  // clamp to height so it always stays a single page.
   const ratio = cssHeight / cssWidth;
   let drawW = pageW;
   let drawH = pageW * ratio;
@@ -242,6 +343,14 @@ export async function generateStatementPdf(
   }
   const offsetX = (pageW - drawW) / 2;
   pdf.addImage(dataUrl, 'PNG', offsetX, 0, drawW, drawH, undefined, 'FAST');
+
+  // Document metadata — a small but real "this is an issued document" signal.
+  pdf.setProperties({
+    title: `Statement of account — ${statement.partyName}`,
+    subject: `Statement of account as of ${fmtDate(statement.asOf)}`,
+    author: opts.fromName || 'Hisaab',
+    creator: 'Hisaab',
+  });
 
   const blob = pdf.output('blob') as Blob;
   const datePart = new Date(statement.asOf).toISOString().slice(0, 10);
