@@ -24,7 +24,7 @@ function sampleHtml(): string {
     txn({ id: 'b1', type: 'loan_taken', amount: 30000, currency: 'PKR', relatedLoanId: 'L2', createdAt: '2026-06-25T00:00:00.000Z', notes: 'Rent deposit' }),
   ];
   const statement = buildStatement({ partyName: 'Maryam Corpuz', loans, transactions, asOf: '2026-07-02T14:30:00.000Z', scope: 'contact' });
-  return renderStatementInnerHtml(statement, { phone: '+971 52 449 5778', fromName: 'Muhammad Abdullah' });
+  return renderStatementInnerHtml(statement, { phone: '+971 52 449 5778', fromName: 'Muhammad Abdullah', greeting: 'Hello Maryam Corpuz,' });
 }
 
 describe('renderStatementInnerHtml', () => {
@@ -40,11 +40,14 @@ describe('renderStatementInnerHtml', () => {
     expect(html).toContain('Page 1 of 1');
   });
 
-  it('leads with a hero net number per currency, bilingual', () => {
-    expect(html).toContain('Net outstanding · AED');
-    expect(html).toContain('Net outstanding · PKR');
-    expect(html).toContain('Maryam Corpuz owes you'); // English
-    expect(html).toContain('dena hai'); // Roman-Urdu companion
+  it('leads with a recipient-focused hero number per currency, bilingual', () => {
+    // AED: Maryam owes → she must pay. PKR: she is owed → she receives.
+    expect(html).toContain('Amount you need to pay · AED');
+    expect(html).toContain("Amount you'll receive · PKR");
+    expect(html).toContain('You need to pay Muhammad Abdullah'); // recipient-addressed English
+    expect(html).toContain('You will receive');
+    expect(html).toContain('dena hai'); // Roman-Urdu (pay)
+    expect(html).toContain('milega'); // Roman-Urdu (receive)
   });
 
   it('uses the canonical Debit/Credit/Balance ledger with currency stated once', () => {
@@ -56,11 +59,11 @@ describe('renderStatementInnerHtml', () => {
     expect(html).toContain('Opening balance');
   });
 
-  it('color-codes direction with the CVD-safe palette and a redundant sign', () => {
-    expect(html).toContain('#047857'); // owed-to-you teal
-    expect(html).toContain('#C2410C'); // you-owe vermillion
-    expect(html).toContain('+8,000.00'); // positive AED closing, signed
-    expect(html).toContain('−30,000.00'); // negative PKR closing, signed
+  it('color-codes from the recipient perspective (pay = −red, receive = +green), CVD-safe', () => {
+    expect(html).toContain('#047857'); // receive / credit teal
+    expect(html).toContain('#C2410C'); // pay / debit vermillion
+    expect(html).toContain('−8,000.00'); // AED: recipient owes ⇒ shown as −, they must pay
+    expect(html).toContain('+30,000.00'); // PKR: recipient is owed ⇒ shown as +, they receive
   });
 
   it('uses contrast-safe muted text (#6B6B66), not the failing #9A9A93', () => {
@@ -71,5 +74,21 @@ describe('renderStatementInnerHtml', () => {
   it('reconciles: the AED closing equals opening + debits − credits', () => {
     // 0 + (10,000 + 500) − 2,500 = 8,000.00 shown as the AED net.
     expect(html).toContain('8,000.00');
+  });
+
+  it('opens with the greeting and signs off with the sender name', () => {
+    expect(html).toContain('Hello Maryam Corpuz,');
+    expect(html).toContain('Thank you,');
+    expect(html).toContain('>Muhammad Abdullah<');
+  });
+
+  it('omits greeting and sign-off when not provided', () => {
+    const loans = [loan({ id: 'L1', type: 'given', totalAmount: 100, remainingAmount: 100, currency: 'AED' })];
+    const transactions = [txn({ id: 't1', type: 'loan_given', amount: 100, currency: 'AED', relatedLoanId: 'L1', createdAt: '2026-06-01T00:00:00.000Z' })];
+    const st = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    const bare = renderStatementInnerHtml(st, {});
+    expect(bare).not.toContain('Thank you,');
+    expect(bare).not.toContain('Hello');
+    expect(bare).not.toContain('Prepared by');
   });
 });

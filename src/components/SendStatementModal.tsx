@@ -4,7 +4,7 @@ import { Modal } from './Modal';
 import { useToast } from './Toast';
 import { useT } from '../lib/i18n';
 import { buildStatement } from '../lib/statementOfAccount';
-import { renderStatementText, netBalanceLabel } from '../lib/statementText';
+import { renderStatementText, netBalanceLabel, greetingLine, type GreetingStyle } from '../lib/statementText';
 import { generateStatementPdf } from '../lib/statementPdf';
 import { shareStatementFile } from '../lib/shareStatement';
 import { buildWhatsAppUrl, hasWhatsAppNumber } from '../lib/whatsappReminder';
@@ -56,6 +56,7 @@ export function SendStatementModal({
   const toast = useToast();
   const [preparing, setPreparing] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [greetingStyle, setGreetingStyle] = useState<GreetingStyle>('hello');
   // Freeze the "as of" instant when the sheet opens so every artefact (PDF,
   // text, preview) reports the same generation time.
   const [asOf, setAsOf] = useState('');
@@ -64,20 +65,35 @@ export function SendStatementModal({
     if (open) setAsOf(new Date().toISOString());
   }, [open]);
 
+  // The user's own name (set at onboarding, used across groups/committees)
+  // signs the statement off; an explicit fromName prop can override it.
+  const myName = useMemo(() => (localStorage.getItem('hisaab_user_name') ?? '').trim(), []);
+  const preparedName = (fromName && fromName.trim()) || myName || undefined;
+
   const statement = useMemo(() => {
     if (!asOf) return null;
     return buildStatement({ partyName, loans, transactions, asOf, scope });
   }, [asOf, partyName, loans, transactions, scope]);
 
-  const message = useMemo(() => (statement ? renderStatementText(statement) : ''), [statement]);
+  const greeting = useMemo(() => greetingLine(greetingStyle, partyName), [greetingStyle, partyName]);
+  const message = useMemo(
+    () => (statement ? renderStatementText(statement, { greeting, fromName: preparedName }) : ''),
+    [statement, greeting, preparedName],
+  );
   const whatsappUrl = buildWhatsAppUrl(phone, message);
   const knownNumber = hasWhatsAppNumber(phone);
+  const greetLabels: Record<GreetingStyle, string> = {
+    hello: t('soa_greet_hello'),
+    salaam: t('soa_greet_salaam'),
+    dear: t('soa_greet_dear'),
+    none: t('soa_greet_none'),
+  };
 
   const handleSendPdf = async () => {
     if (!statement) return;
     setPreparing(true);
     try {
-      const { blob, filename } = await generateStatementPdf(statement, { fromName, phone, refCode });
+      const { blob, filename } = await generateStatementPdf(statement, { fromName: preparedName, phone, refCode, greeting });
       const outcome = await shareStatementFile({
         blob,
         filename,
@@ -184,6 +200,28 @@ export function SendStatementModal({
         ) : (
           <div className="rounded-2xl bg-cream-soft border border-cream-hairline p-4">
             <p className="text-[13px] text-ink-600">{t('soa_none').replace('{name}', partyName)}</p>
+          </div>
+        )}
+
+        {/* Greeting selector — the statement opens with this line and signs
+            off with your name, so it reads as a message, not an export. */}
+        {statement?.hasActivity && (
+          <div>
+            <p className="form-label">{t('soa_greeting_label')}</p>
+            <div className="grid grid-cols-4 gap-2">
+              {(['hello', 'salaam', 'dear', 'none'] as GreetingStyle[]).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => setGreetingStyle(style)}
+                  className={`py-2 rounded-xl text-[11px] font-bold border transition-all active:scale-95 ${
+                    greetingStyle === style ? 'bg-ink-900 text-white border-ink-900' : 'bg-cream-card text-ink-500 border-cream-border'
+                  }`}
+                >
+                  {greetLabels[style]}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

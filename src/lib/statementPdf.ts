@@ -16,7 +16,7 @@
 // over ornament (hairlines, no zebra), and honest trust scaffolding (statement
 // number, period, E&OE) with no fake verification marks.
 
-import { netBalanceLabel, netBalanceLabelUrdu } from './statementText';
+import { payOrReceiveLabel } from './statementText';
 import { trimSection } from './statementOfAccount';
 import type { Statement, StatementLine, StatementSection } from './statementOfAccount';
 
@@ -107,46 +107,55 @@ function periodLabel(statement: Statement): string | null {
   return `${fmtDate(from)} – ${fmtDate(statement.asOf)}`;
 }
 
-function heroRowHtml(statement: Statement, section: StatementSection, big: boolean): string {
-  const positive = section.closing > 0.005;
-  const settled = Math.abs(section.closing) <= 0.005;
-  const tint = settled ? SETTLED_TINT : positive ? POS_TINT : NEG_TINT;
-  const color = settled ? NEUTRAL : positive ? POS : NEG;
-  const labelColor = settled ? MUTED : positive ? POS_LABEL : NEG;
-  const sign = positive ? '+ ' : section.closing < -0.005 ? '− ' : '';
+function heroRowHtml(section: StatementSection, big: boolean, senderName?: string): string {
+  // Recipient perspective: they PAY when they owe (out ⇒ red, −), they RECEIVE
+  // when they're owed (in ⇒ green, +). Colour follows the reader's situation.
+  const pr = payOrReceiveLabel(section.closing, section.currency, senderName);
+  const owe = pr.mode === 'pay';
+  const settled = pr.mode === 'settled';
+  const tint = settled ? SETTLED_TINT : owe ? NEG_TINT : POS_TINT;
+  const color = settled ? NEUTRAL : owe ? NEG : POS;
+  const labelColor = settled ? MUTED : owe ? NEG : POS_LABEL;
+  const sign = settled ? '' : owe ? '− ' : '+ ';
+  const heading = settled
+    ? `Settled · ${section.currency}`
+    : owe
+      ? `Amount you need to pay · ${section.currency}`
+      : `Amount you'll receive · ${section.currency}`;
   const numSize = big ? 34 : 23;
-  const english = netBalanceLabel(statement.partyName, section.closing, section.currency);
-  const urdu = netBalanceLabelUrdu(statement.partyName, section.closing, section.currency);
   return `<div style="background:${tint};border-radius:8px;padding:15px 18px;">
-    <p style="margin:0;font-size:10px;color:${labelColor};letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">Net outstanding · ${section.currency}</p>
+    <p style="margin:0;font-size:10px;color:${labelColor};letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">${heading}</p>
     <p style="margin:4px 0 0;font-size:${numSize}px;font-weight:700;color:${color};letter-spacing:-0.01em;">${sign}${fmtAmount(section.closing)}</p>
-    <p style="margin:5px 0 0;font-size:13px;color:${INK};">${esc(english)} · <span style="color:${MUTED};">${esc(urdu)}</span></p>
+    <p style="margin:5px 0 0;font-size:13px;color:${INK};">${esc(pr.english)} · <span style="color:${MUTED};">${esc(pr.urdu)}</span></p>
   </div>`;
 }
 
-function heroBlockHtml(statement: Statement): string {
+function heroBlockHtml(statement: Statement, senderName?: string): string {
   if (!statement.hasActivity) {
     return `<div style="margin:18px 44px 0;background:${SETTLED_TINT};border-radius:8px;padding:16px 18px;">
-      <p style="margin:0;font-size:15px;font-weight:600;color:${MUTED};">Settled up with ${esc(statement.partyName)} — nothing outstanding.</p>
+      <p style="margin:0;font-size:15px;font-weight:600;color:${MUTED};">You're all settled up — nothing outstanding.</p>
     </div>`;
   }
   const big = statement.sections.length === 1;
-  const rows = statement.sections.map((s) => heroRowHtml(statement, s, big)).join('');
+  const rows = statement.sections.map((s) => heroRowHtml(s, big, senderName)).join('');
   return `<div style="margin:18px 44px 0;display:flex;flex-direction:column;gap:10px;">${rows}</div>`;
 }
 
 function ledgerRowHtml(line: StatementLine): string {
   // Description prefers the human note (kills the repeated "Loan given ·");
   // the Debit/Credit column position already encodes the entry type.
+  // Recipient-focused colour: a Debit adds to what THEY owe (red = you'll pay
+  // this), a Credit is a payment they made (green = reduces what you owe). The
+  // running balance is negated to the recipient's side (owe = −red, receive = +green).
   const desc = line.note ? esc(line.note) : esc(line.description);
-  const debit = line.delta > 0.005 ? fmtAmount(line.delta) : '';
-  const credit = line.delta < -0.005 ? fmtAmount(line.delta) : '';
+  const debit = line.delta > 0.005 ? `<span style="color:${NEG};">${fmtAmount(line.delta)}</span>` : '';
+  const credit = line.delta < -0.005 ? `<span style="color:${POS};">${fmtAmount(line.delta)}</span>` : '';
   return `<tr>
     <td style="padding:7px 6px 7px 0;color:${MUTED};white-space:nowrap;vertical-align:top;border-top:1px solid ${ROWLINE};">${fmtDateShort(line.date)}</td>
     <td style="padding:7px 6px;color:${INK};vertical-align:top;border-top:1px solid ${ROWLINE};">${desc}</td>
-    <td style="padding:7px 6px;text-align:right;color:${INK};white-space:nowrap;border-top:1px solid ${ROWLINE};">${debit}</td>
-    <td style="padding:7px 6px;text-align:right;color:${INK};white-space:nowrap;border-top:1px solid ${ROWLINE};">${credit}</td>
-    <td style="padding:7px 0 7px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};">${balanceCellHtml(line.balance)}</td>
+    <td style="padding:7px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};">${debit}</td>
+    <td style="padding:7px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};">${credit}</td>
+    <td style="padding:7px 0 7px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};">${balanceCellHtml(-line.balance)}</td>
   </tr>`;
 }
 
@@ -191,16 +200,16 @@ function sectionHtml(section: StatementSection): string {
           <td style="padding:7px 6px;color:${MUTED};font-style:italic;border-top:1px solid ${ROWLINE};">${openingLabel}</td>
           <td style="border-top:1px solid ${ROWLINE};"></td>
           <td style="border-top:1px solid ${ROWLINE};"></td>
-          <td style="padding:7px 0 7px 6px;text-align:right;border-top:1px solid ${ROWLINE};">${balanceCellHtml(openingBalance)}</td>
+          <td style="padding:7px 0 7px 6px;text-align:right;border-top:1px solid ${ROWLINE};">${balanceCellHtml(-openingBalance)}</td>
         </tr>
         ${lines.map(ledgerRowHtml).join('')}
       </tbody>
       <tfoot>
         <tr style="border-top:2px solid ${NAVY};">
           <td colspan="2" style="padding:10px 6px 0 0;font-weight:600;color:${INK};">Outstanding balance</td>
-          <td style="padding:10px 6px 0;text-align:right;font-weight:600;color:${NEUTRAL};">${fmtAmount(totalDebit)}</td>
-          <td style="padding:10px 6px 0;text-align:right;font-weight:600;color:${NEUTRAL};">${fmtAmount(totalCredit)}</td>
-          <td style="padding:10px 0 0 6px;text-align:right;font-weight:700;">${balanceCellHtml(section.closing)}</td>
+          <td style="padding:10px 6px 0;text-align:right;font-weight:600;color:${NEG};">${fmtAmount(totalDebit)}</td>
+          <td style="padding:10px 6px 0;text-align:right;font-weight:600;color:${POS};">${fmtAmount(totalCredit)}</td>
+          <td style="padding:10px 0 0 6px;text-align:right;font-weight:700;">${balanceCellHtml(-section.closing)}</td>
         </tr>
       </tfoot>
     </table>
@@ -209,9 +218,10 @@ function sectionHtml(section: StatementSection): string {
 }
 
 export interface StatementPdfOptions {
-  fromName?: string; // current user's display name, shown as "Prepared by"
+  fromName?: string; // current user's display name — shown as "Prepared by" and signs off the statement
   phone?: string | null; // counterparty phone, shown under their name when known
   refCode?: string; // override the auto statement number
+  greeting?: string; // friendly opener, e.g. "Hello Rashid," — empty ⇒ omitted
 }
 
 // Inline styles for the offscreen page node. Exported so a dev harness / test
@@ -242,6 +252,16 @@ export function renderStatementInnerHtml(statement: Statement, opts: StatementPd
         <p style="margin:3px 0 0;font-size:13px;font-weight:600;color:${INK};">${esc(opts.fromName)}</p>
       </div>`
     : '';
+  // Warm opener + sign-off so the statement reads as a message, not an export.
+  const greetingHtml = opts.greeting?.trim()
+    ? `<div style="padding:14px 44px 0;"><p style="margin:0;font-size:15px;color:${INK};">${esc(opts.greeting.trim())}</p></div>`
+    : '';
+  const signOffHtml = opts.fromName?.trim()
+    ? `<div style="padding:16px 44px 4px;">
+        <p style="margin:0;font-size:12.5px;color:${MUTED};">Thank you,</p>
+        <p style="margin:2px 0 0;font-size:14px;font-weight:600;color:${INK};">${esc(opts.fromName.trim())}</p>
+      </div>`
+    : '';
 
   return `
     <div style="background:${NAVY};padding:20px 44px;display:flex;justify-content:space-between;align-items:flex-start;">
@@ -256,22 +276,26 @@ export function renderStatementInnerHtml(statement: Statement, opts: StatementPd
       </div>
     </div>
 
-    <div style="padding:18px 44px 0;display:flex;justify-content:space-between;gap:20px;">
+    <div style="padding:18px 44px 0;display:flex;justify-content:space-between;gap:20px;align-items:flex-start;">
       <div>
         <p style="margin:0;font-size:10px;color:${MUTED};letter-spacing:0.06em;text-transform:uppercase;">Account of</p>
-        <p style="margin:3px 0 0;font-size:15px;font-weight:600;color:${INK};">${esc(statement.partyName)}</p>
+        <p style="margin:4px 0 0;font-size:25px;font-weight:700;color:${INK};letter-spacing:-0.015em;line-height:1.1;">${esc(statement.partyName)}</p>
         ${partyPhone}
       </div>
       ${preparedBy}
     </div>
 
-    ${heroBlockHtml(statement)}
+    ${greetingHtml}
+
+    ${heroBlockHtml(statement, opts.fromName)}
 
     ${statement.hasActivity ? statement.sections.map(sectionHtml).join('') : ''}
 
+    ${signOffHtml}
+
     <div style="margin-top:auto;padding:14px 44px;background:${SETTLED_TINT};border-top:1px solid ${HAIRLINE};display:flex;justify-content:space-between;align-items:flex-end;gap:16px;">
       <p style="margin:0;font-size:10px;color:${MUTED};line-height:1.6;">
-        <span style="color:${POS};font-weight:600;">+ they owe you</span> &nbsp;·&nbsp; <span style="color:${NEG};font-weight:600;">− you owe them</span> &nbsp;·&nbsp; Debit adds to the balance, Credit reduces it<br>
+        <span style="color:${NEG};font-weight:600;">− you need to pay</span> &nbsp;·&nbsp; <span style="color:${POS};font-weight:600;">+ you'll receive</span> &nbsp;·&nbsp; Debit adds to what you owe, Credit is what you've paid<br>
         Generated by Hisaab on ${fmtDateTime(statement.asOf)} · A summary of recorded transactions, not a legal document. E&amp;OE.
       </p>
       <p style="margin:0;font-size:10px;color:${MUTED};white-space:nowrap;">Page 1 of 1</p>
