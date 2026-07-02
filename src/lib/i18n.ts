@@ -231,6 +231,26 @@ const S = {
     ur: "{count} days overdue",
     en: "{count} days overdue",
   },
+
+  // Statement of Account (SOA) — a per-contact / per-loan statement that can
+  // be sent as a one-page PDF (native share) or a text ping over WhatsApp.
+  soa_title: { ur: "Hisaab ka statement", en: "Statement of account" },
+  soa_cta: { ur: "Statement bhejein", en: "Send statement" },
+  soa_send_pdf: { ur: "PDF statement bhejein", en: "Send statement (PDF)" },
+  soa_preparing: { ur: "Tayyar ho raha hai…", en: "Preparing…" },
+  soa_whatsapp_text: { ur: "WhatsApp text", en: "WhatsApp text" },
+  soa_copy: { ur: "Copy", en: "Copy text" },
+  soa_copied: { ur: "Statement copy ho gaya", en: "Statement copied" },
+  soa_copy_failed: { ur: "Copy nahi ho saka", en: "Could not copy" },
+  soa_ready: { ur: "Statement bhejne ke liye tayyar", en: "Statement ready to share" },
+  soa_downloaded: { ur: "Statement download ho gaya", en: "Statement downloaded" },
+  soa_share_failed: { ur: "Statement nahi ban saka", en: "Could not create the statement" },
+  soa_preview: { ur: "Preview", en: "Preview" },
+  soa_none: { ur: "{name} ke saath abhi koi hisaab nahi.", en: "No loan history with {name} yet." },
+  soa_nudge_intro: {
+    ur: "Payment save ho gayi. {name} ko naya statement bhejein?",
+    en: "Payment recorded. Send {name} an updated statement?",
+  },
   reminder_duration_fallback: { ur: "earlier", en: "earlier" },
   reminder_duration_today: { ur: "Aaj", en: "today" },
   reminder_duration_yesterday: { ur: "1 din pehlay", en: "1 day ago" },

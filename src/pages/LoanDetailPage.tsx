@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { format, isPast, differenceInDays } from 'date-fns';
-import { AlertCircle, Bell, CheckCircle, Clock, RotateCcw, ChevronRight, Handshake } from 'lucide-react';
+import { AlertCircle, Bell, CheckCircle, Clock, RotateCcw, ChevronRight, Handshake, FileText } from 'lucide-react';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -17,6 +17,7 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { TransactionItem } from '../components/TransactionItem';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
+import { SendStatementModal } from '../components/SendStatementModal';
 import { PageErrorState } from '../components/PageErrorState';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useToast } from '../components/Toast';
@@ -48,6 +49,8 @@ export function LoanDetailPage() {
   const [showRepayment, setShowRepayment] = useState(false);
   const [showSettleLinked, setShowSettleLinked] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
+  const [showStatement, setShowStatement] = useState(false);
+  const [statementIntro, setStatementIntro] = useState<string | undefined>(undefined);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedEmi, setSelectedEmi] = useState<(EmiSchedule & { isOverdue: boolean }) | null>(null);
 
@@ -542,9 +545,20 @@ export function LoanDetailPage() {
 
         {/* Transaction history */}
         <div>
-          <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5 px-1">
-            {t('tx_history')}
-          </h2>
+          <div className="flex items-center justify-between mb-2.5 px-1">
+            <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+              {t('tx_history')}
+            </h2>
+            {(loanTransactions.length > 0 || loan.remainingAmount > 0.005) && (
+              <button
+                type="button"
+                onClick={() => { setStatementIntro(undefined); setShowStatement(true); }}
+                className="text-[11px] font-semibold text-accent-600 flex items-center gap-1 active:opacity-70"
+              >
+                <FileText size={12} strokeWidth={2.2} /> {t('soa_cta')}
+              </button>
+            )}
+          </div>
           {loanTransactions.length === 0 ? (
             <p className="text-[12px] text-ink-400 text-center py-5">
               {t('loan_no_tx')}
@@ -574,6 +588,10 @@ export function LoanDetailPage() {
             refreshLoanDetail();
           }}
           loan={loan}
+          onRepaid={() => {
+            setStatementIntro(t('soa_nudge_intro').replace('{name}', displayName || loan.personName));
+            setShowStatement(true);
+          }}
         />
       )}
       {loan.status === 'active' && selectedEmi && (
@@ -588,6 +606,10 @@ export function LoanDetailPage() {
           presetAmount={Math.min(selectedEmi.amount, loan.remainingAmount)}
           lockAmount
           installmentNumber={selectedEmi.installmentNumber}
+          onRepaid={() => {
+            setStatementIntro(t('soa_nudge_intro').replace('{name}', displayName || loan.personName));
+            setShowStatement(true);
+          }}
         />
       )}
       <EditTransactionModal
@@ -605,6 +627,16 @@ export function LoanDetailPage() {
         startedAt={reminderStartedAt}
         hasDueDate={totalCount > 0}
         phone={(loan.personId ? persons.find((x) => x.id === loan.personId)?.phone : null) ?? null}
+      />
+      <SendStatementModal
+        open={showStatement}
+        onClose={() => { setShowStatement(false); setStatementIntro(undefined); }}
+        partyName={displayName || loan.personName}
+        loans={[loan]}
+        transactions={loanTransactions}
+        scope="loan"
+        phone={(loan.personId ? persons.find((x) => x.id === loan.personId)?.phone : null) ?? null}
+        intro={statementIntro}
       />
       {isLinkedLoan && (
         <SettleLinkedLoanModal

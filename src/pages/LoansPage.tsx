@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Plus, ChevronRight, Users, Bell, Search, X, AlertCircle, Clock, Link2 } from 'lucide-react';
+import { Plus, ChevronRight, Users, Bell, Search, X, AlertCircle, Clock, Link2, FileText } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
 import { usePersonStore } from '../stores/personStore';
@@ -18,6 +18,7 @@ import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
 import { TransactionItem } from '../components/TransactionItem';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
+import { SendStatementModal } from '../components/SendStatementModal';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
@@ -89,6 +90,8 @@ export function LoansPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllocate, setShowAllocate] = useState(false);
+  const [statementFor, setStatementFor] = useState<{ personId: string | null; name: string; phone: string | null } | null>(null);
+  const [statementIntro, setStatementIntro] = useState<string | undefined>(undefined);
 
   const load = useCallback(async () => {
     // loadLinkedRequests is needed so we can exclude linked loans (which must
@@ -362,6 +365,19 @@ export function LoansPage() {
       hasDueDate: groupHasDueDate(group),
       phone: groupPhone(group),
     });
+  };
+
+  // Open a full Statement of Account for this person. The statement itself is
+  // rebuilt from the live store (all their loans, every currency + direction),
+  // so we only need to capture who it's for — not the currency/direction slice
+  // the drill-down group represents.
+  const openStatementForGroup = (group: LoanGroup, intro?: string) => {
+    setStatementFor({
+      personId: group.loans.find((l) => l.personId)?.personId ?? null,
+      name: group.name,
+      phone: groupPhone(group),
+    });
+    setStatementIntro(intro);
   };
 
   const renderPersonRow = (group: LoanGroup) => {
@@ -742,6 +758,13 @@ export function LoansPage() {
               <p className="text-[11px] text-ink-500 leading-relaxed">{t('alloc_linked_note')}</p>
             )}
 
+            <button
+              onClick={() => openStatementForGroup(selectedGroup)}
+              className="w-full bg-accent-100 text-accent-600 rounded-xl py-3 text-[13px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            >
+              <FileText size={14} strokeWidth={2.2} /> {t('soa_cta')}
+            </button>
+
             <div>
               <h3 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5">
                 Individual loans
@@ -788,7 +811,16 @@ export function LoansPage() {
           direction={selectedGroup.direction}
           currency={selectedGroup.currency}
           personName={selectedGroup.name}
-          onDone={() => { setShowAllocate(false); setSelectedGroup(null); void load(); }}
+          onDone={() => {
+            const paidGroup = selectedGroup;
+            setShowAllocate(false);
+            setSelectedGroup(null);
+            void load();
+            // Offer an updated statement now that the balance changed.
+            if (paidGroup) {
+              openStatementForGroup(paidGroup, t('soa_nudge_intro').replace('{name}', paidGroup.name));
+            }
+          }}
         />
       )}
 
@@ -805,6 +837,25 @@ export function LoansPage() {
           phone={reminderTarget.phone}
         />
       ) : null}
+
+      {statementFor && (
+        <SendStatementModal
+          open={!!statementFor}
+          onClose={() => { setStatementFor(null); setStatementIntro(undefined); }}
+          partyName={statementFor.name}
+          loans={loans.filter(
+            (l) =>
+              !l.deletedAt &&
+              (statementFor.personId
+                ? l.personId === statementFor.personId
+                : l.personName.trim().toLowerCase() === statementFor.name.trim().toLowerCase()),
+          )}
+          transactions={transactions}
+          scope="contact"
+          phone={statementFor.phone}
+          intro={statementIntro}
+        />
+      )}
 
       <AddLoanModal open={showAdd} onClose={() => setShowAdd(false)} />
     </main>

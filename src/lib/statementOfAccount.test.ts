@@ -1,0 +1,132 @@
+import { describe, it, expect } from 'vitest';
+import { buildStatement, trimSection } from './statementOfAccount';
+import type { Loan, Transaction } from '../db';
+
+function loan(partial: Partial<Loan> & Pick<Loan, 'id' | 'type' | 'totalAmount' | 'remainingAmount'>): Loan {
+  return {
+    personName: 'Ahmed',
+    personId: 'p1',
+    currency: 'PKR',
+    status: 'active',
+    notes: '',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    ...partial,
+  } as Loan;
+}
+
+function txn(partial: Partial<Transaction> & Pick<Transaction, 'id' | 'type' | 'amount' | 'relatedLoanId' | 'createdAt'>): Transaction {
+  return {
+    currency: 'PKR',
+    sourceAccountId: null,
+    destinationAccountId: null,
+    relatedPerson: 'Ahmed',
+    personId: 'p1',
+    relatedGoalId: null,
+    conversionRate: null,
+    category: '',
+    notes: '',
+    ...partial,
+  } as Transaction;
+}
+
+describe('buildStatement', () => {
+  it('builds a running-balance ledger for a given loan with repayments', () => {
+    const loans = [loan({ id: 'L1', type: 'given', totalAmount: 25000, remainingAmount: 15000 })];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 25000, relatedLoanId: 'L1', createdAt: '2026-05-12T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'repayment', amount: 5000, relatedLoanId: 'L1', createdAt: '2026-05-28T00:00:00.000Z' }),
+      txn({ id: 't3', type: 'repayment', amount: 5000, relatedLoanId: 'L1', createdAt: '2026-06-20T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    expect(s.hasActivity).toBe(true);
+    expect(s.sections).toHaveLength(1);
+    const section = s.sections[0];
+    expect(section.currency).toBe('PKR');
+    expect(section.lines.map((l) => l.balance)).toEqual([25000, 20000, 15000]);
+    expect(section.lines.map((l) => l.delta)).toEqual([25000, -5000, -5000]);
+    expect(section.closing).toBe(15000); // positive ⇒ they owe you
+    expect(section.estimated).toBe(false);
+  });
+
+  it('nets given (+) against taken (−) within one currency', () => {
+    const loans = [
+      loan({ id: 'L1', type: 'given', totalAmount: 10000, remainingAmount: 10000 }),
+      loan({ id: 'L2', type: 'taken', totalAmount: 4000, remainingAmount: 4000, createdAt: '2026-02-01T00:00:00.000Z' }),
+    ];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 10000, relatedLoanId: 'L1', createdAt: '2026-01-10T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'loan_taken', amount: 4000, relatedLoanId: 'L2', createdAt: '2026-02-10T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    expect(s.sections).toHaveLength(1);
+    expect(s.sections[0].lines.map((l) => l.balance)).toEqual([10000, 6000]);
+    expect(s.sections[0].closing).toBe(6000);
+  });
+
+  it('separates currencies into sorted sections', () => {
+    const loans = [
+      loan({ id: 'L1', type: 'given', totalAmount: 100, remainingAmount: 100, currency: 'PKR' }),
+      loan({ id: 'L2', type: 'given', totalAmount: 50, remainingAmount: 50, currency: 'AED' }),
+    ];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 100, relatedLoanId: 'L1', currency: 'PKR', createdAt: '2026-03-01T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'loan_given', amount: 50, relatedLoanId: 'L2', currency: 'AED', createdAt: '2026-03-02T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    expect(s.sections.map((sec) => sec.currency)).toEqual(['AED', 'PKR']);
+  });
+
+  it('falls back to an estimated outstanding line in ledger-only mode (no transactions)', () => {
+    const loans = [loan({ id: 'L1', type: 'taken', totalAmount: 8000, remainingAmount: 3000 })];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions: [], asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    expect(s.sections).toHaveLength(1);
+    expect(s.sections[0].estimated).toBe(true);
+    expect(s.sections[0].lines).toHaveLength(1);
+    expect(s.sections[0].closing).toBe(-3000); // negative ⇒ you owe them
+  });
+
+  it('ignores deleted transactions', () => {
+    const loans = [loan({ id: 'L1', type: 'given', totalAmount: 100, remainingAmount: 100 })];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 100, relatedLoanId: 'L1', createdAt: '2026-03-01T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'repayment', amount: 40, relatedLoanId: 'L1', createdAt: '2026-03-05T00:00:00.000Z', deletedAt: '2026-03-06T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    expect(s.sections[0].lines).toHaveLength(1);
+    expect(s.sections[0].closing).toBe(100);
+  });
+
+  it('reports no activity when there are no loans', () => {
+    const s = buildStatement({ partyName: 'Ahmed', loans: [], transactions: [], asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    expect(s.hasActivity).toBe(false);
+    expect(s.sections).toHaveLength(0);
+  });
+});
+
+describe('trimSection', () => {
+  it('folds older lines into a brought-forward opening balance', () => {
+    const loans = [loan({ id: 'L1', type: 'given', totalAmount: 6, remainingAmount: 6 })];
+    const transactions = [
+      txn({ id: 'd', type: 'loan_given', amount: 6, relatedLoanId: 'L1', createdAt: '2026-01-01T00:00:00.000Z' }),
+      ...Array.from({ length: 5 }, (_, i) =>
+        txn({ id: `r${i}`, type: 'repayment', amount: 0, relatedLoanId: 'L1', createdAt: `2026-01-1${i}T00:00:00.000Z` }),
+      ),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    const section = s.sections[0];
+    expect(section.lines.length).toBe(6);
+    const trimmed = trimSection(section, 3);
+    expect(trimmed.opening).not.toBeNull();
+    expect(trimmed.opening?.count).toBe(4); // 6 lines − 2 visible = 4 folded
+    expect(trimmed.lines).toHaveLength(2);
+  });
+
+  it('does not trim when within the limit', () => {
+    const loans = [loan({ id: 'L1', type: 'given', totalAmount: 5, remainingAmount: 5 })];
+    const transactions = [txn({ id: 'd', type: 'loan_given', amount: 5, relatedLoanId: 'L1', createdAt: '2026-01-01T00:00:00.000Z' })];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    const trimmed = trimSection(s.sections[0], 10);
+    expect(trimmed.opening).toBeNull();
+    expect(trimmed.lines).toHaveLength(1);
+  });
+});

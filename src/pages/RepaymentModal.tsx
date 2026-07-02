@@ -21,6 +21,9 @@ interface Props {
   presetAmount?: number;
   lockAmount?: boolean;
   installmentNumber?: number;
+  // Fired once, after a repayment has committed and the user dismisses the
+  // confirmation. Lets the host offer to send an updated statement.
+  onRepaid?: () => void;
 }
 
 export function RepaymentModal({
@@ -31,6 +34,7 @@ export function RepaymentModal({
   presetAmount,
   lockAmount = false,
   installmentNumber,
+  onRepaid,
 }: Props) {
   const { accounts } = useAccountStore();
   const { processTransaction, getByLoan } = useTransactionStore();
@@ -455,6 +459,9 @@ export function RepaymentModal({
         onClose={() => {
           setShowConfirmation(false);
           onClose();
+          // Nudge the statement send only after a successful commit — this
+          // sheet is shown solely on the success path.
+          onRepaid?.();
         }}
         title={confirmData.title}
         description={confirmData.description}

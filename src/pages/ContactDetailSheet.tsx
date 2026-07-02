@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -14,6 +14,7 @@ import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import type { Person } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
 import { EditTransactionModal } from '../components/EditTransactionModal';
+import { SendStatementModal } from '../components/SendStatementModal';
 import { useT } from '../lib/i18n';
 import { getActionLabel } from '../lib/transactionLabel';
 import type { Transaction } from '../db';
@@ -56,6 +57,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [editingPhone, setEditingPhone] = useState(false);
   const [phoneDraft, setPhoneDraft] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
+  const [showStatement, setShowStatement] = useState(false);
 
   const savePhone = async () => {
     if (!person) return;
@@ -83,6 +85,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       setSyncing(false);
       setArchiving(false);
       setEditingPhone(false);
+      setShowStatement(false);
     }
   }, [open]);
 
@@ -139,6 +142,15 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     }
     return [...byCurrency.entries()].filter(([, value]) => Math.abs(value) > 0.00001);
   })();
+  // All of this contact's loans (personId, with a name fallback for legacy
+  // loans created before the contact record existed) — the raw material for a
+  // statement that spans every loan direction and currency with this person.
+  const personLoans = loans.filter(
+    (loan) =>
+      !loan.deletedAt &&
+      (loan.personId === person.id ||
+        (!loan.personId && loan.personName.trim().toLowerCase() === person.name.trim().toLowerCase())),
+  );
   const recentEntries = transactions
     .filter((transaction) => transaction.personId === person.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -328,6 +340,19 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             </div>
           )}
         </div>
+
+        {/* Send a full Statement of Account with this contact — spans every
+            loan (both directions) and currency, delivered as a one-page PDF or
+            a WhatsApp text ping. Shown once there's any loan history. */}
+        {personLoans.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowStatement(true)}
+            className="w-full py-3 rounded-2xl bg-accent-100 text-accent-600 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+          >
+            <FileText size={14} strokeWidth={2.2} /> {t('soa_cta')}
+          </button>
+        )}
 
         {/* WhatsApp number — add it once so payment reminders go straight to
             their chat, and so the contact list shows the WhatsApp badge. */}
@@ -677,6 +702,15 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       open={!!editingTransaction}
       transaction={editingTransaction}
       onClose={() => setEditingTransaction(null)}
+    />
+    <SendStatementModal
+      open={showStatement}
+      onClose={() => setShowStatement(false)}
+      partyName={person.name}
+      loans={personLoans}
+      transactions={transactions}
+      scope="contact"
+      phone={person.phone}
     />
     </>
   );
