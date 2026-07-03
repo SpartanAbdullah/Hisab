@@ -7,6 +7,7 @@ import { useNotificationStore } from '../stores/notificationStore';
 import { AddGroupExpenseModal } from './AddGroupExpenseModal';
 import { EditGroupExpenseModal } from './EditGroupExpenseModal';
 import { SettleUpModal } from './SettleUpModal';
+import { GroupSettleUpModal } from './GroupSettleUpModal';
 import { GroupInviteModal } from '../components/GroupInviteModal';
 import { ProgressRing } from '../components/ProgressRing';
 import { PageErrorState } from '../components/PageErrorState';
@@ -185,6 +186,7 @@ export function GroupDetailPage() {
   const [tab, setTab] = useState<'expenses' | 'balances' | 'activity'>('expenses');
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showSettle, setShowSettle] = useState(false);
+  const [showSettleShare, setShowSettleShare] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [editExpense, setEditExpense] = useState<GroupExpense | null>(null);
   const [savingReconciliationId, setSavingReconciliationId] = useState<string | null>(null);
@@ -820,6 +822,14 @@ export function GroupDetailPage() {
         </div>
       ) : tab === 'balances' ? (
         <div className="px-5 pt-4 pb-44 space-y-2">
+          {shownDebts.length > 0 && (
+            <button
+              onClick={() => setShowSettleShare(true)}
+              className="w-full rounded-2xl bg-accent-100 text-accent-600 py-3 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            >
+              <Share2 size={14} strokeWidth={2.2} /> {t('gsu_cta')}
+            </button>
+          )}
           {balanceRows.length === 0 ? (
             <div className="rounded-[18px] bg-cream-card border border-cream-border p-6 text-center animate-fade-in">
               <div className="w-12 h-12 rounded-2xl bg-cream-soft border border-cream-hairline text-ink-500 mx-auto flex items-center justify-center">
@@ -975,6 +985,7 @@ export function GroupDetailPage() {
       <AddGroupExpenseModal open={showAddExpense} group={group} recentExpenses={expenses} onClose={() => { setShowAddExpense(false); void reload(); }} />
       <EditGroupExpenseModal open={!!editExpense} group={group} expense={editExpense} onClose={() => { setEditExpense(null); void reload(); }} />
       <SettleUpModal open={showSettle} group={group} debts={shownDebts} currentMemberId={currentMember?.id} onClose={() => { setShowSettle(false); void reload(); }} />
+      <GroupSettleUpModal open={showSettleShare} group={group} debts={shownDebts} expenses={expenses} simplify={simplify} currentMemberId={currentMember?.id} onClose={() => setShowSettleShare(false)} />
       <GroupInviteModal open={showInvite} group={group} onClose={() => { setShowInvite(false); void reload(); }} />
     </main>
   );

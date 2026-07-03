@@ -51,6 +51,7 @@ export function LoanDetailPage() {
   const [showReminder, setShowReminder] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
   const [statementIntro, setStatementIntro] = useState<string | undefined>(undefined);
+  const [receiptData, setReceiptData] = useState<{ receivedAmount: number; currency: string; remaining: number | null; date: string } | undefined>(undefined);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedEmi, setSelectedEmi] = useState<(EmiSchedule & { isOverdue: boolean }) | null>(null);
 
@@ -144,6 +145,23 @@ export function LoanDetailPage() {
     void loadSchedules();
     void loadTransactions();
     void loadAccounts();
+  };
+
+  // Post-repayment nudge. On a loan the user GAVE, money came back to them, so
+  // default to a "payment received" receipt for the payer; on a loan they TOOK
+  // (they paid) keep the statement-only nudge. Read the freshest remaining from
+  // the store since the repayment has already committed by this point.
+  const handleRepaid = (info?: { amount: number }) => {
+    const name = displayName || loan.personName;
+    if (loan.type === 'given') {
+      const remaining = useLoanStore.getState().loans.find((l) => l.id === loan.id)?.remainingAmount ?? loan.remainingAmount;
+      setReceiptData({ receivedAmount: info?.amount ?? 0, currency: loan.currency, remaining, date: new Date().toISOString() });
+      setStatementIntro(t('rcpt_nudge_intro').replace('{name}', name));
+    } else {
+      setReceiptData(undefined);
+      setStatementIntro(t('soa_nudge_intro').replace('{name}', name));
+    }
+    setShowStatement(true);
   };
 
   // Reconcile-only: mark instalments the loan's paid-down balance already
@@ -588,10 +606,7 @@ export function LoanDetailPage() {
             refreshLoanDetail();
           }}
           loan={loan}
-          onRepaid={() => {
-            setStatementIntro(t('soa_nudge_intro').replace('{name}', displayName || loan.personName));
-            setShowStatement(true);
-          }}
+          onRepaid={handleRepaid}
         />
       )}
       {loan.status === 'active' && selectedEmi && (
@@ -606,10 +621,7 @@ export function LoanDetailPage() {
           presetAmount={Math.min(selectedEmi.amount, loan.remainingAmount)}
           lockAmount
           installmentNumber={selectedEmi.installmentNumber}
-          onRepaid={() => {
-            setStatementIntro(t('soa_nudge_intro').replace('{name}', displayName || loan.personName));
-            setShowStatement(true);
-          }}
+          onRepaid={handleRepaid}
         />
       )}
       <EditTransactionModal
@@ -630,13 +642,14 @@ export function LoanDetailPage() {
       />
       <SendStatementModal
         open={showStatement}
-        onClose={() => { setShowStatement(false); setStatementIntro(undefined); }}
+        onClose={() => { setShowStatement(false); setStatementIntro(undefined); setReceiptData(undefined); }}
         partyName={displayName || loan.personName}
         loans={[loan]}
         transactions={loanTransactions}
         scope="loan"
         phone={(loan.personId ? persons.find((x) => x.id === loan.personId)?.phone : null) ?? null}
         intro={statementIntro}
+        receipt={receiptData}
       />
       {isLinkedLoan && (
         <SettleLinkedLoanModal

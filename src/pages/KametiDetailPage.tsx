@@ -13,10 +13,12 @@ import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { buildWhatsAppUrl } from '../lib/whatsappReminder';
 import { buildAppShareUrl } from '../lib/collaboration';
+import { KametiPayoutSlipSheet } from '../components/KametiPayoutSlipSheet';
 import {
   poolAmount, currentRound, roundDate, recipientForRound, hasPaid,
   paymentsForRound, slotKind, buildSchedule,
 } from '../lib/committeeMath';
+import type { CommitteeMember } from '../db';
 
 export function KametiDetailPage() {
   const { id = '' } = useParams();
@@ -50,6 +52,7 @@ export function KametiDetailPage() {
   const liveRound = committee ? currentRound(committee.startDate, committee.cadence, committee.totalRounds) : 1;
   const [viewRound, setViewRound] = useState<number | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [slip, setSlip] = useState<{ recipient: CommitteeMember; round: number; witnessUrl?: string } | null>(null);
   const round = viewRound ?? liveRound;
 
   if (status === 'loading' && !committee) {
@@ -221,7 +224,20 @@ export function KametiDetailPage() {
                 <p className="text-[15px] font-bold text-ink-900 truncate">{recipient.name}{recipient.isOrganizer ? '' : ''}</p>
               </div>
               <button
-                onClick={() => confirmPayout(recipient.id, !recipient.payoutReceivedAt)}
+                onClick={async () => {
+                  const next = !recipient.payoutReceivedAt;
+                  await confirmPayout(recipient.id, next);
+                  // On marking received, offer a premium payout slip (with the
+                  // witness link) to send the recipient. Un-marking does nothing.
+                  if (next) {
+                    let witnessUrl: string | undefined;
+                    try {
+                      const token = await ensureShareToken(committee.id);
+                      witnessUrl = `${buildAppShareUrl()}/kameti/witness/${token}`;
+                    } catch { /* offer the slip without the verify link */ }
+                    setSlip({ recipient, round, witnessUrl });
+                  }
+                }}
                 className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 ${recipient.payoutReceivedAt ? 'bg-receive-600 text-white' : 'bg-cream-card text-ink-900 border border-cream-border'}`}
               >
                 <Check size={12} strokeWidth={2.8} /> {recipient.payoutReceivedAt ? t('kameti_received') : t('kameti_mark_received')}
@@ -292,6 +308,18 @@ export function KametiDetailPage() {
           </button>
         </div>
       </div>
+
+      {slip && (
+        <KametiPayoutSlipSheet
+          open={!!slip}
+          onClose={() => setSlip(null)}
+          committee={committee}
+          recipient={slip.recipient}
+          round={slip.round}
+          payments={payments}
+          witnessUrl={slip.witnessUrl}
+        />
+      )}
     </main>
   );
 }

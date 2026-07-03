@@ -10,6 +10,8 @@ import {
   type WrapStats,
 } from '../lib/monthlyWrap';
 import { formatMoney } from '../lib/constants';
+import { generateWrapCard } from '../lib/wrapCard';
+import { shareStatementFile } from '../lib/shareStatement';
 import type { Currency } from '../db';
 
 // Spotify-Wrapped-style end-of-month summary. Triggers on app boot:
@@ -23,6 +25,8 @@ export function MonthlyWrapModal() {
   const user = useSupabaseAuthStore((s) => s.user);
   const [open, setOpen] = useState(false);
   const [stats, setStats] = useState<WrapStats | null>(null);
+  const [includeTotals, setIncludeTotals] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     if (!user?.id || transactions.length === 0) return;
@@ -46,30 +50,23 @@ export function MonthlyWrapModal() {
     if (stats) markWrapShown(stats.monthKey);
   };
 
+  // Share the Wrapped as a portrait IMAGE card (WhatsApp Status shaped) so it
+  // reaches non-users. Exact totals only ride along when the user opts in.
   const handleShare = async () => {
-    if (!stats) return;
-    const text = buildShareText(stats);
-    // The Web Share API is optional on Navigator. We avoid `'share' in
-    // navigator` because TS narrows the else branch to `never` once that
-    // predicate is true. Casting to a permissive shape keeps both paths
-    // typeable without losing runtime correctness.
-    const nav = typeof navigator === 'undefined'
-      ? null
-      : (navigator as Navigator & {
-          share?: (data: { text: string; title?: string }) => Promise<void>;
-        });
-    if (nav?.share) {
-      try {
-        await nav.share({ text, title: 'My Hisaab Wrap' });
-      } catch {
-        // User cancelled or share failed silently — fine.
-      }
-    } else if (nav?.clipboard) {
-      try {
-        await nav.clipboard.writeText(text);
-      } catch {
-        // Clipboard blocked — show nothing extra.
-      }
+    if (!stats || sharing) return;
+    setSharing(true);
+    try {
+      const { blob, filename } = await generateWrapCard(stats, { showTotals: includeTotals });
+      await shareStatementFile({
+        blob,
+        filename,
+        title: `My ${stats.monthLabel} Hisaab Wrap`,
+        text: `My ${stats.monthLabel} — tracked with Hisaab`,
+      });
+    } catch {
+      // Share cancelled / failed silently — fine.
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -184,12 +181,24 @@ export function MonthlyWrapModal() {
           )}
         </div>
 
+        {/* Privacy: default to "proud numbers"; exact totals are opt-in. */}
+        <label className="flex items-center justify-between rounded-2xl bg-cream-card border border-cream-border px-4 py-3 cursor-pointer">
+          <span className="text-[12.5px] font-semibold text-ink-800">Include exact totals on the card</span>
+          <input
+            type="checkbox"
+            checked={includeTotals}
+            onChange={(e) => setIncludeTotals(e.target.checked)}
+            className="w-4 h-4 accent-accent-600"
+          />
+        </label>
+
         <div className="flex gap-2">
           <button
             onClick={handleShare}
-            className="cta-secondary flex-1 flex items-center justify-center gap-1.5"
+            disabled={sharing}
+            className="cta-secondary flex-1 flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
-            <Share2 size={12} /> Share
+            <Share2 size={12} /> {sharing ? 'Preparing…' : 'Share card'}
           </button>
           <button onClick={handleClose} className="cta-primary flex-1">
             See you next month
@@ -223,16 +232,3 @@ function StatCard({ label, value, tone }: StatCardProps) {
   );
 }
 
-function buildShareText(stats: WrapStats): string {
-  const lines = [
-    `My ${stats.monthLabel} Hisaab Wrap ✨`,
-    '',
-    `Spent: ${formatMoney(stats.totalSpent, stats.primaryCurrency)}`,
-    `Earned: ${formatMoney(stats.totalIncome, stats.primaryCurrency)}`,
-  ];
-  if (stats.topCategories[0]) {
-    lines.push(`Biggest category: ${stats.topCategories[0].category} (${stats.topCategories[0].share.toFixed(0)}%)`);
-  }
-  lines.push('', 'Tracked with Hisaab.');
-  return lines.join('\n');
-}

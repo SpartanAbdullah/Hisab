@@ -256,6 +256,45 @@ const S = {
   soa_greet_salaam: { ur: "Salaam", en: "Salaam" },
   soa_greet_dear: { ur: "Dear", en: "Dear" },
   soa_greet_none: { ur: "None", en: "None" },
+
+  // Payment-received receipt — a warm acknowledgement sent back to the payer.
+  rcpt_title: { ur: "Payment mil gayi", en: "Payment received" },
+  rcpt_nudge_intro: {
+    ur: "Payment mil gayi. {name} ko receipt bhejein?",
+    en: "Payment received. Send {name} a receipt?",
+  },
+  rcpt_toggle_receipt: { ur: "Receipt", en: "Receipt" },
+  rcpt_toggle_statement: { ur: "Statement", en: "Statement" },
+  rcpt_received: { ur: "Mil gaye", en: "Received" },
+  rcpt_thanks_short: { ur: "Shukriya — record ho gaya.", en: "Thanks — recorded." },
+  rcpt_settled_short: { ur: "Ab hisaab barabar.", en: "All settled now." },
+  rcpt_remaining_short: { ur: "Baqi {amount}", en: "Remaining {amount}" },
+
+  // Group settle-up sheet — the statement, for splits.
+  gsu_title: { ur: "Hisaab barabar karein", en: "Settle up" },
+  gsu_cta: { ur: "Settle-up share karein", en: "Share settle-up" },
+  gsu_intro: {
+    ur: "Har banday ko WhatsApp par bhejein — kis ne kya dena hai ya lena hai. Woh Hisaab par ho ya na ho.",
+    en: "Send each person exactly what they owe or get back — over WhatsApp, even if they're not on Hisaab.",
+  },
+  gsu_for_member: { ur: "Kis ke liye card", en: "Send card for" },
+  gsu_send_card: { ur: "WhatsApp card", en: "WhatsApp card" },
+  gsu_full_plan_pdf: { ur: "Poora plan (PDF)", en: "Full plan (PDF)" },
+  gsu_you_receive: { ur: "Aap ko total {amount} milega", en: "You'll receive {amount} overall" },
+  gsu_you_pay: { ur: "Aap ko total {amount} dena hai", en: "You need to pay {amount} overall" },
+  gsu_settled: { ur: "Aap ka hisaab barabar hai", en: "You're all settled up" },
+  gsu_pick_hint: { ur: "Number save nahi — WhatsApp mein chunna hoga.", en: "No number saved — you'll pick them in WhatsApp." },
+
+  // Kameti payout slip.
+  kslip_title: { ur: "Kameti payout slip", en: "Kameti payout slip" },
+  kslip_pdf: { ur: "Slip bhejein (PDF)", en: "Send slip (PDF)" },
+  kslip_received: { ur: "Payout", en: "Payout" },
+  kslip_received_line: {
+    ur: "Aap ko {amount} mile — Round {r} of {n}.",
+    en: "You received {amount} — Round {r} of {n}.",
+  },
+  kslip_intro: { ur: "{name} ne Round {r} ka payout liya.", en: "{name} took the Round {r} payout." },
+  kslip_verify: { ur: "Live verify karein", en: "Verify live" },
   reminder_duration_fallback: { ur: "earlier", en: "earlier" },
   reminder_duration_today: { ur: "Aaj", en: "today" },
   reminder_duration_yesterday: { ur: "1 din pehlay", en: "1 day ago" },

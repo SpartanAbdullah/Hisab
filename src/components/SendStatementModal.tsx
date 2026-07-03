@@ -3,11 +3,13 @@ import { FileText, Copy, MessageCircle, CheckCircle2 } from 'lucide-react';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
 import { useT } from '../lib/i18n';
+import { formatMoney } from '../lib/constants';
 import { buildStatement } from '../lib/statementOfAccount';
 import { renderStatementText, netBalanceLabel, greetingLine, type GreetingStyle } from '../lib/statementText';
 import { generateStatementPdf } from '../lib/statementPdf';
 import { shareStatementFile } from '../lib/shareStatement';
 import { buildWhatsAppUrl, hasWhatsAppNumber } from '../lib/whatsappReminder';
+import { buildReceiptText } from '../lib/receiptText';
 import type { Loan, Transaction } from '../db';
 
 interface Props {
@@ -22,6 +24,9 @@ interface Props {
   refCode?: string;
   // Friendly lead-in shown at the top — used by the post-repayment nudge.
   intro?: string;
+  // When present, the sheet defaults to a "payment received" receipt (with a
+  // toggle back to the full statement). Set post-repayment on `given` loans.
+  receipt?: { receivedAmount: number; currency: string; remaining: number | null; date: string };
 }
 
 function copyWithFallback(text: string): Promise<void> {
@@ -50,19 +55,27 @@ function copyWithTextarea(text: string): Promise<void> {
 }
 
 export function SendStatementModal({
-  open, onClose, partyName, loans, transactions, scope, phone = null, fromName, refCode, intro,
+  open, onClose, partyName, loans, transactions, scope, phone = null, fromName, refCode, intro, receipt,
 }: Props) {
   const t = useT();
   const toast = useToast();
   const [preparing, setPreparing] = useState(false);
   const [copying, setCopying] = useState(false);
   const [greetingStyle, setGreetingStyle] = useState<GreetingStyle>('hello');
+  // 'receipt' = a warm "payment received" acknowledgement; 'statement' = the
+  // full ledger. Defaults to receipt when a payment just arrived.
+  const [mode, setMode] = useState<'statement' | 'receipt'>('statement');
   // Freeze the "as of" instant when the sheet opens so every artefact (PDF,
   // text, preview) reports the same generation time.
   const [asOf, setAsOf] = useState('');
 
   useEffect(() => {
-    if (open) setAsOf(new Date().toISOString());
+    if (open) {
+      setAsOf(new Date().toISOString());
+      setMode(receipt ? 'receipt' : 'statement');
+    }
+    // `receipt` is read only at open-time to choose the default mode.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // The user's own name (set at onboarding, used across groups/committees)
@@ -76,10 +89,16 @@ export function SendStatementModal({
   }, [asOf, partyName, loans, transactions, scope]);
 
   const greeting = useMemo(() => greetingLine(greetingStyle, partyName), [greetingStyle, partyName]);
-  const message = useMemo(
+  const receiptText = useMemo(
+    () => (receipt ? buildReceiptText({ ...receipt, fromName: preparedName, greeting }) : null),
+    [receipt, preparedName, greeting],
+  );
+  const statementMessage = useMemo(
     () => (statement ? renderStatementText(statement, { greeting, fromName: preparedName }) : ''),
     [statement, greeting, preparedName],
   );
+  const message = mode === 'receipt' && receiptText ? receiptText.message : statementMessage;
+  const hasContent = mode === 'receipt' ? !!receiptText : !!statement?.hasActivity;
   const whatsappUrl = buildWhatsAppUrl(phone, message);
   const knownNumber = hasWhatsAppNumber(phone);
   const greetLabels: Record<GreetingStyle, string> = {
@@ -130,33 +149,36 @@ export function SendStatementModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={t('soa_title')}
+      title={mode === 'receipt' ? t('rcpt_title') : t('soa_title')}
       footer={
         <div className="flex flex-col gap-2.5">
-          <button
-            onClick={handleSendPdf}
-            disabled={preparing || !statement?.hasActivity}
-            className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40"
-            style={{ background: '#0B0E2A' }}
-          >
-            <FileText size={16} strokeWidth={2.2} /> {preparing ? t('soa_preparing') : t('soa_send_pdf')}
-          </button>
+          {/* PDF is a statement-mode action; the receipt is a quick text send. */}
+          {mode === 'statement' && (
+            <button
+              onClick={handleSendPdf}
+              disabled={preparing || !hasContent}
+              className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40"
+              style={{ background: '#0B0E2A' }}
+            >
+              <FileText size={16} strokeWidth={2.2} /> {preparing ? t('soa_preparing') : t('soa_send_pdf')}
+            </button>
+          )}
           <div className="flex gap-2.5">
             {/* Text-only WhatsApp ping — opens the chat when we know the number,
-                the picker otherwise. Carries the plain-text statement body. */}
+                the picker otherwise. Carries the receipt / statement body. */}
             <a
               href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => toast.show({ type: 'success', title: t('reminder_wa_opening') })}
-              className={`flex-1 rounded-2xl py-3 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform ${statement?.hasActivity ? '' : 'pointer-events-none opacity-40'}`}
+              className={`flex-1 rounded-2xl py-3 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform ${hasContent ? '' : 'pointer-events-none opacity-40'}`}
               style={{ background: '#1FA855', color: '#fff' }}
             >
               <MessageCircle size={14} /> {t('soa_whatsapp_text')}
             </a>
             <button
               onClick={handleCopy}
-              disabled={copying || !statement?.hasActivity}
+              disabled={copying || !hasContent}
               className="px-4 rounded-2xl py-3 text-[13px] font-bold bg-cream-soft text-ink-700 flex items-center justify-center gap-2 active:bg-cream-border disabled:opacity-30"
             >
               <Copy size={14} /> {copying ? t('quick_processing') : t('soa_copy')}
@@ -173,8 +195,36 @@ export function SendStatementModal({
           </div>
         )}
 
-        {/* Per-currency net position — the headline of the statement. */}
-        {statement && statement.sections.length > 0 ? (
+        {/* Receipt ⇄ Statement toggle — only when a payment just arrived. */}
+        {receipt && (
+          <div className="grid grid-cols-2 gap-2">
+            {(['receipt', 'statement'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={`py-2 rounded-xl text-[12px] font-bold border transition-all active:scale-95 ${mode === m ? 'bg-ink-900 text-white border-ink-900' : 'bg-cream-card text-ink-500 border-cream-border'}`}
+              >
+                {m === 'receipt' ? t('rcpt_toggle_receipt') : t('rcpt_toggle_statement')}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Headline — received amount (receipt) or per-currency net (statement). */}
+        {mode === 'receipt' && receipt ? (
+          <div className="rounded-2xl p-4 border bg-receive-50/60 border-receive-100/70">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-receive-text">{t('rcpt_received')}</p>
+            <p className="text-[18px] font-extrabold text-ink-900 mt-1 tabular-nums">{formatMoney(receipt.receivedAmount, receipt.currency)}</p>
+            <p className="text-[11px] text-ink-500 mt-1">
+              {receipt.remaining == null
+                ? t('rcpt_thanks_short')
+                : receipt.remaining <= 0.005
+                ? t('rcpt_settled_short')
+                : t('rcpt_remaining_short').replace('{amount}', formatMoney(receipt.remaining, receipt.currency))}
+            </p>
+          </div>
+        ) : statement && statement.sections.length > 0 ? (
           <div className="space-y-2">
             {statement.sections.map((section) => {
               const positive = section.closing > 0.005;
@@ -205,7 +255,7 @@ export function SendStatementModal({
 
         {/* Greeting selector — the statement opens with this line and signs
             off with your name, so it reads as a message, not an export. */}
-        {statement?.hasActivity && (
+        {hasContent && (
           <div>
             <p className="form-label">{t('soa_greeting_label')}</p>
             <div className="grid grid-cols-4 gap-2">
@@ -226,7 +276,7 @@ export function SendStatementModal({
         )}
 
         {/* Text preview — mirrors what the WhatsApp ping / copy will contain. */}
-        {statement?.hasActivity && (
+        {hasContent && (
           <div>
             <p className="form-label">{t('soa_preview')}</p>
             <div className="rounded-2xl bg-cream-soft border border-cream-hairline p-4 max-h-56 overflow-auto">

@@ -19,6 +19,7 @@
 import { payOrReceiveLabel } from './statementText';
 import { trimSection } from './statementOfAccount';
 import type { Statement, StatementLine, StatementSection } from './statementOfAccount';
+import { renderHtmlToA4Pdf } from './renderNodeToImage';
 
 // Frame / neutrals
 const NAVY = '#0B0E2A';
@@ -303,13 +304,6 @@ export function renderStatementInnerHtml(statement: Statement, opts: StatementPd
   `;
 }
 
-function buildNode(statement: Statement, opts: StatementPdfOptions): HTMLElement {
-  const el = document.createElement('div');
-  el.style.cssText = `position:fixed;left:-10000px;top:0;pointer-events:none;${STATEMENT_NODE_STYLE}`;
-  el.innerHTML = renderStatementInnerHtml(statement, opts);
-  return el;
-}
-
 function sanitizeFilename(name: string): string {
   return name.replace(/[^\w.-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'contact';
 }
@@ -323,60 +317,15 @@ export async function generateStatementPdf(
   statement: Statement,
   opts: StatementPdfOptions = {},
 ): Promise<StatementPdfResult> {
-  const [{ domToPng }, jspdfModule] = await Promise.all([
-    import('modern-screenshot'),
-    import('jspdf'),
-  ]);
-  const JsPDF = jspdfModule.jsPDF;
-
-  const node = buildNode(statement, opts);
-  document.body.appendChild(node);
-
-  let dataUrl: string;
-  let cssWidth: number;
-  let cssHeight: number;
-  try {
-    // Two paints so layout + web fonts settle before the snapshot.
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const rect = node.getBoundingClientRect();
-    cssWidth = rect.width || PAGE_W;
-    cssHeight = rect.height || PAGE_H;
-    dataUrl = await domToPng(node, {
-      scale: 2,
-      backgroundColor: '#ffffff',
-      width: cssWidth,
-      height: cssHeight,
-    });
-  } finally {
-    node.remove();
-  }
-
-  // A4 portrait in points.
-  const pageW = 595.28;
-  const pageH = 841.89;
-  const pdf = new JsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
-
-  // Fit to page width; if that overflows the page height (a very long ledger),
-  // clamp to height so it always stays a single page.
-  const ratio = cssHeight / cssWidth;
-  let drawW = pageW;
-  let drawH = pageW * ratio;
-  if (drawH > pageH) {
-    drawH = pageH;
-    drawW = pageH / ratio;
-  }
-  const offsetX = (pageW - drawW) / 2;
-  pdf.addImage(dataUrl, 'PNG', offsetX, 0, drawW, drawH, undefined, 'FAST');
-
-  // Document metadata — a small but real "this is an issued document" signal.
-  pdf.setProperties({
+  const html = renderStatementInnerHtml(statement, opts);
+  const blob = await renderHtmlToA4Pdf(html, {
+    width: PAGE_W,
+    nodeStyle: STATEMENT_NODE_STYLE, // carries min-height so the footer pins to the page bottom
+    scale: 2,
     title: `Statement of account — ${statement.partyName}`,
     subject: `Statement of account as of ${fmtDate(statement.asOf)}`,
     author: opts.fromName || 'Hisaab',
-    creator: 'Hisaab',
   });
-
-  const blob = pdf.output('blob') as Blob;
   const datePart = new Date(statement.asOf).toISOString().slice(0, 10);
   const filename = `Statement-${sanitizeFilename(statement.partyName)}-${datePart}.pdf`;
   return { blob, filename };

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -22,8 +22,9 @@ interface Props {
   lockAmount?: boolean;
   installmentNumber?: number;
   // Fired once, after a repayment has committed and the user dismisses the
-  // confirmation. Lets the host offer to send an updated statement.
-  onRepaid?: () => void;
+  // confirmation. Carries the amount just paid so the host can build a receipt
+  // / offer to send an updated statement.
+  onRepaid?: (info?: { amount: number }) => void;
 }
 
 export function RepaymentModal({
@@ -42,6 +43,8 @@ export function RepaymentModal({
   const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
+  // Captured at commit so onRepaid can report the amount after the fields reset.
+  const lastAmountRef = useRef(0);
 
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
@@ -166,6 +169,7 @@ export function RepaymentModal({
       tone: 'warning',
     });
     if (!ok) return;
+    lastAmountRef.current = parsedAmount;
 
     setSaving(true);
     try {
@@ -459,9 +463,9 @@ export function RepaymentModal({
         onClose={() => {
           setShowConfirmation(false);
           onClose();
-          // Nudge the statement send only after a successful commit — this
-          // sheet is shown solely on the success path.
-          onRepaid?.();
+          // Nudge the statement/receipt send only after a successful commit —
+          // this sheet is shown solely on the success path.
+          onRepaid?.({ amount: lastAmountRef.current });
         }}
         title={confirmData.title}
         description={confirmData.description}
