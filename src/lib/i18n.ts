@@ -995,6 +995,93 @@ const S = {
     ur: "Koi ads nahi · Aap ka data private · Hamesha free shuru",
     en: "No ads · Your data stays private · Free to start",
   },
+  // ── Auth: rotating "what does this app do" headline ──
+  // One static prefix + a colored feature word that swaps every few seconds.
+  // The sr-only sentence gives assistive tech one coherent phrase, not a flicker.
+  auth_headline_prefix: { ur: "Hisaab sambhalta hai aap ke", en: "Hisaab helps you handle" },
+  auth_headline_sr: {
+    ur: "Hisaab sambhalta hai aap ke qarz, kharche, kameti, splits aur bachat.",
+    en: "Hisaab helps you handle loans, expenses, committees, splits and savings.",
+  },
+  auth_word_loans: { ur: "Qarz", en: "Loans" },
+  auth_word_expenses: { ur: "Kharche", en: "Expenses" },
+  auth_word_committees: { ur: "Kameti", en: "Committees" },
+  auth_word_splits: { ur: "Splits", en: "Splits" },
+  auth_word_savings: { ur: "Bachat", en: "Savings" },
+  // ── Auth: action-oriented CTA copy ──
+  auth_cta_signup: { ur: "Mera Free Account banao", en: "Create my Free Account" },
+  auth_cta_login: { ur: "Mujhe log in karao", en: "Log me in" },
+  auth_cta_reset: { ur: "Reset link email karo", en: "Email me a reset link" },
+  auth_reset_intro: {
+    ur: "Apna email daalein, hum reset link bhej denge.",
+    en: "Enter your email and we'll send a link to reset your password.",
+  },
+  auth_first_action_hint: {
+    ur: "Naye hain? Free account banayein — bas ek minute.",
+    en: "New here? Create your free account — it takes a minute.",
+  },
+  // ── Auth: pinned field labels + password success ──
+  auth_label_email: { ur: "Email", en: "Email" },
+  auth_label_password: { ur: "Password", en: "Password" },
+  pw_check_done: { ur: "Password mazboot hai", en: "Strong password" },
+  // ── Auth: "detour, not dead-end" error copy + inline recovery actions ──
+  err_invalid_credentials: {
+    ur: "Yeh email aur password match nahi karte. Dobara koshish karein ya reset karein?",
+    en: "That email and password don't match. Want to try again, or reset it?",
+  },
+  err_invalid_credentials_action: { ur: "Password reset karein", en: "Reset password" },
+  err_already_registered: {
+    ur: "Is email par account pehle se hai. Login karein?",
+    en: "You've already got an account with this email. Log in instead?",
+  },
+  err_already_registered_action: { ur: "Login karein", en: "Log in instead" },
+  err_email_not_confirmed: {
+    ur: "Bas thori si kasar — email confirm karni hai. Link dobara bhejein?",
+    en: "Almost there — your email just needs confirming. Want the link again?",
+  },
+  err_email_not_confirmed_action: { ur: "Link dobara bhejein", en: "Resend confirmation" },
+  err_password_short: {
+    ur: "Password thora lamba karein — 8 ya zyada characters.",
+    en: "Just make the password a little longer — 8 characters or more.",
+  },
+  err_password_weak: {
+    ur: "Ek harf aur ek number daal kar password mazboot karein.",
+    en: "Add a letter and a number to make this password stronger.",
+  },
+  err_password_action: { ur: "Password theek karein", en: "Fix password" },
+  err_security_throttle: {
+    ur: "Bas ek lamha — thori jaldi ho gayi. Kuch second baad try karein.",
+    en: "Just a moment — that was a bit quick. Try again in a few seconds.",
+  },
+  err_rate_limit: {
+    ur: "Thori der ruk jayein — ek minute baad dobara koshish karein.",
+    en: "Whoa, that's a lot of tries. Take a short breather and try again in a minute.",
+  },
+  err_email_rate_limit: {
+    ur: "Kuch emails bhej chuke hain — inbox dekhein ya ek minute baad try karein.",
+    en: "We've sent a few emails already — check your inbox, or try again in a minute.",
+  },
+  err_email_rate_limit_action: { ur: "Inbox dekhein", en: "Check inbox" },
+  err_bad_email: {
+    ur: "Email thora ghalat lag raha hai — zara check karein?",
+    en: "That email looks a little off — mind checking it?",
+  },
+  err_bad_email_action: { ur: "Email theek karein", en: "Edit email" },
+  err_network: {
+    ur: "Abhi Hisaab tak nahi pohanch sake. Internet check kar ke dobara try karein.",
+    en: "Couldn't reach Hisaab just now. Check your connection and try again.",
+  },
+  err_deleted_account: {
+    ur: "Yeh account delete ho chuka hai. Aap naya account bana sakte hain.",
+    en: "This account was deleted. You can start fresh with a new one.",
+  },
+  err_deleted_account_action: { ur: "Naya account banayein", en: "Create a new account" },
+  err_generic: {
+    ur: "Kuch masla ho gaya. Ek baar phir koshish karein.",
+    en: "Something didn't go through. Give it another try.",
+  },
+  err_action_try_again: { ur: "Dobara koshish karein", en: "Try again" },
+  err_action_dismiss: { ur: "Theek hai", en: "Got it" },
   // Live password checklist (signup)
   pw_check_length: { ur: "Kam se kam 8 characters", en: "At least 8 characters" },
   pw_check_letter: { ur: "Ek harf (a–z)", en: "A letter (a–z)" },
@@ -2042,6 +2129,8 @@ const S = {
 } as const;
 
 type Key = keyof typeof S;
+// Public alias so non-component modules (e.g. authErrorMap) can type i18n keys.
+export type I18nKey = Key;
 
 interface I18nState {
   lang: Language;

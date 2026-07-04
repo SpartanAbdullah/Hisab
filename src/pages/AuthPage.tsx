@@ -1,11 +1,58 @@
-import { useState } from 'react';
-import { Wallet, Mail, Lock, ArrowRight, Eye, EyeOff, Check, MailCheck } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Wallet, Mail, Lock, ArrowRight, Eye, EyeOff, Check, MailCheck, Sparkles } from 'lucide-react';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { supabase } from '../lib/supabase';
 import { useT, useI18nStore } from '../lib/i18n';
+import type { I18nKey } from '../lib/i18n';
 import { Globe } from 'lucide-react';
 import { validatePassword, passwordChecks } from '../lib/passwordPolicy';
 import { isValidEmail } from '../lib/validateEmail';
+import { mapAuthError, type Detour } from '../lib/authErrorMap';
+
+// ── Rotating feature word ──────────────────────────────────────────────
+// One colored word per real app feature. Colors are the app's own semantic
+// palette (violet=brand, coral=out, gold=kameti, blue=shared, green=in) but
+// BRIGHTENED to clear WCAG AA on the navy hero (#11142F): every hex below is
+// ≥6:1 as white-adjacent text on navy. Hardcoded inline because the hero is
+// navy in both light and dark themes, so no token/dark variant is needed.
+const HEADLINE_WORDS: { key: I18nKey; color: string }[] = [
+  { key: 'auth_word_loans', color: '#9E86FF' },      // 6.27:1
+  { key: 'auth_word_expenses', color: '#F2967C' },   // 8.09:1
+  { key: 'auth_word_committees', color: '#E8C063' }, // 10.43:1
+  { key: 'auth_word_splits', color: '#6B92F5' },     // 6.06:1
+  { key: 'auth_word_savings', color: '#3FD7A6' },    // 9.86:1
+];
+
+function RotatingHeadline() {
+  const t = useT();
+  const [i, setI] = useState(0);
+
+  useEffect(() => {
+    // Reduced-motion: never start the cycle — freeze on the first (flagship) word.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const id = window.setInterval(() => {
+      // Pause while the tab/app is backgrounded (battery on the Capacitor wrapper).
+      if (!document.hidden) setI(v => (v + 1) % HEADLINE_WORDS.length);
+    }, 2600);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const w = HEADLINE_WORDS[i];
+  return (
+    <div className="mt-3 text-center">
+      {/* One stable sentence for assistive tech, instead of a flicker of words. */}
+      <span className="sr-only">{t('auth_headline_sr')}</span>
+      <p aria-hidden className="text-white/55 text-[13px] tracking-wide">{t('auth_headline_prefix')}</p>
+      {/* Fixed height so the swap never shifts the layout; overflow clips the rise. */}
+      <div aria-hidden className="h-8 flex items-center justify-center overflow-hidden">
+        <span key={i} className="animate-word-morph text-[22px] font-bold tracking-tight leading-none"
+          style={{ color: w.color }}>
+          {t(w.key)}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export function AuthPage() {
   const t = useT();
@@ -16,7 +63,11 @@ export function AuthPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+  // A raw Supabase error is never rendered directly — it's mapped to a Detour.
+  const [detour, setDetour] = useState<Detour | null>(null);
+  // Reset flow uses an enumeration-safe "if an account exists…" message that is
+  // deliberately kept OUT of the error map and shown as a calm confirmation.
+  const [resetMsg, setResetMsg] = useState('');
   // After a successful signup we swap the form for a prominent "check your
   // email" screen instead of a faint message line.
   const [signupSent, setSignupSent] = useState(false);
@@ -24,7 +75,20 @@ export function AuthPage() {
   const [resending, setResending] = useState(false);
   const [resentMsg, setResentMsg] = useState('');
 
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
   const checks = passwordChecks(password);
+  const pwStrong = mode === 'signup' && checks.length && checks.letter && checks.number;
+  const emailErr = detour?.field === 'email';
+  const passwordErr = detour?.field === 'password';
+
+  // Surface externally-set store errors (e.g. a deleted-account session blocked
+  // at app boot) through the same detour mapper. Local call failures set the
+  // detour directly in handleSubmit, so this is only a safety net.
+  useEffect(() => {
+    if (error) setDetour(mapAuthError(error));
+  }, [error]);
 
   const resendVerification = async () => {
     if (!sentEmail) return;
@@ -38,12 +102,38 @@ export function AuthPage() {
     }
   };
 
+  // Resend triggered from an "email not confirmed" detour — lands the user in
+  // the familiar "check your email" screen on success.
+  const resendFromError = async () => {
+    if (!email || resending) return;
+    setResending(true);
+    try {
+      const { error: resendError } = await supabase.auth.resend({ type: 'signup', email });
+      if (resendError) {
+        setDetour(mapAuthError(resendError.message));
+      } else {
+        setSentEmail(email);
+        setSignupSent(true);
+        setDetour(null);
+      }
+    } finally {
+      setResending(false);
+    }
+  };
+
   const backToLogin = () => {
     setSignupSent(false);
     setMode('login');
     setPassword('');
-    setMessage('');
+    setDetour(null);
+    setResetMsg('');
     setResentMsg('');
+  };
+
+  const switchMode = (next: 'login' | 'signup' | 'reset') => {
+    setMode(next);
+    setDetour(null);
+    setResetMsg('');
   };
 
   const handleSubmit = async () => {
@@ -54,12 +144,18 @@ export function AuthPage() {
     if (mode === 'signup') {
       const policy = validatePassword(password);
       if (!policy.valid) {
-        setMessage(policy.code === 'too_short' ? t('password_too_short') : t('password_missing_complexity'));
+        setDetour({
+          msgKey: policy.code === 'too_short' ? 'err_password_short' : 'err_password_weak',
+          actionKey: 'err_password_action',
+          action: 'fixPassword',
+          field: 'password',
+        });
         return;
       }
     }
     setLoading(true);
-    setMessage('');
+    setDetour(null);
+    setResetMsg('');
 
     if (mode === 'signup') {
       const result = await signUp(email, password);
@@ -67,19 +163,66 @@ export function AuthPage() {
         setSentEmail(email);
         setSignupSent(true);
       } else {
-        setMessage(result.message);
+        setDetour(mapAuthError(result.message));
       }
     } else if (mode === 'reset') {
       const result = await requestPasswordReset(email);
-      setMessage(result.message);
+      if (result.success) setResetMsg(result.message);
+      else setDetour(mapAuthError(result.message));
     } else {
       const result = await signIn(email, password);
-      if (!result.success) setMessage(result.message);
+      if (!result.success) setDetour(mapAuthError(result.message));
     }
     setLoading(false);
   };
 
-  const inputClass = "w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-4 pl-12 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-white/25 focus:border-white/35 text-[15px] tracking-tight backdrop-blur-sm transition-all";
+  // An error's inline action re-routes the user instead of leaving them stuck.
+  const runDetour = () => {
+    if (!detour) return;
+    switch (detour.action) {
+      case 'reset':
+        switchMode('reset'); // keep the typed email prefilled
+        break;
+      case 'login':
+        setMode('login');
+        setPassword('');
+        setDetour(null);
+        setResetMsg('');
+        setTimeout(() => passwordRef.current?.focus(), 0);
+        break;
+      case 'resend':
+        void resendFromError();
+        break;
+      case 'fixPassword':
+        setDetour(null);
+        passwordRef.current?.focus();
+        break;
+      case 'editEmail':
+        setDetour(null);
+        emailRef.current?.focus();
+        emailRef.current?.select();
+        break;
+      case 'newAccount':
+        setMode('signup');
+        setEmail('');
+        setPassword('');
+        setDetour(null);
+        setResetMsg('');
+        break;
+      case 'retry':
+        setDetour(null);
+        void handleSubmit();
+        break;
+      case 'dismiss':
+      default:
+        setDetour(null);
+        break;
+    }
+  };
+
+  const inputBase = 'auth-input peer w-full bg-white/10 border rounded-2xl px-4 pl-12 pt-6 pb-2 text-white text-[15px] tracking-tight backdrop-blur-sm transition-all focus:outline-none focus:ring-2';
+  const inputOk = 'border-white/20 focus:ring-accent-500/40 focus:border-accent-500/50';
+  const inputBad = 'border-pay-600/70 focus:ring-pay-600/40 focus:border-pay-600/70';
 
   return (
     <div className="min-h-dvh relative overflow-hidden bg-navy-bloom">
@@ -124,13 +267,15 @@ export function AuthPage() {
 
       {!signupSent && (
       <div className="relative text-white flex flex-col min-h-dvh px-8">
-        {/* Logo */}
+        {/* Logo + living headline */}
         <div className="flex flex-col items-center pt-16 mb-8">
           <div className="w-16 h-16 rounded-3xl bg-white/10 flex items-center justify-center mb-4 backdrop-blur-sm border border-white/10">
             <Wallet size={28} strokeWidth={1.5} />
           </div>
           <h1 className="text-3xl font-bold tracking-tighter">Hisaab</h1>
-          <p className="text-white/55 text-[13px] mt-1 text-center max-w-[280px] leading-relaxed">{t('onboard_tagline')}</p>
+          {/* Rotating colored feature word — teaches "what does this app do?" in
+              the first few seconds, and pre-cues the violet action color. */}
+          <RotatingHeadline />
           {/* Trust line — the no-ads / privacy promise belongs on the very
               first screen, not hidden until after onboarding. */}
           <p className="text-white/40 text-[10.5px] mt-3 tracking-wide">{t('auth_trust')}</p>
@@ -139,32 +284,47 @@ export function AuthPage() {
         {/* Toggle */}
         {mode !== 'reset' && (
           <div className="flex bg-white/8 rounded-2xl p-1 mb-6 border border-white/10">
-            <button onClick={() => { setMode('login'); setMessage(''); }}
+            <button onClick={() => switchMode('login')}
               className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold transition-all ${mode === 'login' ? 'bg-white text-navy-900 shadow-md' : 'text-white/60'}`}>
               Login
             </button>
-            <button onClick={() => { setMode('signup'); setMessage(''); }}
+            <button onClick={() => switchMode('signup')}
               className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold transition-all ${mode === 'signup' ? 'bg-white text-navy-900 shadow-md' : 'text-white/60'}`}>
               Sign Up
             </button>
           </div>
         )}
 
+        {/* First-action teach — the blank login screen nudges a newcomer toward
+            creating an account instead of assuming they already have one. Kept
+            neutral (not violet) so it never competes with the one violet CTA. */}
+        {mode === 'login' && (
+          <button onClick={() => switchMode('signup')}
+            className="w-full -mt-2 mb-5 flex items-center justify-center gap-2 rounded-2xl bg-white/[0.06] border border-white/10 py-3 px-4 text-[12px] text-white/70 active:scale-[0.98] transition-all backdrop-blur-sm">
+            <Sparkles size={13} className="text-accent-100 shrink-0" />
+            <span>{t('auth_first_action_hint')}</span>
+          </button>
+        )}
+
         {mode === 'reset' && (
           <p className="text-white/70 text-[13px] mb-4 text-center leading-relaxed">
-            Enter your email and we'll send you a link to reset your password.
+            {t('auth_reset_intro')}
           </p>
         )}
 
         {/* Form */}
         <div className="space-y-4">
-          <div className="relative">
+          <div className={`relative ${emailErr ? 'animate-shake' : ''}`}>
             <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('settings_email')}
-              className={inputClass + ' pr-11'} autoFocus />
-            {/* Green tick the moment the email format looks valid. */}
+            <input id="auth-email" ref={emailRef} type="email" inputMode="email" autoComplete="email"
+              value={email} onChange={e => { setEmail(e.target.value); if (detour) setDetour(null); }}
+              placeholder=" " aria-invalid={emailErr || undefined}
+              aria-describedby={detour ? 'auth-error' : undefined}
+              className={`${inputBase} pr-11 ${emailErr ? inputBad : inputOk}`} autoFocus />
+            <label htmlFor="auth-email" className="auth-float-label">{t('auth_label_email')}</label>
+            {/* Green tick the moment the email format looks valid — confirm, don't just flag. */}
             {isValidEmail(email) && (
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-receive-600 flex items-center justify-center animate-scale-in">
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-[#12B48C] flex items-center justify-center animate-scale-in">
                 <Check size={12} strokeWidth={3.2} className="text-white" />
               </span>
             )}
@@ -172,29 +332,51 @@ export function AuthPage() {
 
           {mode !== 'reset' && (
             <>
-              <div className="relative">
-                <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
-                <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('settings_password')}
-                  className={inputClass + ' pr-12'} onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
-                <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30">
+              <div className={`relative ${passwordErr ? 'animate-shake' : ''}`}>
+                {/* Leading icon crossfades to a green check once the password is strong. */}
+                {pwStrong ? (
+                  <Check size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#12B48C] animate-scale-in" strokeWidth={3} />
+                ) : (
+                  <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+                )}
+                <input id="auth-password" ref={passwordRef} type={showPassword ? 'text' : 'password'}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  value={password} onChange={e => { setPassword(e.target.value); if (detour) setDetour(null); }}
+                  placeholder=" " aria-invalid={passwordErr || undefined}
+                  aria-describedby={detour ? 'auth-error' : undefined}
+                  className={`${inputBase} pr-12 ${passwordErr ? inputBad : inputOk}`}
+                  onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+                <label htmlFor="auth-password" className="auth-float-label">{t('auth_label_password')}</label>
+                <button type="button" tabIndex={-1} onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
               {mode === 'signup' && (
-                <div className="space-y-1.5 pt-0.5">
-                  {([
-                    { ok: checks.length, label: t('pw_check_length') },
-                    { ok: checks.letter, label: t('pw_check_letter') },
-                    { ok: checks.number, label: t('pw_check_number') },
-                  ]).map((c, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-colors ${c.ok ? 'bg-receive-600 text-white' : 'bg-white/10 text-transparent border border-white/15'}`}>
-                        <Check size={10} strokeWidth={3.2} />
-                      </span>
-                      <span className={`text-[11.5px] transition-colors ${c.ok ? 'text-receive-50 font-medium' : 'text-white/45'}`}>{c.label}</span>
-                    </div>
-                  ))}
-                </div>
+                pwStrong ? (
+                  // All three rules met — collapse the checklist into one calm win.
+                  <div className="flex items-center gap-2 pt-0.5 animate-fade-in">
+                    <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 bg-[#12B48C] text-white">
+                      <Check size={10} strokeWidth={3.2} />
+                    </span>
+                    <span className="text-[11.5px] font-medium text-receive-50">{t('pw_check_done')}</span>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 pt-0.5">
+                    {([
+                      { ok: checks.length, label: t('pw_check_length') },
+                      { ok: checks.letter, label: t('pw_check_letter') },
+                      { ok: checks.number, label: t('pw_check_number') },
+                    ]).map((c, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-colors ${c.ok ? 'bg-receive-600 text-white' : 'bg-white/10 text-transparent border border-white/15'}`}>
+                          <Check size={10} strokeWidth={3.2} />
+                        </span>
+                        <span className={`text-[11.5px] transition-colors ${c.ok ? 'text-receive-50 font-medium' : 'text-white/45'}`}>{c.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
             </>
           )}
@@ -203,28 +385,40 @@ export function AuthPage() {
         {/* Forgot-password link (only on Login) */}
         {mode === 'login' && (
           <div className="text-right mt-2">
-            <button onClick={() => { setMode('reset'); setMessage(''); }}
+            <button onClick={() => switchMode('reset')}
               className="text-white/50 text-[11px] font-medium underline">
               Forgot password?
             </button>
           </div>
         )}
 
-        {/* Error / Message */}
-        {(error || message) && (
-          <p className={`text-[12px] mt-3 text-center font-medium ${error ? 'text-pay-50' : 'text-receive-50'}`}>
-            {error || message}
-          </p>
+        {/* Detour error — warm copy + a one-tap way forward, never a dead end. */}
+        {detour && (
+          <div id="auth-error" role="alert" className="mt-3 text-center animate-fade-in">
+            <p className="text-pay-50 text-[12.5px] font-medium leading-relaxed">{t(detour.msgKey)}</p>
+            <button onClick={runDetour} disabled={resending}
+              className="text-white text-[12.5px] font-semibold underline underline-offset-2 mt-1.5 min-h-[36px] disabled:opacity-50">
+              {t(detour.actionKey)}
+            </button>
+          </div>
         )}
 
-        {/* Submit */}
+        {/* Reset-request confirmation — a done action, not a maybe (enumeration-safe copy). */}
+        {resetMsg && (
+          <div role="status" className="mt-3 flex items-center justify-center gap-2 text-receive-50 text-[12.5px] font-medium animate-fade-in">
+            <MailCheck size={14} className="shrink-0" />
+            <span className="leading-relaxed">{resetMsg}</span>
+          </div>
+        )}
+
+        {/* Primary CTA — the single accent-violet action on the navy hero. */}
         <button onClick={handleSubmit} disabled={loading || !email || (mode !== 'reset' && !password)}
-          className="w-full mt-6 bg-white text-navy-900 rounded-2xl py-4 text-[14px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-30 shadow-lg shadow-white/10">
+          className="auth-cta w-full mt-6 rounded-2xl py-4 text-[15px] font-semibold text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] active:brightness-95 disabled:opacity-40 disabled:shadow-none bg-gradient-to-b from-accent-500 to-accent-600 shadow-lg shadow-accent-600/30">
           {loading ? (
-            <div className="w-5 h-5 border-2 border-navy-700 border-t-navy-900 rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
           ) : (
             <>
-              {mode === 'login' ? 'Login' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'}
+              {t(mode === 'login' ? 'auth_cta_login' : mode === 'signup' ? 'auth_cta_signup' : 'auth_cta_reset')}
               <ArrowRight size={16} />
             </>
           )}
@@ -235,17 +429,17 @@ export function AuthPage() {
           {mode === 'reset' ? (
             <>
               Remembered it?{' '}
-              <button onClick={() => { setMode('login'); setMessage(''); }} className="text-white/60 font-semibold underline">Back to Login</button>
+              <button onClick={() => switchMode('login')} className="text-white/60 font-semibold underline">Back to Login</button>
             </>
           ) : mode === 'login' ? (
             <>
               Don't have an account?{' '}
-              <button onClick={() => { setMode('signup'); setMessage(''); }} className="text-white/60 font-semibold underline">Sign Up</button>
+              <button onClick={() => switchMode('signup')} className="text-white/60 font-semibold underline">Sign Up</button>
             </>
           ) : (
             <>
               Already have an account?{' '}
-              <button onClick={() => { setMode('login'); setMessage(''); }} className="text-white/60 font-semibold underline">Login</button>
+              <button onClick={() => switchMode('login')} className="text-white/60 font-semibold underline">Login</button>
             </>
           )}
         </p>
