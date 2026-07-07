@@ -327,6 +327,12 @@ function AppContent() {
     );
   }
 
+  // Dev-only: ?loading-preview pins the loading screen so it can be styled
+  // and reviewed (it normally flashes by too fast). Dead code in prod builds.
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('loading-preview')) {
+    return <AppLoadingScreen />;
+  }
+
   if (authLoading || onboardingLoading) {
     return <AppLoadingScreen />;
   }

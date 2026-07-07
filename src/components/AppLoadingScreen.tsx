@@ -1,25 +1,57 @@
 import { useEffect, useState } from 'react';
-import { LockKeyhole, WalletCards } from 'lucide-react';
+import { LockKeyhole } from 'lucide-react';
+import { BrandMark } from './BrandMark';
 
-const LOADING_MESSAGES = [
-  'Loading awesomeness for you 🚀',
-  'Preparing your dashboard ✨',
-  'Balancing your Hisaab 🧮',
-  'Securing your data 🔐',
-  'Getting your groups ready 🤝',
-  'Almost there, money boss 😄',
-];
+// The loading hero: one big word typed out, held, deleted, then the next.
+// Everything Hisaab handles, in the brand green of the logo tile. English +
+// Roman-Urdu mix on purpose — same register as the rest of the app copy.
+const TYPE_WORDS = ['Loans', 'Expenses', 'Kameti', 'Splits', 'Savings', 'Sukoon'];
 
-export function AppLoadingScreen() {
-  const [messageIndex, setMessageIndex] = useState(0);
+const TYPE_MS = 85; // per character while typing
+const DELETE_MS = 45; // per character while deleting
+const HOLD_MS = 1300; // full word on screen
+const REDUCED_HOLD_MS = 1800; // word swap cadence without animation
+
+// Types the words one character at a time. Under prefers-reduced-motion the
+// full word just swaps on a timer — no letter churn. Every state change is
+// scheduled through a timeout so the effect body never sets state directly.
+function useTypewriter(words: string[]) {
+  // Read once — the OS-level motion setting doesn't flip mid-load.
+  const [reduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const [wordIndex, setWordIndex] = useState(0);
+  const [text, setText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setMessageIndex((current) => (current + 1) % LOADING_MESSAGES.length);
-    }, 1600);
+    const word = words[wordIndex];
+    let timer: number;
+    if (reduced) {
+      timer = window.setTimeout(
+        () => setWordIndex((current) => (current + 1) % words.length),
+        REDUCED_HOLD_MS,
+      );
+    } else if (!deleting) {
+      if (text.length < word.length) {
+        timer = window.setTimeout(() => setText(word.slice(0, text.length + 1)), TYPE_MS);
+      } else {
+        timer = window.setTimeout(() => setDeleting(true), HOLD_MS);
+      }
+    } else if (text.length > 0) {
+      timer = window.setTimeout(() => setText(text.slice(0, -1)), DELETE_MS);
+    } else {
+      timer = window.setTimeout(() => {
+        setDeleting(false);
+        setWordIndex((current) => (current + 1) % words.length);
+      }, TYPE_MS);
+    }
+    return () => window.clearTimeout(timer);
+  }, [reduced, text, deleting, wordIndex, words]);
 
-    return () => window.clearInterval(timer);
-  }, []);
+  return reduced ? words[wordIndex] : text;
+}
+
+export function AppLoadingScreen() {
+  const typed = useTypewriter(TYPE_WORDS);
 
   return (
     <main className="app-loading-screen" role="status" aria-live="polite" aria-label="Hisaab is loading">
@@ -28,32 +60,18 @@ export function AppLoadingScreen() {
       <div className="app-loading-content">
         <div className="app-loading-brand">
           <div className="app-loading-mark" aria-hidden="true">
-            <svg width="24" height="24" viewBox="0 0 512 512">
-              <rect x="160" y="146" width="56" height="220" rx="10" fill="#F4F2EC" />
-              <rect x="296" y="146" width="56" height="220" rx="10" fill="#F4F2EC" />
-              <rect x="160" y="229" width="192" height="54" rx="10" fill="#7C5CFF" />
-            </svg>
+            <BrandMark size={46} />
           </div>
           <h1>Hisaab</h1>
         </div>
 
-        <div className="app-loading-visual" aria-hidden="true">
-          <div className="app-loading-wallet">
-            <WalletCards size={42} strokeWidth={1.6} />
-          </div>
-          <span className="app-loading-coin app-loading-coin-one">₨</span>
-          <span className="app-loading-coin app-loading-coin-two">₨</span>
-          <span className="app-loading-coin app-loading-coin-three">₨</span>
-          <span className="app-loading-spark app-loading-spark-one">✦</span>
-          <span className="app-loading-spark app-loading-spark-two">✧</span>
+        {/* Big typewriter word — the hero of the loading screen. */}
+        <div className="app-loading-type" aria-hidden="true">
+          <span className="app-loading-word">{typed}</span>
+          <span className="app-loading-caret" />
         </div>
 
-        <div className="app-loading-copy">
-          <p className="app-loading-message" aria-hidden="true" key={messageIndex}>
-            {LOADING_MESSAGES[messageIndex]}
-          </p>
-          <p className="app-loading-subline">Your finances. Your way. All in one place.</p>
-        </div>
+        <p className="app-loading-subline">Your money, always in sight.</p>
 
         <div className="app-loading-progress" aria-hidden="true">
           <span />
@@ -64,10 +82,6 @@ export function AppLoadingScreen() {
           Your data stays private and secure.
         </p>
       </div>
-
-      <p className="app-loading-tip">
-        Tip: You can track expenses, loans, and group splits in one place.
-      </p>
     </main>
   );
 }

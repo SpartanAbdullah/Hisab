@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hisaab-v4';
+const CACHE_NAME = 'hisaab-v6';
 const STATIC_ASSETS = [
   '/',
   '/favicon.svg',

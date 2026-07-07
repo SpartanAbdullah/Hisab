@@ -416,95 +416,52 @@ html.dark .auth-cta {
   line-height: 1;
 }
 
+/* The BrandMark SVG is its own green tile — this wrapper only adds the shadow.
+   Radius matches the tile corner (46px × 26.1% ≈ 12px) so the glow hugs it. */
 .app-loading-mark {
   align-items: center;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 13px;
-  box-shadow: 0 10px 28px rgba(3, 5, 22, 0.24);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(3, 5, 22, 0.32);
   display: flex;
-  height: 42px;
+  height: 46px;
   justify-content: center;
-  width: 42px;
+  width: 46px;
 }
 
-.app-loading-mark span {
-  font-size: 18px;
+/* Typewriter hero. Fixed height so the layout never jumps as letters churn;
+   sized to fit "Expenses" (the longest word) on a 320px viewport. */
+.app-loading-type {
+  align-items: center;
+  display: flex;
+  height: 76px;
+  justify-content: center;
+  margin-top: 40px;
+}
+
+.app-loading-word {
+  color: #2FE3A0; /* brand green — the logo tile color */
+  font-size: clamp(44px, 15vw, 60px);
   font-weight: 800;
+  letter-spacing: -0.03em;
   line-height: 1;
+  white-space: nowrap;
 }
 
-.app-loading-visual {
-  height: 146px;
-  margin-top: 36px;
-  position: relative;
-  width: 188px;
-}
-
-.app-loading-wallet {
-  align-items: center;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 22px;
-  bottom: 8px;
-  box-shadow: 0 20px 38px rgba(3, 5, 22, 0.28);
-  color: rgba(255, 255, 255, 0.9);
-  display: flex;
-  height: 88px;
-  justify-content: center;
-  left: 50%;
-  position: absolute;
-  transform: translateX(-50%);
-  width: 112px;
-}
-
-.app-loading-coin {
-  align-items: center;
-  background: #f4c96b;
-  border: 2px solid rgba(255, 242, 182, 0.66);
-  border-radius: 999px;
-  box-shadow: 0 8px 18px rgba(244, 201, 107, 0.16);
-  color: #6d5220;
-  display: flex;
-  font-size: 13px;
-  font-weight: 800;
-  height: 32px;
-  justify-content: center;
-  position: absolute;
-  width: 32px;
-}
-
-.app-loading-coin-one { left: 50px; top: 20px; animation: loading-coin-drop 2.4s ease-in-out infinite; }
-.app-loading-coin-two { left: 79px; top: 8px; animation: loading-coin-drop 2.4s 0.32s ease-in-out infinite; }
-.app-loading-coin-three { left: 108px; top: 22px; animation: loading-coin-drop 2.4s 0.64s ease-in-out infinite; }
-
-.app-loading-spark {
-  color: #d6cbff;
-  font-size: 18px;
-  position: absolute;
-}
-
-.app-loading-spark-one { animation: loading-sparkle 1.9s ease-in-out infinite; left: 18px; top: 54px; }
-.app-loading-spark-two { animation: loading-sparkle 1.9s 0.55s ease-in-out infinite; right: 16px; top: 42px; }
-
-.app-loading-copy {
-  margin-top: 24px;
-  min-height: 66px;
-  width: min(100%, 340px);
-}
-
-.app-loading-message {
-  animation: loading-message-in 0.32s ease-out;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0;
+.app-loading-caret {
+  background: #2FE3A0;
+  border-radius: 3px;
+  display: inline-block;
+  height: clamp(40px, 13.5vw, 54px);
+  margin-left: 7px;
+  width: 5px;
+  animation: loading-caret-blink 1.1s steps(2, start) infinite;
 }
 
 .app-loading-subline {
   color: rgba(255, 255, 255, 0.55);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
-  margin-top: 8px;
+  margin-top: 14px;
 }
 
 .app-loading-progress {
@@ -535,27 +492,9 @@ html.dark .auth-cta {
   margin-top: 16px;
 }
 
-.app-loading-tip {
-  color: rgba(255, 255, 255, 0.38);
-  font-size: 10px;
-  line-height: 1.6;
-  margin: 24px auto 0;
-  max-width: 310px;
-}
-
-@keyframes loading-coin-drop {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-9px); }
-}
-
-@keyframes loading-sparkle {
-  0%, 100% { opacity: 0.35; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.12); }
-}
-
-@keyframes loading-message-in {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes loading-caret-blink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 @keyframes loading-shimmer {
@@ -564,9 +503,7 @@ html.dark .auth-cta {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-loading-coin,
-  .app-loading-spark,
-  .app-loading-message,
+  .app-loading-caret,
   .app-loading-progress span {
     animation: none;
   }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Language } from '../lib/i18n';
-import { Wallet, ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle, Sparkles } from 'lucide-react';
+import { ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle, Sparkles } from 'lucide-react';
+import { BrandMark } from '../components/BrandMark';
 import { MODE_QUIZ, recommendMode } from '../lib/modeQuiz';
 import { useOnboardingStore } from '../stores/onboardingStore';
 import { useAppModeStore } from '../stores/appModeStore';
@@ -108,8 +109,8 @@ export function OnboardingPage() {
         {/* Step 0: Welcome */}
         {step === 0 && (
           <div className="flex-1 flex flex-col items-center justify-center px-8 text-center animate-fade-in">
-            <div className="w-20 h-20 rounded-3xl bg-white/10 flex items-center justify-center mb-8 animate-bounce-in backdrop-blur-sm border border-white/10">
-              <Wallet size={36} strokeWidth={1.5} />
+            <div className="w-20 h-20 rounded-[21px] mb-8 animate-bounce-in shadow-lg shadow-black/30">
+              <BrandMark size={80} />
             </div>
             <h1 className="text-4xl font-bold tracking-tighter">Hisaab</h1>
             <p className="text-white/85 text-[15px] leading-relaxed max-w-[280px] mt-4 font-medium">

@@ -15,7 +15,7 @@ we always know who's on what. Pair this with the step-by-step in
 | C1 | Interaction-safety pass (confirmations, undo, validation, guards) | ✅ | Shipped |
 | C2 | Gradle guard: fail release build if upload keystore missing | ✅ | `android/app/build.gradle` |
 | C3 | Make `supabase-migration-p0-launch-blockers.sql` re-runnable | ✅ | Idempotent policy drops |
-| C4 | Design the consistent Hisaab logo (pick a concept) | ✅ | Concept A chosen (navy squircle, cream H, violet bar) |
+| C4 | Design the consistent Hisaab logo (pick a concept) | ✅ | "Single Wink" chosen 2026-07-07 (green #2FE3A0 tile, ink stroke "h" + wink — see docs/brand/LOGO_HANDOFF.md); replaced Concept A (navy squircle, cream H, violet bar) |
 | C5 | Produce ALL icon assets from the chosen logo | ✅ | favicon, PWA (+ real maskable), apple-touch, Android mipmaps, in-app mark — via `scripts/generate-icons.mjs` |
 | C6 | Hardware back button closes an open modal first | ✅ | Done; **verify on device** (RELEASE.md smoke test) |
 | C7 | Draft Play store listing copy (short + full description) | ✅ | `docs/play-store-listing.md` — en + Roman-Urdu + release notes + ASO keywords |

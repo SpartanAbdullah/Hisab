@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Wallet, Mail, Lock, ArrowRight, Eye, EyeOff, Check, MailCheck, Sparkles } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Eye, EyeOff, Check, MailCheck, Sparkles } from 'lucide-react';
+import { BrandMark } from '../components/BrandMark';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { supabase } from '../lib/supabase';
 import { useT, useI18nStore } from '../lib/i18n';
@@ -269,8 +270,8 @@ export function AuthPage() {
       <div className="relative text-white flex flex-col min-h-dvh px-8">
         {/* Logo + living headline */}
         <div className="flex flex-col items-center pt-16 mb-8">
-          <div className="w-16 h-16 rounded-3xl bg-white/10 flex items-center justify-center mb-4 backdrop-blur-sm border border-white/10">
-            <Wallet size={28} strokeWidth={1.5} />
+          <div className="w-16 h-16 rounded-[17px] mb-4 shadow-lg shadow-black/30">
+            <BrandMark size={64} />
           </div>
           <h1 className="text-3xl font-bold tracking-tighter">Hisaab</h1>
           {/* Rotating colored feature word — teaches "what does this app do?" in
