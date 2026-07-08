@@ -35,6 +35,8 @@ import { SettlementNudgeBanner } from "../components/SettlementNudgeBanner";
 import { BudgetWarningBanner } from "../components/BudgetWarningBanner";
 import { getOverdueSettlements } from "../lib/settlementNudges";
 import { TransactionItem } from "../components/TransactionItem";
+import { EditTransactionModal } from "../components/EditTransactionModal";
+import type { Transaction } from "../db";
 import { EmptyState } from "../components/EmptyState";
 import { PageErrorState } from "../components/PageErrorState";
 import { UserAvatar } from "../components/UserAvatar";
@@ -83,6 +85,8 @@ export function HomePage() {
   const t = useT();
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  // Tapping a recent transaction opens it for editing (previously inert).
+  const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
   // splits_only "Record an IOU" entry — opens QuickEntry locally so the
   // empty-state CTA actually does something instead of pointing at the FAB.
   const [showQuickEntry, setShowQuickEntry] = useState(false);
@@ -1166,7 +1170,7 @@ export function HomePage() {
             </div>
             <div className="rounded-[18px] bg-cream-card border border-cream-border px-4 divide-y divide-cream-hairline">
               {recentTxns.map((txn) => (
-                <TransactionItem key={txn.id} transaction={txn} />
+                <TransactionItem key={txn.id} transaction={txn} onClick={() => setSelectedTxn(txn)} />
               ))}
             </div>
           </div>
@@ -1178,6 +1182,11 @@ export function HomePage() {
         onClose={() => setShowAddAccount(false)}
       />
       <GlobalSearch open={showGlobalSearch} onClose={() => setShowGlobalSearch(false)} />
+      <EditTransactionModal
+        open={!!selectedTxn}
+        transaction={selectedTxn}
+        onClose={() => setSelectedTxn(null)}
+      />
     </main>
   );
 }

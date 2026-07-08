@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from 'react';
+import { Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSplitStore } from '../stores/splitStore';
@@ -60,6 +61,9 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
   const [shares, setShares] = useState<Record<string, string>>({});
   const [category, setCategory] = useState('General');
   const [paidFromAccountId, setPaidFromAccountId] = useState('');
+  // When on, the split is still recorded but the payer's personal account
+  // balance is NOT touched — for people who don't track their own accounts here.
+  const [dontTrackInAccounts, setDontTrackInAccounts] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -106,6 +110,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
     if (!open) return;
     if (!shouldTrackExpense) {
       setPaidFromAccountId('');
+      setDontTrackInAccounts(false);
       return;
     }
     if (paidFromAccountId && !accounts.some(account => account.id === paidFromAccountId)) {
@@ -185,8 +190,8 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
       setSubmitError(NEED_TWO_ACTIVE_MEMBERS_MESSAGE);
       return;
     }
-    if (shouldTrackExpense && !paidFromAccountId) {
-      setSubmitError('Select the account you paid from.');
+    if (shouldTrackExpense && !dontTrackInAccounts && !paidFromAccountId) {
+      setSubmitError(t('group_paid_from_required'));
       return;
     }
 
@@ -221,7 +226,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
         splitType,
         splits,
         category,
-        paidFromAccountId: shouldTrackExpense ? paidFromAccountId : undefined,
+        paidFromAccountId: (shouldTrackExpense && !dontTrackInAccounts) ? paidFromAccountId : undefined,
       });
       const payerName = activeMembers.find((member) => member.id === paidBy)?.name ?? 'Someone';
       const paidFrom = paidFromAccountId ? accounts.find((account) => account.id === paidFromAccountId)?.name : null;
@@ -260,7 +265,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
             {submitError}
           </p>
         )}
-        <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0 || activeMembers.length < 2 || !defaultPayerId || (shouldTrackExpense && !paidFromAccountId)}
+        <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0 || activeMembers.length < 2 || !defaultPayerId || (shouldTrackExpense && !dontTrackInAccounts && !paidFromAccountId)}
           className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
           {saving ? t('quick_processing') : t('group_save_expense')}
         </button>
@@ -302,20 +307,38 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
         {shouldTrackExpense && (
           <div>
             <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('paid_from')}</label>
-            <div className="space-y-2 mt-1.5">
-              {accounts.map(account => (
-                <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
-                  className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                    paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
-                  }`}>
-                  <div>
-                    <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
-                    <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
-                  </div>
-                  <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
-                </button>
-              ))}
-            </div>
+            {/* Opt-out for people who don't track their own accounts here — the
+                split is still recorded, just without touching a balance. */}
+            <button
+              type="button"
+              onClick={() => setDontTrackInAccounts(v => !v)}
+              className={`w-full mt-1.5 p-3 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
+                dontTrackInAccounts ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
+              }`}>
+              <p className="text-[13px] font-semibold text-ink-800">{t('group_dont_track')}</p>
+              <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${dontTrackInAccounts ? 'bg-accent-500 border-accent-500 text-white' : 'border-cream-border text-transparent'}`}>
+                <Check size={12} strokeWidth={3} />
+              </span>
+            </button>
+            {!dontTrackInAccounts && (
+              <>
+                <div className="space-y-2 mt-2">
+                  {accounts.map(account => (
+                    <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
+                      className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
+                        paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
+                      }`}>
+                      <div>
+                        <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
+                        <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
+                      </div>
+                      <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10.5px] text-ink-500 mt-1.5 leading-relaxed">{t('group_paid_from_hint')}</p>
+              </>
+            )}
           </div>
         )}
 

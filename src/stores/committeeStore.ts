@@ -36,6 +36,7 @@ interface CommitteeState {
   setFixedOrder: (committeeId: string, orderedMemberIds: string[]) => Promise<void>;
   setPaid: (committeeId: string, memberId: string, round: number, paid: boolean) => Promise<void>;
   confirmPayout: (memberId: string, received: boolean) => Promise<void>;
+  updateMember: (memberId: string, changes: { name?: string; phone?: string | null }) => Promise<void>;
   membersOf: (committeeId: string) => CommitteeMember[];
   paymentsOf: (committeeId: string) => CommitteePayment[];
   getCommittee: (id: string) => Committee | undefined;
@@ -163,6 +164,13 @@ export const useCommitteeStore = create<CommitteeState>((set, get) => ({
     const payoutReceivedAt = received ? new Date().toISOString() : null;
     await committeeMembersDb.update(memberId, { payoutReceivedAt });
     set((s) => ({ members: s.members.map((m) => (m.id === memberId ? { ...m, payoutReceivedAt } : m)) }));
+  },
+
+  // Fix a member's name / WhatsApp number after creation. Deliberately does NOT
+  // touch slot or payments, so the draw order and money math are untouched.
+  updateMember: async (memberId, changes) => {
+    await committeeMembersDb.update(memberId, changes);
+    set((s) => ({ members: s.members.map((m) => (m.id === memberId ? { ...m, ...changes } : m)) }));
   },
 
   membersOf: (committeeId) =>

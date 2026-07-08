@@ -3,6 +3,7 @@ import { Target, CalendarClock, CheckCircle, XCircle, GraduationCap, HeartPulse,
 import { useGoalStore } from '../stores/goalStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
+import { useTransactionStore } from '../stores/transactionStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
@@ -45,8 +46,40 @@ export function GoalsPage() {
   const { goals, loadGoals, addContribution } = useGoalStore();
   const { accounts, loadAccounts } = useAccountStore();
   const { expenses, loadExpenses, markPaid, updateStatus } = useUpcomingExpenseStore();
+  const processTransaction = useTransactionStore(s => s.processTransaction);
   const t = useT();
   const toast = useToast();
+
+  // Marking a bill "Done" only hides the reminder — it never moved money. Make
+  // that explicit and offer a one-tap way to record the actual spend, so a user
+  // who assumed "Done" logged the payment isn't left with a wrong balance.
+  const handleBillDone = (exp: (typeof expenses)[number]) => {
+    void markPaid(exp.id);
+    const account = accounts.find(a => a.id === exp.accountId);
+    toast.show({
+      type: 'success',
+      title: t('upcoming_done_toast').replace('{title}', exp.title),
+      action: account
+        ? {
+            label: t('upcoming_log_expense'),
+            onPress: () => {
+              void processTransaction({
+                type: 'expense',
+                sourceAccountId: exp.accountId,
+                amount: exp.amount,
+                category: exp.category,
+                notes: exp.title,
+              }).then(() => {
+                toast.show({
+                  type: 'success',
+                  title: t('upcoming_logged').replace('{amount}', formatMoney(exp.amount, exp.currency)),
+                });
+              });
+            },
+          }
+        : undefined,
+    });
+  };
   const [showAdd, setShowAdd] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
   // "Add money" sheet for a specific goal — a simple set-aside that grows the
@@ -248,7 +281,7 @@ export function GoalsPage() {
 
                   {/* Actions */}
                   <div className="flex gap-2 mt-3">
-                    <button onClick={() => markPaid(exp.id)}
+                    <button onClick={() => handleBillDone(exp)}
                       className="flex-1 min-h-[44px] py-2 rounded-xl border border-receive-100 text-receive-600 text-[11px] font-bold flex items-center justify-center gap-1.5 active:bg-receive-50 transition-all"
                     >
                       <CheckCircle size={12} /> {t('upcoming_status_done')}

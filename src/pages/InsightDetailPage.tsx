@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { TrendingUp } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageErrorState } from '../components/PageErrorState';
@@ -14,10 +14,14 @@ function primaryCurrency(): string {
   return localStorage.getItem('hisaab_primary_currency') || 'AED';
 }
 
-// Drill into one spending category for the current month: total, by-week
-// trend, and by-merchant breakdown — all from real transactions.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Drill into one spending category. Honours the period + currency the user had
+// selected on Analytics (passed as ?from=&to=&cur=); falls back to the current
+// month in the primary currency when opened without them.
 export function InsightDetailPage() {
   const { category = '' } = useParams();
+  const [params] = useSearchParams();
   const cat = decodeURIComponent(category);
   const transactions = useTransactionStore((s) => s.transactions);
   const loadTransactions = useTransactionStore((s) => s.loadTransactions);
@@ -25,26 +29,42 @@ export function InsightDetailPage() {
   const { status, error, retry } = useAsyncLoad(load);
 
   const data = useMemo(() => {
-    const cur = primaryCurrency();
+    const cur = params.get('cur') || primaryCurrency();
     const now = new Date();
-    const ym = now.toISOString().slice(0, 7);
-    const rows = transactions.filter(
-      (t) =>
-        t.type === 'expense' &&
-        t.currency === cur &&
-        (t.createdAt ?? '').slice(0, 7) === ym &&
-        (t.category || 'Other') === cat,
-    );
+    const fromParam = params.get('from');
+    const toParam = params.get('to');
+    const from = fromParam ? new Date(fromParam) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = toParam ? new Date(toParam) : now;
+    const rows = transactions.filter((t) => {
+      if (t.type !== 'expense' || t.currency !== cur || (t.category || 'Other') !== cat) return false;
+      const d = new Date(t.createdAt);
+      return d >= from && d <= to;
+    });
     const total = rows.reduce((a, t) => a + t.amount, 0);
 
-    // by week-of-month, up to the current week
-    const weeks = [0, 0, 0, 0, 0];
-    for (const t of rows) {
-      const day = new Date(t.createdAt).getDate();
-      weeks[Math.min(4, Math.floor((day - 1) / 7))] += t.amount;
+    // Trend buckets: by calendar month when the range spans more than one
+    // month, else by week-of-month. Keeps the chart meaningful for any period.
+    const spanDays = (to.getTime() - from.getTime()) / 86_400_000;
+    const byMonth = spanDays > 32;
+    let weekBars: { name: string; amt: number }[];
+    if (byMonth) {
+      const buckets = new Map<string, number>();
+      for (const t of rows) {
+        const k = (t.createdAt ?? '').slice(0, 7);
+        buckets.set(k, (buckets.get(k) ?? 0) + t.amount);
+      }
+      weekBars = [...buckets.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([k, amt]) => ({ name: MONTHS[parseInt(k.slice(5, 7), 10) - 1] ?? k, amt }));
+    } else {
+      const weeks = [0, 0, 0, 0, 0];
+      for (const t of rows) {
+        const day = new Date(t.createdAt).getDate();
+        weeks[Math.min(4, Math.floor((day - 1) / 7))] += t.amount;
+      }
+      weekBars = weeks.map((amt, i) => ({ name: `Wk ${i + 1}`, amt }));
+      while (weekBars.length > 1 && weekBars[weekBars.length - 1].amt === 0) weekBars.pop();
     }
-    const currentWeek = Math.floor((now.getDate() - 1) / 7);
-    const weekBars = weeks.slice(0, currentWeek + 1).map((amt, i) => ({ name: `Wk ${i + 1}`, amt }));
 
     // by merchant (the note carries the merchant/description). Split-group-linked
     // expenses hide their real label behind a [[HISAAB_META:…]] tag, so parse it
@@ -66,8 +86,8 @@ export function InsightDetailPage() {
       .sort((a, b) => b.amt - a.amt)
       .slice(0, 8);
 
-    return { cur, total, weekBars, merchants, count: rows.length };
-  }, [transactions, cat]);
+    return { cur, total, weekBars, merchants, count: rows.length, byMonth };
+  }, [transactions, cat, params]);
 
   const maxWeek = Math.max(1, ...data.weekBars.map((w) => w.amt));
 
@@ -92,8 +112,8 @@ export function InsightDetailPage() {
             <EmptyState
               icon={TrendingUp}
               tone="accent"
-              title={`No ${cat} spending this month`}
-              description="Once you log expenses in this category, the breakdown shows up here."
+              title={`No ${cat} spending in this period`}
+              description="Try a wider range on Analytics, or log expenses in this category to see the breakdown."
             />
           ) : null
         ) : (
@@ -101,7 +121,7 @@ export function InsightDetailPage() {
             {/* total */}
             <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
               <p className="text-[11px] text-ink-500 font-semibold tracking-[0.12em] uppercase">
-                Spent this month
+                Total spent
               </p>
               <p className="text-[28px] font-bold text-ink-900 tabular-nums mt-1">
                 {formatMoney(data.total, data.cur)}
@@ -115,7 +135,7 @@ export function InsightDetailPage() {
             {data.weekBars.length > 0 && (
               <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                 <p className="text-[11px] text-ink-500 font-semibold tracking-[0.12em] uppercase mb-3">
-                  By week
+                  {data.byMonth ? 'By month' : 'By week'}
                 </p>
                 <div className="flex items-end gap-2.5 h-28">
                   {data.weekBars.map((w) => (

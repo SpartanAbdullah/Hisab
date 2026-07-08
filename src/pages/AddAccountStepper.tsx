@@ -64,12 +64,15 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const [ccLast4, setCcLast4] = useState('');
   const [ccLimit, setCcLimit] = useState('');
   const [ccDueDay, setCcDueDay] = useState('');
+  // How much is already owed on the card today (optional). Without it we'd
+  // assume a brand-new card with nothing spent and show wrong net worth.
+  const [ccOwed, setCcOwed] = useState('');
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setStep(0); setAccountType('cash'); setName(''); setCurrency(primaryCurrency);
     setBalance(''); setBankName(''); setWalletType('');
-    setCcIssuer(''); setCcLast4(''); setCcLimit(''); setCcDueDay('');
+    setCcIssuer(''); setCcLast4(''); setCcLimit(''); setCcDueDay(''); setCcOwed('');
   };
   const handleClose = () => { reset(); onClose(); };
 
@@ -118,11 +121,13 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
         metadata.last4 = ccLast4;
         metadata.creditLimit = ccLimit;
         metadata.dueDay = ccDueDay;
+        if (ccOwed.trim()) metadata.outstanding = ccOwed;
       }
 
-      // Credit card: balance = available credit = limit (new card, nothing spent)
+      // Credit card: stored balance = available credit = limit − amount already
+      // owed. Leaving "owed" blank assumes a fresh card with nothing spent.
       const initialBalance = accountType === 'credit_card'
-        ? parseFloat(ccLimit) || 0
+        ? (parseFloat(ccLimit) || 0) - (parseFloat(ccOwed) || 0)
         : parseFloat(balance) || 0;
 
       const accountName = accountType === 'credit_card'
@@ -150,7 +155,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   };
 
   const isCreditCard = accountType === 'credit_card';
-  const isDirty = step > 0 || !!name.trim() || !!balance.trim() || !!bankName || !!walletType || !!ccIssuer.trim() || !!ccLast4 || !!ccLimit || !!ccDueDay;
+  const isDirty = step > 0 || !!name.trim() || !!balance.trim() || !!bankName || !!walletType || !!ccIssuer.trim() || !!ccLast4 || !!ccLimit || !!ccDueDay || !!ccOwed;
   const title = inline ? t('acct_create_first') : step === 0 ? t('acct_what_type') : step === 1 ? t('acct_details') : t('acct_opening');
 
   const footerContent = step === 1 ? (
@@ -249,6 +254,13 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                   <label className="form-label">{t('cc_due_day')}</label>
                   <input type="number" min="1" max="31" value={ccDueDay} onChange={e => setCcDueDay(e.target.value)}
                     placeholder="e.g. 15" className="input-field text-center" />
+                </div>
+
+                <div>
+                  <label className="form-label">{t('cc_owed')}</label>
+                  <input type="number" step="0.01" min="0" value={ccOwed} onChange={e => setCcOwed(e.target.value)}
+                    placeholder="0" className="input-field text-center text-lg font-bold tabular-nums" />
+                  <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">{t('cc_owed_hint')}</p>
                 </div>
 
                 <div>

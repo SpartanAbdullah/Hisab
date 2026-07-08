@@ -439,6 +439,21 @@ export function AccountDetailPage() {
             {t('acct_action_group')}
           </button>
         </div>
+        {/* Paying a card bill is a transfer INTO the card — a newcomer won't
+            guess that "Move" means this, so give it a named action. */}
+        {isCreditCard && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuickPreset({ type: 'transfer', destinationAccountId: account.id });
+              setShowAdd(true);
+            }}
+            className="rounded-2xl bg-accent-50 border border-accent-100 px-2 py-3 text-[12px] font-semibold text-accent-600 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+          >
+            <CreditCard size={15} className="text-accent-600" />
+            {t('acct_action_pay_card')}
+          </button>
+        )}
         {/* Rename modal (lightweight — kept inline since the Modal helper is
             optimised for the bottom-sheet pattern, not centred dialogs) */}
         {showRename && (

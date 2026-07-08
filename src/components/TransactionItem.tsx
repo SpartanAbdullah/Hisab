@@ -159,8 +159,8 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
         onClick={handleReconcileClick}
         disabled={savingReconciliation}
         aria-pressed={isReconciled}
-        aria-label={isReconciled ? 'Mark transaction unreconciled' : 'Mark transaction reconciled'}
-        title={isReconciled ? 'Reconciled' : 'Mark reconciled'}
+        aria-label={isReconciled ? t('reconcile_tip_done') : t('reconcile_tip_todo')}
+        title={isReconciled ? t('reconcile_tip_done') : t('reconcile_tip_todo')}
         className={`relative w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 disabled:opacity-60 before:absolute before:-inset-2.5 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 ${
           isReconciled
             ? 'bg-receive-600 border-receive-600 text-white'

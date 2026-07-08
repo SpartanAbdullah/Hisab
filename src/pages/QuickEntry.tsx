@@ -48,6 +48,9 @@ export interface QuickEntryPreset {
   contact?: ContactValue;
   repaymentDirection?: Exclude<RepaymentDirection, null>;
   accountId?: string;
+  // Pre-fill the transfer DESTINATION (e.g. paying a credit-card bill, where
+  // the card is the destination and the user picks which account pays).
+  destinationAccountId?: string;
   lockContact?: boolean;
   lockAccount?: boolean;
 }
@@ -182,7 +185,9 @@ export function QuickEntry({
     setDestId(
       preset?.accountId && ['income', 'loan_taken'].includes(preset.type ?? '')
         ? preset.accountId
-        : '',
+        : preset?.destinationAccountId && preset.type === 'transfer'
+          ? preset.destinationAccountId
+          : '',
     );
     setContact(preset?.contact ?? { id: null, name: '' });
     setLoanId('');
@@ -192,10 +197,13 @@ export function QuickEntry({
   }, [open, preset]);
 
   useEffect(() => {
-    if (!open || !preset?.accountId) return;
-    if (['expense', 'transfer', 'loan_given'].includes(type)) setSourceId(preset.accountId);
-    if (['income', 'loan_taken'].includes(type)) setDestId(preset.accountId);
-  }, [open, preset?.accountId, type]);
+    if (!open) return;
+    if (preset?.accountId) {
+      if (['expense', 'transfer', 'loan_given'].includes(type)) setSourceId(preset.accountId);
+      if (['income', 'loan_taken'].includes(type)) setDestId(preset.accountId);
+    }
+    if (preset?.destinationAccountId && type === 'transfer') setDestId(preset.destinationAccountId);
+  }, [open, preset?.accountId, preset?.destinationAccountId, type]);
 
   const numpadPress = (key: string) => {
     if (key === 'del') { setAmount(a => a.slice(0, -1)); }

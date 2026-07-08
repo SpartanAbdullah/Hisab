@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle, Eye, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCommitteeStore } from '../stores/committeeStore';
+import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { PageErrorState } from '../components/PageErrorState';
 import { CommitteeVerifyDraw } from '../components/CommitteeVerifyDraw';
@@ -38,6 +39,7 @@ export function KametiDetailPage() {
   const ensureShareToken = useCommitteeStore((s) => s.ensureShareToken);
   const setPaid = useCommitteeStore((s) => s.setPaid);
   const confirmPayout = useCommitteeStore((s) => s.confirmPayout);
+  const updateMember = useCommitteeStore((s) => s.updateMember);
   const deleteCommittee = useCommitteeStore((s) => s.deleteCommittee);
 
   const load = useCallback(async () => { if (!getCommittee(id)) await loadAll(); }, [getCommittee, id, loadAll]);
@@ -53,6 +55,21 @@ export function KametiDetailPage() {
   const [viewRound, setViewRound] = useState<number | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [slip, setSlip] = useState<{ recipient: CommitteeMember; round: number; witnessUrl?: string } | null>(null);
+  // Fix a member's name / WhatsApp number after creation (name typo, missing
+  // number). Draw order and payments are untouched.
+  const [editMember, setEditMember] = useState<CommitteeMember | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const openEditMember = (m: CommitteeMember) => {
+    setEditName(m.name);
+    setEditPhone(m.phone ?? '');
+    setEditMember(m);
+  };
+  const saveEditMember = async () => {
+    if (!editMember || !editName.trim()) return;
+    await updateMember(editMember.id, { name: editName.trim(), phone: editPhone.trim() || null });
+    setEditMember(null);
+  };
   const round = viewRound ?? liveRound;
 
   if (status === 'loading' && !committee) {
@@ -261,6 +278,11 @@ export function KametiDetailPage() {
               {members.map((m) => {
                 const paid = hasPaid(payments, m.id, round);
                 const kind = m.slot ? slotKind(m.slot, committee.totalRounds) : 'mid';
+                // Rounds before the live round this member never paid — otherwise
+                // a missed month silently vanishes when the round rolls over.
+                const missed = liveRound > 1
+                  ? Array.from({ length: liveRound - 1 }, (_, i) => i + 1).filter((r) => !hasPaid(payments, m.id, r)).length
+                  : 0;
                 return (
                   <div key={m.id} className="flex items-center gap-2.5 px-3.5 py-3">
                     <button
@@ -280,6 +302,11 @@ export function KametiDetailPage() {
                       {m.slot != null && (kind === 'early' || kind === 'late') && (
                         <p className="text-[10px] text-ink-400">{t(kind === 'early' ? 'kameti_slot_early' : 'kameti_slot_late')}</p>
                       )}
+                      {missed > 0 && (
+                        <p className="text-[10px] font-semibold text-pay-text">
+                          {t('kameti_arrears').replace('{amount}', formatMoney(missed * committee.contributionAmount, committee.currency)).replace('{n}', String(missed))}
+                        </p>
+                      )}
                     </div>
                     {paid ? (
                       <span className="text-[10px] font-semibold text-receive-text bg-receive-50 rounded-full px-2 py-0.5 shrink-0">{t('kameti_paid_badge')}</span>
@@ -288,7 +315,36 @@ export function KametiDetailPage() {
                         <MessageCircle size={12} /> {t('kameti_remind')}
                       </button>
                     )}
+                    <button onClick={() => openEditMember(m)} className="shrink-0 text-ink-400 active:opacity-60 p-1 -mr-1" aria-label={t('kameti_edit_member')}>
+                      <Pencil size={13} />
+                    </button>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Full baari schedule — the organizer's most basic question ("kis
+            mahine kis ki baari hai?") answered at a glance, instead of only one
+            round at a time behind the chevrons. Mirrors the witness page. */}
+        {isDrawn && (
+          <div>
+            <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5">{t('kameti_schedule')}</h2>
+            <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-cream-hairline overflow-hidden">
+              {Array.from({ length: committee.totalRounds }, (_, i) => i + 1).map((r) => {
+                const rec = recipientForRound(members, r);
+                return (
+                  <button
+                    key={r}
+                    onClick={() => setViewRound(r)}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors ${r === round ? 'bg-accent-50/60' : 'active:bg-cream-soft'}`}
+                  >
+                    <span className="text-[11px] font-bold text-ink-400 tabular-nums w-5">{r}</span>
+                    <span className="flex-1 text-[12.5px] text-ink-900 truncate">{rec?.name ?? '—'}</span>
+                    {rec?.payoutReceivedAt && <Check size={12} className="text-receive-text shrink-0" strokeWidth={2.6} />}
+                    <span className="text-[10.5px] text-ink-400 tabular-nums shrink-0">{format(roundDate(committee.startDate, committee.cadence, r), 'd MMM')}</span>
+                  </button>
                 );
               })}
             </div>
@@ -320,6 +376,34 @@ export function KametiDetailPage() {
           witnessUrl={slip.witnessUrl}
         />
       )}
+
+      <Modal
+        open={!!editMember}
+        onClose={() => setEditMember(null)}
+        title={t('kameti_edit_member')}
+        footer={
+          <button
+            onClick={saveEditMember}
+            disabled={!editName.trim()}
+            className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40 active:scale-[0.98] transition-transform"
+          >
+            {t('cat_save')}
+          </button>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('kameti_member_name')}</label>
+            <input value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus
+              className="w-full mt-1.5 border border-cream-border rounded-xl px-4 py-3 text-[14px] bg-cream-bg focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('kameti_member_phone')}</label>
+            <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} inputMode="tel" placeholder="+92…"
+              className="w-full mt-1.5 border border-cream-border rounded-xl px-4 py-3 text-[14px] bg-cream-bg focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all" />
+          </div>
+        </div>
+      </Modal>
     </main>
   );
 }

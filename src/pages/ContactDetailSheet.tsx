@@ -32,6 +32,7 @@ type Mode = 'idle' | 'entering' | 'resolved';
 // Resolve button press, never on keystrokes.
 export function ContactDetailSheet({ open, person, onClose }: Props) {
   const { linkToProfile, unlinkFromProfile, archiveIfSettled, updatePhone } = usePersonStore();
+  const persons = usePersonStore((s) => s.persons);
   const syncableBreakdownFor = useLinkedRequestStore((s) => s.syncableBreakdownFor);
   const syncPastRecords = useLinkedRequestStore((s) => s.syncPastRecords);
   // Subscribe to requests so the syncable count updates after a sync fires.
@@ -232,7 +233,15 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       onClose();
     } catch (err) {
       if (err instanceof DuplicateLinkedContactError) {
-        setError('Another of your contacts is already linked to this user.');
+        // Name the contact that's already linked to this person — a common case
+        // when both sides exchange codes and a reciprocal contact was auto-made,
+        // so the user isn't stuck on an opaque "already linked" message.
+        const existing = persons.find((p) => p.linkedProfileId === resolved.profileId && p.id !== person.id);
+        setError(
+          existing
+            ? t('contact_dup_link_named').replace('{name}', existing.name)
+            : t('contact_dup_link_generic'),
+        );
       } else {
         setError('Could not link this contact. Try again.');
       }

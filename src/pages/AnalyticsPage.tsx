@@ -110,6 +110,11 @@ export function AnalyticsPage() {
     [transactions, chartCurrency],
   );
 
+  // Carry the selected period + currency into the drill-in so it shows the same
+  // window the user is looking at, not a hardcoded current-month/primary view.
+  const insightHref = (category: string) =>
+    `/hisaab-ai/insight/${encodeURIComponent(category)}?from=${start.toISOString()}&to=${end.toISOString()}&cur=${chartCurrency}`;
+
   const categories = useMemo(() => groupByCategory(chartTransactions, start, end), [chartTransactions, start, end]);
   const trend = useMemo(() => monthlyTrend(chartTransactions, period === 'year' ? 12 : period === '3months' ? 3 : 2), [chartTransactions, period]);
   const daily = useMemo(() => dailySpending(chartTransactions, start, end), [chartTransactions, start, end]);
@@ -280,7 +285,7 @@ export function AnalyticsPage() {
                     {categories.slice(0, 5).map(c => (
                       <button
                         key={c.category}
-                        onClick={() => navigate(`/hisaab-ai/insight/${encodeURIComponent(c.category)}`)}
+                        onClick={() => navigate(insightHref(c.category))}
                         className="w-full flex items-center gap-2 min-h-[44px] text-left active:opacity-70 transition-opacity"
                       >
                         <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
@@ -349,7 +354,7 @@ export function AnalyticsPage() {
                   return (
                     <button
                       key={tx.id}
-                      onClick={() => navigate(`/hisaab-ai/insight/${encodeURIComponent(cat)}`)}
+                      onClick={() => navigate(insightHref(cat))}
                       className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between text-left active:bg-cream-soft transition-colors"
                     >
                       <div className="min-w-0 flex-1">

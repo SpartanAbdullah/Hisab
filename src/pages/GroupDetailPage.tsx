@@ -713,8 +713,33 @@ export function GroupDetailPage() {
         <div className="px-5 pt-4 space-y-2">
           {expenses.length === 0 ? (
             // Activation card — strong CTA instead of a passive "no expenses"
-            // line. This is the single most important first action after
-            // creating/joining a group, so give it real visual weight.
+            // line. When the owner is still alone, a split isn't possible yet
+            // (expenses can only involve connected members), so point them at
+            // inviting first instead of an "Add expense" button that opens a
+            // modal they can't meaningfully complete.
+            group.members.filter(m => m.status === 'connected').length <= 1 ? (
+              <div className="rounded-[18px] bg-cream-card border border-cream-border p-6 text-center animate-fade-in">
+                <div className="mx-auto w-14 h-14 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 text-accent-600 flex items-center justify-center">
+                  <UserPlus size={24} strokeWidth={1.8} />
+                </div>
+                <p className="text-[15px] font-bold text-ink-900 tracking-tight mt-4">
+                  {t('group_first_invite_title')}
+                </p>
+                <p className="text-[12px] text-ink-500 mt-1.5 leading-relaxed max-w-[260px] mx-auto">
+                  {t('group_first_invite_body')}
+                </p>
+                <button
+                  onClick={async () => {
+                    if (!group.joinCode) return;
+                    await navigator.clipboard.writeText(group.joinCode);
+                    toast.show({ type: 'success', title: t('group_code_copied'), subtitle: t('group_code_copied_sub') });
+                  }}
+                  className="mt-5 w-full rounded-2xl py-3 text-[13px] font-bold bg-ink-900 text-white shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+                >
+                  <Copy size={14} strokeWidth={2.5} /> {t('group_first_invite_cta')}
+                </button>
+              </div>
+            ) : (
             <div className="rounded-[18px] bg-cream-card border border-cream-border p-6 text-center animate-fade-in">
               <div className="mx-auto w-14 h-14 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 text-accent-600 flex items-center justify-center">
                 <Receipt size={24} strokeWidth={1.8} />
@@ -732,6 +757,7 @@ export function GroupDetailPage() {
                 <Plus size={14} strokeWidth={2.5} /> {t('group_first_expense_cta')}
               </button>
             </div>
+            )
           ) : (
             expenses.map((expense, index) => {
               const meta = getExpenseMeta(expense);

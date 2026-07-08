@@ -50,6 +50,9 @@ const S = {
   settled: { ur: "Hisaab Barabar", en: "Settled" },
   cash_advance_source: { ur: "Credit Card Cash Advance", en: "Cash Advance Source" },
   paid_from: { ur: "Kis Account Se Pay Kia?", en: "Paid From" },
+  group_dont_track: { ur: "Mere account mein track na karein", en: "Don't track in my accounts" },
+  group_paid_from_hint: { ur: "Poora amount is account se minus hoga — settle-up par doosre wapas karenge.", en: "The full amount is deducted from this account — the others pay you back at settle-up." },
+  group_paid_from_required: { ur: "Kis account se pay kiya woh chunein — ya “track na karein” select karein.", en: "Pick the account you paid from — or choose \"Don't track\"." },
 
   // Transaction type sub-labels
   tx_income_sub: { ur: "Money in", en: "Money in" },
@@ -147,6 +150,8 @@ const S = {
   cc_last4: { ur: "Last 4 Digits", en: "Last 4 Digits" },
   cc_limit: { ur: "Credit Limit", en: "Credit Limit" },
   cc_due_day: { ur: "Due Date (Day of Month)", en: "Due Date (Day of Month)" },
+  cc_owed: { ur: "Abhi kitna dena hai? (optional)", en: "Currently owed (optional)" },
+  cc_owed_hint: { ur: "Agar card par pehle se kuch baqi hai to likhein — warna khali chhor dein (naya card).", en: "If you already owe something on this card, enter it — otherwise leave blank (new card)." },
   cc_available: { ur: "Available", en: "Available" },
   cc_used: { ur: "Used", en: "Used" },
   cc_next_due: { ur: "Next Payment", en: "Next Payment" },
@@ -420,6 +425,8 @@ const S = {
   cat_err_empty: { ur: "Naam likhein", en: "Enter a name" },
   cat_err_too_long: { ur: "Naam chhota rakhein", en: "Name is too long" },
   cat_err_duplicate: { ur: "Ye category pehle se hai", en: "That category already exists" },
+  contact_dup_link_named: { ur: "Aap pehle se in se apne contact “{name}” ke zariye juday hain — usi ko kholein.", en: "You're already connected to them through your contact “{name}” — open that one instead." },
+  contact_dup_link_generic: { ur: "Aap ka ek aur contact pehle se is user se juda hua hai.", en: "Another of your contacts is already linked to this user." },
   cat_manage_title: { ur: "Categories", en: "Categories" },
   cat_manage_row: { ur: "Categories manage karein", en: "Manage categories" },
   cat_manage_sub: { ur: "Apni categories banayein", en: "Add your own categories" },
@@ -499,6 +506,8 @@ const S = {
   stl_confirm_cta: { ur: "Request bhejein", en: "Send request" },
   stl_amount_over: { ur: "Yeh baqi raqam se zyada hai.", en: "That's more than what's left to settle." },
   reconcile_failed: { ur: "Reconcile update nahi hua — dobara koshish karein.", en: "Couldn't update — tap to try again." },
+  reconcile_tip_todo: { ur: "Tick karein jab yeh aap ke asli account se mil jaye", en: "Tick this off once it matches your real account" },
+  reconcile_tip_done: { ur: "Milaan ho gaya — aap ke account se match karta hai", en: "Checked off — matches your real account" },
   settings_appearance_desc: { ur: "Light, dark ya system", en: "Light, dark, or match system" },
   theme_light: { ur: "Light", en: "Light" },
   theme_dark: { ur: "Dark", en: "Dark" },
@@ -570,6 +579,9 @@ const S = {
   // Upcoming statuses
   upcoming_status_done: { ur: "Ho Gaya", en: "Done" },
   upcoming_status_cancel: { ur: "Cancel", en: "Cancel" },
+  upcoming_done_toast: { ur: "“{title}” reminder hata diya — aap ke balance par asar nahi hua.", en: "“{title}” reminder cleared — this didn't change your balance." },
+  upcoming_log_expense: { ur: "Kharcha darj karein", en: "Log the expense" },
+  upcoming_logged: { ur: "{amount} kharcha darj ho gaya", en: "Logged {amount} as an expense" },
   // Smart insights
   insight_month_spent: {
     ur: "Is mahine aapne {amount} kharcha kiya",
@@ -817,6 +829,14 @@ const S = {
     en: "Dinner tonight? An Uber split? Drop it in and balances update for everyone instantly.",
   },
   group_first_expense_cta: { ur: "Kharcha add karo", en: "Add first expense" },
+  group_first_invite_title: { ur: "Pehle kisi ko bulao", en: "Invite someone first" },
+  group_first_invite_body: {
+    ur: "Split ke liye kam se kam do log chahiye. Apna group code share karo, phir pehla kharcha add karna.",
+    en: "A split needs at least two people. Share your group code, then add the first expense together.",
+  },
+  group_first_invite_cta: { ur: "Group code copy karo", en: "Copy group code" },
+  group_code_copied: { ur: "Code copy ho gaya", en: "Code copied" },
+  group_code_copied_sub: { ur: "Share karo taake doosre join kar sakein.", en: "Share it so others can join." },
   group_solo_invite_title: {
     ur: "Sirf aap ho is group mein",
     en: "You\u2019re the only one here yet",
@@ -1664,6 +1684,7 @@ const S = {
   // AccountDetailPage — two new tiles for the expanded quick-action grid.
   acct_action_person: { ur: "Kisi ke sath", en: "With someone" },
   acct_action_group: { ur: "Group main", en: "Split group" },
+  acct_action_pay_card: { ur: "Card ka bill bharo", en: "Pay card bill" },
 
   // ── Phase H2: Money-safety guards (Android prod hardening) ──
   // User-facing errors when amount validation rejects a save. These
@@ -1975,6 +1996,10 @@ const S = {
   kameti_this_round: { ur: "Is baari", en: "This round" },
   kameti_tap_mark_paid: { ur: "Har member par tap kar ke unhe paid mark karein", en: "Tap a member to mark them paid this round" },
   kameti_collected: { ur: "{paid} / {total} ne diya", en: "{paid} of {total} paid" },
+  kameti_arrears: { ur: "{amount} baqi · {n} baariyan", en: "{amount} behind · {n} rounds" },
+  kameti_edit_member: { ur: "Member edit karein", en: "Edit member" },
+  kameti_member_name: { ur: "Naam", en: "Name" },
+  kameti_member_phone: { ur: "WhatsApp number", en: "WhatsApp number" },
   kameti_remind_unpaid: { ur: "Jinhone nahi diya unhe yaad dilayein", en: "Remind who hasn't paid" },
   kameti_baari_label: { ur: "Is baari ki raqam inhein", en: "This round's pool goes to" },
   kameti_received: { ur: "Mil gaya", en: "Received" },
