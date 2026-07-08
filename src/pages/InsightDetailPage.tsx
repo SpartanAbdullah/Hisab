@@ -8,6 +8,7 @@ import { EmptyState } from '../components/EmptyState';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
+import { parseInternalNote } from '../lib/internalNotes';
 
 function primaryCurrency(): string {
   return localStorage.getItem('hisaab_primary_currency') || 'AED';
@@ -45,10 +46,16 @@ export function InsightDetailPage() {
     const currentWeek = Math.floor((now.getDate() - 1) / 7);
     const weekBars = weeks.slice(0, currentWeek + 1).map((amt, i) => ({ name: `Wk ${i + 1}`, amt }));
 
-    // by merchant (the note carries the merchant/description)
+    // by merchant (the note carries the merchant/description). Split-group-linked
+    // expenses hide their real label behind a [[HISAAB_META:…]] tag, so parse it
+    // out — otherwise the breakdown shows a URL-encoded JSON blob as the merchant.
     const byMerchant = new Map<string, { amt: number; count: number }>();
     for (const t of rows) {
-      const key = (t.notes || '').trim() || 'Other';
+      const parsed = parseInternalNote(t.notes);
+      const key = parsed.visibleNote.trim()
+        || parsed.meta.expenseDescription
+        || parsed.meta.groupName
+        || 'Other';
       const e = byMerchant.get(key) ?? { amt: 0, count: 0 };
       e.amt += t.amount;
       e.count += 1;

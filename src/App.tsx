@@ -22,6 +22,8 @@ import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
 import { supabase } from './lib/supabase';
 import { initNativeBridge } from './lib/nativeBridge';
+import { useT, useI18nStore } from './lib/i18n';
+import { Globe } from 'lucide-react';
 
 // Lazy-loaded pages for code splitting
 const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })));
@@ -78,6 +80,8 @@ function PageLoader() {
 
 function UnverifiedEmailScreen({ email }: { email: string }) {
   const { signOut } = useSupabaseAuthStore();
+  const t = useT();
+  const { lang, setLang } = useI18nStore();
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState('');
 
@@ -87,42 +91,52 @@ function UnverifiedEmailScreen({ email }: { email: string }) {
     setResendMessage('');
     try {
       const { error } = await supabase.auth.resend({ type: 'signup', email });
-      setResendMessage(error ? error.message : 'Verification email sent. Check your inbox.');
+      setResendMessage(error ? error.message : t('verify_resent'));
     } finally {
       setResending(false);
     }
   };
 
+  // Signup with email confirmation leaves no session, so the only way forward
+  // is the login form. Flag it so AuthPage greets them with a success banner
+  // instead of a bare form, then drop to login via signOut (which clears the
+  // transient unconfirmed user). Previously this reloaded and dumped the user
+  // on a plain Login screen with no explanation.
+  const goLogin = () => {
+    sessionStorage.setItem('hisaab_just_verified', '1');
+    void signOut();
+  };
+
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-navy-bloom text-white px-8 text-center">
+    <div className="min-h-dvh relative flex flex-col items-center justify-center bg-navy-bloom text-white px-8 text-center">
+      <button
+        onClick={() => setLang(lang === 'ur' ? 'en' : 'ur')}
+        className="absolute top-5 right-5 z-50 bg-white/10 text-white/80 rounded-xl px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 active:scale-95 transition-all backdrop-blur-sm border border-white/10"
+      >
+        <Globe size={11} /> {lang === 'ur' ? 'EN' : 'UR'}
+      </button>
       <div className="w-20 h-20 rounded-3xl bg-receive-600/25 flex items-center justify-center mb-6 backdrop-blur-sm border border-receive-600/30">
         <span className="text-3xl">📩</span>
       </div>
-      <h1 className="text-2xl font-bold tracking-tight mb-3">Check your email</h1>
-      <p className="text-white/60 text-[13px] max-w-[300px] leading-relaxed">
-        We sent a confirmation link to
-      </p>
-      <p className="text-white text-[14px] font-semibold mt-1.5 break-all max-w-[300px]">{email || 'your email address'}</p>
-      <p className="text-white/45 text-[12px] max-w-[290px] leading-relaxed mt-4">
-        Open it to activate your account, then continue here.
-      </p>
-      <p className="text-white/35 text-[11px] max-w-[290px] leading-relaxed mt-2">
-        Don't see it? Check spam or promotions.
-      </p>
+      <h1 className="text-2xl font-bold tracking-tight mb-3">{t('verify_title')}</h1>
+      <p className="text-white/60 text-[13px] max-w-[300px] leading-relaxed">{t('verify_body')}</p>
+      <p className="text-white text-[14px] font-semibold mt-1.5 break-all max-w-[300px]">{email || '—'}</p>
+      <p className="text-white/45 text-[12px] max-w-[290px] leading-relaxed mt-4">{t('verify_instruction')}</p>
+      <p className="text-white/35 text-[11px] max-w-[290px] leading-relaxed mt-2">{t('verify_spam')}</p>
 
       <div className="w-full max-w-[300px] mt-8 space-y-3">
         <button
-          onClick={() => window.location.reload()}
+          onClick={goLogin}
           className="w-full bg-white text-navy-900 rounded-2xl py-4 text-[14px] font-semibold active:scale-[0.98] transition-all shadow-lg shadow-white/10"
         >
-          I've verified — continue
+          {t('verify_done_login')}
         </button>
         <button
           onClick={resend}
           disabled={resending || !email}
           className="w-full bg-white/10 border border-white/15 text-white rounded-2xl py-3.5 text-[13px] font-semibold active:scale-[0.98] transition-all disabled:opacity-50 backdrop-blur-sm"
         >
-          {resending ? 'Sending…' : 'Resend confirmation email'}
+          {resending ? t('verify_resending') : t('verify_resend')}
         </button>
       </div>
 
@@ -131,7 +145,7 @@ function UnverifiedEmailScreen({ email }: { email: string }) {
       )}
 
       <button onClick={() => signOut()} className="text-white/45 text-[11px] underline mt-6 min-h-[44px]">
-        Use a different account
+        {t('verify_diff_account')}
       </button>
     </div>
   );

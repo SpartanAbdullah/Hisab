@@ -7,7 +7,7 @@ import { useT, useI18nStore } from '../lib/i18n';
 import type { I18nKey } from '../lib/i18n';
 import { Globe } from 'lucide-react';
 import { validatePassword, passwordChecks } from '../lib/passwordPolicy';
-import { isValidEmail } from '../lib/validateEmail';
+import { isValidEmail, suggestEmailFix } from '../lib/validateEmail';
 import { mapAuthError, type Detour } from '../lib/authErrorMap';
 
 // ── Rotating feature word ──────────────────────────────────────────────
@@ -75,6 +75,9 @@ export function AuthPage() {
   const [sentEmail, setSentEmail] = useState('');
   const [resending, setResending] = useState(false);
   const [resentMsg, setResentMsg] = useState('');
+  // Set by the verification screen when the user taps "I've verified — log in":
+  // greet them with a success banner instead of a bare login form.
+  const [justVerified, setJustVerified] = useState(false);
 
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -83,6 +86,17 @@ export function AuthPage() {
   const pwStrong = mode === 'signup' && checks.length && checks.letter && checks.number;
   const emailErr = detour?.field === 'email';
   const passwordErr = detour?.field === 'password';
+  // "Did you mean gmail.com?" — only when the typed address looks like a known
+  // domain typo, so a mistyped email doesn't strand the user in verify limbo.
+  const emailSuggestion = suggestEmailFix(email);
+
+  useEffect(() => {
+    if (sessionStorage.getItem('hisaab_just_verified')) {
+      sessionStorage.removeItem('hisaab_just_verified');
+      setJustVerified(true);
+      setMode('login');
+    }
+  }, []);
 
   // Surface externally-set store errors (e.g. a deleted-account session blocked
   // at app boot) through the same detour mapper. Local call failures set the
@@ -282,6 +296,15 @@ export function AuthPage() {
           <p className="text-white/40 text-[10.5px] mt-3 tracking-wide">{t('auth_trust')}</p>
         </div>
 
+        {/* Email-confirmed banner — shown after the verification screen hands
+            the user back to log in, so the login form isn't a bare dead-end. */}
+        {justVerified && mode === 'login' && (
+          <div role="status" className="mb-5 flex items-center justify-center gap-2 rounded-2xl bg-receive-600/15 border border-receive-600/25 px-4 py-3 text-receive-50 text-[12.5px] font-medium animate-fade-in">
+            <MailCheck size={14} className="shrink-0" />
+            <span className="leading-relaxed">{t('verify_confirmed_login')}</span>
+          </div>
+        )}
+
         {/* Toggle */}
         {mode !== 'reset' && (
           <div className="flex bg-white/8 rounded-2xl p-1 mb-6 border border-white/10">
@@ -330,6 +353,15 @@ export function AuthPage() {
               </span>
             )}
           </div>
+
+          {/* "Did you mean gmail.com?" — a valid-format email can still be a
+              typo'd domain; one tap fixes it before verify limbo. */}
+          {emailSuggestion && (
+            <button type="button" onClick={() => { setEmail(emailSuggestion); if (detour) setDetour(null); }}
+              className="-mt-2 ml-1 text-left text-white/70 text-[11.5px] underline underline-offset-2 active:scale-95 transition-transform">
+              {t('auth_did_you_mean')} <span className="font-semibold text-receive-50">{emailSuggestion}</span>
+            </button>
+          )}
 
           {mode !== 'reset' && (
             <>
@@ -388,7 +420,7 @@ export function AuthPage() {
           <div className="text-right mt-2">
             <button onClick={() => switchMode('reset')}
               className="text-white/50 text-[11px] font-medium underline">
-              Forgot password?
+              {t('auth_forgot')}
             </button>
           </div>
         )}
@@ -429,17 +461,17 @@ export function AuthPage() {
         <p className="text-white/25 text-[11px] text-center mt-6">
           {mode === 'reset' ? (
             <>
-              Remembered it?{' '}
-              <button onClick={() => switchMode('login')} className="text-white/60 font-semibold underline">Back to Login</button>
+              {t('auth_remembered')}{' '}
+              <button onClick={() => switchMode('login')} className="text-white/60 font-semibold underline">{t('auth_back_to_login')}</button>
             </>
           ) : mode === 'login' ? (
             <>
-              Don't have an account?{' '}
+              {t('auth_no_account')}{' '}
               <button onClick={() => switchMode('signup')} className="text-white/60 font-semibold underline">Sign Up</button>
             </>
           ) : (
             <>
-              Already have an account?{' '}
+              {t('auth_have_account')}{' '}
               <button onClick={() => switchMode('login')} className="text-white/60 font-semibold underline">Login</button>
             </>
           )}

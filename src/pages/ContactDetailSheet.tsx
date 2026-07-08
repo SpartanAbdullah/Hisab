@@ -582,7 +582,8 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             )}
 
             <p className="text-[11px] text-ink-500 leading-relaxed">
-              Linking is private &mdash; the other user is not notified.
+              You're connected both ways &mdash; {person.name} was notified and you
+              appear in each other's contacts. Loans and splits you record can be shared.
             </p>
             <button
               onClick={handleUnlink}
@@ -631,7 +632,8 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 <p className="text-[11px] font-bold text-receive-text uppercase tracking-widest">Found</p>
                 <p className="text-[14px] font-semibold text-ink-900 mt-0.5">{resolved.displayName}</p>
                 <p className="text-[11px] text-ink-500 mt-1">
-                  Confirming will tag this contact with their account. No messages are sent.
+                  Confirming connects you both &mdash; {resolved.displayName} gets a notification
+                  and you'll appear in each other's contacts.
                 </p>
               </div>
             ) : (

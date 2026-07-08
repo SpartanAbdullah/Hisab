@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight, Lock,
+  HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight, Lock, Sparkles,
 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore, type TransactionInput } from '../stores/transactionStore';
@@ -339,8 +339,15 @@ export function QuickEntry({
   const nearestUpcoming = upcomingForSource[0] ?? null;
 
   const preSubmit = () => {
-    // If deducting from account that has upcoming expense, show warning first
-    if (nearestUpcoming && ['expense', 'transfer', 'loan_given', 'goal_contribution'].includes(type)) {
+    // Only warn when this spend would actually leave the account short of the
+    // upcoming bill — i.e. the balance after this deduction drops below the
+    // bill amount. Previously EVERY spend for 30 days after adding a bill
+    // triggered the full-screen warning, regardless of whether it threatened it.
+    const amt = parseFloat(amount) || 0;
+    const wouldFallShort =
+      nearestUpcoming && srcAccount &&
+      srcAccount.balance - amt < nearestUpcoming.amount;
+    if (wouldFallShort && ['expense', 'transfer', 'loan_given', 'goal_contribution'].includes(type)) {
       setShowSpendingWarning(true);
       return;
     }
@@ -720,6 +727,17 @@ export function QuickEntry({
                 >{key === 'del' ? <Delete size={18} /> : key}</button>
               ))}
             </div>
+
+            {/* Plain-words entry lives in Hisaab AI — surface it here so the
+                headline "type it in words" claim is discoverable from the FAB,
+                not hidden behind a separate tab. */}
+            <button
+              onClick={() => { handleClose(); navigate('/hisaab-ai'); }}
+              className="w-full flex items-center justify-center gap-1.5 text-[12px] text-ink-500 active:scale-[0.98] transition-transform pt-1 min-h-[40px]"
+            >
+              <Sparkles size={13} className="text-accent-500 shrink-0" />
+              {t('quick_type_instead')}
+            </button>
 
           </div>
         )}
