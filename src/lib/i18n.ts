@@ -83,6 +83,7 @@ const S = {
     en: "Enter name — e.g. Ahmed",
   },
   quick_which_loan: { ur: "Kaun Sa Qarz?", en: "Which Loan?" },
+  quick_loan_search_placeholder: { ur: "Naam se dhoondein…", en: "Search by name…" },
   quick_money_where: {
     ur: "Paisa Kis account main Aayega?",
     en: "Money Goes Where?",
@@ -2134,6 +2135,7 @@ const S = {
   confirm_settle_cta: { ur: "Settlement confirm karo", en: "Confirm settlement" },
   inbox_incoming_explainer: { ur: "Aapke linked contacts ki requests yahan aayengi — accept ya decline karne ke liye.", en: "Requests from your linked contacts will land here for you to accept or decline." },
   inbox_send_request: { ur: "Linked request bhejo", en: "Send a linked request" },
+  inbox_resolved_divider: { ur: "Pehle ke", en: "Earlier" },
   inbox_card_incoming_lent_full: { ur: "aapko {name} ko dena hoga", en: "you'd owe {name}" },
   inbox_card_incoming_borrowed_full: { ur: "{name} ko aapko dena hoga", en: "{name} would owe you" },
   // Settings group headers

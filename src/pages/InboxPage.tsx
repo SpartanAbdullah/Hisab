@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -84,10 +84,24 @@ export function InboxPage() {
     const settlementItems: InboxItem[] = settlements
       .filter((r) => (tab === 'incoming' ? r.toUserId === myId : r.fromUserId === myId))
       .map((r) => ({ kind: 'settlement' as const, item: r }));
-    return [...linkedItems, ...settlementItems].sort((a, b) =>
-      b.item.createdAt.localeCompare(a.item.createdAt),
-    );
+    // Pending (not-yet-acted) requests pin to the top so an older request
+    // never gets buried under newer, already-resolved ones. Within each
+    // group, newest-first. Acting on a card flips its status off 'pending',
+    // so it drops below the pending block on the very next render.
+    return [...linkedItems, ...settlementItems].sort((a, b) => {
+      const ap = a.item.status === 'pending' ? 0 : 1;
+      const bp = b.item.status === 'pending' ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      return b.item.createdAt.localeCompare(a.item.createdAt);
+    });
   }, [requests, settlements, tab, myId]);
+
+  // Where the pinned pending block ends — drives the "Earlier" divider so the
+  // acted-upon history reads as a visually separate section below.
+  const pendingVisibleCount = useMemo(
+    () => visible.filter((e) => e.item.status === 'pending').length,
+    [visible],
+  );
 
   const incomingPendingCount = useMemo(
     () =>
@@ -428,31 +442,49 @@ export function InboxPage() {
           ) : null
         ) : (
           <div className="space-y-2.5">
-            {visible.map((entry) =>
-              entry.kind === 'linked' ? (
-                <RequestCard
-                  key={`ltr-${entry.item.id}`}
-                  request={entry.item}
-                  tab={tab}
-                  busy={busyId === entry.item.id}
-                  contactName={contactNameFor(entry.item)}
-                  onAccept={() => handleAccept(entry.item.id)}
-                  onReject={() => handleReject(entry.item.id)}
-                  onCancel={() => handleCancel(entry.item.id)}
-                />
-              ) : (
-                <SettlementCard
-                  key={`lsr-${entry.item.id}`}
-                  request={entry.item}
-                  tab={tab}
-                  busy={busyId === entry.item.id}
-                  contactName={contactNameForSettlement(entry.item)}
-                  onAccept={() => handleAcceptSettlement(entry.item.id)}
-                  onReject={() => handleRejectSettlement(entry.item.id)}
-                  onCancel={() => handleCancelSettlement(entry.item.id)}
-                />
-              ),
-            )}
+            {visible.map((entry, idx) => {
+              // Divider sits at the boundary between the pinned pending block
+              // and the resolved history — shown only when both groups exist.
+              const showDivider =
+                pendingVisibleCount > 0 &&
+                pendingVisibleCount < visible.length &&
+                idx === pendingVisibleCount;
+              const card =
+                entry.kind === 'linked' ? (
+                  <RequestCard
+                    request={entry.item}
+                    tab={tab}
+                    busy={busyId === entry.item.id}
+                    contactName={contactNameFor(entry.item)}
+                    onAccept={() => handleAccept(entry.item.id)}
+                    onReject={() => handleReject(entry.item.id)}
+                    onCancel={() => handleCancel(entry.item.id)}
+                  />
+                ) : (
+                  <SettlementCard
+                    request={entry.item}
+                    tab={tab}
+                    busy={busyId === entry.item.id}
+                    contactName={contactNameForSettlement(entry.item)}
+                    onAccept={() => handleAcceptSettlement(entry.item.id)}
+                    onReject={() => handleRejectSettlement(entry.item.id)}
+                    onCancel={() => handleCancelSettlement(entry.item.id)}
+                  />
+                );
+              return (
+                <Fragment key={`${entry.kind}-${entry.item.id}`}>
+                  {showDivider && (
+                    <div className="flex items-center gap-2 pt-1.5 pb-0.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+                        {t('inbox_resolved_divider')}
+                      </span>
+                      <span className="flex-1 h-px bg-cream-hairline" />
+                    </div>
+                  )}
+                  {card}
+                </Fragment>
+              );
+            })}
           </div>
         )}
       </div>

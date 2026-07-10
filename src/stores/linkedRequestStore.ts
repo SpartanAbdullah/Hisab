@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { linkedRequestsDb } from '../lib/supabaseDb';
 import type { LinkedRequest, LinkedRequestKind, Currency, Loan } from '../db';
 import { plausibilityCheck } from '../lib/currencyValidation';
+import { syncCandidateLoans } from '../lib/syncableLoans';
 import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
 import { usePersonStore } from './personStore';
@@ -150,25 +151,12 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
   },
 
   syncableBreakdownFor: (personId) => {
-    const allRequests = get().requests;
-    // A loan is already syncing (or has been synced) if any
-    // non-cancelled/non-rejected request references it via
-    // pre_existing_loan_id. Cancelled / rejected requests free the slot
-    // — the user can retry. Accepted requests should also block, since
-    // the loan is now linked.
-    const blockedLoanIds = new Set(
-      allRequests
-        .filter((r) => r.preExistingLoanId && r.status !== 'cancelled' && r.status !== 'rejected')
-        .map((r) => r.preExistingLoanId as string),
-    );
-    const loans = useLoanStore.getState().loans;
-    const candidates = loans.filter(
-      (l) =>
-        l.personId === personId &&
-        l.status === 'active' &&
-        l.remainingAmount > 0.01 &&
-        !blockedLoanIds.has(l.id),
-    );
+    // A loan must not be offered for sync if it's already shared with the
+    // other user — re-sending it would create a duplicate request and leave
+    // both ledgers ambiguous (the reported "keeps asking to sync again" bug).
+    // syncCandidateLoans encodes the three "already shared" signals; see
+    // src/lib/syncableLoans.ts. Currency support is applied below.
+    const candidates = syncCandidateLoans(personId, useLoanStore.getState().loans, get().requests);
     const syncable: Loan[] = [];
     const skipped: Loan[] = [];
     for (const loan of candidates) {

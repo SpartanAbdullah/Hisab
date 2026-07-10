@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
   HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight, Lock, Sparkles,
+  Search, X,
 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore, type TransactionInput } from '../stores/transactionStore';
@@ -26,7 +27,7 @@ import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
-import { SUPPORTED_CURRENCIES, type Currency, type TransactionType, type SplitGroup } from '../db';
+import { SUPPORTED_CURRENCIES, type Currency, type TransactionType, type SplitGroup, type Loan } from '../db';
 import { AddAccountStepper } from './AddAccountStepper';
 
 // Internal type slot widened to include the "group_expense" sentinel.
@@ -101,6 +102,7 @@ export function QuickEntry({
   const [notes, setNotes] = useState('');
   const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
   const [loanId, setLoanId] = useState('');
+  const [loanSearch, setLoanSearch] = useState('');
   const [goalId, setGoalId] = useState('');
   const [conversionRate, setConversionRate] = useState('');
   const [ledgerCurrency, setLedgerCurrency] = useState<Currency>((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
@@ -161,7 +163,7 @@ export function QuickEntry({
   const reset = () => {
     setStep(0); setIntent(null); setAmount(''); setType('expense'); setRepaymentDirection(null);
     setSourceId(''); setDestId(''); setCategory('');
-    setNotes(''); setContact({ id: null, name: '' }); setLoanId('');
+    setNotes(''); setContact({ id: null, name: '' }); setLoanId(''); setLoanSearch('');
     setGoalId(''); setConversionRate('');
     setHasEmi(false); setEmiInstallments(''); setEmiStartDate('');
   };
@@ -235,6 +237,37 @@ export function QuickEntry({
     if (preset?.contact?.id && loan.personId !== preset.contact.id) return false;
     return true;
   });
+
+  // Group the direction-filtered loans by person (+ currency, so someone with
+  // both an AED and a PKR loan shows two honest subtotals rather than a mixed
+  // sum). Reuses LoansPage's person key so grouping stays consistent app-wide.
+  // The search box narrows by name or note. This replaces the old flat list
+  // that buried the loan the user was looking for.
+  const loanQuery = loanSearch.trim().toLowerCase();
+  const repaymentLoanGroups: Array<{ key: string; name: string; currency: Currency; loans: Loan[]; remaining: number }> = (() => {
+    const searched = loanQuery
+      ? filteredLoans.filter(
+          (l) =>
+            l.personName.toLowerCase().includes(loanQuery) ||
+            (l.notes ?? '').toLowerCase().includes(loanQuery),
+        )
+      : filteredLoans;
+    const buckets = new Map<string, { key: string; name: string; currency: Currency; loans: Loan[]; remaining: number }>();
+    for (const l of searched) {
+      const personKey = l.personId ?? l.personName.trim().toLowerCase();
+      const key = `${personKey}:${l.currency}`;
+      const bucket = buckets.get(key) ?? { key, name: l.personName, currency: l.currency, loans: [], remaining: 0 };
+      bucket.loans.push(l);
+      bucket.remaining += l.remainingAmount;
+      buckets.set(key, bucket);
+    }
+    const groups = [...buckets.values()];
+    for (const g of groups) g.loans.sort((a, b) => b.remainingAmount - a.remainingAmount);
+    return groups.sort((a, b) => b.remaining - a.remaining);
+  })();
+  // Only surface the search box once the flat list is long enough that
+  // scanning for the right loan is the friction the user reported.
+  const showLoanSearch = filteredLoans.length > 4;
 
   // Group-expense handoff. The actual save happens in App's
   // AddGroupExpenseModal — we just close + relay.
@@ -1177,25 +1210,74 @@ export function QuickEntry({
                     {t('loan_no_tx')}
                   </p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {selectedLoan && parseFloat(amount) > selectedLoan.remainingAmount + 0.00001 && (
                       <p className="text-[11px] text-pay-text font-semibold leading-relaxed bg-pay-50 border border-pay-100 rounded-xl px-3 py-2">
                         {t('err_overpayment').replace('{remaining}', formatMoney(selectedLoan.remainingAmount, selectedLoan.currency))}
                       </p>
                     )}
-                    {filteredLoans.map(l => (
-                      <button key={l.id} type="button" onClick={() => setLoanId(l.id)}
-                        className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                          loanId === l.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-semibold text-ink-900 truncate">{l.personName}</p>
-                          <p className="text-[10px] text-ink-500">{l.type === 'given' ? t('loan_receivable') : t('loan_payable')}</p>
+                    {/* Search — appears once the list is long enough that finding
+                        the right loan by scanning is the friction users hit. */}
+                    {showLoanSearch && (
+                      <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
+                        <input
+                          value={loanSearch}
+                          onChange={(e) => setLoanSearch(e.target.value)}
+                          placeholder={t('quick_loan_search_placeholder')}
+                          className="w-full border border-cream-border rounded-2xl pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all"
+                        />
+                        {loanSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setLoanSearch('')}
+                            aria-label="Clear search"
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 active:text-ink-600"
+                          >
+                            <X size={15} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {repaymentLoanGroups.length === 0 ? (
+                      <p className="text-[12px] text-ink-500 bg-cream-soft border border-cream-hairline rounded-xl p-3 leading-relaxed">
+                        {t('search_no_matches').replace('{q}', loanSearch.trim())}
+                      </p>
+                    ) : (
+                      // Loans grouped by person (+ currency), each person a
+                      // labelled section with a subtotal — so the exact loan is
+                      // easy to spot instead of hunting a flat list.
+                      repaymentLoanGroups.map((group) => (
+                        <div key={group.key} className="space-y-1.5">
+                          <div className="flex items-center justify-between px-0.5">
+                            <p className="text-[12px] font-semibold text-ink-900 truncate">{group.name}</p>
+                            <p className="text-[10.5px] text-ink-500 tabular-nums shrink-0 ml-2">
+                              {group.loans.length > 1 ? `${group.loans.length} loans · ` : ''}
+                              {formatMoney(group.remaining, group.currency)}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            {group.loans.map((l) => (
+                              <button key={l.id} type="button" onClick={() => setLoanId(l.id)}
+                                className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                                  loanId === l.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-[12.5px] font-medium text-ink-800 truncate">
+                                    {l.notes?.trim() ? l.notes : (l.type === 'given' ? t('loan_receivable') : t('loan_payable'))}
+                                  </p>
+                                  <p className="text-[10px] text-ink-500 mt-0.5">
+                                    {new Date(l.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </p>
+                                </div>
+                                <p className="text-[13px] font-semibold text-ink-900 tabular-nums shrink-0 ml-2">{formatMoney(l.remainingAmount, l.currency)}</p>
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums shrink-0 ml-2">{formatMoney(l.remainingAmount, l.currency)}</p>
-                      </button>
-                    ))}
+                      ))
+                    )}
                   </div>
                 )}
               </div>
