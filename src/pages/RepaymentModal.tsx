@@ -8,6 +8,8 @@ import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useToast } from '../components/Toast';
 import { AccountGroupSections } from '../components/AccountGroupSections';
+import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
+import { rateIsSane, RATE_MIN } from '../lib/conversionMath';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
@@ -88,13 +90,6 @@ export function RepaymentModal({
     onClose();
   };
 
-  // Conversion-rate sanity bounds. A typo'd rate of 0.0001 or 999999
-  // would silently corrupt a balance, so we reject anything outside a
-  // sane window. Real-world rates for AED/PKR/USD/EUR sit between
-  // 0.005 and 350, well within these bounds.
-  const RATE_MIN = 0.0001;
-  const RATE_MAX = 100000;
-
   const canSubmit = () => {
     const parsedAmount = parseFloat(amount);
     if (!(parsedAmount > 0)) return false;
@@ -103,10 +98,7 @@ export function RepaymentModal({
     // overage with no user feedback — unacceptable for a money app.
     if (parsedAmount > loan.remainingAmount + 0.00001) return false;
     if (!isLedgerOnlyMode && !accountId) return false;
-    if (!isLedgerOnlyMode && isCrossCurrency) {
-      const r = parseFloat(conversionRate);
-      if (!(r >= RATE_MIN && r <= RATE_MAX)) return false;
-    }
+    if (!isLedgerOnlyMode && isCrossCurrency && !rateIsSane(parseFloat(conversionRate))) return false;
     return true;
   };
 
@@ -117,15 +109,6 @@ export function RepaymentModal({
     if (parsedAmount > loan.remainingAmount + 0.00001) {
       return t('err_overpayment').replace('{remaining}', formatMoney(loan.remainingAmount, loan.currency));
     }
-    return null;
-  })();
-
-  const rateValidationMsg = (() => {
-    if (!isCrossCurrency) return null;
-    const r = parseFloat(conversionRate);
-    if (!conversionRate) return null;
-    if (r < RATE_MIN) return t('err_rate_too_low');
-    if (r > RATE_MAX) return t('err_rate_too_high');
     return null;
   })();
 
@@ -144,7 +127,7 @@ export function RepaymentModal({
     }
     if (!isLedgerOnlyMode && isCrossCurrency) {
       const r = parseFloat(conversionRate);
-      if (!(r >= RATE_MIN && r <= RATE_MAX)) {
+      if (!rateIsSane(r)) {
         toast.show({
           type: 'error',
           title: t('error'),
@@ -403,41 +386,20 @@ export function RepaymentModal({
           </div>
           )}
 
-          {!isLedgerOnlyMode && isCrossCurrency && selectedAccount ? (
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-4 border border-blue-100/60 space-y-3 animate-fade-in">
-              <p className="text-[11px] font-bold text-blue-600 uppercase tracking-widest">{t('conv_title')}</p>
-              <p className="text-[12px] text-ink-700">
-                Loan: <span className="font-bold">{loan.currency}</span> - Account: <span className="font-bold">{selectedAccount.currency}</span>
-              </p>
-              <div>
-                <label className="block text-[11px] font-bold text-ink-500 mb-1.5">
-                  {t('conv_rate')} 1 {loan.currency} = ___ {selectedAccount.currency}
-                </label>
-                <input
-                  type="number"
-                  step="0.0001"
-                  value={conversionRate}
-                  onChange={(event) => setConversionRate(event.target.value)}
-                  placeholder="e.g. 78.50"
-                  className="input-field"
-                />
-                {rateValidationMsg && (
-                  <p className="mt-1.5 text-[11px] text-pay-text font-semibold leading-relaxed">
-                    {rateValidationMsg}
-                  </p>
-                )}
-              </div>
-              {conversionRate && parseFloat(conversionRate) > 0 && parseFloat(amount) > 0 ? (
-                <div className="bg-cream-card rounded-xl p-3 text-center border border-blue-100/60 animate-fade-in">
-                  <p className="text-[10px] text-ink-500">{isGiven ? t('conv_will_get') : 'Will deduct'}</p>
-                  <p className="text-lg font-bold text-receive-text tabular-nums">
-                    {isGiven
-                      ? formatMoney(Math.round(parseFloat(amount) * parseFloat(conversionRate) * 100) / 100, selectedAccount.currency)
-                      : formatMoney(Math.round(parseFloat(amount) / parseFloat(conversionRate) * 100) / 100, selectedAccount.currency)}
-                  </p>
-                </div>
-              ) : null}
-            </div>
+          {/* Cross-currency: the user types what actually landed in (or left)
+              the account; the rate is derived. The old free-form rate input's
+              label asked for the opposite direction from the store math on
+              'taken' loans — a direction the user can no longer get wrong. */}
+          {!isLedgerOnlyMode && isCrossCurrency && selectedAccount && parseFloat(amount) > 0 ? (
+            <CurrencyConversionCard
+              knownAmount={parseFloat(amount)}
+              knownCurrency={loan.currency}
+              otherCurrency={selectedAccount.currency}
+              otherSide={isGiven ? 'receiving' : 'paying'}
+              rateSemantics={isGiven ? 'other-per-known' : 'known-per-other'}
+              rate={conversionRate}
+              onRateChange={setConversionRate}
+            />
           ) : null}
 
           <div>

@@ -20,6 +20,8 @@ import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { AccountGroupSections } from '../components/AccountGroupSections';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
+import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
+import { rateIsSane } from '../lib/conversionMath';
 import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { SpendingWarningModal } from '../components/SpendingWarningModal';
@@ -372,31 +374,34 @@ export function QuickEntry({
     return false;
   })();
 
-  // Determine the two currencies for the conversion card
-  const crossCurrencyFrom = (() => {
-    if (type === 'transfer' && srcAccount) return srcAccount.currency;
-    if (type === 'repayment' && selectedLoan) return selectedLoan.currency;
-    if (type === 'goal_contribution' && srcAccount) return srcAccount.currency;
-    return '';
-  })();
-  const crossCurrencyTo = (() => {
-    if (type === 'transfer' && dstAccount) return dstAccount.currency;
-    if (type === 'repayment') {
-      if (selectedLoan?.type === 'given' && dstAccount) return dstAccount.currency;
-      if (selectedLoan?.type === 'taken' && srcAccount) return srcAccount.currency;
+  // Per-type props for the conversion card. `known` is the side the user has
+  // already typed (the main amount); `other` is what the card asks about.
+  // rateSemantics mirrors the store math EXACTLY:
+  //   transfer / repayment-given → other = amount * rate  ('other-per-known')
+  //   repayment-taken / goal     → other = amount / rate  ('known-per-other')
+  // Previously the repayment-taken label asked for the rate in the opposite
+  // direction from what the store divided by — following the label corrupted
+  // the deduction. The card derives the rate from amounts, so the direction
+  // can no longer be entered backwards.
+  const conversionProps = (() => {
+    if (type === 'transfer' && srcAccount && dstAccount)
+      return { knownCurrency: srcAccount.currency, otherCurrency: dstAccount.currency, otherSide: 'receiving' as const, rateSemantics: 'other-per-known' as const };
+    if (type === 'repayment' && selectedLoan) {
+      if (selectedLoan.type === 'given' && dstAccount)
+        return { knownCurrency: selectedLoan.currency, otherCurrency: dstAccount.currency, otherSide: 'receiving' as const, rateSemantics: 'other-per-known' as const };
+      if (selectedLoan.type === 'taken' && srcAccount)
+        return { knownCurrency: selectedLoan.currency, otherCurrency: srcAccount.currency, otherSide: 'paying' as const, rateSemantics: 'known-per-other' as const };
     }
-    if (type === 'goal_contribution' && selectedGoal) return selectedGoal.currency;
-    return '';
+    if (type === 'goal_contribution' && srcAccount && selectedGoal)
+      return { knownCurrency: selectedGoal.currency, otherCurrency: srcAccount.currency, otherSide: 'paying' as const, rateSemantics: 'known-per-other' as const };
+    return null;
   })();
 
   // Conversion-rate sanity bounds (Phase H2 hardening). A typo'd rate
   // would silently corrupt balances; reject outside a sane window.
-  const RATE_MIN = 0.0001;
-  const RATE_MAX = 100000;
   const rateIsValid = () => {
     if (!isCrossCurrency) return true;
-    const r = parseFloat(conversionRate);
-    return r >= RATE_MIN && r <= RATE_MAX;
+    return rateIsSane(parseFloat(conversionRate));
   };
 
   const canSubmit = () => {
@@ -1252,34 +1257,18 @@ export function QuickEntry({
               </div>
             )}
 
-            {/* Universal cross-currency conversion screen */}
-            {isCrossCurrency && crossCurrencyFrom && crossCurrencyTo && (
-              <div className="bg-info-50 rounded-2xl p-4 border border-cream-border space-y-3 animate-fade-in">
-                <p className="text-[10.5px] font-semibold text-info-600 uppercase tracking-[0.12em]">{t('conv_title')}</p>
-                <p className="text-[12px] text-ink-600">
-                  {t('conv_moving')} <span className="font-semibold text-ink-900">{formatMoney(parseFloat(amount), crossCurrencyFrom)}</span>
-                </p>
-                <div>
-                  <label className="block text-[11px] font-semibold text-ink-500 mb-1.5">
-                    {t('conv_rate')} 1 {crossCurrencyFrom} = ___ {crossCurrencyTo}
-                  </label>
-                  <input type="number" step="0.0001" value={conversionRate} onChange={e => setConversionRate(e.target.value)}
-                    placeholder="e.g. 78.50" className={inputClass} autoFocus />
-                  {conversionRate && !rateIsValid() && (
-                    <p className="mt-1.5 text-[11px] text-pay-text font-semibold leading-relaxed">
-                      {parseFloat(conversionRate) < RATE_MIN ? t('err_rate_too_low') : t('err_rate_too_high')}
-                    </p>
-                  )}
-                </div>
-                {conversionRate && parseFloat(conversionRate) > 0 && (
-                  <div className="bg-cream-card rounded-xl p-3 text-center border border-cream-border animate-fade-in">
-                    <p className="text-[10px] text-ink-500">{t('conv_will_get')}</p>
-                    <p className="text-lg font-semibold text-receive-text tabular-nums">
-                      {formatMoney(Math.round(parseFloat(amount) * parseFloat(conversionRate) * 100) / 100, crossCurrencyTo)}
-                    </p>
-                  </div>
-                )}
-              </div>
+            {/* Cross-currency: ask for the amount that landed/left on the
+                other side and derive the rate — no rate-direction guessing. */}
+            {isCrossCurrency && conversionProps && (
+              <CurrencyConversionCard
+                knownAmount={parseFloat(amount) || 0}
+                knownCurrency={conversionProps.knownCurrency}
+                otherCurrency={conversionProps.otherCurrency}
+                otherSide={conversionProps.otherSide}
+                rateSemantics={conversionProps.rateSemantics}
+                rate={conversionRate}
+                onRateChange={setConversionRate}
+              />
             )}
 
             {needsPerson && !cashAdvance && (

@@ -125,6 +125,21 @@ const S = {
   conv_moving: { ur: "Aap bhej rahe hain", en: "You are moving" },
   conv_rate: { ur: "Aaj ka rate daalo: 1", en: "Enter today's rate: 1" },
   conv_will_get: { ur: "Milenge", en: "Will receive" },
+  // Received-amount-first conversion card. The user types what landed (or
+  // what was deducted) on the other side; the rate is derived and shown in
+  // both directions so there is no direction to get wrong.
+  conv_ask_received: { ur: "Doosri taraf kitne {currency} aaye?", en: "How much {currency} arrived on the other side?" },
+  conv_ask_paid: { ur: "Account se kitne {currency} gaye?", en: "How much {currency} left your account?" },
+  conv_side_sending: { ur: "Bhej rahe hain", en: "Sending" },
+  conv_side_arrives: { ur: "Pohanchenge", en: "Arrives" },
+  conv_side_paying_back: { ur: "Ada kar rahe hain", en: "Paying" },
+  conv_side_leaves: { ur: "Account se jayenge", en: "Leaves account" },
+  conv_amount_placeholder: { ur: "e.g. 76,500", en: "e.g. 76,500" },
+  conv_rate_placeholder: { ur: "e.g. 76.50", en: "e.g. 76.50" },
+  conv_amount_implausible: { ur: "Yeh rate theek nahi lagta — dono amounts check karein.", en: "That rate looks off — double-check both amounts." },
+  conv_enter_rate_instead: { ur: "Rate khud likhna hai?", en: "Know the rate? Enter it instead" },
+  conv_enter_amount_instead: { ur: "Amount se hisaab karein", en: "Enter the amount instead" },
+  conv_flip_direction: { ur: "Rate ki simt badlein", en: "Flip rate direction" },
 
   // Account Stepper
   acct_what_type: { ur: "Kis type ka Account?", en: "Account Type?" },
