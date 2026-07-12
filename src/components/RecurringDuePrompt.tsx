@@ -6,6 +6,7 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from './Toast';
 import { formatMoney } from '../lib/constants';
+import { brandIconFor } from '../lib/brandIcon';
 import type { RecurringTransaction } from '../db';
 import type { RecurringDueDetail } from '../lib/recurringRunner';
 
@@ -125,8 +126,13 @@ export function RecurringDuePrompt() {
     <Modal open={!!current} onClose={pop} title="Recurring entry due">
       <div className="space-y-4">
         <div className="rounded-2xl bg-cream-soft border border-cream-border p-4 flex items-start gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-accent-100 text-accent-600 flex items-center justify-center shrink-0">
-            <Repeat size={18} strokeWidth={1.8} />
+          {/* Brand/category glyph when we can infer one ("Netflix" → 🎬,
+              "Salary" → 💰); generic Repeat icon otherwise. */}
+          <div className="w-11 h-11 rounded-2xl bg-accent-100 text-accent-600 flex items-center justify-center shrink-0 text-lg">
+            {(() => {
+              const icon = brandIconFor(current.label, current.category);
+              return icon.matched === 'none' ? <Repeat size={18} strokeWidth={1.8} /> : icon.emoji;
+            })()}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">

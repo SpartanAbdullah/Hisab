@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
   HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight, Lock, Sparkles,
-  Search, X,
+  Search, X, CreditCard,
 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore, type TransactionInput } from '../stores/transactionStore';
@@ -18,6 +18,7 @@ import { useSplitStore } from '../stores/splitStore';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
+import { AccountGroupSections } from '../components/AccountGroupSections';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
@@ -36,14 +37,13 @@ import { AddAccountStepper } from './AddAccountStepper';
 // authored via AddGroupExpenseModal, so the type guard is "if the user
 // picked this tile, route to the group-picker step and hand off to App."
 type EntryKind = TransactionType | 'group_expense';
-type EntryIntent = 'expense' | 'income' | 'transfer' | 'person_money' | 'group_expense';
+type EntryIntent = 'expense' | 'income' | 'transfer' | 'person_money' | 'group_expense' | 'cash_advance';
 type RepaymentDirection = 'received' | 'paid' | null;
 
 export interface QuickEntryPreset {
   type?: Extract<TransactionType, 'expense' | 'income' | 'transfer' | 'loan_given' | 'loan_taken' | 'repayment'>;
   // `intent` lets callers start QuickEntry at a higher level than `type`.
-  // 'person_money' jumps directly to the Step-3 sub-picker after amount
-  // entry (so the user picks gave/borrowed/paid-back themselves).
+  // 'person_money' starts at the gave/borrowed/paid-back sub-picker;
   // 'group_expense' routes amount → group picker.
   intent?: 'person_money' | 'group_expense';
   contact?: ContactValue;
@@ -52,6 +52,10 @@ export interface QuickEntryPreset {
   // Pre-fill the transfer DESTINATION (e.g. paying a credit-card bill, where
   // the card is the destination and the user picks which account pays).
   destinationAccountId?: string;
+  // Cash advance: pre-select (and lock) the credit card funding a loan_taken.
+  // Used by the card page's "Cash advance" action — the user only enters the
+  // amount and picks where the cash landed; no contact is asked for.
+  cashAdvanceCardId?: string;
   lockContact?: boolean;
   lockAccount?: boolean;
 }
@@ -96,6 +100,9 @@ export function QuickEntry({
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<EntryKind>('expense');
   const [repaymentDirection, setRepaymentDirection] = useState<RepaymentDirection>(null);
+  // Cash-advance mode: a loan_taken funded by one of the user's own credit
+  // cards. No counterparty is asked for — the card IS the counterparty.
+  const [cashAdvance, setCashAdvance] = useState(false);
   const [sourceId, setSourceId] = useState('');
   const [destId, setDestId] = useState('');
   const [category, setCategory] = useState('');
@@ -148,20 +155,23 @@ export function QuickEntry({
   // Intent picker. Splits-only mode has no accounts, so the Spend/Receive/
   // Move intents (which require source/dest account selection) are hidden
   // entirely — only the people-oriented intents remain. Full-tracker mode
-  // shows everything.
+  // shows everything; "Cash advance" appears only when a credit card exists.
+  const hasCreditCard = accounts.some((a) => a.type === 'credit_card');
   const ALL_INTENTS: { value: EntryIntent; label: string; sub: string; icon: typeof ArrowUpRight }[] = [
     { value: 'expense', label: t('intent_spend'), sub: t('intent_spend_sub'), icon: ArrowUpRight },
     { value: 'income', label: t('intent_receive'), sub: t('intent_receive_sub'), icon: ArrowDownLeft },
     { value: 'transfer', label: t('intent_move'), sub: t('intent_move_sub'), icon: ArrowLeftRight },
     { value: 'person_money', label: t('intent_person'), sub: t('intent_person_sub'), icon: HandCoins },
     { value: 'group_expense', label: t('intent_group'), sub: t('intent_group_sub'), icon: Users },
+    { value: 'cash_advance', label: t('intent_cash_advance'), sub: t('intent_cash_advance_sub'), icon: CreditCard },
   ];
   const INTENTS = appMode === 'splits_only'
     ? ALL_INTENTS.filter((i) => i.value === 'person_money' || i.value === 'group_expense')
-    : ALL_INTENTS;
+    : ALL_INTENTS.filter((i) => i.value !== 'cash_advance' || hasCreditCard);
 
   const reset = () => {
     setStep(0); setIntent(null); setAmount(''); setType('expense'); setRepaymentDirection(null);
+    setCashAdvance(false);
     setSourceId(''); setDestId(''); setCategory('');
     setNotes(''); setContact({ id: null, name: '' }); setLoanId(''); setLoanSearch('');
     setGoalId(''); setConversionRate('');
@@ -171,21 +181,31 @@ export function QuickEntry({
 
   useEffect(() => {
     if (!open) return;
-    setStep(0);
-    // Hydrate intent from preset so the Step-0 Next button routes to the
-    // right subsequent step (Step 3 for person_money, Step 2 with type set
-    // for group_expense).
+    // Type-first flow: the wizard opens on "What happened?" (step 1) and only
+    // asks for the amount once the type is known, so the amount screen can
+    // carry context. Presets that already know the type skip straight to the
+    // amount; person_money presets start at the gave/borrowed/paid sub-picker.
+    setStep(
+      preset?.type || preset?.cashAdvanceCardId || preset?.intent === 'group_expense'
+        ? 0
+        : preset?.intent === 'person_money'
+          ? 3
+          : 1,
+    );
     setIntent(preset?.intent ?? null);
     setAmount('');
     setType(preset?.intent === 'group_expense' ? 'group_expense' : (preset?.type ?? 'expense'));
     setRepaymentDirection(preset?.repaymentDirection ?? null);
+    setCashAdvance(!!preset?.cashAdvanceCardId);
     setSourceId(
-      preset?.accountId && ['expense', 'transfer', 'loan_given'].includes(preset.type ?? '')
-        ? preset.accountId
-        : '',
+      preset?.cashAdvanceCardId
+        ? preset.cashAdvanceCardId
+        : preset?.accountId && ['expense', 'transfer', 'loan_given'].includes(preset.type ?? '')
+          ? preset.accountId
+          : '',
     );
     setDestId(
-      preset?.accountId && ['income', 'loan_taken'].includes(preset.type ?? '')
+      preset?.accountId && ['income', 'loan_taken'].includes(preset.type ?? '') && !preset?.cashAdvanceCardId
         ? preset.accountId
         : preset?.destinationAccountId && preset.type === 'transfer'
           ? preset.destinationAccountId
@@ -200,12 +220,19 @@ export function QuickEntry({
 
   useEffect(() => {
     if (!open) return;
+    if (preset?.cashAdvanceCardId) {
+      if (type === 'loan_taken') setSourceId(preset.cashAdvanceCardId);
+      return; // cash-advance preset carries no accountId — nothing else to re-apply
+    }
     if (preset?.accountId) {
       if (['expense', 'transfer', 'loan_given'].includes(type)) setSourceId(preset.accountId);
       if (['income', 'loan_taken'].includes(type)) setDestId(preset.accountId);
+      // Repayment splits by loan direction at submit; preselect both sides so
+      // whichever one the chosen loan needs is already the viewed account.
+      if (type === 'repayment') { setSourceId(preset.accountId); setDestId(preset.accountId); }
     }
     if (preset?.destinationAccountId && type === 'transfer') setDestId(preset.destinationAccountId);
-  }, [open, preset?.accountId, preset?.destinationAccountId, type]);
+  }, [open, preset?.accountId, preset?.destinationAccountId, preset?.cashAdvanceCardId, type]);
 
   const numpadPress = (key: string) => {
     if (key === 'del') { setAmount(a => a.slice(0, -1)); }
@@ -291,11 +318,42 @@ export function QuickEntry({
   );
   const selectedCashAdvanceCard = availableCashAdvanceCards.find(a => a.id === sourceId);
 
+  // Side-aware account lock. A preset's accountId locks ONLY the side the
+  // viewed account plays for the current type — never both. For transfers the
+  // opposite list excludes the locked/selected account, otherwise "Move" from
+  // an account page showed the same single account as both From and To and
+  // the transfer could never be submitted (sourceId !== destId is required).
+  const sourceLockId =
+    preset?.lockAccount && preset.accountId && ['expense', 'transfer', 'loan_given', 'goal_contribution'].includes(type)
+      ? preset.accountId
+      : null;
+  const destLockId =
+    preset?.lockAccount && preset.accountId && ['income', 'loan_taken'].includes(type)
+      ? preset.accountId
+      : null;
+  const sourceChoices = sourceLockId
+    ? accounts.filter((a) => a.id === sourceLockId)
+    : accounts.filter((a) => type !== 'transfer' || !destId || a.id !== destId);
+  const destChoices = (() => {
+    let list = destLockId
+      ? accounts.filter((a) => a.id === destLockId)
+      : accounts.filter((a) => type !== 'transfer' || !sourceId || a.id !== sourceId);
+    // Cash advance: the money lands somewhere spendable — never another card —
+    // and must match the funding card's currency (store-enforced).
+    if (cashAdvance) {
+      list = list.filter(
+        (a) => a.type !== 'credit_card' && (!selectedCashAdvanceCard || a.currency === selectedCashAdvanceCard.currency),
+      );
+    }
+    return list;
+  })();
+
   // Active currency for the amount step + quick-amount presets. Prefer the
   // preset account's currency (when QuickEntry was launched pinned to an
   // account); otherwise the user's primary currency.
   const primaryCurrency = (localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED';
-  const presetAccount = preset?.accountId ? accounts.find(a => a.id === preset.accountId) : undefined;
+  const presetAccountId = preset?.accountId ?? preset?.cashAdvanceCardId;
+  const presetAccount = presetAccountId ? accounts.find(a => a.id === presetAccountId) : undefined;
   const activeCurrency: Currency = presetAccount?.currency ?? primaryCurrency;
   // Quick-amount chips scale with the primary currency: PKR users deal in
   // far larger nominal amounts than AED users, so offer a bigger preset set.
@@ -358,7 +416,11 @@ export function QuickEntry({
       case 'expense': return !!sourceId;
       case 'transfer': return !!sourceId && !!destId && sourceId !== destId;
       case 'loan_given': return (isLedgerOnlyPersonFlow || !!sourceId) && !!contact.name.trim();
-      case 'loan_taken': return (isLedgerOnlyPersonFlow || !!destId) && !!contact.name.trim();
+      case 'loan_taken':
+        // Cash advance: the card is the counterparty — require the card
+        // (sourceId) instead of a typed contact.
+        if (cashAdvance) return !!destId && !!selectedCashAdvanceCard;
+        return (isLedgerOnlyPersonFlow || !!destId) && !!contact.name.trim();
       case 'repayment':
         if (!loanId) return false;
         // Linked loans settle via the loan page, not here.
@@ -432,8 +494,10 @@ export function QuickEntry({
       const changes: Array<{ accountName: string; currency: string; before: number; after: number }> = [];
 
       // Resolve contact once if this entry type needs a person. `needsPerson`
-      // is the source of truth for whether a contact row must exist.
-      const resolvedPerson = needsPerson
+      // is the source of truth for whether a contact row must exist. A cash
+      // advance has no human counterparty — the card is the lender — so no
+      // Person row is created (it would pollute the contact pickers).
+      const resolvedPerson = needsPerson && !cashAdvance
         ? (contact.id
             ? await ensureResolvedPerson(contact.name.trim(), contact.id)
             : await usePersonStore.getState().findOrCreateByName(contact.name.trim()))
@@ -519,7 +583,10 @@ export function QuickEntry({
       // Phase 2B: Full Money Tracker can branch linked-contact loan entries
       // into an approval request. Simple mode must record local wallet effects
       // immediately, so it uses the normal transaction path below.
-      if (appMode !== 'splits_only' && (type === 'loan_given' || type === 'loan_taken')) {
+      // Card-funded entries never branch: a cash advance is between the user
+      // and their own card — branching here used to fire a cross-user request
+      // and silently skip the card debit entirely.
+      if (appMode !== 'splits_only' && (type === 'loan_given' || type === 'loan_taken') && !selectedCashAdvanceCard) {
         const accountForBranch = type === 'loan_given' ? srcAccount : dstAccount;
         const branch = decideLinkedBranch({
           type,
@@ -566,7 +633,17 @@ export function QuickEntry({
             changes.push({ accountName: selectedCashAdvanceCard.name, currency: selectedCashAdvanceCard.currency, before: selectedCashAdvanceCard.balance, after: selectedCashAdvanceCard.balance - amt });
           }
           changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt });
-          input = { type: 'loan_taken', amount: amt, destinationAccountId: destId, sourceAccountId: selectedCashAdvanceCard?.id, personName: resolvedPerson!.name, personId: resolvedPerson!.id, notes };
+          // Cash advance: the card is the counterparty — record its name on
+          // the loan but create no Person row (personId stays null).
+          input = {
+            type: 'loan_taken',
+            amount: amt,
+            destinationAccountId: destId,
+            sourceAccountId: selectedCashAdvanceCard?.id,
+            personName: cashAdvance && selectedCashAdvanceCard ? selectedCashAdvanceCard.name : resolvedPerson!.name,
+            personId: cashAdvance ? null : resolvedPerson!.id,
+            notes,
+          };
           break;
         }
         case 'repayment': {
@@ -622,7 +699,7 @@ export function QuickEntry({
         }
       }
 
-      const typeLabel = TX_TYPES.find(tx => tx.value === type)?.label ?? type;
+      const typeLabel = cashAdvance ? t('intent_cash_advance') : (TX_TYPES.find(tx => tx.value === type)?.label ?? type);
       const confirmationCurrency = changes[0]?.currency ?? localStorage.getItem('hisaab_primary_currency') ?? 'PKR';
       const resultDescription = (() => {
         const first = changes[0];
@@ -630,6 +707,12 @@ export function QuickEntry({
         if (type === 'income' && first) return `${formatMoney(amt, first.currency)} was added to ${first.accountName}.`;
         if (type === 'transfer' && changes.length === 2) return `${formatMoney(amt, changes[0].currency)} moved from ${changes[0].accountName} to ${changes[1].accountName}.`;
         if (type === 'loan_given') return `${resolvedPerson!.name} owes you ${formatMoney(amt, confirmationCurrency)}.`;
+        if (type === 'loan_taken' && cashAdvance && selectedCashAdvanceCard) {
+          return t('qe_ca_done_desc')
+            .replace('{amount}', formatMoney(amt, selectedCashAdvanceCard.currency))
+            .replace('{card}', selectedCashAdvanceCard.name)
+            .replace('{account}', accounts.find(a => a.id === destId)?.name ?? '');
+        }
         if (type === 'loan_taken') return `You owe ${resolvedPerson!.name} ${formatMoney(amt, confirmationCurrency)}.`;
         if (type === 'repayment' && selectedLoan) {
           return selectedLoan.type === 'given'
@@ -681,45 +764,65 @@ export function QuickEntry({
     );
   };
 
+  // Type-first flow: the amount screen knows what's being recorded, so its
+  // title asks the specific question instead of a context-free "How much?".
+  const amountTitle = (() => {
+    if (cashAdvance) return t('qe_amt_cash_advance');
+    switch (type) {
+      case 'expense': return t('qe_amt_expense');
+      case 'income': return t('qe_amt_income');
+      case 'transfer': return t('qe_amt_transfer');
+      case 'loan_given': return t('qe_amt_loan_given');
+      case 'loan_taken': return t('qe_amt_loan_taken');
+      case 'repayment': return repaymentDirection === 'paid' ? t('qe_amt_repay_paid') : t('qe_amt_repay_received');
+      case 'goal_contribution': return t('qe_amt_goal');
+      case 'group_expense': return t('qe_amt_group');
+      default: return t('quick_how_much');
+    }
+  })();
+  // The amount step offers a back arrow only when a previous screen exists —
+  // presets that fix the type land directly on the amount.
+  const canGoBackFromAmount = !preset?.type && !preset?.cashAdvanceCardId;
+
   return (
     <>
       <Modal open={open && !showInlineAccount} onClose={handleClose}
-        confirmClose={() => guardClose(step > 0 || !!amount.trim())}
-        title={step === 0 ? t('quick_how_much') : step === 1 ? t('quick_what_type') : t('quick_details')}
+        confirmClose={() => guardClose(!!amount.trim() || step === 2)}
+        title={step === 0 ? amountTitle : step === 2 ? t('quick_details') : t('qe_title_what_happened')}
         footer={step === 0 ? (
+          <div className="flex gap-2.5">
+          {canGoBackFromAmount && (
+            <button
+              onClick={() => setStep(intent === 'person_money' ? 3 : 1)}
+              className="px-4 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft transition-colors bg-cream-card"
+            >
+              &#x2190;
+            </button>
+          )}
           <button
             onClick={() => {
               if (parseFloat(amount) <= 0) return;
-              // Routing precedence:
-              //   preset.type      → Step 2 (details directly for that type)
-              //   preset.intent='person_money' → Step 3 (gave/borrowed/paid sub-picker)
-              //   preset.intent='group_expense' → Step 2 (group picker variant)
-              //   otherwise        → Step 1 (intent picker)
-              if (preset?.type) { setStep(2); return; }
-              if (preset?.intent === 'person_money') { setStep(3); return; }
-              if (preset?.intent === 'group_expense') { setStep(2); return; }
-              setStep(1);
+              // Type-first flow: the type is already chosen before the
+              // amount, so Next always lands on the details step.
+              setStep(2);
             }}
             disabled={!parseFloat(amount)}
-            className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+            className="flex-1 bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
           >{`${t('quick_next')} \u2192`}</button>
-        ) : step === 1 ? (
-          <button onClick={() => setStep(0)} className="w-full text-center text-[12px] text-ink-500 py-2 font-medium">
-            &#x2190; {t('quick_change_amount')}
-          </button>
+          </div>
         ) : step === 2 ? (
           isGroupExpense ? (
             // Group expense exits via the picker tap, not a Save button.
-            // Just give the user a way back to change the amount or type.
+            // Just give the user a way back to change the amount.
             <button
-              onClick={() => setStep(1)}
+              onClick={() => setStep(0)}
               className="w-full text-center text-[12px] text-ink-500 py-2 font-medium"
             >
-              &#x2190; Back
+              &#x2190; {t('quick_change_amount')}
             </button>
           ) : (
             <div className="flex gap-2.5">
-              <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft transition-colors bg-cream-card">
+              <button onClick={() => setStep(0)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft transition-colors bg-cream-card">
                 &#x2190;
               </button>
               <button onClick={preSubmit} disabled={saving || !canSubmit()}
@@ -735,14 +838,23 @@ export function QuickEntry({
           <div className="space-y-5">
             <div className="text-center py-4">
               <p className="text-[12px] font-semibold text-ink-500 tracking-[0.12em] uppercase">{activeCurrency}</p>
+              {/* readOnly + inputMode="none": the in-app numpad below is the
+                  single input surface on touch — previously tapping the field
+                  ALSO opened the phone's native keyboard, showing two keypads
+                  at once. Physical keyboards still work via onKeyDown. */}
               <input
                 ref={amountRef}
                 type="text"
-                inputMode="decimal"
+                inputMode="none"
+                readOnly
                 value={amount}
-                onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); if ((v.match(/\./g) ?? []).length <= 1) setAmount(v); }}
+                onKeyDown={(e) => {
+                  if (e.key >= '0' && e.key <= '9') { numpadPress(e.key); e.preventDefault(); }
+                  else if (e.key === '.') { numpadPress('.'); e.preventDefault(); }
+                  else if (e.key === 'Backspace' || e.key === 'Delete') { numpadPress('del'); e.preventDefault(); }
+                }}
                 placeholder="0"
-                className="text-[54px] font-semibold text-center w-full border-none outline-none bg-transparent tabular-nums text-ink-900"
+                className="text-[54px] font-semibold text-center w-full border-none outline-none bg-transparent tabular-nums text-ink-900 caret-transparent"
                 style={{ letterSpacing: '-0.025em' }}
               />
               <p className="text-[12px] text-ink-500 mt-2">{t('quick_enter_amount')}</p>
@@ -783,15 +895,11 @@ export function QuickEntry({
           </div>
         )}
 
-        {/* Step 1: Type — Sukoon card rows on cream */}
+        {/* Step 1: What happened? — type-first, so every later screen has
+            context. The amount comes next. */}
         {step === 1 && (
           <div className="space-y-5 animate-fade-in">
-            <div className="text-center py-2">
-              <p className="text-4xl font-semibold tabular-nums text-ink-900" style={{ letterSpacing: '-0.025em' }}>
-                {parseFloat(amount).toLocaleString()}
-              </p>
-              <p className="text-[12px] text-ink-500 mt-1">{t('quick_where_money')}</p>
-            </div>
+            <p className="text-[12px] text-ink-500 leading-relaxed">{t('quick_where_money')}</p>
             <div className="grid grid-cols-2 gap-2.5">
               {INTENTS.map(tx => {
                 const Icon = tx.icon;
@@ -824,11 +932,26 @@ export function QuickEntry({
                 return (
                   <button key={tx.value} onClick={() => {
                     setIntent(tx.value);
+                    // Clear account picks left over from a previously chosen
+                    // type — a stale credit-card sourceId would otherwise turn
+                    // a person-borrow into a silent cash advance. Preset
+                    // accounts re-apply via the hydration effect.
+                    setSourceId('');
+                    setDestId('');
                     if (tx.value === 'person_money') {
+                      setCashAdvance(false);
                       setStep(3);
+                    } else if (tx.value === 'cash_advance') {
+                      // Cash advance is a loan_taken funded by the user's own
+                      // credit card — no contact will be asked for.
+                      setType('loan_taken');
+                      setRepaymentDirection(null);
+                      setCashAdvance(true);
+                      setStep(0);
                     } else {
                       setType(tx.value);
-                      setStep(2);
+                      setCashAdvance(false);
+                      setStep(0);
                     }
                   }}
                     className={`p-3.5 rounded-2xl border flex items-center gap-3 text-left transition-all duration-200 active:scale-[0.96] ${
@@ -873,7 +996,12 @@ export function QuickEntry({
                     setType(choice.value);
                     setRepaymentDirection(null);
                   }
-                  setStep(2);
+                  setCashAdvance(false);
+                  // Stale account picks from an earlier type choice must not
+                  // leak into this flow; presets re-apply via the effect.
+                  setSourceId('');
+                  setDestId('');
+                  setStep(0);
                 }}
                 className="w-full rounded-2xl border border-cream-border bg-cream-card p-3.5 flex items-center gap-3 text-left active:scale-[0.98] transition-transform"
               >
@@ -886,9 +1014,13 @@ export function QuickEntry({
                 </div>
               </button>
             ))}
-            <button onClick={() => setStep(preset?.intent === 'person_money' ? 0 : 1)} className="w-full text-center text-[12px] text-ink-500 py-2 font-medium">
-              &#x2190; {t('back')}
-            </button>
+            {/* When the sheet was launched straight into the person picker
+                (contact page preset) there is no earlier screen to go back to. */}
+            {preset?.intent !== 'person_money' && (
+              <button onClick={() => setStep(1)} className="w-full text-center text-[12px] text-ink-500 py-2 font-medium">
+                &#x2190; {t('back')}
+              </button>
+            )}
           </div>
         )}
 
@@ -899,15 +1031,17 @@ export function QuickEntry({
             <div className="bg-cream-card border border-cream-border rounded-2xl p-3.5 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 {(() => {
-                  const T = TX_TYPES.find(tx => tx.value === type);
-                  if (!T) return null;
+                  const Icon = cashAdvance ? CreditCard : TX_TYPES.find(tx => tx.value === type)?.icon;
+                  if (!Icon) return null;
                   return (
                     <div className="w-8 h-8 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center">
-                      <T.icon size={14} className="text-ink-600" />
+                      <Icon size={14} className="text-ink-600" />
                     </div>
                   );
                 })()}
-                <span className="text-[13px] font-semibold text-ink-900 tracking-tight">{TX_TYPES.find(tx => tx.value === type)?.label}</span>
+                <span className="text-[13px] font-semibold text-ink-900 tracking-tight">
+                  {cashAdvance ? t('intent_cash_advance') : TX_TYPES.find(tx => tx.value === type)?.label}
+                </span>
               </div>
               <span className="font-semibold text-[15px] tabular-nums text-ink-900">{parseFloat(amount).toLocaleString()}</span>
             </div>
@@ -1000,11 +1134,52 @@ export function QuickEntry({
                 </button>
               </div>
             )}
+            {/* Cash advance: pick the funding card first (locked when launched
+                from the card's own page), then where the cash landed. */}
+            {cashAdvance && !isLedgerOnlyPersonFlow && (
+              <div>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('qe_ca_which_card')}</label>
+                {preset?.cashAdvanceCardId && (() => {
+                  const lockedCard = accounts.find(a => a.id === preset.cashAdvanceCardId);
+                  if (!lockedCard) return null;
+                  return (
+                    <p className="text-[10.5px] text-accent-600 font-semibold mb-2 flex items-center gap-1.5">
+                      <Lock size={11} /> {t('qe_ca_locked').replace('{name}', lockedCard.name)}
+                    </p>
+                  );
+                })()}
+                <div className="space-y-2">
+                  {(preset?.cashAdvanceCardId
+                    ? accounts.filter(a => a.id === preset.cashAdvanceCardId)
+                    : accounts.filter(a => a.type === 'credit_card' && (!dstAccount || a.currency === dstAccount.currency))
+                  ).map(a => (
+                    <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
+                      className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                        sourceId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                      }`}
+                    >
+                      <div>
+                        <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
+                        <p className="text-[10px] text-ink-500">{t('type_credit_card')}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                        {renderAfterBalance(a)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-ink-500 leading-relaxed bg-cream-card border border-cream-border rounded-2xl p-3 mt-2">
+                  {t('qe_ca_helper')}
+                </p>
+              </div>
+            )}
+
             {needsSource && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_from')}</label>
-                {preset?.lockAccount && preset.accountId && (() => {
-                  const lockedAcct = accounts.find(a => a.id === preset.accountId);
+                {sourceLockId && (() => {
+                  const lockedAcct = accounts.find(a => a.id === sourceLockId);
                   if (!lockedAcct) return null;
                   return (
                     <p className="text-[10.5px] text-accent-600 font-semibold mb-2 flex items-center gap-1.5">
@@ -1012,8 +1187,9 @@ export function QuickEntry({
                     </p>
                   );
                 })()}
-                <div className="space-y-2">
-                  {(preset?.lockAccount && preset.accountId ? accounts.filter(a => a.id === preset.accountId) : accounts).map(a => {
+                <AccountGroupSections
+                  accounts={sourceChoices}
+                  renderAccount={(a) => {
                     const meta = currencyMeta[a.currency];
                     return (
                     <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
@@ -1033,16 +1209,18 @@ export function QuickEntry({
                         {renderAfterBalance(a)}
                       </div>
                     </button>
-                  );})}
-                </div>
+                  );}}
+                />
               </div>
             )}
 
             {needsDest && (
               <div>
-                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_to')}</label>
-                {preset?.lockAccount && preset.accountId && (() => {
-                  const lockedAcct = accounts.find(a => a.id === preset.accountId);
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">
+                  {cashAdvance ? t('qe_ca_dest_label') : t('quick_to')}
+                </label>
+                {destLockId && (() => {
+                  const lockedAcct = accounts.find(a => a.id === destLockId);
                   if (!lockedAcct) return null;
                   return (
                     <p className="text-[10.5px] text-accent-600 font-semibold mb-2 flex items-center gap-1.5">
@@ -1050,8 +1228,9 @@ export function QuickEntry({
                     </p>
                   );
                 })()}
-                <div className="space-y-2">
-                  {(preset?.lockAccount && preset.accountId ? accounts.filter(a => a.id === preset.accountId) : accounts).map(a => {
+                <AccountGroupSections
+                  accounts={destChoices}
+                  renderAccount={(a) => {
                     const meta = currencyMeta[a.currency];
                     return (
                     <button key={a.id} type="button" onClick={() => setDestId(a.id)}
@@ -1068,8 +1247,8 @@ export function QuickEntry({
                       </div>
                       <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                     </button>
-                  );})}
-                </div>
+                  );}}
+                />
               </div>
             )}
 
@@ -1103,7 +1282,7 @@ export function QuickEntry({
               </div>
             )}
 
-            {needsPerson && (
+            {needsPerson && !cashAdvance && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_who')}</label>
                 {preset?.lockContact && preset.contact ? (
@@ -1147,40 +1326,13 @@ export function QuickEntry({
               </div>
             )}
 
-            {type === 'loan_taken' && availableCashAdvanceCards.length > 0 && (
-              <div>
-                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('cash_advance_source')}</label>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setSourceId('')}
-                    className={`w-full p-3 rounded-2xl border text-left text-[12px] font-semibold transition-all ${
-                      !selectedCashAdvanceCard ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-cream-card text-ink-500'
-                    }`}
-                  >
-                    No credit card
-                  </button>
-                  {availableCashAdvanceCards.map(a => (
-                    <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
-                      className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                        selectedCashAdvanceCard?.id === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
-                      }`}
-                    >
-                      <div>
-                        <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
-                        <p className="text-[10px] text-ink-500">Credit card</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
-                        {renderAfterBalance(a)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* The old opt-in "Cash Advance Source" picker that hid inside the
+                person-borrow flow is gone — cash advances now have their own
+                explicit entry (intent tile + card-page action) with the card
+                picker rendered above. Borrowing from a person is person-only. */}
 
-            {/* EMI Setup for Loans */}
+            {/* EMI Setup for Loans (incl. cash advances — card installment
+                plans are the most common EMI case) */}
             {needsPerson && (
               <div className="space-y-3">
                 <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-cream-card border border-cream-border">
@@ -1295,8 +1447,9 @@ export function QuickEntry({
             {needsLoan && !selectedLoanIsLinked && selectedLoan?.type === 'given' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_money_where')}</label>
-                <div className="space-y-2">
-                  {accounts.map(a => {
+                <AccountGroupSections
+                  accounts={accounts}
+                  renderAccount={(a) => {
                     const meta = currencyMeta[a.currency];
                     return (
                       <button key={a.id} type="button" onClick={() => setDestId(a.id)}
@@ -1314,15 +1467,16 @@ export function QuickEntry({
                         <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                       </button>
                     );
-                  })}
-                </div>
+                  }}
+                />
               </div>
             )}
             {needsLoan && !selectedLoanIsLinked && selectedLoan?.type === 'taken' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_pay_from')}</label>
-                <div className="space-y-2">
-                  {accounts.map(a => {
+                <AccountGroupSections
+                  accounts={accounts}
+                  renderAccount={(a) => {
                     const meta = currencyMeta[a.currency];
                     return (
                       <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
@@ -1343,8 +1497,8 @@ export function QuickEntry({
                         </div>
                       </button>
                     );
-                  })}
-                </div>
+                  }}
+                />
               </div>
             )}
 
@@ -1389,7 +1543,9 @@ export function QuickEntry({
               </div>
             )}
 
-            {(needsPerson || needsLoan) && (
+            {/* Cash advances DO move money (card debited, cash credited), so
+                the "money not moved" ledger notice would be misleading there. */}
+            {(needsPerson || needsLoan) && !cashAdvance && (
               <p className="text-[12px] text-ink-600 bg-cream-card border border-cream-border rounded-2xl p-3 leading-relaxed">
                 {t('money_not_moved_notice')}
               </p>
@@ -1397,8 +1553,9 @@ export function QuickEntry({
 
             {/* Glanceable confirm/private chip near Save — tells the user
                 whether this loan will mirror to a linked contact (who must
-                confirm) or stay a private local-only record. */}
-            {(type === 'loan_given' || type === 'loan_taken') && (() => {
+                confirm) or stay a private local-only record. Not relevant to
+                a cash advance (no counterparty to mirror to). */}
+            {(type === 'loan_given' || type === 'loan_taken') && !cashAdvance && (() => {
               const personName = (preset?.lockContact && preset.contact ? preset.contact.name : contact.name).trim();
               if (wouldBranchToLinked) {
                 return (

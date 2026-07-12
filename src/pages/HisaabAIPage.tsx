@@ -11,6 +11,7 @@ import { PageErrorState } from '../components/PageErrorState';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
+import { groupAccountsByType } from '../lib/accountGroups';
 import { useCategoryOptions } from '../lib/mergedCategories';
 import { type ParsedExpense, type Direction } from '../lib/nlExpenseParser';
 import { pickAccountForDraft, buildTransactionFromDraft } from '../lib/nlExpenseToTransaction';
@@ -615,9 +616,12 @@ export function HisaabAIPage() {
   return (
     <main className="min-h-dvh bg-cream-bg pb-44">
       {/* ── Navy hero ── */}
-      <div className="relative overflow-hidden text-white" style={{ background: 'var(--color-navy-800)' }}>
+      {/* pt-safe matches NavyHero: pads for the status bar on devices where
+          the WebView draws edge-to-edge (Android 15+, iOS notch). Without it
+          the header collided with the system status bar. */}
+      <div className="relative overflow-hidden text-white pt-safe" style={{ background: 'var(--color-navy-800)' }}>
         <div className="absolute inset-0 pointer-events-none" style={{ background: NAVY_BLOOM }} />
-        <div className="relative px-5 pt-6 pb-7">
+        <div className="relative px-5 pt-2 pb-7">
           <div className="flex items-center gap-2.5">
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -1052,6 +1056,7 @@ interface ChipCardProps {
 }
 
 function ChipCard({ draft, accounts, history, resolved, busy, onConfirm, onCancel, onAddAccount }: ChipCardProps) {
+  const t = useT();
   const [direction, setDirection] = useState<Direction>(draft.direction);
   const [amount, setAmount] = useState(String(draft.amount ?? ''));
   const defaultAccount = useMemo(() => pickAccountForDraft(draft, accounts), [draft, accounts]);
@@ -1168,10 +1173,14 @@ function ChipCard({ draft, accounts, history, resolved, busy, onConfirm, onCance
               onChange={(e) => setAccountId(e.target.value)}
               className="w-full text-[13px] text-ink-900 bg-cream-soft border border-cream-border rounded-lg px-2.5 py-2 mb-2.5 outline-none focus:border-accent-500"
             >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.currency})
-                </option>
+              {groupAccountsByType(accounts).map((g) => (
+                <optgroup key={g.id} label={t(g.labelKey)}>
+                  {g.accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({a.currency})
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
 

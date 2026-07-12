@@ -17,6 +17,7 @@ import {
 } from '../lib/groupActiveMembers';
 import { findRecentDuplicate } from '../lib/duplicateExpense';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { AccountGroupSections } from '../components/AccountGroupSections';
 
 interface Props {
   open: boolean;
@@ -322,19 +323,22 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
             </button>
             {!dontTrackInAccounts && (
               <>
-                <div className="space-y-2 mt-2">
-                  {accounts.map(account => (
-                    <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
-                      className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                        paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
-                      }`}>
-                      <div>
-                        <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
-                        <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
-                      </div>
-                      <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
-                    </button>
-                  ))}
+                <div className="mt-2">
+                  <AccountGroupSections
+                    accounts={accounts}
+                    renderAccount={(account) => (
+                      <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
+                        className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
+                          paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
+                        }`}>
+                        <div>
+                          <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
+                          <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
+                        </div>
+                        <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
+                      </button>
+                    )}
+                  />
                 </div>
                 <p className="text-[10.5px] text-ink-500 mt-1.5 leading-relaxed">{t('group_paid_from_hint')}</p>
               </>

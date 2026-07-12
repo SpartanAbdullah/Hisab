@@ -7,6 +7,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { AccountGroupSections } from '../components/AccountGroupSections';
 import { useT } from '../lib/i18n';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { parseInternalNote } from '../lib/internalNotes';
@@ -233,18 +234,21 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
                   <p className="text-[10px] text-ink-500">Use this for card/cash paid outside this app.</p>
                 </div>
               </button>
-              {accounts.map(account => (
-                <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
-                  className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                    paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
-                  }`}>
-                  <div>
-                    <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
-                    <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
-                  </div>
-                  <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
-                </button>
-              ))}
+              <AccountGroupSections
+                accounts={accounts}
+                renderAccount={(account) => (
+                  <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
+                    className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
+                      paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
+                    }`}>
+                    <div>
+                      <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
+                      <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
+                    </div>
+                    <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
+                  </button>
+                )}
+              />
             </div>
           </div>
         )}

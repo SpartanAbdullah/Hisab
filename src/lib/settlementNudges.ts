@@ -8,6 +8,7 @@
 // notification we want to silence forever.
 
 import type { SettlementRequest, Person } from '../db';
+import { buildWhatsAppUrl, hasWhatsAppNumber } from './whatsappReminder';
 
 const NUDGE_AFTER_DAYS = 3;
 const SNOOZE_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -83,8 +84,11 @@ export function getOverdueSettlements(
     if (typeof snoozedUntil === 'number' && snoozedUntil > now) continue;
     const linkedPerson = personByLinkedProfile.get(r.toUserId);
     const recipientLabel = linkedPerson?.name ?? 'Someone in your network';
-    const whatsappUrl = linkedPerson?.phone
-      ? buildWhatsAppNudgeUrl(linkedPerson.phone, recipientLabel, r)
+    // Deep link only when the number passes the shared sanity check
+    // (whatsappReminder.ts) — its min-length guard stops broken chat links
+    // that the old local phone-cleaning allowed through.
+    const whatsappUrl = hasWhatsAppNumber(linkedPerson?.phone)
+      ? buildWhatsAppUrl(linkedPerson?.phone, buildNudgeMessage(recipientLabel, r))
       : null;
     nudges.push({ request: r, daysOpen, recipientLabel, whatsappUrl });
   }
@@ -93,17 +97,13 @@ export function getOverdueSettlements(
   return nudges.slice(0, limit);
 }
 
-function buildWhatsAppNudgeUrl(phone: string, recipientName: string, r: SettlementRequest): string {
-  const cleanedPhone = phone.replace(/[^\d+]/g, '');
-  const number = cleanedPhone.replace(/^\+/, '');
+function buildNudgeMessage(recipientName: string, r: SettlementRequest): string {
   // Light, polite. The amount is intentionally last so the message reads
   // less like a debt-collection notice and more like a friendly check-in.
-  const lines = [
+  return [
     `Salam ${recipientName},`,
     '',
     `Hisaab par maine ek settlement request bheji thi — ${r.currency} ${r.amount.toLocaleString()}.`,
     'Jab time mile, accept kar dena. Shukriya \u{1F642}',
-  ];
-  const text = encodeURIComponent(lines.join('\n'));
-  return `https://wa.me/${number}?text=${text}`;
+  ].join('\n');
 }

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus } from 'lucide-react';
+import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus, BellRing } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -14,6 +14,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { buildInboxInfoItems, isInboxInfoNotification, type InfoItem, type InfoIcon as InfoIconKind } from '../lib/inboxInfo';
+import { buildWhatsAppUrl } from '../lib/whatsappReminder';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { formatMoney } from '../lib/constants';
@@ -40,6 +41,9 @@ export function InboxPage() {
   const rejectSettlement = useSettlementRequestStore((s) => s.reject);
   const cancelSettlement = useSettlementRequestStore((s) => s.cancel);
   const persons = usePersonStore((s) => s.persons);
+  // Persons must be warm here: phone numbers power the outgoing-request
+  // "Remind" WhatsApp deep link (same reason LoansPage loads them).
+  const loadPersons = usePersonStore((s) => s.loadPersons);
   const budgets = useBudgetStore((s) => s.budgets);
   const loadBudgets = useBudgetStore((s) => s.loadBudgets);
   const transactions = useTransactionStore((s) => s.transactions);
@@ -62,11 +66,11 @@ export function InboxPage() {
 
   const load = useCallback(async () => {
     await Promise.all([
-      loadRequests(), loadSettlements(),
+      loadRequests(), loadSettlements(), loadPersons(),
       // Info-tab sources (cheap; most are already warm from app boot).
       loadBudgets(), loadTransactions(), loadTemplates(), loadAccounts(), loadExpenses(), loadNotifications(),
     ]);
-  }, [loadRequests, loadSettlements, loadBudgets, loadTransactions, loadTemplates, loadAccounts, loadExpenses, loadNotifications]);
+  }, [loadRequests, loadSettlements, loadPersons, loadBudgets, loadTransactions, loadTemplates, loadAccounts, loadExpenses, loadNotifications]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   useEffect(() => {
@@ -338,6 +342,33 @@ export function InboxPage() {
     return t('ltr_unknown_person');
   }
 
+  // One-tap WhatsApp nudge for an outgoing request stuck on the other side.
+  // Known phone → opens their chat; unknown → WhatsApp's own contact picker
+  // (buildWhatsAppUrl degrades gracefully), so the button always works.
+  function remindUrlFor(entry: InboxItem): string {
+    const isLinked = entry.kind === 'linked';
+    const name = isLinked
+      ? contactNameFor(entry.item as LinkedRequest)
+      : contactNameForSettlement(entry.item as SettlementRequest);
+    const phone = (() => {
+      if (isLinked) {
+        const r = entry.item as LinkedRequest;
+        const byPersonId = r.personId ? persons.find((x) => x.id === r.personId) : undefined;
+        return byPersonId?.phone ?? persons.find((x) => x.linkedProfileId === r.toUserId)?.phone ?? null;
+      }
+      return persons.find((x) => x.linkedProfileId === entry.item.toUserId)?.phone ?? null;
+    })();
+    const template = !isLinked
+      ? t('req_remind_settlement')
+      : (entry.item as LinkedRequest).kind === 'lent'
+        ? t('req_remind_linked_lent')
+        : t('req_remind_linked_borrowed');
+    const message = template
+      .replaceAll('{name}', name)
+      .replaceAll('{amount}', formatMoney(entry.item.amount, entry.item.currency));
+    return buildWhatsAppUrl(phone, message);
+  }
+
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
       <NavyHero>
@@ -456,6 +487,7 @@ export function InboxPage() {
                     tab={tab}
                     busy={busyId === entry.item.id}
                     contactName={contactNameFor(entry.item)}
+                    remindUrl={remindUrlFor(entry)}
                     onAccept={() => handleAccept(entry.item.id)}
                     onReject={() => handleReject(entry.item.id)}
                     onCancel={() => handleCancel(entry.item.id)}
@@ -466,6 +498,7 @@ export function InboxPage() {
                     tab={tab}
                     busy={busyId === entry.item.id}
                     contactName={contactNameForSettlement(entry.item)}
+                    remindUrl={remindUrlFor(entry)}
                     onAccept={() => handleAcceptSettlement(entry.item.id)}
                     onReject={() => handleRejectSettlement(entry.item.id)}
                     onCancel={() => handleCancelSettlement(entry.item.id)}
@@ -595,12 +628,13 @@ function InfoCard({ item, onOpen }: { item: InfoItem; onOpen: () => void }) {
 }
 
 function SettlementCard({
-  request, tab, busy, contactName, onAccept, onReject, onCancel,
+  request, tab, busy, contactName, remindUrl, onAccept, onReject, onCancel,
 }: {
   request: SettlementRequest;
   tab: Tab;
   busy: boolean;
   contactName: string;
+  remindUrl: string;
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
@@ -664,13 +698,27 @@ function SettlementCard({
                 </button>
               </>
             ) : (
-              <button
-                onClick={onCancel}
-                disabled={busy}
-                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
-              >
-                {busy ? t('ltr_cancelling') : t('ltr_cancel')}
-              </button>
+              <>
+                {/* Remind: one-tap WhatsApp nudge — the defined way to chase
+                    a request the other side hasn't confirmed yet. Rendered as
+                    an anchor so Android hands it to the WhatsApp intent. */}
+                <a
+                  href={remindUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                >
+                  <BellRing size={13} strokeWidth={2.2} />
+                  {t('req_remind_cta')}
+                </a>
+                <button
+                  onClick={onCancel}
+                  disabled={busy}
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
+                >
+                  {busy ? t('ltr_cancelling') : t('ltr_cancel')}
+                </button>
+              </>
             )}
           </div>
         </>
@@ -680,12 +728,13 @@ function SettlementCard({
 }
 
 function RequestCard({
-  request, tab, busy, contactName, onAccept, onReject, onCancel,
+  request, tab, busy, contactName, remindUrl, onAccept, onReject, onCancel,
 }: {
   request: LinkedRequest;
   tab: Tab;
   busy: boolean;
   contactName: string;
+  remindUrl: string;
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
@@ -796,13 +845,26 @@ function RequestCard({
               </button>
             </>
           ) : (
-            <button
-              onClick={onCancel}
-              disabled={busy}
-              className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
-            >
-              {busy ? t('ltr_cancelling') : t('ltr_cancel')}
-            </button>
+            <>
+              {/* Remind: one-tap WhatsApp nudge — the defined way to chase a
+                  request the other side hasn't confirmed yet. */}
+              <a
+                href={remindUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+              >
+                <BellRing size={13} strokeWidth={2.2} />
+                {t('req_remind_cta')}
+              </a>
+              <button
+                onClick={onCancel}
+                disabled={busy}
+                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-pay-50 text-pay-text text-[12px] font-semibold active:bg-pay-100 transition-colors disabled:opacity-50"
+              >
+                {busy ? t('ltr_cancelling') : t('ltr_cancel')}
+              </button>
+            </>
           )}
         </div>
       ) : null}

@@ -19,6 +19,7 @@ import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { AddAccountStepper } from './AddAccountStepper';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
+import { groupAccountsByType } from '../lib/accountGroups';
 import { currencyMeta } from '../lib/design-tokens';
 import { daysUntilDayOfMonth } from '../lib/inboxInfo';
 import { useT } from '../lib/i18n';
@@ -341,9 +342,30 @@ export function AccountsPage() {
                       )}
                     </div>
                   </div>
-                  <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
-                    {b.accounts.map(renderRow)}
-                  </div>
+                  {/* Within a currency, accounts are organized by kind —
+                      Wallets & Cash, Banks, Credit Cards — instead of one
+                      undifferentiated dump. Labels appear only when the
+                      currency actually spans more than one kind. */}
+                  {(() => {
+                    const typeGroups = groupAccountsByType(b.accounts);
+                    const showGroupLabels = typeGroups.length > 1;
+                    return (
+                      <div className="space-y-2.5">
+                        {typeGroups.map((g) => (
+                          <div key={g.id}>
+                            {showGroupLabels && (
+                              <p className="text-[9.5px] font-semibold text-ink-400 uppercase tracking-[0.14em] mb-1 px-1">
+                                {t(g.labelKey)}
+                              </p>
+                            )}
+                            <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+                              {g.accounts.map(renderRow)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

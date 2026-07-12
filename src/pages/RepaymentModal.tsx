@@ -7,6 +7,7 @@ import { useAppModeStore } from '../stores/appModeStore';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useToast } from '../components/Toast';
+import { AccountGroupSections } from '../components/AccountGroupSections';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
@@ -371,8 +372,9 @@ export function RepaymentModal({
             <label className="form-label">
               {isGiven ? t('repay_receive_in') : t('repay_pay_from')}
             </label>
-            <div className="space-y-2">
-              {accounts.map((account) => {
+            <AccountGroupSections
+              accounts={accounts}
+              renderAccount={(account) => {
                 const meta = currencyMeta[account.currency];
                 return (
                   <button
@@ -396,8 +398,8 @@ export function RepaymentModal({
                     </p>
                   </button>
                 );
-              })}
-            </div>
+              }}
+            />
           </div>
           )}
 

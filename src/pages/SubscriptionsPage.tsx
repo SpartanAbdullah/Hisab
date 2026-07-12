@@ -20,7 +20,26 @@ import {
   daysUntil,
   monthlyAmount,
 } from '../lib/subscriptionMetrics';
+import { brandIconFor } from '../lib/brandIcon';
 import type { RecurringTransaction } from '../db';
+
+// Brand/category glyph tile for a recurring entry, in the app's group-emoji
+// avatar style. Falls back to a first-letter avatar when nothing matches
+// (custom category + unknown name).
+function EntryIconTile({ label, category }: { label: string; category: string }) {
+  const icon = brandIconFor(label, category);
+  return (
+    <div className="w-9 h-9 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center text-base shrink-0">
+      {icon.matched === 'none' ? (
+        <span className="text-[13px] font-semibold text-ink-500">
+          {((label || category).trim()[0] ?? '?').toUpperCase()}
+        </span>
+      ) : (
+        icon.emoji
+      )}
+    </div>
+  );
+}
 
 export function SubscriptionsPage() {
   const templates = useRecurringStore((s) => s.templates);
@@ -219,10 +238,13 @@ export function SubscriptionsPage() {
                     !t.active ? 'opacity-60' : ''
                   }`}
                 >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">
-                      {t.label || t.category}
-                    </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <EntryIconTile label={t.label} category={t.category} />
+                      <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">
+                        {t.label || t.category}
+                      </p>
+                    </div>
                     <div className="text-right shrink-0">
                       <p className="text-[12px] font-semibold text-pay-text tabular-nums">
                         {formatMoney(t.amount, t.currency)}
@@ -279,10 +301,13 @@ export function SubscriptionsPage() {
                   key={t.id}
                   className={`rounded-2xl bg-cream-card border border-cream-border p-4 ${!t.active ? 'opacity-60' : ''}`}
                 >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">
-                      {t.label || t.category}
-                    </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <EntryIconTile label={t.label} category={t.category} />
+                      <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">
+                        {t.label || t.category}
+                      </p>
+                    </div>
                     <p
                       className={`text-[12px] font-semibold tabular-nums shrink-0 ${
                         t.type === 'income' ? 'text-receive-text' : 'text-pay-text'

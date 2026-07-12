@@ -11,6 +11,7 @@ import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { useToast } from '../components/Toast';
+import { AccountGroupSections } from '../components/AccountGroupSections';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
@@ -231,8 +232,9 @@ export function AddLoanModal({ open, onClose }: Props) {
         ) : (
           <div>
             <label className="form-label">{loanType === 'given' ? t('loan_paid_from') : t('loan_received_into')}</label>
-            <div className="space-y-2">
-              {accounts.map(a => {
+            <AccountGroupSections
+              accounts={accounts}
+              renderAccount={(a) => {
                 const meta = currencyMeta[a.currency];
                 return (
                   <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
@@ -242,8 +244,8 @@ export function AddLoanModal({ open, onClose }: Props) {
                     <span className="text-[12px] text-ink-500 tabular-nums">{a.currency}</span>
                   </button>
                 );
-              })}
-            </div>
+              }}
+            />
           </div>
         )}
 

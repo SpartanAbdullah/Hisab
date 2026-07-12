@@ -7,6 +7,8 @@ import { useToast } from './Toast';
 import { confirmDestructive } from './ConfirmDestructiveSheet';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../lib/constants';
 import { useCategoryOptions, withCurrentValue } from '../lib/mergedCategories';
+import { groupAccountsByType } from '../lib/accountGroups';
+import { useT } from '../lib/i18n';
 import { validateRecurringStart } from '../lib/recurringStartValidation';
 import type { RecurringCadence, RecurringTransaction } from '../db';
 
@@ -28,6 +30,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
   const updateTemplate = useRecurringStore((s) => s.updateTemplate);
   const accounts = useAccountStore((s) => s.accounts);
   const toast = useToast();
+  const t = useT();
   const guardClose = useDiscardGuard();
   const isEdit = !!template;
   const seedCategory =
@@ -214,10 +217,14 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
           <label className="form-label">{type === 'expense' ? 'From account' : 'To account'}</label>
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="input-field">
             <option value="">Pick an account…</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} ({a.currency})
-              </option>
+            {groupAccountsByType(accounts).map((g) => (
+              <optgroup key={g.id} label={t(g.labelKey)}>
+                {g.accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.currency})
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>

@@ -84,6 +84,28 @@ const S = {
   },
   quick_which_loan: { ur: "Kaun Sa Qarz?", en: "Which Loan?" },
   quick_loan_search_placeholder: { ur: "Naam se dhoondein…", en: "Search by name…" },
+  // Type-first Quick Entry: the intent is picked first, so the amount screen
+  // can ask the specific question instead of a context-free "How much?".
+  qe_title_what_happened: { ur: "Kya hua?", en: "What happened?" },
+  qe_amt_expense: { ur: "Kitna kharch hua?", en: "How much did you spend?" },
+  qe_amt_income: { ur: "Kitna mila?", en: "How much did you receive?" },
+  qe_amt_transfer: { ur: "Kitna move karna hai?", en: "How much are you moving?" },
+  qe_amt_loan_given: { ur: "Kitna diya?", en: "How much did you give?" },
+  qe_amt_loan_taken: { ur: "Kitna udhaar liya?", en: "How much did you borrow?" },
+  qe_amt_repay_received: { ur: "Unhon ne kitna wapas kiya?", en: "How much did they pay back?" },
+  qe_amt_repay_paid: { ur: "Aap ne kitna wapas kiya?", en: "How much did you pay back?" },
+  qe_amt_goal: { ur: "Kitna bachana hai?", en: "How much are you setting aside?" },
+  qe_amt_group: { ur: "Kitna kharcha hua?", en: "How much was spent?" },
+  qe_amt_cash_advance: { ur: "Kitna cash nikala?", en: "How much cash did you take out?" },
+  // Cash advance — first-class flow
+  intent_cash_advance: { ur: "Cash Advance", en: "Cash Advance" },
+  intent_cash_advance_sub: { ur: "Credit card se cash", en: "Cash from your credit card" },
+  qe_ca_which_card: { ur: "Kaun sa card?", en: "Which card?" },
+  qe_ca_locked: { ur: "{name} se cash advance", en: "Cash advance from {name}" },
+  qe_ca_dest_label: { ur: "Cash kahan gaya?", en: "Where did the cash go?" },
+  qe_ca_helper: { ur: "Card charge hoga aur ek repayable record banega — installments mein wapas karna ho to neeche EMI set karein.", en: "Your card will be charged and a repayable record created. Paying it back in installments? Set up the EMI plan below." },
+  qe_ca_done_desc: { ur: "Cash advance record ho gaya — {amount} {card} se {account} mein.", en: "Cash advance recorded — {amount} from {card} into {account}." },
+  acct_action_cash_advance: { ur: "Cash advance", en: "Cash advance" },
   quick_money_where: {
     ur: "Paisa Kis account main Aayega?",
     en: "Money Goes Where?",
@@ -2125,6 +2147,10 @@ const S = {
   acct_type_cash: { ur: "Cash", en: "Cash" },
   acct_type_bank: { ur: "Bank", en: "Bank" },
   acct_type_wallet: { ur: "Wallet", en: "Wallet" },
+  // Account grouping sections — used everywhere accounts are listed/picked.
+  acct_group_wallets_cash: { ur: "Wallets aur Cash", en: "Wallets & Cash" },
+  acct_group_banks: { ur: "Bank Accounts", en: "Banks" },
+  acct_group_cards: { ur: "Credit Cards", en: "Credit Cards" },
   onboard_acct_name: { ur: "Account ka naam", en: "Account name" },
   onboard_acct_name_ph: { ur: "e.g. Cash, Meezan, JazzCash", en: "e.g. Cash, Meezan, JazzCash" },
   onboard_acct_balance: { ur: "Mojooda balance (optional)", en: "Opening balance (optional)" },
@@ -2136,6 +2162,21 @@ const S = {
   inbox_incoming_explainer: { ur: "Aapke linked contacts ki requests yahan aayengi — accept ya decline karne ke liye.", en: "Requests from your linked contacts will land here for you to accept or decline." },
   inbox_send_request: { ur: "Linked request bhejo", en: "Send a linked request" },
   inbox_resolved_divider: { ur: "Pehle ke", en: "Earlier" },
+  // "Remind them" on outgoing pending requests — one-tap WhatsApp nudge when
+  // the other party hasn't confirmed. {name}/{amount} are substituted.
+  req_remind_cta: { ur: "Yaad dilao", en: "Remind" },
+  req_remind_linked_lent: {
+    ur: "Salam {name}! Maine Hisaab par {amount} ki request bheji hai (jo maine aapko diye thay). Jab time mile, app khol kar confirm kar dena 🙂",
+    en: "Salam {name}! I sent you a request on Hisaab for the {amount} I lent you — please open the app and confirm when you get a minute 🙂",
+  },
+  req_remind_linked_borrowed: {
+    ur: "Salam {name}! Maine Hisaab par {amount} record kiya hai jo maine aap se udhaar liya tha. Jab time mile, app khol kar confirm kar dena 🙂",
+    en: "Salam {name}! I logged the {amount} I borrowed from you on Hisaab — please open the app and confirm when you get a minute 🙂",
+  },
+  req_remind_settlement: {
+    ur: "Salam {name}! Maine Hisaab par {amount} settle mark kiya hai — app khol kar accept kar dena taake dono ka hisaab barabar rahe 🙂",
+    en: "Salam {name}! I marked {amount} as settled on Hisaab — please open the app and accept so both our books match 🙂",
+  },
   inbox_card_incoming_lent_full: { ur: "aapko {name} ko dena hoga", en: "you'd owe {name}" },
   inbox_card_incoming_borrowed_full: { ur: "{name} ko aapko dena hoga", en: "{name} would owe you" },
   // Settings group headers

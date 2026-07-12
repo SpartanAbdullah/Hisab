@@ -4,6 +4,7 @@ import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { useToast } from '../components/Toast';
+import { AccountGroupSections } from '../components/AccountGroupSections';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
@@ -218,8 +219,9 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
             <label className="form-label">
               {t('upcoming_account')}
             </label>
-            <div className="space-y-2">
-              {accounts.map(a => {
+            <AccountGroupSections
+              accounts={accounts}
+              renderAccount={(a) => {
                 const meta = currencyMeta[a.currency];
                 return (
                   <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
@@ -237,8 +239,8 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
                     <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
                   </button>
                 );
-              })}
-            </div>
+              }}
+            />
           </div>
 
           {/* Reminder timing */}

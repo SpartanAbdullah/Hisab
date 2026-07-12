@@ -10,6 +10,7 @@ import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
 import { CategoryPicker } from './CategoryPicker';
 import { ReceiptField } from './ReceiptField';
+import { AccountGroupSections } from './AccountGroupSections';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { parseInternalNote } from '../lib/internalNotes';
@@ -315,8 +316,9 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           <label className="form-label">
             {isLoanTaken ? t('loan_received_into') : t('quick_from')}
           </label>
-          <div className="space-y-2">
-            {accounts.map((account) => {
+          <AccountGroupSections
+            accounts={accounts}
+            renderAccount={(account) => {
               const meta = currencyMeta[account.currency];
               const isSelected = accountId === account.id;
               return (
@@ -341,8 +343,8 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                   <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
                 </button>
               );
-            })}
-          </div>
+            }}
+          />
         </div>
 
         {isLoanTaken && availableCashAdvanceCards.length > 0 && (
