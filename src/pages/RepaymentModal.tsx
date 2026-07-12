@@ -7,11 +7,10 @@ import { useAppModeStore } from '../stores/appModeStore';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useToast } from '../components/Toast';
-import { AccountGroupSections } from '../components/AccountGroupSections';
+import { AccountSelect } from '../components/AccountSelect';
 import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
 import { rateIsSane, RATE_MIN } from '../lib/conversionMath';
-import { formatMoney, formatSignedMoney } from '../lib/constants';
-import { currencyMeta } from '../lib/design-tokens';
+import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { resolvePersonName } from '../lib/resolvePersonName';
 import type { Loan } from '../db';
@@ -355,32 +354,14 @@ export function RepaymentModal({
             <label className="form-label">
               {isGiven ? t('repay_receive_in') : t('repay_pay_from')}
             </label>
-            <AccountGroupSections
+            <AccountSelect
               accounts={accounts}
-              renderAccount={(account) => {
-                const meta = currencyMeta[account.currency];
-                return (
-                  <button
-                    key={account.id}
-                    type="button"
-                    onClick={() => {
-                      setAccountId(account.id);
-                      setConversionRate('');
-                    }}
-                    className={accountId === account.id ? 'selector-base selector-selected' : 'selector-base'}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{meta?.flag}</span>
-                      <div>
-                        <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
-                        <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
-                      </div>
-                    </div>
-                    <p className="text-[13px] font-bold text-ink-800 tabular-nums">
-                      {formatSignedMoney(account.balance, account.currency)}
-                    </p>
-                  </button>
-                );
+              selectedId={accountId}
+              onSelect={(id) => {
+                setAccountId(id);
+                // A different account can mean a different currency — the
+                // previous conversion no longer applies.
+                setConversionRate('');
               }}
             />
           </div>

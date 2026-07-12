@@ -7,9 +7,9 @@ import { useAccountStore } from '../stores/accountStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
-import { AccountGroupSections } from '../components/AccountGroupSections';
+import { AccountSelect } from '../components/AccountSelect';
 import { useT } from '../lib/i18n';
-import { formatMoney, formatSignedMoney } from '../lib/constants';
+import { formatMoney } from '../lib/constants';
 import { parseInternalNote } from '../lib/internalNotes';
 import type { SplitGroup, GroupExpense, SplitType, SplitDetail } from '../db';
 import {
@@ -50,6 +50,9 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const [exactAmounts, setExactAmounts] = useState<Record<string, string>>({});
   const [category, setCategory] = useState('General');
   const [paidFromAccountId, setPaidFromAccountId] = useState('');
+  // Whether "Not tracked in my wallet" is the deliberate choice — as opposed
+  // to '' merely meaning "no account picked yet" while the picker is open.
+  const [dontTrack, setDontTrack] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
@@ -78,6 +81,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       setSelectedMembers(expense.splits.map(split => split.memberId).filter((id) => activeMemberIds.has(id)));
       setCategory(expense.category || 'General');
       setPaidFromAccountId(meta.paidFromAccountId ?? '');
+      setDontTrack(!meta.paidFromAccountId);
       if (expense.splitType === 'exact') {
         const values: Record<string, string> = {};
         expense.splits.forEach(split => { values[split.memberId] = String(split.amount); });
@@ -224,9 +228,9 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
             <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('paid_from')}</label>
             <div className="space-y-2 mt-1.5">
               <button
-                onClick={() => setPaidFromAccountId('')}
+                onClick={() => { setDontTrack(true); setPaidFromAccountId(''); }}
                 className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                  !paidFromAccountId ? 'border-emerald-300 bg-receive-50/60 shadow-sm shadow-emerald-500/5' : 'border-cream-border bg-cream-card'
+                  dontTrack ? 'border-emerald-300 bg-receive-50/60 shadow-sm shadow-emerald-500/5' : 'border-cream-border bg-cream-card'
                 }`}
               >
                 <div>
@@ -234,21 +238,20 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
                   <p className="text-[10px] text-ink-500">Use this for card/cash paid outside this app.</p>
                 </div>
               </button>
-              <AccountGroupSections
-                accounts={accounts}
-                renderAccount={(account) => (
-                  <button key={account.id} onClick={() => setPaidFromAccountId(account.id)}
-                    className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                      paidFromAccountId === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
-                    }`}>
-                    <div>
-                      <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
-                      <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
-                    </div>
-                    <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
-                  </button>
-                )}
-              />
+              {/* "Not tracked" is a deliberate state (paidFromAccountId=''),
+                  so the account picker only appears once the user opts back
+                  into tracking — otherwise its "Choose an account" prompt
+                  would contradict the selected option above. */}
+              {dontTrack ? (
+                <button
+                  onClick={() => setDontTrack(false)}
+                  className="w-full p-3.5 rounded-2xl border-2 border-cream-border bg-cream-card text-left transition-all active:scale-[0.98]"
+                >
+                  <p className="text-[13px] font-semibold text-ink-800">{t('acct_select_placeholder')}…</p>
+                </button>
+              ) : (
+                <AccountSelect accounts={accounts} selectedId={paidFromAccountId} onSelect={setPaidFromAccountId} />
+              )}
             </div>
           </div>
         )}

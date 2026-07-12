@@ -10,9 +10,8 @@ import { usePersonStore } from '../stores/personStore';
 import { useToast } from './Toast';
 import { CategoryPicker } from './CategoryPicker';
 import { ReceiptField } from './ReceiptField';
-import { AccountGroupSections } from './AccountGroupSections';
+import { AccountSelect } from './AccountSelect';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
-import { currencyMeta } from '../lib/design-tokens';
 import { parseInternalNote } from '../lib/internalNotes';
 import { useT } from '../lib/i18n';
 import { getActionLabel } from '../lib/transactionLabel';
@@ -316,33 +315,13 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           <label className="form-label">
             {isLoanTaken ? t('loan_received_into') : t('quick_from')}
           </label>
-          <AccountGroupSections
+          <AccountSelect
             accounts={accounts}
-            renderAccount={(account) => {
-              const meta = currencyMeta[account.currency];
-              const isSelected = accountId === account.id;
-              return (
-                <button
-                  key={account.id}
-                  type="button"
-                  onClick={() => {
-                    setAccountId(account.id);
-                    if (cashAdvanceCardId === account.id) setCashAdvanceCardId('');
-                  }}
-                  className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    isSelected ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">{meta?.flag}</span>
-                    <div>
-                      <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
-                      <p className="text-[10px] text-ink-500 capitalize">{account.type.replace('_', ' ')}</p>
-                    </div>
-                  </div>
-                  <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
-                </button>
-              );
+            selectedId={accountId}
+            onSelect={(id) => {
+              setAccountId(id);
+              // The main account can't also fund itself as a cash advance.
+              if (cashAdvanceCardId === id) setCashAdvanceCardId('');
             }}
           />
         </div>

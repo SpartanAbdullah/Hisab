@@ -2166,6 +2166,9 @@ const S = {
   acct_group_wallets_cash: { ur: "Wallets aur Cash", en: "Wallets & Cash" },
   acct_group_banks: { ur: "Bank Accounts", en: "Banks" },
   acct_group_cards: { ur: "Credit Cards", en: "Credit Cards" },
+  // Collapsed account selector — one selected row, tap to expand the list.
+  acct_select_placeholder: { ur: "Account chunein", en: "Choose an account" },
+  acct_select_change: { ur: "Badlein", en: "Change" },
   onboard_acct_name: { ur: "Account ka naam", en: "Account name" },
   onboard_acct_name_ph: { ur: "e.g. Cash, Meezan, JazzCash", en: "e.g. Cash, Meezan, JazzCash" },
   onboard_acct_balance: { ur: "Mojooda balance (optional)", en: "Opening balance (optional)" },

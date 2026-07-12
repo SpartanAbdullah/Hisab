@@ -11,7 +11,7 @@ import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useAppModeStore } from '../stores/appModeStore';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { useToast } from '../components/Toast';
-import { AccountGroupSections } from '../components/AccountGroupSections';
+import { AccountSelect } from '../components/AccountSelect';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
@@ -232,20 +232,7 @@ export function AddLoanModal({ open, onClose }: Props) {
         ) : (
           <div>
             <label className="form-label">{loanType === 'given' ? t('loan_paid_from') : t('loan_received_into')}</label>
-            <AccountGroupSections
-              accounts={accounts}
-              renderAccount={(a) => {
-                const meta = currencyMeta[a.currency];
-                return (
-                  <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
-                    className={accountId === a.id ? 'selector-base selector-selected' : 'selector-base'}
-                  >
-                    <span className="text-[13px] font-semibold text-ink-800 flex items-center gap-1.5"><span>{meta?.flag}</span> {a.name}</span>
-                    <span className="text-[12px] text-ink-500 tabular-nums">{a.currency}</span>
-                  </button>
-                );
-              }}
-            />
+            <AccountSelect accounts={accounts} selectedId={accountId} onSelect={setAccountId} />
           </div>
         )}
 

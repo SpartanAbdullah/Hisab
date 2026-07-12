@@ -4,9 +4,8 @@ import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { useToast } from '../components/Toast';
-import { AccountGroupSections } from '../components/AccountGroupSections';
-import { formatMoney, formatSignedMoney } from '../lib/constants';
-import { currencyMeta } from '../lib/design-tokens';
+import { AccountSelect } from '../components/AccountSelect';
+import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { GraduationCap, HeartPulse, PartyPopper, Plane, Home, Zap, MoreHorizontal } from 'lucide-react';
 import type { Currency } from '../db';
@@ -219,28 +218,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
             <label className="form-label">
               {t('upcoming_account')}
             </label>
-            <AccountGroupSections
-              accounts={accounts}
-              renderAccount={(a) => {
-                const meta = currencyMeta[a.currency];
-                return (
-                  <button key={a.id} type="button" onClick={() => setAccountId(a.id)}
-                    className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                      accountId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{meta?.flag}</span>
-                      <div>
-                        <p className="text-[13px] font-semibold text-ink-800">{a.name}</p>
-                        <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
-                      </div>
-                    </div>
-                    <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
-                  </button>
-                );
-              }}
-            />
+            <AccountSelect accounts={accounts} selectedId={accountId} onSelect={setAccountId} />
           </div>
 
           {/* Reminder timing */}

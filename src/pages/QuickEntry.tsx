@@ -18,7 +18,7 @@ import { useSplitStore } from '../stores/splitStore';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
-import { AccountGroupSections } from '../components/AccountGroupSections';
+import { AccountSelect } from '../components/AccountSelect';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
 import { rateIsSane } from '../lib/conversionMath';
@@ -350,6 +350,32 @@ export function QuickEntry({
     return list;
   })();
 
+  // Seed account defaults when the details step opens so the collapsed
+  // selector usually starts with the right account already picked: the
+  // last-used account for everyday spend/receive, or the only account when
+  // there's exactly one. Transfers stay manual (two sides must differ) and
+  // presets/locks always win. The user can still tap the row to change.
+  useEffect(() => {
+    if (!open || step !== 2 || cashAdvance || isLedgerOnlyPersonFlow) return;
+    // Seed ONLY an account whose currency matches what the amount was typed
+    // under — expense/income have no conversion step, so a silently seeded
+    // different-currency account would record the flat number in the wrong
+    // currency. On mismatch we seed nothing and the user picks consciously.
+    const seedable = (id: string) => {
+      const a = accounts.find((x) => x.id === id);
+      return a && a.currency === activeCurrency ? id : '';
+    };
+    const remembered = (key: string) => seedable(localStorage.getItem(key) ?? '');
+    const onlyAccount = accounts.length === 1 ? seedable(accounts[0].id) : '';
+    if (needsSource && !sourceId && type !== 'transfer' && !sourceLockId) {
+      setSourceId((type === 'expense' ? remembered('hisaab_qe_last_source') : '') || onlyAccount);
+    }
+    if (needsDest && !destId && type !== 'transfer' && !destLockId) {
+      setDestId((type === 'income' ? remembered('hisaab_qe_last_dest') : '') || onlyAccount);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, step, type]);
+
   // Active currency for the amount step + quick-amount presets. Prefer the
   // preset account's currency (when QuickEntry was launched pinned to an
   // account); otherwise the user's primary currency.
@@ -678,6 +704,15 @@ export function QuickEntry({
       }
 
       const resultTx = await processTransaction(input);
+
+      // Remember the everyday accounts so the next spend/receive opens with
+      // the selector already on the right one. Only from a generic entry —
+      // an account-page launch pins its own account and says nothing about
+      // the user's habitual choice.
+      if (!preset?.accountId) {
+        if (type === 'expense' && sourceId) localStorage.setItem('hisaab_qe_last_source', sourceId);
+        if (type === 'income' && destId) localStorage.setItem('hisaab_qe_last_dest', destId);
+      }
 
       // EMI scheduling is a follow-up write, not part of the transaction
       // itself. If it fails we must NOT show "Transaction Failed" — the money
@@ -1153,27 +1188,20 @@ export function QuickEntry({
                     </p>
                   );
                 })()}
-                <div className="space-y-2">
-                  {(preset?.cashAdvanceCardId
+                <AccountSelect
+                  accounts={preset?.cashAdvanceCardId
                     ? accounts.filter(a => a.id === preset.cashAdvanceCardId)
-                    : accounts.filter(a => a.type === 'credit_card' && (!dstAccount || a.currency === dstAccount.currency))
-                  ).map(a => (
-                    <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
-                      className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                        sourceId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
-                      }`}
-                    >
-                      <div>
-                        <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
-                        <p className="text-[10px] text-ink-500">{t('type_credit_card')}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
-                        {renderAfterBalance(a)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                    : accounts.filter(a => a.type === 'credit_card' && (!dstAccount || a.currency === dstAccount.currency))}
+                  selectedId={sourceId}
+                  onSelect={setSourceId}
+                  locked={!!preset?.cashAdvanceCardId}
+                  renderRight={(a) => (
+                    <>
+                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      {renderAfterBalance(a)}
+                    </>
+                  )}
+                />
                 <p className="text-[11px] text-ink-500 leading-relaxed bg-cream-card border border-cream-border rounded-2xl p-3 mt-2">
                   {t('qe_ca_helper')}
                 </p>
@@ -1192,29 +1220,22 @@ export function QuickEntry({
                     </p>
                   );
                 })()}
-                <AccountGroupSections
+                <AccountSelect
                   accounts={sourceChoices}
-                  renderAccount={(a) => {
-                    const meta = currencyMeta[a.currency];
-                    return (
-                    <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
-                      className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                        sourceId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{meta?.flag}</span>
-                        <div>
-                          <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
-                          <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
-                        {renderAfterBalance(a)}
-                      </div>
-                    </button>
-                  );}}
+                  selectedId={sourceId}
+                  onSelect={(id) => {
+                    setSourceId(id);
+                    // A different account can mean a different currency — a
+                    // previously typed conversion no longer applies.
+                    setConversionRate('');
+                  }}
+                  locked={!!sourceLockId}
+                  renderRight={(a) => (
+                    <>
+                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      {renderAfterBalance(a)}
+                    </>
+                  )}
                 />
               </div>
             )}
@@ -1233,26 +1254,14 @@ export function QuickEntry({
                     </p>
                   );
                 })()}
-                <AccountGroupSections
+                <AccountSelect
                   accounts={destChoices}
-                  renderAccount={(a) => {
-                    const meta = currencyMeta[a.currency];
-                    return (
-                    <button key={a.id} type="button" onClick={() => setDestId(a.id)}
-                      className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                        destId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{meta?.flag}</span>
-                        <div>
-                          <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
-                          <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
-                        </div>
-                      </div>
-                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
-                    </button>
-                  );}}
+                  selectedId={destId}
+                  onSelect={(id) => {
+                    setDestId(id);
+                    setConversionRate('');
+                  }}
+                  locked={!!destLockId}
                 />
               </div>
             )}
@@ -1399,7 +1408,13 @@ export function QuickEntry({
                           </div>
                           <div className="space-y-2">
                             {group.loans.map((l) => (
-                              <button key={l.id} type="button" onClick={() => setLoanId(l.id)}
+                              <button key={l.id} type="button"
+                                onClick={() => {
+                                  // A different loan can carry a different
+                                  // currency — drop any typed conversion.
+                                  if (l.id !== loanId) setConversionRate('');
+                                  setLoanId(l.id);
+                                }}
                                 className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
                                   loanId === l.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
                                 }`}
@@ -1436,57 +1451,26 @@ export function QuickEntry({
             {needsLoan && !selectedLoanIsLinked && selectedLoan?.type === 'given' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_money_where')}</label>
-                <AccountGroupSections
+                <AccountSelect
                   accounts={accounts}
-                  renderAccount={(a) => {
-                    const meta = currencyMeta[a.currency];
-                    return (
-                      <button key={a.id} type="button" onClick={() => setDestId(a.id)}
-                        className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                          destId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">{meta?.flag}</span>
-                          <div>
-                            <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
-                            <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
-                          </div>
-                        </div>
-                        <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
-                      </button>
-                    );
-                  }}
+                  selectedId={destId}
+                  onSelect={(id) => { setDestId(id); setConversionRate(''); }}
                 />
               </div>
             )}
             {needsLoan && !selectedLoanIsLinked && selectedLoan?.type === 'taken' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_pay_from')}</label>
-                <AccountGroupSections
+                <AccountSelect
                   accounts={accounts}
-                  renderAccount={(a) => {
-                    const meta = currencyMeta[a.currency];
-                    return (
-                      <button key={a.id} type="button" onClick={() => setSourceId(a.id)}
-                        className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                          sourceId === a.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">{meta?.flag}</span>
-                          <div>
-                            <p className="text-[13px] font-semibold text-ink-900">{a.name}</p>
-                            <p className="text-[10px] text-ink-500 capitalize">{a.type.replace('_', ' ')}</p>
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
-                          {renderAfterBalance(a)}
-                        </div>
-                      </button>
-                    );
-                  }}
+                  selectedId={sourceId}
+                  onSelect={(id) => { setSourceId(id); setConversionRate(''); }}
+                  renderRight={(a) => (
+                    <>
+                      <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
+                      {renderAfterBalance(a)}
+                    </>
+                  )}
                 />
               </div>
             )}
@@ -1498,7 +1482,11 @@ export function QuickEntry({
                   {goals.map(g => {
                     const pct = g.targetAmount > 0 ? Math.min(100, Math.round((g.savedAmount / g.targetAmount) * 100)) : 0;
                     return (
-                      <button key={g.id} type="button" onClick={() => setGoalId(g.id)}
+                      <button key={g.id} type="button"
+                        onClick={() => {
+                          if (g.id !== goalId) setConversionRate('');
+                          setGoalId(g.id);
+                        }}
                         className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
                           goalId === g.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
                         }`}
