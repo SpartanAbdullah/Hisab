@@ -281,9 +281,9 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
     'w-full border border-cream-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   const KINDS: { value: InvestmentTradeKind; label: string; active: string }[] = [
-    { value: 'buy', label: t('inv_buy'), active: 'bg-gradient-to-br from-emerald-400 to-teal-600 border-transparent text-white shadow-md shadow-teal-500/40' },
-    { value: 'sell', label: t('inv_sell'), active: 'bg-gradient-to-br from-orange-400 to-rose-500 border-transparent text-white shadow-md shadow-rose-500/40' },
-    { value: 'dividend', label: t('inv_dividend'), active: 'bg-gradient-to-br from-sky-400 to-blue-600 border-transparent text-white shadow-md shadow-blue-500/40' },
+    { value: 'buy', label: t('inv_buy'), active: 'bg-emerald-700 border-transparent text-white shadow-sm' },
+    { value: 'sell', label: t('inv_sell'), active: 'bg-rose-600 border-transparent text-white shadow-sm' },
+    { value: 'dividend', label: t('inv_dividend'), active: 'bg-blue-600 border-transparent text-white shadow-sm' },
   ];
 
   return (
@@ -334,17 +334,19 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
             <div className="flex gap-2 flex-wrap">
               {markets.map((m) => {
                 const color = marketColorFor(m.id);
+                const selected = marketId === m.id;
                 return (
                   <button
                     key={m.id}
                     type="button"
                     onClick={() => { setMarketId(m.id); setConversionRate(''); }}
-                    className={`min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-bold text-white transition-all hover:scale-[1.04] active:scale-95 ${color.gradient} ${
-                      marketId === m.id
-                        ? `${color.glow} ring-2 ring-white/70 scale-[1.04]`
-                        : 'opacity-75 hover:opacity-100'
+                    className={`min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-semibold border transition-all active:scale-95 flex items-center gap-1.5 ${
+                      selected
+                        ? `${color.solid} text-white border-transparent shadow-sm`
+                        : `${color.tint} ${color.text} ${color.border} hover:shadow-sm`
                     }`}
                   >
+                    <span className={`w-1.5 h-1.5 rounded-full ${selected ? 'bg-white/80' : color.dot}`} />
                     {currencyMeta[m.currency]?.flag} {m.name} · {m.currency}
                   </button>
                 );

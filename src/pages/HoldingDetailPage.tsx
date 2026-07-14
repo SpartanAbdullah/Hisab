@@ -155,7 +155,8 @@ export function HoldingDetailPage() {
           action={<LanguageToggle />}
         />
         <div className="px-5 pb-7 space-y-2">
-          <span className={`inline-flex rounded-full px-3 py-1 text-[10.5px] font-bold text-white ${marketColorFor(market.id).gradient} ${marketColorFor(market.id).glow}`}>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10.5px] font-semibold text-white ${marketColorFor(market.id).solid}`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-white/70" />
             {market.name} · {market.currency}
           </span>
           {isOpen ? (
@@ -228,7 +229,7 @@ export function HoldingDetailPage() {
         <div className="flex gap-2">
           <button
             onClick={() => openRecord('buy')}
-            className="flex-1 min-h-[44px] rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white text-[12.5px] font-bold shadow-md shadow-teal-500/40 hover:brightness-110 hover:shadow-lg active:scale-[0.98] transition-all"
+            className="flex-1 min-h-[44px] rounded-2xl bg-emerald-700 text-white text-[12.5px] font-semibold shadow-sm hover:bg-emerald-600 active:scale-[0.98] transition-all"
           >
             {isOpen ? t('inv_buy_more') : t('inv_buy')}
           </button>

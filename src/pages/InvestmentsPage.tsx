@@ -94,14 +94,14 @@ export function InvestmentsPage() {
         onClick={() => navigate(`/investment/${h.marketId}/${encodeURIComponent(h.symbol)}`)}
         className="w-full rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 text-left hover:shadow-sm hover:border-cream-hairline hover:bg-cream-soft active:scale-[0.99] transition-all"
       >
-        <div className={`w-11 h-11 rounded-2xl ${color.gradient} ${color.glow} flex items-center justify-center shrink-0`}>
-          <span className="text-[12px] font-bold text-white tracking-tight">{h.symbol.slice(0, 3)}</span>
+        <div className={`w-11 h-11 rounded-2xl ${color.tint} border ${color.border} flex items-center justify-center shrink-0`}>
+          <span className={`text-[12px] font-bold ${color.text} tracking-tight`}>{h.symbol.slice(0, 3)}</span>
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[13.5px] font-semibold text-ink-900 truncate tracking-tight">
             {h.symbol}
             {!scopedMarket && (
-              <span className={`text-[9.5px] font-bold text-white ml-1.5 rounded-full px-2 py-0.5 ${color.gradient}`}>
+              <span className={`text-[9.5px] font-semibold ml-1.5 rounded-full px-2 py-0.5 ${color.tint} ${color.text}`}>
                 {market.name}
               </span>
             )}
@@ -157,9 +157,9 @@ export function InvestmentsPage() {
               {markets.length > 0 && (
                 <button
                   onClick={() => openRecord(scopedMarket ? { marketId: scopedMarket.id } : null)}
-                  className="glow-attention min-h-[32px] px-3.5 py-1.5 rounded-full bg-gradient-to-br from-accent-500 to-accent-600 text-white text-[11px] font-bold flex items-center gap-1.5 hover:brightness-110 hover:scale-[1.04] active:scale-95 transition-all"
+                  className="glow-attention min-h-[32px] px-3.5 py-1.5 rounded-full bg-gradient-to-b from-accent-500 to-accent-600 text-white text-[11px] font-semibold flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition-all"
                 >
-                  <Plus size={12} strokeWidth={2.6} /> {t('inv_record_trade')}
+                  <Plus size={12} strokeWidth={2.4} /> {t('inv_record_trade')}
                 </button>
               )}
               <LanguageToggle />
@@ -254,17 +254,19 @@ export function InvestmentsPage() {
                 </button>
                 {markets.map((m) => {
                   const color = marketColorFor(m.id);
+                  const selected = scopedMarketId === m.id;
                   return (
                     <button
                       key={m.id}
                       type="button"
                       onClick={() => setScopedMarketId(m.id === scopedMarketId ? null : m.id)}
-                      className={`shrink-0 min-h-[36px] px-3.5 py-1.5 rounded-full text-[12px] font-bold text-white transition-all hover:scale-[1.04] active:scale-95 ${color.gradient} ${
-                        scopedMarketId === m.id
-                          ? `${color.glow} ring-2 ring-white/70 scale-[1.04]`
-                          : 'opacity-75 hover:opacity-100'
+                      className={`shrink-0 min-h-[36px] px-3.5 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 flex items-center gap-1.5 ${
+                        selected
+                          ? `${color.solid} text-white border-transparent shadow-sm`
+                          : `${color.tint} ${color.text} ${color.border} hover:shadow-sm`
                       }`}
                     >
+                      <span className={`w-1.5 h-1.5 rounded-full ${selected ? 'bg-white/80' : color.dot}`} />
                       {m.name} · {m.currency}
                     </button>
                   );

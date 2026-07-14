@@ -93,7 +93,7 @@ export function UpdatePricesSheet({ open, onClose, marketId }: Props) {
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-semibold text-ink-900 truncate">
                   {h.symbol}{' '}
-                  <span className={`text-[9px] font-bold text-white rounded-full px-1.5 py-0.5 ${marketColorFor(market.id).gradient}`}>
+                  <span className={`text-[9px] font-semibold rounded-full px-1.5 py-0.5 ${marketColorFor(market.id).tint} ${marketColorFor(market.id).text}`}>
                     {market.name}
                   </span>
                 </p>

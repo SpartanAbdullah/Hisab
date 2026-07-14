@@ -88,8 +88,8 @@ export function ManageMarketsSheet({ open, onClose }: Props) {
                 </div>
               ) : (
                 <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-xl ${marketColorFor(m.id).gradient} ${marketColorFor(m.id).glow} flex items-center justify-center shrink-0`}>
-                    <span className="text-[10px] font-bold text-white tracking-tight">{m.name.slice(0, 3).toUpperCase()}</span>
+                  <div className={`w-9 h-9 rounded-xl ${marketColorFor(m.id).tint} border ${marketColorFor(m.id).border} flex items-center justify-center shrink-0`}>
+                    <span className={`text-[10px] font-bold ${marketColorFor(m.id).text} tracking-tight`}>{m.name.slice(0, 3).toUpperCase()}</span>
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-semibold text-ink-900 truncate">
