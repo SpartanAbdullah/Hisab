@@ -9,6 +9,7 @@ import { CreateMarketModal } from './CreateMarketModal';
 import { useInvestmentStore } from '../stores/investmentStore';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { marketColorFor } from '../lib/marketColors';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 
@@ -87,6 +88,9 @@ export function ManageMarketsSheet({ open, onClose }: Props) {
                 </div>
               ) : (
                 <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl ${marketColorFor(m.id).gradient} ${marketColorFor(m.id).glow} flex items-center justify-center shrink-0`}>
+                    <span className="text-[10px] font-bold text-white tracking-tight">{m.name.slice(0, 3).toUpperCase()}</span>
+                  </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-semibold text-ink-900 truncate">
                       {currencyMeta[m.currency]?.flag} {m.name} · {m.currency}

@@ -281,9 +281,9 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
     'w-full border border-cream-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   const KINDS: { value: InvestmentTradeKind; label: string; active: string }[] = [
-    { value: 'buy', label: t('inv_buy'), active: 'bg-receive-50 border-receive-600 text-receive-text' },
-    { value: 'sell', label: t('inv_sell'), active: 'bg-pay-50 border-pay-text text-pay-text' },
-    { value: 'dividend', label: t('inv_dividend'), active: 'bg-info-50 border-info-600 text-info-600' },
+    { value: 'buy', label: t('inv_buy'), active: 'bg-gradient-to-br from-emerald-400 to-teal-600 border-transparent text-white shadow-md shadow-teal-500/40' },
+    { value: 'sell', label: t('inv_sell'), active: 'bg-gradient-to-br from-orange-400 to-rose-500 border-transparent text-white shadow-md shadow-rose-500/40' },
+    { value: 'dividend', label: t('inv_dividend'), active: 'bg-gradient-to-br from-sky-400 to-blue-600 border-transparent text-white shadow-md shadow-blue-500/40' },
   ];
 
   return (
@@ -339,10 +339,10 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
                     key={m.id}
                     type="button"
                     onClick={() => { setMarketId(m.id); setConversionRate(''); }}
-                    className={`min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-semibold border transition-all hover:scale-[1.03] active:scale-95 ${
+                    className={`min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-bold text-white transition-all hover:scale-[1.04] active:scale-95 ${color.gradient} ${
                       marketId === m.id
-                        ? `${color.solidBg} ${color.solidText} border-transparent`
-                        : `${color.bg} ${color.text} ${color.border}`
+                        ? `${color.glow} ring-2 ring-white/70 scale-[1.04]`
+                        : 'opacity-75 hover:opacity-100'
                     }`}
                   >
                     {currencyMeta[m.currency]?.flag} {m.name} · {m.currency}

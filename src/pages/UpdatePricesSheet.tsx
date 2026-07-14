@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useInvestmentStore, holdingsFor } from '../stores/investmentStore';
 import { useToast } from '../components/Toast';
+import { marketColorFor } from '../lib/marketColors';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 
@@ -91,7 +92,10 @@ export function UpdatePricesSheet({ open, onClose, marketId }: Props) {
             <div key={key} className="rounded-2xl bg-cream-card border border-cream-border p-3.5 flex items-center gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-semibold text-ink-900 truncate">
-                  {h.symbol} <span className="text-[10px] text-ink-400 font-medium">{market.name}</span>
+                  {h.symbol}{' '}
+                  <span className={`text-[9px] font-bold text-white rounded-full px-1.5 py-0.5 ${marketColorFor(market.id).gradient}`}>
+                    {market.name}
+                  </span>
                 </p>
                 <p className="text-[10.5px] text-ink-500 mt-0.5 tabular-nums">
                   {h.position.quantity.toLocaleString()} @ {formatMoney(h.position.avgCost, market.currency)}
