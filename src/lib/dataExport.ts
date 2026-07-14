@@ -2,6 +2,7 @@ import {
   accountsDb, transactionsDb, loansDb, emiSchedulesDb,
   goalsDb, activitiesDb, upcomingExpensesDb,
   splitGroupsDb, groupExpensesDb, groupSettlementsDb,
+  investmentMarketsDb, investmentTradesDb, investmentPricesDb,
 } from './supabaseDb';
 import { supabase } from './supabase';
 
@@ -17,7 +18,7 @@ function getUserId(): string {
 }
 
 export async function exportAllData(): Promise<string> {
-  const [accounts, transactions, loans, emiSchedules, goals, activities, upcomingExpenses, splitGroups] = await Promise.all([
+  const [accounts, transactions, loans, emiSchedules, goals, activities, upcomingExpenses, splitGroups, investmentMarkets, investmentTrades, investmentPrices] = await Promise.all([
     accountsDb.getAll(),
     transactionsDb.getAll(),
     loansDb.getAll(),
@@ -26,6 +27,11 @@ export async function exportAllData(): Promise<string> {
     activitiesDb.getAll(),
     upcomingExpensesDb.getAll(),
     splitGroupsDb.getAll(),
+    // Graceful pre-migration export: if the investment tables don't exist
+    // yet, back up everything else instead of failing the whole export.
+    investmentMarketsDb.getAll().catch(() => []),
+    investmentTradesDb.getAll().catch(() => []),
+    investmentPricesDb.getAll().catch(() => []),
   ]);
 
   // Fetch group expenses and settlements for each group
@@ -49,6 +55,7 @@ export async function exportAllData(): Promise<string> {
       accounts, transactions, loans, emiSchedules, goals,
       activityLog: activities, upcomingExpenses, splitGroups,
       groupExpenses: allGroupExpenses, groupSettlements: allGroupSettlements,
+      investmentMarkets, investmentTrades, investmentPrices,
     },
   }, null, 2);
 }
@@ -65,6 +72,8 @@ export async function importData(json: string): Promise<{ success: boolean; mess
       'group_settlements', 'group_expenses', 'split_groups',
       'upcoming_expenses', 'activities', 'emi_schedules',
       'goals', 'loans', 'transactions', 'accounts',
+      // children before parent (investment_trades FK-references markets)
+      'investment_prices', 'investment_trades', 'investment_markets',
     ];
 
     // Clear all user data (order matters for foreign keys)
@@ -89,9 +98,18 @@ export async function importData(json: string): Promise<{ success: boolean; mess
       const rows = d.transactions.map((t: Record<string, unknown>) => ({
         id: t.id, user_id: userId, type: t.type, amount: t.amount, currency: t.currency,
         source_account_id: t.sourceAccountId, destination_account_id: t.destinationAccountId,
-        related_person: t.relatedPerson, related_loan_id: t.relatedLoanId,
+        related_person: t.relatedPerson, person_id: t.personId ?? null,
+        related_loan_id: t.relatedLoanId,
         related_goal_id: t.relatedGoalId, conversion_rate: t.conversionRate,
+        // Conditional so restore still works on a pre-investments database;
+        // without it a restored buy/sell loses its trade link and deleting it
+        // later would orphan the trade row (phantom shares).
+        ...(t.relatedInvestmentId != null ? { related_investment_id: t.relatedInvestmentId } : {}),
         category: t.category, notes: t.notes, created_at: t.createdAt,
+        is_reconciled: t.isReconciled ?? false,
+        reconciled_at: t.reconciledAt ?? null,
+        reconciled_by: t.reconciledBy ?? null,
+        receipt_path: t.receiptPath ?? null,
       }));
       const { error } = await supabase.from('transactions').insert(rows);
       if (error) throw error;
@@ -125,6 +143,36 @@ export async function importData(json: string): Promise<{ success: boolean; mess
         created_at: g.createdAt,
       }));
       const { error } = await supabase.from('goals').insert(rows);
+      if (error) throw error;
+    }
+
+    if (d.investmentMarkets?.length) {
+      const rows = d.investmentMarkets.map((m: Record<string, unknown>) => ({
+        id: m.id, user_id: userId, name: m.name, currency: m.currency,
+        created_at: m.createdAt,
+      }));
+      const { error } = await supabase.from('investment_markets').insert(rows);
+      if (error) throw error;
+    }
+
+    if (d.investmentTrades?.length) {
+      const rows = d.investmentTrades.map((tr: Record<string, unknown>) => ({
+        id: tr.id, user_id: userId, market_id: tr.marketId, symbol: tr.symbol,
+        name: tr.name ?? '', kind: tr.kind, quantity: tr.quantity,
+        price_per_unit: tr.pricePerUnit, amount: tr.amount, fees: tr.fees,
+        account_id: tr.accountId ?? null, transaction_id: tr.transactionId ?? null,
+        traded_at: tr.tradedAt, notes: tr.notes ?? '', created_at: tr.createdAt,
+      }));
+      const { error } = await supabase.from('investment_trades').insert(rows);
+      if (error) throw error;
+    }
+
+    if (d.investmentPrices?.length) {
+      const rows = d.investmentPrices.map((p: Record<string, unknown>) => ({
+        id: p.id, user_id: userId, market_id: p.marketId, symbol: p.symbol,
+        price: p.price, as_of: p.asOf, created_at: p.createdAt,
+      }));
+      const { error } = await supabase.from('investment_prices').insert(rows);
       if (error) throw error;
     }
 

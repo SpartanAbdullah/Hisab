@@ -69,6 +69,12 @@ export function getActionLabel(
         : t("action_saved_goal_nogoal");
     case "opening_balance":
       return t("action_opening_balance");
+    case "investment_buy":
+      return t("action_invested");
+    case "investment_sell":
+      return t("action_sold_investment");
+    case "investment_dividend":
+      return t("action_dividend");
     default:
       return transaction.type;
   }

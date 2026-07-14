@@ -5,6 +5,7 @@ import {
   ArrowDownLeft,
   Wallet2,
   Coins,
+  TrendingUp,
   Plus,
   BarChart3,
   HandCoins,
@@ -976,6 +977,12 @@ export function HomePage() {
                 icon={Coins}
                 iconClass="text-accent-600"
                 onClick={() => navigate("/kameti")}
+              />
+              <QuickTile
+                label={t("inv_title")}
+                icon={TrendingUp}
+                iconClass="text-receive-text"
+                onClick={() => navigate("/investments")}
               />
             </div>
           </div>

@@ -28,6 +28,9 @@ vi.mock('../lib/supabaseDb', async () => {
   const emis = new Map<string, Record<string, unknown>>();
   const goals = new Map<string, Record<string, unknown>>();
   const activities = new Map<string, Record<string, unknown>>();
+  const investmentMarkets = new Map<string, Record<string, unknown>>();
+  const investmentTrades = new Map<string, Record<string, unknown>>();
+  const investmentPrices = new Map<string, Record<string, unknown>>();
 
   // Toggle: when true, transactionsDb.add throws on the next call. Lets us
   // simulate "final write fails after balance moved" for the rollback test.
@@ -54,8 +57,12 @@ vi.mock('../lib/supabaseDb', async () => {
       emis.clear();
       goals.clear();
       activities.clear();
+      investmentMarkets.clear();
+      investmentTrades.clear();
+      investmentPrices.clear();
       nextTxAddThrows = null;
     },
+    __getInvestmentTrades: () => Array.from(investmentTrades.values()),
     __getAccount: (id: string) => accounts.get(id),
     __getLoan: (id: string) => loans.get(id),
     __getTransactions: () => Array.from(transactions.values()),
@@ -137,6 +144,25 @@ vi.mock('../lib/supabaseDb', async () => {
       async getAll() { return Array.from(activities.values()); },
       async add(a: Record<string, unknown>) { activities.set(a.id as string, a); },
     },
+
+    investmentMarketsDb: {
+      async getAll() { return Array.from(investmentMarkets.values()); },
+      async add(m: Record<string, unknown>) { investmentMarkets.set(m.id as string, m); },
+      async update(id: string, changes: Record<string, unknown>) {
+        const cur = investmentMarkets.get(id);
+        if (cur) investmentMarkets.set(id, { ...cur, ...changes });
+      },
+      async delete(id: string) { investmentMarkets.delete(id); },
+    },
+    investmentTradesDb: {
+      async getAll() { return Array.from(investmentTrades.values()); },
+      async add(t: Record<string, unknown>) { investmentTrades.set(t.id as string, t); },
+      async delete(id: string) { investmentTrades.delete(id); },
+    },
+    investmentPricesDb: {
+      async getAll() { return Array.from(investmentPrices.values()); },
+      async upsert(p: Record<string, unknown>) { investmentPrices.set(p.id as string, p); },
+    },
   };
 });
 
@@ -148,6 +174,7 @@ import { useGoalStore } from './goalStore';
 import { useEmiStore } from './emiStore';
 import { useAppModeStore } from './appModeStore';
 import { useActivityStore } from './activityStore';
+import { useInvestmentStore } from './investmentStore';
 
 // Loose-typed accessors on the mock module — these are added by vi.mock above
 // but TypeScript doesn't know about them.
@@ -169,7 +196,14 @@ beforeEach(async () => {
   // activitiesDb.add which is already mocked, but the store also reads
   // localStorage for de-dup. Reset it for isolation.
   useActivityStore.setState({ activities: [], loading: false });
+  useInvestmentStore.setState({ markets: [], trades: [], prices: [], loading: false });
 });
+
+function seedMarket(market: { id: string; name: string; currency: 'AED' | 'PKR' }) {
+  useInvestmentStore.setState((s) => ({
+    markets: [...s.markets, { ...market, createdAt: new Date().toISOString() }],
+  }));
+}
 
 function seedAndLoad(account: { id: string; balance: number; currency?: string; type?: 'cash' | 'bank' | 'digital_wallet' | 'savings' | 'credit_card'; name?: string }) {
   seedAccount(account);
@@ -349,5 +383,192 @@ describe('processTransaction', () => {
     expect(useAccountStore.getState().getAccount('cash')?.balance).toBe(1000);
     // And no transaction row should have been persisted.
     expect(useTransactionStore.getState().transactions).toHaveLength(0);
+  });
+});
+
+describe('processTransaction — investments', () => {
+  it('buy same-currency: debits total cost including fees and creates the trade row', async () => {
+    seedAndLoad({ id: 'aed-bank', balance: 10000, currency: 'AED' });
+    seedMarket({ id: 'dfm', name: 'DFM', currency: 'AED' });
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'investment_buy',
+      amount: 0, // engine computes the real cash amount
+      marketId: 'dfm',
+      symbol: 'emaar',
+      quantity: 500,
+      pricePerUnit: 2.5,
+      fees: 15,
+      sourceAccountId: 'aed-bank',
+    });
+
+    // 500 × 2.50 + 15 = 1265
+    expect(tx.amount).toBe(1265);
+    expect(tx.type).toBe('investment_buy');
+    expect(tx.relatedInvestmentId).toBeTruthy();
+    expect(useAccountStore.getState().getAccount('aed-bank')?.balance).toBe(8735);
+
+    const trades = useInvestmentStore.getState().trades;
+    expect(trades).toHaveLength(1);
+    expect(trades[0].symbol).toBe('EMAAR'); // uppercased
+    expect(trades[0].transactionId).toBe(tx.id);
+    expect(trades[0].accountId).toBe('aed-bank');
+  });
+
+  it('buy cross-currency: rate = market-per-account (divide) — PKR stock from AED account', async () => {
+    seedAndLoad({ id: 'aed-bank', balance: 1000, currency: 'AED' });
+    seedMarket({ id: 'psx', name: 'PSX', currency: 'PKR' });
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'investment_buy',
+      amount: 0,
+      marketId: 'psx',
+      symbol: 'HBL',
+      quantity: 100,
+      pricePerUnit: 76,
+      fees: 50,
+      sourceAccountId: 'aed-bank',
+      conversionRate: 76.5, // 1 AED = 76.5 PKR → rate is market-per-account
+    });
+
+    // Total PKR 7650; AED deducted = 7650 / 76.5 = 100
+    expect(tx.amount).toBe(7650);
+    expect(tx.currency).toBe('PKR');
+    expect(useAccountStore.getState().getAccount('aed-bank')?.balance).toBe(900);
+  });
+
+  it('sell same-currency: credits net proceeds after fees and stamps the trade', async () => {
+    seedAndLoad({ id: 'aed-bank', balance: 0, currency: 'AED' });
+    seedMarket({ id: 'dfm', name: 'DFM', currency: 'AED' });
+    // Existing position: 500 EMAAR (outside-Hisaab buy so no balance involved)
+    useInvestmentStore.setState((s) => ({
+      trades: [...s.trades, {
+        id: 'buy-1', marketId: 'dfm', symbol: 'EMAAR', name: '', kind: 'buy' as const,
+        quantity: 500, pricePerUnit: 2.0, amount: 0, fees: 0, accountId: null,
+        transactionId: null, tradedAt: '2026-01-01T00:00:00Z', notes: '',
+        createdAt: '2026-01-01T00:00:00Z',
+      }],
+    }));
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'investment_sell',
+      amount: 0,
+      marketId: 'dfm',
+      symbol: 'EMAAR',
+      quantity: 200,
+      pricePerUnit: 2.6,
+      fees: 10,
+      destinationAccountId: 'aed-bank',
+    });
+
+    // 200 × 2.60 − 10 = 510
+    expect(tx.amount).toBe(510);
+    expect(useAccountStore.getState().getAccount('aed-bank')?.balance).toBe(510);
+    expect(useInvestmentStore.getState().trades).toHaveLength(2);
+  });
+
+  it('oversell: throws before any balance moves', async () => {
+    seedAndLoad({ id: 'aed-bank', balance: 100, currency: 'AED' });
+    seedMarket({ id: 'dfm', name: 'DFM', currency: 'AED' });
+
+    await expect(
+      useTransactionStore.getState().processTransaction({
+        type: 'investment_sell',
+        amount: 0,
+        marketId: 'dfm',
+        symbol: 'EMAAR',
+        quantity: 50,
+        pricePerUnit: 2,
+        fees: 0,
+        destinationAccountId: 'aed-bank',
+      }),
+    ).rejects.toThrow(/only hold 0/);
+
+    expect(useAccountStore.getState().getAccount('aed-bank')?.balance).toBe(100);
+    expect(useInvestmentStore.getState().trades).toHaveLength(0);
+    expect(useTransactionStore.getState().transactions).toHaveLength(0);
+  });
+
+  it('dividend: credits gross minus fees', async () => {
+    seedAndLoad({ id: 'pkr-bank', balance: 0, currency: 'PKR' });
+    seedMarket({ id: 'psx', name: 'PSX', currency: 'PKR' });
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'investment_dividend',
+      amount: 0,
+      marketId: 'psx',
+      symbol: 'HBL',
+      grossAmount: 1000,
+      fees: 150, // withholding
+      destinationAccountId: 'pkr-bank',
+    });
+
+    expect(tx.amount).toBe(850);
+    expect(useAccountStore.getState().getAccount('pkr-bank')?.balance).toBe(850);
+    const trade = useInvestmentStore.getState().trades[0];
+    expect(trade.kind).toBe('dividend');
+    expect(trade.amount).toBe(1000); // gross stored on the trade row
+  });
+
+  it('delete buy: refunds the source exactly, including cross-currency', async () => {
+    seedAndLoad({ id: 'aed-bank', balance: 1000, currency: 'AED' });
+    seedMarket({ id: 'psx', name: 'PSX', currency: 'PKR' });
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'investment_buy',
+      amount: 0,
+      marketId: 'psx',
+      symbol: 'HBL',
+      quantity: 100,
+      pricePerUnit: 76,
+      fees: 50,
+      sourceAccountId: 'aed-bank',
+      conversionRate: 76.5,
+    });
+    expect(useAccountStore.getState().getAccount('aed-bank')?.balance).toBe(900);
+
+    await useTransactionStore.getState().deleteTransaction(tx.id, { allowInvestment: true });
+
+    expect(useAccountStore.getState().getAccount('aed-bank')?.balance).toBe(1000);
+    expect(useInvestmentStore.getState().trades).toHaveLength(0);
+    expect(useTransactionStore.getState().transactions).toHaveLength(0);
+  });
+
+  it('delete without allowInvestment: redirects to the Investments screen', async () => {
+    seedAndLoad({ id: 'aed-bank', balance: 10000, currency: 'AED' });
+    seedMarket({ id: 'dfm', name: 'DFM', currency: 'AED' });
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'investment_buy',
+      amount: 0,
+      marketId: 'dfm',
+      symbol: 'EMAAR',
+      quantity: 10,
+      pricePerUnit: 2,
+      fees: 0,
+      sourceAccountId: 'aed-bank',
+    });
+
+    await expect(
+      useTransactionStore.getState().deleteTransaction(tx.id),
+    ).rejects.toThrow(/Investments screen/);
+  });
+
+  it('deleteTrade guard: blocks deleting a buy that a later sell depends on', async () => {
+    seedAndLoad({ id: 'aed-bank', balance: 10000, currency: 'AED' });
+    seedMarket({ id: 'dfm', name: 'DFM', currency: 'AED' });
+
+    const buyTx = await useTransactionStore.getState().processTransaction({
+      type: 'investment_buy', amount: 0, marketId: 'dfm', symbol: 'EMAAR',
+      quantity: 100, pricePerUnit: 2, fees: 0, sourceAccountId: 'aed-bank',
+    });
+    await useTransactionStore.getState().processTransaction({
+      type: 'investment_sell', amount: 0, marketId: 'dfm', symbol: 'EMAAR',
+      quantity: 80, pricePerUnit: 2.5, fees: 0, destinationAccountId: 'aed-bank',
+    });
+
+    const buyTrade = useInvestmentStore.getState().trades.find((t) => t.transactionId === buyTx.id);
+    expect(buyTrade).toBeTruthy();
+    await expect(useInvestmentStore.getState().deleteTrade(buyTrade!.id)).rejects.toThrow(/delete the newer sell/i);
   });
 });

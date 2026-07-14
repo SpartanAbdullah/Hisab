@@ -178,10 +178,10 @@ function TermsOfUse() {
     >
       <Section title="About Hisaab">
         <p>
-          Hisaab is a personal finance record-keeping tool. It helps you enter and review information such as accounts, income, expenses, loans, repayments, balances, currencies, and group splits.
+          Hisaab is a personal finance record-keeping tool. It helps you enter and review information such as accounts, income, expenses, loans, repayments, balances, currencies, investment records, and group splits.
         </p>
         <p>
-          Hisaab is not a bank, licensed wallet, custody provider, lender, money transfer provider, investment platform, investment adviser, tax adviser, or financial adviser. Hisaab does not hold, move, lend, or invest money for you.
+          Hisaab is not a bank, licensed wallet, custody provider, lender, money transfer provider, investment platform, investment adviser, tax adviser, or financial adviser. Hisaab does not hold, move, lend, or invest money for you. Investment records — including trades, prices, and profit/loss figures — are manual entries you keep yourself; Hisaab does not fetch market data, execute trades, or provide any recommendations.
         </p>
       </Section>
 

@@ -1,6 +1,6 @@
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  HandCoins, Handshake, RotateCcw, Target, Landmark, Check, Paperclip,
+  HandCoins, Handshake, RotateCcw, Target, Landmark, Check, Paperclip, TrendingUp,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { MouseEvent } from 'react';
@@ -25,6 +25,9 @@ const iconMap: Record<string, React.ElementType> = {
   repayment: RotateCcw,
   goal_contribution: Target,
   opening_balance: Landmark,
+  investment_buy: TrendingUp,
+  investment_sell: TrendingUp,
+  investment_dividend: TrendingUp,
 };
 
 // Type-mapped icon chrome. Sukoon collapses the old per-type rainbow into
@@ -40,6 +43,10 @@ const defaultStyleMap: Record<string, { text: string; bg: string }> = {
   transfer:          { text: 'text-ink-600', bg: 'bg-cream-soft' },
   loan_taken:        { text: 'text-warn-600', bg: 'bg-warn-50' },
   opening_balance:   { text: 'text-info-600', bg: 'bg-info-50' },
+  // Investments: buy = money leaving (pay), sell/dividend = money arriving.
+  investment_buy:      { text: 'text-pay-text', bg: 'bg-pay-50' },
+  investment_sell:     { text: 'text-receive-text', bg: 'bg-receive-50' },
+  investment_dividend: { text: 'text-receive-text', bg: 'bg-receive-50' },
 };
 
 // When viewing an account-scoped list (AccountDetailPage), colour the row
@@ -94,7 +101,7 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
       ? false
       : transaction.type === 'repayment'
         ? !!transaction.sourceAccountId
-        : ['expense', 'loan_given', 'transfer', 'goal_contribution'].includes(transaction.type);
+        : ['expense', 'loan_given', 'transfer', 'goal_contribution', 'investment_buy'].includes(transaction.type);
 
   const displayMoney = (() => {
     if (!accountContextId) return { amount: transaction.amount, currency: transaction.currency };
@@ -105,7 +112,9 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
       return { amount, currency: destinationAccount.currency };
     }
     if (contextIsSource && sourceAccount) {
-      const usesLoanOrGoalCurrency = ['repayment', 'goal_contribution'].includes(transaction.type);
+      // Types whose stored amount is in a FOREIGN currency (loan/goal/market)
+      // while the source account was debited amount ÷ rate.
+      const usesLoanOrGoalCurrency = ['repayment', 'goal_contribution', 'investment_buy'].includes(transaction.type);
       const amount = transaction.conversionRate && usesLoanOrGoalCurrency && sourceAccount.currency !== transaction.currency
         ? Math.round((transaction.amount / transaction.conversionRate) * 100) / 100
         : transaction.amount;

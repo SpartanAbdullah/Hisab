@@ -6,6 +6,7 @@ import type {
   LinkedRequest, LinkedRequestKind, SettlementRequest, Currency,
   Budget, RecurringTransaction, Remittance, CustomCategory,
   Committee, CommitteeMember, CommitteePayment,
+  InvestmentMarket, InvestmentTrade, InvestmentPrice,
 } from '../db';
 
 export interface DeletedRow {
@@ -156,7 +157,12 @@ export const transactionsDb = {
       id: t.id, user_id: getUserId(), type: t.type, amount: t.amount, currency: t.currency,
       source_account_id: t.sourceAccountId, destination_account_id: t.destinationAccountId,
       related_person: t.relatedPerson, person_id: t.personId ?? null, related_loan_id: t.relatedLoanId,
-      related_goal_id: t.relatedGoalId, conversion_rate: t.conversionRate,
+      related_goal_id: t.relatedGoalId,
+      // Only sent when set: keeps every NON-investment entry working on a
+      // database that hasn't applied supabase-migration-investments.sql yet
+      // (an unknown column in the payload would fail the whole insert).
+      ...(t.relatedInvestmentId != null ? { related_investment_id: t.relatedInvestmentId } : {}),
+      conversion_rate: t.conversionRate,
       category: t.category, notes: t.notes, created_at: t.createdAt,
       is_reconciled: t.isReconciled ?? false,
       reconciled_at: t.reconciledAt ?? null,
@@ -177,6 +183,7 @@ export const transactionsDb = {
     if (changes.personId !== undefined) row.person_id = changes.personId;
     if (changes.relatedLoanId !== undefined) row.related_loan_id = changes.relatedLoanId;
     if (changes.relatedGoalId !== undefined) row.related_goal_id = changes.relatedGoalId;
+    if (changes.relatedInvestmentId !== undefined) row.related_investment_id = changes.relatedInvestmentId;
     if (changes.conversionRate !== undefined) row.conversion_rate = changes.conversionRate;
     if (changes.category !== undefined) row.category = changes.category;
     if (changes.notes !== undefined) row.notes = changes.notes;
@@ -1237,6 +1244,7 @@ function mapTransaction(r: Record<string, unknown>): Transaction {
     personId: (r.person_id as string) ?? null,
     relatedLoanId: (r.related_loan_id as string) ?? null,
     relatedGoalId: (r.related_goal_id as string) ?? null,
+    relatedInvestmentId: (r.related_investment_id as string) ?? null,
     conversionRate: r.conversion_rate != null ? Number(r.conversion_rate) : null,
     category: (r.category as string) ?? '', notes: (r.notes as string) ?? '',
     createdAt: r.created_at as string,
@@ -1843,5 +1851,142 @@ function mapRemittance(r: Record<string, unknown>): Remittance {
     sentAt: r.sent_at as string,
     receivedAt: (r.received_at as string) ?? null,
     createdAt: r.created_at as string,
+  };
+}
+
+// ══════════════════════════════════════
+// INVESTMENTS (record-keeping tracker: markets, trades, manual prices)
+// Soft-delete tables — see supabase-migration-investments.sql. Positions are
+// derived client-side from trades (investmentMath.ts); no holdings table.
+// ══════════════════════════════════════
+export const investmentMarketsDb = {
+  async getAll(): Promise<InvestmentMarket[]> {
+    const { data, error } = await supabase
+      .from('investment_markets').select('*')
+      .eq('user_id', getUserId())
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapInvestmentMarket);
+  },
+  async add(m: InvestmentMarket) {
+    const { error } = await supabase.from('investment_markets').insert({
+      id: m.id, user_id: getUserId(), name: m.name, currency: m.currency,
+      created_at: m.createdAt,
+    });
+    if (error) throw error;
+  },
+  async update(id: string, changes: Partial<InvestmentMarket>) {
+    const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (changes.name !== undefined) row.name = changes.name;
+    if (changes.currency !== undefined) row.currency = changes.currency;
+    const { error } = await supabase.from('investment_markets').update(row).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    const { error } = await supabase
+      .from('investment_markets')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+export const investmentTradesDb = {
+  async getAll(): Promise<InvestmentTrade[]> {
+    const { data, error } = await supabase
+      .from('investment_trades').select('*')
+      .eq('user_id', getUserId())
+      .is('deleted_at', null)
+      .order('traded_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapInvestmentTrade);
+  },
+  // Upsert with deleted_at: null so LIFO rollback re-insertion works even if
+  // a soft-deleted row with the same id lingers (transactions.add precedent).
+  async add(t: InvestmentTrade) {
+    const { error } = await supabase.from('investment_trades').upsert({
+      id: t.id, user_id: getUserId(), market_id: t.marketId,
+      symbol: t.symbol, name: t.name, kind: t.kind,
+      quantity: t.quantity, price_per_unit: t.pricePerUnit, amount: t.amount,
+      fees: t.fees, account_id: t.accountId, transaction_id: t.transactionId,
+      traded_at: t.tradedAt, notes: t.notes, created_at: t.createdAt,
+      deleted_at: null,
+    });
+    if (error) throw error;
+  },
+  async delete(id: string) {
+    const { error } = await supabase
+      .from('investment_trades')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+export const investmentPricesDb = {
+  async getAll(): Promise<InvestmentPrice[]> {
+    const { data, error } = await supabase
+      .from('investment_prices').select('*')
+      .eq('user_id', getUserId())
+      .is('deleted_at', null);
+    if (error) throw error;
+    return (data ?? []).map(mapInvestmentPrice);
+  },
+  // Upsert on the (user, market, symbol) unique key — one manual price per
+  // ticker, updated in place.
+  async upsert(p: InvestmentPrice) {
+    const { error } = await supabase.from('investment_prices').upsert({
+      id: p.id, user_id: getUserId(), market_id: p.marketId, symbol: p.symbol,
+      price: p.price, as_of: p.asOf, created_at: p.createdAt,
+      updated_at: new Date().toISOString(), deleted_at: null,
+    }, { onConflict: 'user_id,market_id,symbol' });
+    if (error) throw error;
+  },
+};
+
+function mapInvestmentMarket(r: Record<string, unknown>): InvestmentMarket {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    currency: r.currency as Currency,
+    createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
+    deletedAt: (r.deleted_at as string) ?? null,
+  };
+}
+
+function mapInvestmentTrade(r: Record<string, unknown>): InvestmentTrade {
+  return {
+    id: r.id as string,
+    marketId: r.market_id as string,
+    symbol: r.symbol as string,
+    name: (r.name as string) ?? '',
+    kind: r.kind as InvestmentTrade['kind'],
+    quantity: Number(r.quantity),
+    pricePerUnit: Number(r.price_per_unit),
+    amount: Number(r.amount),
+    fees: Number(r.fees),
+    accountId: (r.account_id as string) ?? null,
+    transactionId: (r.transaction_id as string) ?? null,
+    tradedAt: r.traded_at as string,
+    notes: (r.notes as string) ?? '',
+    createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
+    deletedAt: (r.deleted_at as string) ?? null,
+  };
+}
+
+function mapInvestmentPrice(r: Record<string, unknown>): InvestmentPrice {
+  return {
+    id: r.id as string,
+    marketId: r.market_id as string,
+    symbol: r.symbol as string,
+    price: Number(r.price),
+    asOf: r.as_of as string,
+    createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };
 }

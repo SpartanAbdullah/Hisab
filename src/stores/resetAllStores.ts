@@ -26,6 +26,7 @@ import { useLinkedRequestStore } from './linkedRequestStore';
 import { useSettlementRequestStore } from './settlementRequestStore';
 import { useCustomCategoryStore } from './customCategoryStore';
 import { useCommitteeStore } from './committeeStore';
+import { useInvestmentStore } from './investmentStore';
 import { clearLegacyDatabase, clearUserDatabase, getCurrentDatabaseUserId } from '../db/database';
 
 // hisaab_supabase_uid is NOT listed here — it's owned by supabaseAuthStore's
@@ -63,6 +64,7 @@ export async function resetAllUserStores(userId = getCurrentDatabaseUserId()): P
   useSettlementRequestStore.getState().reset();
   useCustomCategoryStore.getState().reset();
   useCommitteeStore.getState().reset();
+  useInvestmentStore.getState().reset();
 
   for (const key of USER_SCOPED_LOCALSTORAGE_KEYS) {
     localStorage.removeItem(key);

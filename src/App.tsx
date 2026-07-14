@@ -47,6 +47,8 @@ const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then(m => ({ defaul
 const SubscriptionsPage = lazy(() => import('./pages/SubscriptionsPage').then(m => ({ default: m.SubscriptionsPage })));
 const KametiPage = lazy(() => import('./pages/KametiPage').then(m => ({ default: m.KametiPage })));
 const KametiDetailPage = lazy(() => import('./pages/KametiDetailPage').then(m => ({ default: m.KametiDetailPage })));
+const InvestmentsPage = lazy(() => import('./pages/InvestmentsPage').then(m => ({ default: m.InvestmentsPage })));
+const HoldingDetailPage = lazy(() => import('./pages/HoldingDetailPage').then(m => ({ default: m.HoldingDetailPage })));
 const KametiWitnessPage = lazy(() => import('./pages/KametiWitnessPage').then(m => ({ default: m.KametiWitnessPage })));
 const HisaabAIPage = lazy(() => import('./pages/HisaabAIPage').then(m => ({ default: m.HisaabAIPage })));
 const InsightDetailPage = lazy(() => import('./pages/InsightDetailPage').then(m => ({ default: m.InsightDetailPage })));
@@ -409,6 +411,8 @@ function AppContent() {
           {/* Recurring + Subscriptions consolidated into the one Subscription
               Tracker. Old /recurring links redirect there. */}
           <Route path="/subscriptions" element={mode === 'full_tracker' ? <SubscriptionsPage /> : <Navigate to="/" replace />} />
+          <Route path="/investments" element={mode === 'full_tracker' ? <InvestmentsPage /> : <Navigate to="/" replace />} />
+          <Route path="/investment/:marketId/:symbol" element={mode === 'full_tracker' ? <HoldingDetailPage /> : <Navigate to="/" replace />} />
           <Route path="/recurring" element={<Navigate to="/subscriptions" replace />} />
           {/* Kameti / committee — a no-custody tracker; needs no accounts, so
               available in both modes. */}

@@ -23,7 +23,10 @@ export type TransactionType =
   | 'repayment'
   | 'transfer'
   | 'goal_contribution'
-  | 'opening_balance';
+  | 'opening_balance'
+  | 'investment_buy'
+  | 'investment_sell'
+  | 'investment_dividend';
 
 export interface Transaction {
   id: string;
@@ -36,6 +39,9 @@ export interface Transaction {
   personId?: string | null;
   relatedLoanId: string | null;
   relatedGoalId: string | null;
+  // Links investment_buy/sell/dividend rows to their investment_trades row —
+  // O(1) two-way lookup for delete reversal (mirrors relatedGoalId).
+  relatedInvestmentId?: string | null;
   conversionRate: number | null;
   category: string;
   notes: string;
@@ -468,6 +474,63 @@ export interface CommitteePayment {
   memberId: string;
   round: number;
   paidAt: string;
+}
+
+// ── Investments ──
+// A record-keeping tracker for user-entered stock trades — Hisaab never holds,
+// trades, or advises on investments (see PublicInfoPages disclaimer). Positions
+// (quantity / avg cost / P&L) are DERIVED by replaying trades in
+// investmentMath.ts — trades are the single source of truth; there is no
+// materialized holdings row to drift. See supabase-migration-investments.sql.
+
+// A user-defined market with a FIXED currency (DFM→AED, PSX→PKR, ...). The
+// currency locks once the market has trades — changing it retroactively would
+// corrupt every P&L figure under it.
+export interface InvestmentMarket {
+  id: string;
+  name: string;
+  currency: Currency;
+  createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export type InvestmentTradeKind = 'buy' | 'sell' | 'dividend';
+
+export interface InvestmentTrade {
+  id: string;
+  marketId: string;
+  symbol: string;        // uppercased ticker, e.g. EMAAR
+  name: string;          // optional company name ('' when unset)
+  kind: InvestmentTradeKind;
+  // buy/sell: quantity > 0, pricePerUnit >= 0, amount = 0 (total derives from
+  // qty × price). dividend: quantity = 0, pricePerUnit = 0, amount = gross cash.
+  quantity: number;
+  pricePerUnit: number;
+  amount: number;
+  fees: number;          // buy: capitalized into cost basis; sell/dividend: reduce proceeds
+  // null = "held outside Hisaab" — ledger-only, no account balance touched.
+  accountId: string | null;
+  // The transactions row that moved the money; null for outside-Hisaab trades.
+  // Any conversionRate lives on that row only (never duplicated here).
+  transactionId: string | null;
+  tradedAt: string;      // ISO — user-editable trade date
+  notes: string;
+  createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+// Manual "last price + as-of" per (market, symbol) — updated independently of
+// trading and survives a fully-sold position. Upsert-only.
+export interface InvestmentPrice {
+  id: string;
+  marketId: string;
+  symbol: string;
+  price: number;
+  asOf: string;          // ISO — when the user says this price was true
+  createdAt: string;
+  updatedAt?: string;
 }
 
 // ── App Mode ──

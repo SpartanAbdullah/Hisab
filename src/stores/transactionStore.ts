@@ -3,15 +3,18 @@ import { v4 as uuid } from 'uuid';
 import { db } from '../db';
 import { transactionsDb, emiSchedulesDb, loansDb } from '../lib/supabaseDb';
 import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
-import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType } from '../db';
+import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType, InvestmentTrade } from '../db';
 import { useAccountStore } from './accountStore';
 import { useLoanStore, type CreateLoanInput } from './loanStore';
 import { useGoalStore } from './goalStore';
 import { useEmiStore } from './emiStore';
 import { useActivityStore } from './activityStore';
 import { useAppModeStore } from './appModeStore';
+import { useInvestmentStore } from './investmentStore';
 import { parseInternalNote } from '../lib/internalNotes';
 import { uncoveredToPaidIds } from '../lib/emiCoverage';
+import { simulateTimeline, validateTradeInput } from '../lib/investmentMath';
+import { rateIsSane } from '../lib/conversionMath';
 import { MutationScope, runSafeMutation } from '../lib/mutationSafety';
 
 interface BaseTransactionInput {
@@ -76,6 +79,44 @@ interface OpeningBalanceInput extends BaseTransactionInput {
   destinationAccountId: string;
 }
 
+// Investment trades funded from (or credited to) a real account. The trade
+// row itself is created INSIDE the mutation scope (trackedAddInvestmentTrade)
+// so a failed money leg never leaves an orphan trade — loan_given precedent.
+// `amount` on BaseTransactionInput is ignored for these; the engine computes
+// the true cash amount from qty × price ± fees.
+interface InvestmentTradeFields {
+  marketId: string;
+  symbol: string;
+  companyName?: string;
+  quantity: number;
+  pricePerUnit: number;
+  fees: number;
+  tradedAt?: string;
+}
+
+interface InvestmentBuyInput extends BaseTransactionInput, InvestmentTradeFields {
+  type: 'investment_buy';
+  sourceAccountId: string;
+  conversionRate?: number;
+}
+
+interface InvestmentSellInput extends BaseTransactionInput, InvestmentTradeFields {
+  type: 'investment_sell';
+  destinationAccountId: string;
+  conversionRate?: number;
+}
+
+interface InvestmentDividendInput extends BaseTransactionInput {
+  type: 'investment_dividend';
+  destinationAccountId: string;
+  marketId: string;
+  symbol: string;
+  grossAmount: number;
+  fees: number;
+  tradedAt?: string;
+  conversionRate?: number;
+}
+
 export type TransactionInput =
   | IncomeInput
   | ExpenseInput
@@ -84,7 +125,10 @@ export type TransactionInput =
   | LoanTakenInput
   | RepaymentInput
   | GoalContributionInput
-  | OpeningBalanceInput;
+  | OpeningBalanceInput
+  | InvestmentBuyInput
+  | InvestmentSellInput
+  | InvestmentDividendInput;
 
 interface TransactionState {
   transactions: Transaction[];
@@ -100,7 +144,7 @@ interface TransactionState {
   // Attach/detach a receipt photo (storage path or null). Lightweight — patches
   // only receipt_path, never re-runs balance logic (unlike updateTransaction).
   setReceiptPath: (id: string, receiptPath: string | null) => Promise<void>;
-  deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean }) => Promise<void>;
+  deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean; allowInvestment?: boolean }) => Promise<void>;
   // Used by rollback paths that need to re-insert a transaction with its
   // original id and re-apply the matching balance delta. Not for general use.
   restoreTransaction: (snapshot: Transaction) => Promise<void>;
@@ -282,6 +326,19 @@ async function trackedUpdateLoan(
 async function trackedAddContribution(scope: MutationScope, goalId: string, amount: number): Promise<void> {
   await useGoalStore.getState().addContribution(goalId, amount);
   scope.register(() => useGoalStore.getState().addContribution(goalId, -amount));
+}
+
+// Investment trade rows ride inside the money-mutation scope so a failed
+// balance leg can never leave an orphan trade (and vice versa). The store
+// primitives touch only the row + local state — balances stay owned here.
+async function trackedAddInvestmentTrade(scope: MutationScope, trade: InvestmentTrade): Promise<void> {
+  await useInvestmentStore.getState().insertTradeRow(trade);
+  scope.register(() => useInvestmentStore.getState().removeTradeRow(trade.id));
+}
+
+async function trackedDeleteInvestmentTrade(scope: MutationScope, trade: InvestmentTrade): Promise<void> {
+  await useInvestmentStore.getState().removeTradeRow(trade.id);
+  scope.register(() => useInvestmentStore.getState().restoreTradeRow(trade));
 }
 
 async function trackedMarkEmiPaid(scope: MutationScope, emiId: string): Promise<void> {
@@ -504,6 +561,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
   processTransaction: async (input) => {
     await ensureSupportingStoresLoaded();
+    // Investment branches need markets/trades; loaded lazily so non-investment
+    // users never pay a fetch for permanently-empty tables.
+    if (input.type === 'investment_buy' || input.type === 'investment_sell' || input.type === 'investment_dividend') {
+      const inv = useInvestmentStore.getState();
+      if (inv.markets.length === 0) await inv.loadInvestments();
+    }
 
     const { transaction, description } = await runSafeMutation<{ transaction: Transaction; description: string }>(
       async (scope) => {
@@ -511,6 +574,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         const loanStore = useLoanStore.getState();
         const goalStore = useGoalStore.getState();
 
+        // Generated before the switch so investment branches can stamp the
+        // trade row's transactionId at insert time — no post-hoc patch write.
+        const transactionId = uuid();
+        // Investment branches compute the true cash amount (qty × price ± fees)
+        // themselves; every other branch leaves this as the caller's amount.
+        let amount = input.amount;
         let currency: Currency = 'AED';
         let sourceAccountId: string | null = null;
         let destinationAccountId: string | null = null;
@@ -518,6 +587,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         let personId: string | null = null;
         let relatedLoanId: string | null = null;
         let relatedGoalId: string | null = null;
+        let relatedInvestmentId: string | null = null;
         let conversionRate: number | null = null;
         let description = '';
 
@@ -777,12 +847,160 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             description = `Opening Balance — ${currency} ${input.amount} in ${destAccount.name}`;
             break;
           }
+
+          case 'investment_buy':
+          case 'investment_sell': {
+            const inv = useInvestmentStore.getState();
+            const market = inv.getMarket(input.marketId);
+            if (!market) throw new Error('Market not found');
+            const symbol = input.symbol.trim().toUpperCase();
+            if (!symbol) throw new Error('Symbol is required');
+            const kind = input.type === 'investment_buy' ? ('buy' as const) : ('sell' as const);
+            const validationError = validateTradeInput({
+              kind, quantity: input.quantity, pricePerUnit: input.pricePerUnit, amount: 0, fees: input.fees,
+            });
+            if (validationError) throw new Error(validationError);
+
+            // The transaction row's amount is the CASH that moved, in market
+            // currency: buy = total cost incl. fees; sell = net proceeds.
+            const gross = Math.round(input.quantity * input.pricePerUnit * 100) / 100;
+            amount = kind === 'buy'
+              ? Math.round((gross + input.fees) * 100) / 100
+              : Math.round((gross - input.fees) * 100) / 100;
+            currency = market.currency;
+
+            const now = new Date().toISOString();
+            const trade: InvestmentTrade = {
+              id: uuid(),
+              marketId: market.id,
+              symbol,
+              name: input.companyName?.trim() ?? '',
+              kind,
+              quantity: input.quantity,
+              pricePerUnit: input.pricePerUnit,
+              amount: 0,
+              fees: input.fees,
+              accountId: input.type === 'investment_buy' ? input.sourceAccountId : input.destinationAccountId,
+              transactionId,
+              tradedAt: input.tradedAt ?? now,
+              notes: input.notes ?? '',
+              createdAt: now,
+            };
+
+            // Oversell guard runs BEFORE any money moves — the full timeline
+            // replay also catches backdated sells.
+            if (kind === 'sell') {
+              const check = simulateTimeline(inv.tradesForSymbol(market.id, symbol), { add: trade });
+              if (!check.ok) {
+                throw new Error(
+                  `You only hold ${check.violation.heldQty} ${symbol} — cannot sell ${check.violation.attemptedQty}`,
+                );
+              }
+            }
+
+            if (input.type === 'investment_buy') {
+              const src = accountStore.getAccount(input.sourceAccountId);
+              if (!src) throw new Error('Source account not found');
+              sourceAccountId = src.id;
+              // Zero-cash entries (bonus shares at price 0) move no money —
+              // no rate needed, both deltas are 0 via the same-currency path.
+              if (src.currency !== market.currency && amount > 0) {
+                if (!input.conversionRate || !rateIsSane(input.conversionRate)) {
+                  throw new Error('Conversion rate required — different currencies');
+                }
+                conversionRate = input.conversionRate;
+                // rate = market-per-account (divide) — goal_contribution shape.
+                const srcDeduct = Math.round((amount / conversionRate) * 100) / 100;
+                checkBalance(src, srcDeduct);
+                await trackedBalanceDelta(scope, src.id, -srcDeduct);
+                description = `Bought ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount}, paid ${src.currency} ${srcDeduct} from ${src.name} (rate: ${conversionRate})`;
+              } else {
+                checkBalance(src, amount);
+                await trackedBalanceDelta(scope, src.id, -amount);
+                description = `Bought ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount} from ${src.name}`;
+              }
+            } else {
+              const dest = accountStore.getAccount(input.destinationAccountId);
+              if (!dest) throw new Error('Destination account not found');
+              destinationAccountId = dest.id;
+              if (dest.currency !== market.currency && amount > 0) {
+                if (!input.conversionRate || !rateIsSane(input.conversionRate)) {
+                  throw new Error('Conversion rate required — different currencies');
+                }
+                conversionRate = input.conversionRate;
+                // rate = account-per-market (multiply) — repayment-given shape.
+                const credited = Math.round(amount * conversionRate * 100) / 100;
+                await trackedBalanceDelta(scope, dest.id, credited);
+                description = `Sold ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount}, received ${dest.currency} ${credited} into ${dest.name} (rate: ${conversionRate})`;
+              } else {
+                await trackedBalanceDelta(scope, dest.id, amount);
+                description = `Sold ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount} → ${dest.name}`;
+              }
+            }
+
+            await trackedAddInvestmentTrade(scope, trade);
+            relatedInvestmentId = trade.id;
+            break;
+          }
+
+          case 'investment_dividend': {
+            const inv = useInvestmentStore.getState();
+            const market = inv.getMarket(input.marketId);
+            if (!market) throw new Error('Market not found');
+            const symbol = input.symbol.trim().toUpperCase();
+            if (!symbol) throw new Error('Symbol is required');
+            const validationError = validateTradeInput({
+              kind: 'dividend', quantity: 0, pricePerUnit: 0, amount: input.grossAmount, fees: input.fees,
+            });
+            if (validationError) throw new Error(validationError);
+
+            amount = Math.round((input.grossAmount - input.fees) * 100) / 100;
+            currency = market.currency;
+            const dest = accountStore.getAccount(input.destinationAccountId);
+            if (!dest) throw new Error('Destination account not found');
+            destinationAccountId = dest.id;
+
+            const now = new Date().toISOString();
+            const trade: InvestmentTrade = {
+              id: uuid(),
+              marketId: market.id,
+              symbol,
+              name: '',
+              kind: 'dividend',
+              quantity: 0,
+              pricePerUnit: 0,
+              amount: input.grossAmount,
+              fees: input.fees,
+              accountId: input.destinationAccountId,
+              transactionId,
+              tradedAt: input.tradedAt ?? now,
+              notes: input.notes ?? '',
+              createdAt: now,
+            };
+
+            if (dest.currency !== market.currency) {
+              if (!input.conversionRate || !rateIsSane(input.conversionRate)) {
+                throw new Error('Conversion rate required — different currencies');
+              }
+              conversionRate = input.conversionRate;
+              const credited = Math.round(amount * conversionRate * 100) / 100;
+              await trackedBalanceDelta(scope, dest.id, credited);
+              description = `Dividend ${symbol} (${market.name}) — ${currency} ${amount}, received ${dest.currency} ${credited} into ${dest.name} (rate: ${conversionRate})`;
+            } else {
+              await trackedBalanceDelta(scope, dest.id, amount);
+              description = `Dividend ${symbol} (${market.name}) — ${currency} ${amount} → ${dest.name}`;
+            }
+
+            await trackedAddInvestmentTrade(scope, trade);
+            relatedInvestmentId = trade.id;
+            break;
+          }
         }
 
         const transaction: Transaction = {
-          id: uuid(),
+          id: transactionId,
           type: input.type,
-          amount: input.amount,
+          amount,
           currency,
           sourceAccountId,
           destinationAccountId,
@@ -790,8 +1008,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           personId,
           relatedLoanId,
           relatedGoalId,
+          relatedInvestmentId,
           conversionRate,
-          category: input.category ?? '',
+          category: input.category ?? (relatedInvestmentId ? 'Investments' : ''),
           notes: input.notes ?? '',
           createdAt: input.createdAt ?? new Date().toISOString(),
           isReconciled: false,
@@ -1084,6 +1303,18 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       throw new Error('This expense belongs to a group. Delete it from the group details screen.');
     }
 
+    const isInvestmentTxn =
+      existing.type === 'investment_buy' || existing.type === 'investment_sell' || existing.type === 'investment_dividend';
+    if (isInvestmentTxn && !options.allowInvestment) {
+      // The Investments screen runs the position-integrity replay guard
+      // before delegating here — a raw History delete would skip it.
+      throw new Error('This entry belongs to an investment. Delete it from the Investments screen.');
+    }
+    if (isInvestmentTxn) {
+      const inv = useInvestmentStore.getState();
+      if (inv.markets.length === 0 && inv.trades.length === 0) await inv.loadInvestments();
+    }
+
     await runSafeMutation(async (scope) => {
       const accountStore = useAccountStore.getState();
 
@@ -1213,6 +1444,43 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           }
           await trackedBalanceDelta(scope, source.id, restoredAmount);
           await trackedAddContribution(scope, existing.relatedGoalId, -existing.amount);
+          break;
+        }
+
+        case 'investment_buy': {
+          const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
+          if (!source) throw new Error('Source account not found');
+          // Refund exactly what was deducted (same conversion arithmetic as apply).
+          const deducted = existing.conversionRate
+            ? Math.round((existing.amount / existing.conversionRate) * 100) / 100
+            : existing.amount;
+          await trackedBalanceDelta(scope, source.id, deducted);
+          // Two-way lookup: relatedInvestmentId is primary, transactionId is
+          // the fallback for rows restored from backups that predate the link
+          // column — otherwise the trade row would survive as phantom shares.
+          const invTrades = useInvestmentStore.getState().trades;
+          const trade = (existing.relatedInvestmentId
+            ? invTrades.find((t) => t.id === existing.relatedInvestmentId)
+            : undefined) ?? invTrades.find((t) => t.transactionId === existing.id);
+          if (trade) await trackedDeleteInvestmentTrade(scope, trade);
+          break;
+        }
+
+        case 'investment_sell':
+        case 'investment_dividend': {
+          const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
+          if (!destination) throw new Error('Destination account not found');
+          const credited = existing.conversionRate
+            ? Math.round(existing.amount * existing.conversionRate * 100) / 100
+            : existing.amount;
+          // The credited money may have been spent since — income-delete precedent.
+          checkBalance(destination, credited);
+          await trackedBalanceDelta(scope, destination.id, -credited);
+          const invTrades = useInvestmentStore.getState().trades;
+          const trade = (existing.relatedInvestmentId
+            ? invTrades.find((t) => t.id === existing.relatedInvestmentId)
+            : undefined) ?? invTrades.find((t) => t.transactionId === existing.id);
+          if (trade) await trackedDeleteInvestmentTrade(scope, trade);
           break;
         }
       }
