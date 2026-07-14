@@ -20,6 +20,7 @@ import { ManageMarketsSheet } from './ManageMarketsSheet';
 import { UpdatePricesSheet } from './UpdatePricesSheet';
 import { formatMoney } from '../lib/constants';
 import { unrealizedPnl, marketValue } from '../lib/investmentMath';
+import { marketColorFor } from '../lib/marketColors';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import type { Currency } from '../db';
@@ -80,6 +81,7 @@ export function InvestmentsPage() {
   const renderHolding = (h: HoldingView) => {
     const market = marketById.get(h.marketId);
     if (!market) return null;
+    const color = marketColorFor(market.id);
     const isOpen = h.position.quantity > 0;
     const value = h.lastPrice !== null ? marketValue(h.position, h.lastPrice) : null;
     const pnl = h.lastPrice !== null && isOpen ? unrealizedPnl(h.position, h.lastPrice) : null;
@@ -90,15 +92,19 @@ export function InvestmentsPage() {
         key={`${h.marketId}:${h.symbol}`}
         type="button"
         onClick={() => navigate(`/investment/${h.marketId}/${encodeURIComponent(h.symbol)}`)}
-        className="w-full rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 text-left active:scale-[0.99] transition-transform"
+        className="w-full rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 text-left hover:shadow-sm hover:border-cream-hairline hover:bg-cream-soft active:scale-[0.99] transition-all"
       >
-        <div className="w-11 h-11 rounded-2xl bg-accent-50 border border-accent-100 flex items-center justify-center shrink-0">
-          <span className="text-[12px] font-bold text-accent-600 tracking-tight">{h.symbol.slice(0, 3)}</span>
+        <div className={`w-11 h-11 rounded-2xl ${color.bg} border ${color.border} flex items-center justify-center shrink-0`}>
+          <span className={`text-[12px] font-bold ${color.text} tracking-tight`}>{h.symbol.slice(0, 3)}</span>
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[13.5px] font-semibold text-ink-900 truncate tracking-tight">
             {h.symbol}
-            {!scopedMarket && <span className="text-[10px] text-ink-400 font-medium ml-1.5">{market.name}</span>}
+            {!scopedMarket && (
+              <span className={`text-[10px] font-semibold ml-1.5 rounded-full px-1.5 py-0.5 ${color.bg} ${color.text}`}>
+                {market.name}
+              </span>
+            )}
           </p>
           {isOpen ? (
             <>
@@ -151,7 +157,7 @@ export function InvestmentsPage() {
               {markets.length > 0 && (
                 <button
                   onClick={() => openRecord(scopedMarket ? { marketId: scopedMarket.id } : null)}
-                  className="min-h-[32px] px-3 py-1.5 rounded-full bg-white/10 text-white text-[11px] font-semibold flex items-center gap-1.5 active:bg-white/20 transition-colors"
+                  className="glow-attention min-h-[32px] px-3 py-1.5 rounded-full bg-white/10 border border-white/25 text-white text-[11px] font-semibold flex items-center gap-1.5 hover:bg-white/25 active:bg-white/20 transition-colors"
                 >
                   <Plus size={12} strokeWidth={2.4} /> {t('inv_record_trade')}
                 </button>
@@ -240,29 +246,34 @@ export function InvestmentsPage() {
                 <button
                   type="button"
                   onClick={() => setScopedMarketId(null)}
-                  className={`shrink-0 min-h-[36px] px-3.5 py-1.5 rounded-full text-[12px] font-semibold border transition-all ${
-                    !scopedMarketId ? 'border-ink-900 bg-ink-900 text-white' : 'border-cream-border bg-cream-card text-ink-600'
+                  className={`shrink-0 min-h-[36px] px-3.5 py-1.5 rounded-full text-[12px] font-semibold border transition-all hover:scale-[1.03] ${
+                    !scopedMarketId ? 'border-ink-900 bg-ink-900 text-white' : 'border-cream-border bg-cream-card text-ink-600 hover:bg-cream-soft'
                   }`}
                 >
                   {t('inv_all_markets')}
                 </button>
-                {markets.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setScopedMarketId(m.id === scopedMarketId ? null : m.id)}
-                    className={`shrink-0 min-h-[36px] px-3.5 py-1.5 rounded-full text-[12px] font-semibold border transition-all ${
-                      scopedMarketId === m.id ? 'border-ink-900 bg-ink-900 text-white' : 'border-cream-border bg-cream-card text-ink-600'
-                    }`}
-                  >
-                    {m.name} · {m.currency}
-                  </button>
-                ))}
+                {markets.map((m) => {
+                  const color = marketColorFor(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setScopedMarketId(m.id === scopedMarketId ? null : m.id)}
+                      className={`shrink-0 min-h-[36px] px-3.5 py-1.5 rounded-full text-[12px] font-semibold border transition-all hover:scale-[1.03] ${
+                        scopedMarketId === m.id
+                          ? `${color.solidBg} ${color.solidText} border-transparent`
+                          : `${color.bg} ${color.text} ${color.border}`
+                      }`}
+                    >
+                      {m.name} · {m.currency}
+                    </button>
+                  );
+                })}
                 <button
                   type="button"
                   onClick={() => setShowManage(true)}
                   aria-label={t('inv_manage_markets')}
-                  className="shrink-0 min-h-[36px] w-9 rounded-full border border-cream-border bg-cream-card text-ink-600 flex items-center justify-center active:bg-cream-soft transition-colors"
+                  className="shrink-0 min-h-[36px] w-9 rounded-full border border-cream-border bg-cream-card text-ink-600 flex items-center justify-center hover:bg-info-50 hover:text-info-600 hover:border-info-600/25 active:bg-cream-soft transition-colors"
                 >
                   <Settings2 size={14} />
                 </button>
@@ -289,7 +300,7 @@ export function InvestmentsPage() {
                 <button
                   type="button"
                   onClick={() => setShowBulkPrices(true)}
-                  className="min-h-[34px] px-3 py-1.5 rounded-full bg-info-50 border border-cream-border text-info-600 text-[11px] font-semibold active:scale-95 transition-transform"
+                  className="min-h-[34px] px-3 py-1.5 rounded-full bg-info-50 border border-cream-border text-info-600 text-[11px] font-semibold hover:bg-info-600 hover:text-white active:scale-95 transition-all"
                 >
                   {t('inv_update_prices')}
                 </button>

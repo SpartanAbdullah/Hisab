@@ -1224,7 +1224,7 @@ function QuickTile({ label, icon: Icon, iconClass, onClick, badge = 0, badgeBgCl
   return (
     <button
       onClick={onClick}
-      className="relative aspect-square rounded-2xl bg-cream-soft border border-cream-hairline flex flex-col items-center justify-center gap-2 px-1.5 active:scale-[0.97] active:bg-cream-bg transition-all"
+      className="relative aspect-square rounded-2xl bg-cream-soft border border-cream-hairline flex flex-col items-center justify-center gap-2 px-1.5 hover:bg-cream-card hover:border-cream-border hover:shadow-sm active:scale-[0.97] active:bg-cream-bg transition-all"
     >
       {badge > 0 && (
         <span

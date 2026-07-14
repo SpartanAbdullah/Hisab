@@ -38,11 +38,20 @@ export function CreateMarketModal({ open, onClose, onCreated }: Props) {
     onClose();
   };
 
+  const markets = useInvestmentStore((s) => s.markets);
+
   const handleCreate = async () => {
     if (!name.trim() || saving) return;
+    const isFirstMarket = markets.length === 0;
     setSaving(true);
     try {
       const market = await createMarket({ name, currency });
+      // A little encouragement + the obvious next step keeps momentum going.
+      toast.show({
+        type: 'success',
+        title: isFirstMarket ? t('inv_cheer_first_market') : `${market.name} ✓`,
+        subtitle: isFirstMarket ? t('inv_cheer_first_market_guide') : undefined,
+      });
       onCreated?.(market);
       handleClose();
     } catch (err) {
@@ -61,7 +70,7 @@ export function CreateMarketModal({ open, onClose, onCreated }: Props) {
         <button
           onClick={handleCreate}
           disabled={!name.trim() || saving}
-          className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+          className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 hover:enabled:opacity-90 hover:enabled:shadow-md active:scale-[0.98] transition-all"
         >
           {saving ? t('quick_processing') : t('inv_empty_cta')}
         </button>
@@ -78,10 +87,10 @@ export function CreateMarketModal({ open, onClose, onCreated }: Props) {
                 key={s.name}
                 type="button"
                 onClick={() => { setName(s.name); setCurrency(s.currency); }}
-                className={`min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-semibold border transition-all active:scale-95 ${
+                className={`min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-semibold border transition-all hover:scale-[1.03] active:scale-95 ${
                   name.trim().toUpperCase() === s.name
                     ? 'border-accent-500 bg-accent-50 text-accent-600'
-                    : 'border-cream-border bg-cream-card text-ink-600'
+                    : 'border-cream-border bg-cream-card text-ink-600 hover:bg-accent-50 hover:text-accent-600'
                 }`}
               >
                 {currencyMeta[s.currency]?.flag} {s.name} · {s.currency}

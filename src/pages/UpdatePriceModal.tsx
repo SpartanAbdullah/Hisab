@@ -54,7 +54,7 @@ export function UpdatePriceModal({ open, onClose, marketId, symbol, currency, cu
         <button
           onClick={handleSave}
           disabled={!valid || saving}
-          className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+          className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 hover:enabled:opacity-90 hover:enabled:shadow-md active:scale-[0.98] transition-all"
         >
           {saving ? t('quick_processing') : t('quick_save')}
         </button>

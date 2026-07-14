@@ -99,7 +99,7 @@ export function ManageMarketsSheet({ open, onClose }: Props) {
                     type="button"
                     onClick={() => { setEditingId(m.id); setEditName(m.name); }}
                     aria-label={t('inv_rename_market')}
-                    className="w-9 h-9 rounded-xl border border-cream-border text-ink-500 flex items-center justify-center active:bg-cream-soft"
+                    className="w-9 h-9 rounded-xl border border-cream-border text-ink-500 flex items-center justify-center transition-colors hover:bg-info-50 hover:text-info-600 hover:border-info-600/25 active:bg-cream-soft"
                   >
                     <Pencil size={14} />
                   </button>
@@ -107,7 +107,7 @@ export function ManageMarketsSheet({ open, onClose }: Props) {
                     type="button"
                     onClick={() => handleDelete(m.id, m.name)}
                     aria-label={t('inv_delete_market')}
-                    className="w-9 h-9 rounded-xl border border-cream-border text-ink-500 flex items-center justify-center active:bg-pay-50 active:text-pay-text"
+                    className="w-9 h-9 rounded-xl border border-cream-border text-ink-500 flex items-center justify-center transition-colors hover:bg-pay-50 hover:text-pay-text hover:border-pay-100 active:bg-pay-50 active:text-pay-text"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -118,7 +118,7 @@ export function ManageMarketsSheet({ open, onClose }: Props) {
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="w-full rounded-2xl border-2 border-dashed border-cream-border text-ink-700 py-3 text-[12.5px] font-semibold active:bg-cream-soft transition-colors flex items-center justify-center gap-2"
+            className="w-full rounded-2xl border-2 border-dashed border-cream-border text-ink-700 py-3 text-[12.5px] font-semibold hover:bg-accent-50 hover:border-accent-500/40 hover:text-accent-600 active:bg-cream-soft transition-colors flex items-center justify-center gap-2"
           >
             <Plus size={13} strokeWidth={2.4} /> {t('inv_new_market')}
           </button>

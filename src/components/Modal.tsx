@@ -76,10 +76,10 @@ export function Modal({ open, onClose, title, children, footer, confirmClose }: 
           <h2 className="font-semibold text-[15px] tracking-tight text-ink-900 truncate flex-1 min-w-0 pr-3">{title}</h2>
           <button
             onClick={requestClose}
-            className="nav-icon-button border border-cream-hairline shrink-0"
+            className="nav-icon-button border border-cream-hairline shrink-0 hover:bg-pay-50 hover:border-pay-100 transition-colors group"
             aria-label="Close"
           >
-            <X size={15} className="text-ink-500" />
+            <X size={15} className="text-ink-500 group-hover:text-pay-text transition-colors" />
           </button>
         </div>
         {/* Scrollable content */}

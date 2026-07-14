@@ -17,6 +17,7 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { useToast } from '../components/Toast';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { computePosition, simulateTimeline, validateTradeInput } from '../lib/investmentMath';
+import { marketColorFor } from '../lib/marketColors';
 import { rateIsSane } from '../lib/conversionMath';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
@@ -173,6 +174,8 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
 
   const handleSave = async () => {
     if (!canSave || !market) return;
+    // Captured BEFORE the save so "first trade ever" is detected correctly.
+    const isFirstTradeEver = trades.length === 0;
     setSaving(true);
     try {
       const tradedAtIso = tradedAt ? new Date(`${tradedAt}T12:00:00`).toISOString() : undefined;
@@ -236,14 +239,30 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
         }
       }
 
-      const title = kind === 'buy' ? t('inv_trade_saved_buy') : kind === 'sell' ? t('inv_trade_saved_sell') : t('inv_trade_saved_div');
-      const description = kind === 'dividend'
+      // Celebrate the moment — small interactions keep tracking a habit.
+      // First trade ever gets the big cheer; profitable sells get their win
+      // acknowledged; a loss gets an honest, encouraging note instead.
+      const soldAtProfit = kind === 'sell' && sellPreview && !sellPreview.oversell && sellPreview.realized >= 0;
+      const soldAtLoss = kind === 'sell' && sellPreview && !sellPreview.oversell && sellPreview.realized < 0;
+      const title = isFirstTradeEver
+        ? t('inv_cheer_first_trade')
+        : kind === 'buy'
+          ? t('inv_cheer_buy')
+          : kind === 'dividend'
+            ? t('inv_cheer_dividend')
+            : soldAtProfit
+              ? t('inv_cheer_sell_profit').replace('{amount}', formatMoney(sellPreview.realized, market.currency))
+              : t('inv_trade_saved_sell');
+      const facts = kind === 'dividend'
         ? `${symbol} — ${formatMoney(cashAmount, market.currency)}`
         : `${qtyNum} ${symbol} @ ${priceNum} — ${formatMoney(cashAmount, market.currency)}${
             kind === 'sell' && sellPreview && !sellPreview.oversell
               ? ` · ${t('inv_realized_preview')}: ${formatMoney(sellPreview.realized, market.currency)}`
               : ''
           }`;
+      const description = `${facts}${soldAtLoss ? ` ${t('inv_cheer_sell_loss')}` : ''}${
+        isFirstTradeEver ? ` ${t('inv_cheer_first_trade_guide')}` : ''
+      }`;
       setConfirmData({
         title,
         description,
@@ -278,7 +297,7 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
           <button
             onClick={handleSave}
             disabled={!canSave}
-            className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+            className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 hover:enabled:opacity-90 hover:enabled:shadow-md active:scale-[0.98] transition-all"
           >
             {saving ? t('quick_processing') : `${t('quick_save')} ✓`}
           </button>
@@ -298,8 +317,8 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
                   // silently carry into the other.
                   setConversionRate('');
                 }}
-                className={`min-h-[44px] py-2.5 rounded-2xl border-2 text-[13px] font-semibold transition-all active:scale-95 ${
-                  kind === k.value ? k.active : 'border-cream-border bg-cream-card text-ink-600'
+                className={`min-h-[44px] py-2.5 rounded-2xl border-2 text-[13px] font-semibold transition-all hover:scale-[1.02] active:scale-95 ${
+                  kind === k.value ? k.active : 'border-cream-border bg-cream-card text-ink-600 hover:bg-cream-soft'
                 }`}
               >
                 {k.label}
@@ -313,24 +332,27 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
               {t('inv_market_name')}
             </label>
             <div className="flex gap-2 flex-wrap">
-              {markets.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => { setMarketId(m.id); setConversionRate(''); }}
-                  className={`min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-semibold border transition-all active:scale-95 ${
-                    marketId === m.id
-                      ? 'border-accent-500 bg-accent-50 text-accent-600'
-                      : 'border-cream-border bg-cream-card text-ink-600'
-                  }`}
-                >
-                  {currencyMeta[m.currency]?.flag} {m.name} · {m.currency}
-                </button>
-              ))}
+              {markets.map((m) => {
+                const color = marketColorFor(m.id);
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => { setMarketId(m.id); setConversionRate(''); }}
+                    className={`min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-semibold border transition-all hover:scale-[1.03] active:scale-95 ${
+                      marketId === m.id
+                        ? `${color.solidBg} ${color.solidText} border-transparent`
+                        : `${color.bg} ${color.text} ${color.border}`
+                    }`}
+                  >
+                    {currencyMeta[m.currency]?.flag} {m.name} · {m.currency}
+                  </button>
+                );
+              })}
               <button
                 type="button"
                 onClick={() => setShowCreateMarket(true)}
-                className="min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-semibold border-2 border-dashed border-cream-border text-ink-600 flex items-center gap-1.5 active:bg-cream-soft transition-colors"
+                className="min-h-[40px] px-3.5 py-2 rounded-xl text-[12px] font-semibold border-2 border-dashed border-cream-border text-ink-600 flex items-center gap-1.5 hover:bg-accent-50 hover:text-accent-600 hover:border-accent-500/40 active:bg-cream-soft transition-colors"
               >
                 <Plus size={12} strokeWidth={2.4} /> {t('inv_new_market')}
               </button>

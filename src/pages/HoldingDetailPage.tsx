@@ -19,6 +19,7 @@ import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { RecordTradeModal, type RecordTradePreset } from './RecordTradeModal';
 import { UpdatePriceModal } from './UpdatePriceModal';
 import { computePosition, sortTrades, unrealizedPnl, marketValue } from '../lib/investmentMath';
+import { marketColorFor } from '../lib/marketColors';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import type { InvestmentTrade } from '../db';
@@ -154,7 +155,7 @@ export function HoldingDetailPage() {
           action={<LanguageToggle />}
         />
         <div className="px-5 pb-7 space-y-2">
-          <span className="inline-flex rounded-full bg-white/10 px-2.5 py-1 text-[10.5px] text-white/80 font-semibold">
+          <span className={`inline-flex rounded-full px-2.5 py-1 text-[10.5px] font-semibold ${marketColorFor(market.id).solidBg} ${marketColorFor(market.id).solidText}`}>
             {market.name} · {market.currency}
           </span>
           {isOpen ? (
@@ -227,21 +228,21 @@ export function HoldingDetailPage() {
         <div className="flex gap-2">
           <button
             onClick={() => openRecord('buy')}
-            className="flex-1 min-h-[44px] rounded-2xl bg-ink-900 text-white text-[12.5px] font-semibold active:scale-[0.98] transition-transform"
+            className="flex-1 min-h-[44px] rounded-2xl bg-ink-900 text-white text-[12.5px] font-semibold hover:opacity-90 hover:shadow-md active:scale-[0.98] transition-all"
           >
             {isOpen ? t('inv_buy_more') : t('inv_buy')}
           </button>
           {isOpen && (
             <button
               onClick={() => openRecord('sell')}
-              className="flex-1 min-h-[44px] rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[12.5px] font-semibold active:bg-cream-soft transition-colors"
+              className="flex-1 min-h-[44px] rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[12.5px] font-semibold hover:bg-pay-50 hover:text-pay-text hover:border-pay-100 active:bg-cream-soft transition-colors"
             >
               {t('inv_sell')}
             </button>
           )}
           <button
             onClick={() => openRecord('dividend')}
-            className="min-h-[44px] px-4 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[12.5px] font-semibold active:bg-cream-soft transition-colors"
+            className="min-h-[44px] px-4 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[12.5px] font-semibold hover:bg-receive-50 hover:text-receive-text hover:border-receive-100 active:bg-cream-soft transition-colors"
           >
             {t('inv_dividend')}
           </button>
@@ -285,7 +286,7 @@ export function HoldingDetailPage() {
                     onClick={() => handleDelete(tr)}
                     disabled={busyTradeId === tr.id}
                     aria-label={t('inv_delete_trade')}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-400 active:text-pay-text active:bg-pay-50 transition-colors shrink-0 disabled:opacity-40"
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-400 hover:text-pay-text hover:bg-pay-50 active:text-pay-text active:bg-pay-50 transition-colors shrink-0 disabled:opacity-40"
                   >
                     <Trash2 size={14} />
                   </button>
