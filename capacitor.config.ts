@@ -7,7 +7,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 //   secure origin (required for service worker, crypto.subtle, etc.).
 // - Plugin defaults are tuned for a navy/cream finance app aesthetic.
 const config: CapacitorConfig = {
-  appId: 'com.hisaab.app',
+  appId: 'com.usehisaab.app',
   appName: 'Hisaab',
   webDir: 'dist',
   server: {

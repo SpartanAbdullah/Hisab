@@ -1,4 +1,4 @@
-package com.hisaab.app;
+package com.usehisaab.app;
 
 import com.getcapacitor.BridgeActivity;
 

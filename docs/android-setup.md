@@ -1,7 +1,7 @@
 # Android (Capacitor) Setup
 
 The checked-in `android/` project is a reproducible Capacitor wrapper for package
-ID `com.hisaab.app`. Do not commit `local.properties`, Gradle caches, copied web
+ID `com.usehisaab.app`. Do not commit `local.properties`, Gradle caches, copied web
 assets, APKs, AABs, or signing keystores.
 
 ## Build setup

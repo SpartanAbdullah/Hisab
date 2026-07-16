@@ -127,7 +127,7 @@ Create this file at `https://usehisaab.com/.well-known/assetlinks.json` (must be
   "relation": ["delegate_permission/common.handle_all_urls"],
   "target": {
     "namespace": "android_app",
-    "package_name": "com.hisaab.app",
+    "package_name": "com.usehisaab.app",
     "sha256_cert_fingerprints": [
       "AA:BB:CC:...:ZZ"
     ]

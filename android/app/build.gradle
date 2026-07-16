@@ -14,10 +14,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.hisaab.app"
+    namespace = "com.usehisaab.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.hisaab.app"
+        applicationId "com.usehisaab.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
