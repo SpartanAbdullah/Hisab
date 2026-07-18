@@ -1904,6 +1904,14 @@ const S = {
   },
   loan_group_settled_label: { ur: "Mukammal settle 🎉", en: "All settled 🎉" },
 
+  // ── Per-type account pages: credit-card-native actions ──
+  acct_action_card_spend: { ur: "Card se kharch", en: "Spend on card" },
+  acct_action_card_settings: { ur: "Limit / due date", en: "Limit & due date" },
+  cc_settings_title: { ur: "Card ki settings", en: "Card settings" },
+  cc_settings_limit: { ur: "Credit limit", en: "Credit limit" },
+  cc_settings_due: { ur: "Bill due day (1–31)", en: "Bill due day (1–31)" },
+  cc_settings_saved: { ur: "Card settings save ho gayin", en: "Card settings saved" },
+
   // ── UX pass: bilingual copy for confirmations, errors, status & validation ──
   // Cross-user money confirmations (were English-only)
   confirm_send_title: { ur: "{name} ko {amount} bhejein?", en: "Send {amount} to {name}?" },
@@ -1958,6 +1966,7 @@ const S = {
   search_covers: { ur: "Search transactions, loans aur group expenses ko cover karta hai.", en: "Search covers transactions, loans and group expenses." },
   // Generic dialog actions
   cancel: { ur: "Cancel", en: "Cancel" },
+  save: { ur: "Save karein", en: "Save" },
   confirm_generic: { ur: "Theek hai", en: "Confirm" },
   err_contact_support: { ur: "Support se rabta karein", en: "Contact support" },
   cc_due_in: { ur: "{n} din mein due", en: "Due in {n}d" },

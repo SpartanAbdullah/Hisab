@@ -37,6 +37,7 @@ import {
   Info,
   CalendarClock,
   Banknote,
+  SlidersHorizontal,
 } from 'lucide-react';
 import type { Account } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
@@ -106,7 +107,7 @@ const typeLabelMap: Record<string, string> = {
 
 export function AccountDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { accounts, loadAccounts, renameAccount, deleteAccount } = useAccountStore();
+  const { accounts, loadAccounts, renameAccount, deleteAccount, updateMetadata } = useAccountStore();
   const { loadTransactions, getByAccount } = useTransactionStore();
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
   const t = useT();
@@ -121,6 +122,9 @@ export function AccountDetailPage() {
   const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [showMenu, setShowMenu] = useState(false);
+  const [showCardSettings, setShowCardSettings] = useState(false);
+  const [limitInput, setLimitInput] = useState('');
+  const [dueDayInput, setDueDayInput] = useState('');
   const [showRename, setShowRename] = useState(false);
   const [newName, setNewName] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -389,63 +393,25 @@ export function AccountDetailPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
-        {/* Account-scoped quick-action tiles. First row: three primary
-            account intents (Spend / Receive / Move) that act on this
-            account directly. Second row: two "deeper" intents that touch
-            this account but route through Step-3 (person) or the group
-            picker. Locked account context is preserved through preset. */}
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { type: 'expense' as const, label: t('intent_spend'), icon: ArrowUpRight },
-            { type: 'income' as const, label: t('intent_receive'), icon: ArrowDownLeft },
-            { type: 'transfer' as const, label: t('intent_move'), icon: ArrowLeftRight },
-          ].map((action) => (
+        {/* Account-scoped quick-action tiles, PERSONALIZED per account type.
+            A credit card is not a wallet: you can't "receive" into it, and
+            moving/splitting from it makes no sense — its real verbs are
+            spend, pay the bill, take a cash advance, and adjust the limit.
+            Other account types keep the full Spend/Receive/Move + person +
+            group set. Locked account context flows through the preset. */}
+        {isCreditCard ? (
+          <div className="grid grid-cols-2 gap-2.5">
             <button
-              key={action.type}
               type="button"
               onClick={() => {
-                setQuickPreset({ type: action.type, accountId: account.id, lockAccount: true });
+                setQuickPreset({ type: 'expense', accountId: account.id, lockAccount: true });
                 setShowAdd(true);
               }}
-              className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+              className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
             >
-              <action.icon size={15} className="text-accent-600" />
-              {action.label}
+              <ArrowUpRight size={15} className="text-accent-600" />
+              {t('acct_action_card_spend')}
             </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setQuickPreset({ intent: 'person_money', accountId: account.id, lockAccount: true });
-              setShowAdd(true);
-            }}
-            className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
-          >
-            <HandCoins size={15} className="text-accent-600" />
-            {t('acct_action_person')}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              // Group expense uses splits across multiple accounts; the
-              // account context isn't locked here.
-              setQuickPreset({ intent: 'group_expense' });
-              setShowAdd(true);
-            }}
-            className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
-          >
-            <Users size={15} className="text-accent-600" />
-            {t('acct_action_group')}
-          </button>
-        </div>
-        {/* Card-native actions, named so a newcomer doesn't have to guess:
-            "Pay card bill" = transfer INTO the card, "Cash advance" = cash
-            OUT of the card into a spendable account (guided flow — the card
-            is pre-locked and no contact is asked for). */}
-        {isCreditCard && (
-          <div className="grid grid-cols-2 gap-2.5">
             <button
               type="button"
               onClick={() => {
@@ -468,7 +434,68 @@ export function AccountDetailPage() {
               <Banknote size={15} className="text-warn-600" />
               {t('acct_action_cash_advance')}
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLimitInput(account.metadata.creditLimit ?? '');
+                setDueDayInput(account.metadata.dueDay ?? '');
+                setShowCardSettings(true);
+              }}
+              className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            >
+              <SlidersHorizontal size={15} className="text-accent-600" />
+              {t('acct_action_card_settings')}
+            </button>
           </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { type: 'expense' as const, label: t('intent_spend'), icon: ArrowUpRight },
+                { type: 'income' as const, label: t('intent_receive'), icon: ArrowDownLeft },
+                { type: 'transfer' as const, label: t('intent_move'), icon: ArrowLeftRight },
+              ].map((action) => (
+                <button
+                  key={action.type}
+                  type="button"
+                  onClick={() => {
+                    setQuickPreset({ type: action.type, accountId: account.id, lockAccount: true });
+                    setShowAdd(true);
+                  }}
+                  className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+                >
+                  <action.icon size={15} className="text-accent-600" />
+                  {action.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickPreset({ intent: 'person_money', accountId: account.id, lockAccount: true });
+                  setShowAdd(true);
+                }}
+                className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+              >
+                <HandCoins size={15} className="text-accent-600" />
+                {t('acct_action_person')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Group expense uses splits across multiple accounts; the
+                  // account context isn't locked here.
+                  setQuickPreset({ intent: 'group_expense' });
+                  setShowAdd(true);
+                }}
+                className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+              >
+                <Users size={15} className="text-accent-600" />
+                {t('acct_action_group')}
+              </button>
+            </div>
+          </>
         )}
         {/* Rename modal (lightweight — kept inline since the Modal helper is
             optimised for the bottom-sheet pattern, not centred dialogs) */}
@@ -507,6 +534,82 @@ export function AccountDetailPage() {
                   className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30 transition-opacity"
                 >
                   Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Card settings dialog — the card's limit changes in real life
+            (bank raises/lowers it) and the app must keep up. Same inline
+            centred-dialog pattern as Rename. */}
+        {showCardSettings && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/50 backdrop-blur-sm animate-fade-in"
+            onClick={() => setShowCardSettings(false)}
+          >
+            <div
+              className="bg-cream-card rounded-2xl p-5 w-[90%] max-w-sm shadow-xl border border-cream-border"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-[15px] font-semibold text-ink-900 mb-3">{t('cc_settings_title')}</h3>
+              <label className="block text-[11px] font-semibold text-ink-500 uppercase tracking-[0.1em] mb-1.5">
+                {t('cc_settings_limit')} ({account.currency})
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={limitInput}
+                onChange={(e) => setLimitInput(e.target.value)}
+                autoFocus
+                className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all mb-3 bg-cream-bg"
+              />
+              <label className="block text-[11px] font-semibold text-ink-500 uppercase tracking-[0.1em] mb-1.5">
+                {t('cc_settings_due')}
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                step="1"
+                value={dueDayInput}
+                onChange={(e) => setDueDayInput(e.target.value)}
+                placeholder="—"
+                className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all mb-3 bg-cream-bg"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowCardSettings(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold"
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  disabled={(() => {
+                    const lim = parseFloat(limitInput);
+                    if (!Number.isFinite(lim) || lim <= 0) return true;
+                    if (dueDayInput.trim() !== '') {
+                      const d = parseInt(dueDayInput, 10);
+                      if (!Number.isInteger(d) || d < 1 || d > 31) return true;
+                    }
+                    return false;
+                  })()}
+                  onClick={async () => {
+                    try {
+                      await updateMetadata(account.id, {
+                        creditLimit: String(parseFloat(limitInput)),
+                        dueDay: dueDayInput.trim() === '' ? '' : String(parseInt(dueDayInput, 10)),
+                      });
+                      toast.show({ type: 'success', title: t('cc_settings_saved') });
+                      setShowCardSettings(false);
+                    } catch (err) {
+                      toast.show({ type: 'error', title: err instanceof Error ? err.message : 'Failed' });
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30 transition-opacity"
+                >
+                  {t('save')}
                 </button>
               </div>
             </div>

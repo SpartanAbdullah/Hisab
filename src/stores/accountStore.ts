@@ -22,6 +22,9 @@ interface AccountState {
   getAccount: (id: string) => Account | undefined;
   updateBalance: (id: string, delta: number) => Promise<void>;
   renameAccount: (id: string, newName: string) => Promise<void>;
+  // Merge-patch the metadata map (creditLimit, dueDay, …). An empty-string
+  // value removes that key.
+  updateMetadata: (id: string, patch: Record<string, string>) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
   reset: () => void;
 }
@@ -144,6 +147,25 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     set((s) => ({
       accounts: s.accounts.map((a) =>
         a.id === id ? { ...a, balance: newBalance, updatedAt: new Date().toISOString() } : a,
+      ),
+    }));
+    const updated = get().accounts.find((a) => a.id === id);
+    if (updated) await mirrorPut(db.accounts, updated);
+    markMirrorStale('accounts');
+  },
+
+  updateMetadata: async (id, patch) => {
+    const current = get().accounts.find((a) => a.id === id);
+    if (!current) throw new Error('Account not found');
+    const metadata: Record<string, string> = { ...current.metadata };
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === '') delete metadata[key];
+      else metadata[key] = value;
+    }
+    await accountsDb.update(id, { metadata });
+    set((s) => ({
+      accounts: s.accounts.map((a) =>
+        a.id === id ? { ...a, metadata, updatedAt: new Date().toISOString() } : a,
       ),
     }));
     const updated = get().accounts.find((a) => a.id === id);
