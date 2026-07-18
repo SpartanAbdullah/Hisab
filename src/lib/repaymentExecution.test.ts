@@ -59,16 +59,22 @@ describe('executeAllocatedRepayments — tracker mode', () => {
 });
 
 describe('executeAllocatedRepayments — splits_only mode', () => {
-  it('routes through applyRepayment only', async () => {
-    const d = deps({ mode: 'splits_only' });
+  it('routes through applyRepayment only, threading the notes through', async () => {
+    const d = deps({ mode: 'splits_only', notes: 'Eid lump' });
     const result = await executeAllocatedRepayments(items, d);
     expect(result.done).toBe(3);
     expect(d.applyRepayment.mock.calls).toEqual([
-      ['l1', 100],
-      ['l2', 200],
-      ['l3', 150.5],
+      ['l1', 100, 'Eid lump'],
+      ['l2', 200, 'Eid lump'],
+      ['l3', 150.5, 'Eid lump'],
     ]);
     expect(d.processTransaction).not.toHaveBeenCalled();
+  });
+
+  it('passes undefined notes when none given', async () => {
+    const d = deps({ mode: 'splits_only' });
+    await executeAllocatedRepayments([items[0]], d);
+    expect(d.applyRepayment).toHaveBeenCalledWith('l1', 100, undefined);
   });
 });
 

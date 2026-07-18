@@ -68,7 +68,13 @@ export function payOrReceiveLabel(closing: number, currency: string, senderName?
       urdu: who ? `Aap ko ${who} se ${money} milega` : `Aap ko ${money} milega`,
     };
   }
-  return { mode: 'settled', english: "You're all settled up", urdu: 'Hisaab barabar hai' };
+  // Fully settled deserves warmth, not bank-speak — this is the moment the
+  // relationship's books close clean.
+  return {
+    mode: 'settled',
+    english: '🎉 Congratulations — nothing pending, all settled!',
+    urdu: 'Mubarak ho — hisaab bilkul barabar hai!',
+  };
 }
 
 function signedAmount(delta: number, currency: string): string {
@@ -111,12 +117,14 @@ export function renderStatementText(statement: Statement, opts: RenderStatementT
 
   if (sections.length === 0) {
     out.push('');
-    out.push("You're all settled up — nothing outstanding.");
+    out.push('🎉 Congratulations — nothing pending, all settled!');
+    out.push('Mubarak ho — hisaab bilkul barabar hai!');
   }
 
   for (const section of sections) {
+    const pr = payOrReceiveLabel(section.closing, section.currency, opts.fromName);
     out.push(''); // blank line between blocks
-    out.push(payOrReceiveLabel(section.closing, section.currency, opts.fromName).english);
+    out.push(pr.english);
 
     const { opening, lines } = trimSection(section, maxLines);
     if (opening) {
@@ -127,9 +135,11 @@ export function renderStatementText(statement: Statement, opts: RenderStatementT
     }
     for (const line of lines) out.push(lineText(line, section.currency));
 
-    out.push(`Outstanding — ${payOrReceiveLabel(section.closing, section.currency, opts.fromName).english}`);
+    // Settled: the English celebration already opened the block — close with
+    // the Urdu companion instead of repeating it.
+    out.push(pr.mode === 'settled' ? pr.urdu : `Outstanding — ${pr.english}`);
     if (section.estimated) {
-      out.push('(Balance only — itemised history not tracked in this mode.)');
+      out.push('(Some entries are summarised from loan balances.)');
     }
   }
 

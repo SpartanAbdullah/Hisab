@@ -114,27 +114,32 @@ function heroRowHtml(section: StatementSection, big: boolean, senderName?: strin
   const pr = payOrReceiveLabel(section.closing, section.currency, senderName);
   const owe = pr.mode === 'pay';
   const settled = pr.mode === 'settled';
-  const tint = settled ? SETTLED_TINT : owe ? NEG_TINT : POS_TINT;
-  const color = settled ? NEUTRAL : owe ? NEG : POS;
-  const labelColor = settled ? MUTED : owe ? NEG : POS_LABEL;
+  // Settled celebrates in green — a clean slate is good news, not a gray zero.
+  const tint = settled ? POS_TINT : owe ? NEG_TINT : POS_TINT;
+  const color = settled ? POS : owe ? NEG : POS;
+  const labelColor = settled ? POS_LABEL : owe ? NEG : POS_LABEL;
   const sign = settled ? '' : owe ? '− ' : '+ ';
   const heading = settled
-    ? `Settled · ${section.currency}`
+    ? `All settled 🎉 · ${section.currency}`
     : owe
       ? `Amount you need to pay · ${section.currency}`
       : `Amount you'll receive · ${section.currency}`;
   const numSize = big ? 34 : 23;
+  const number = settled
+    ? `<p style="margin:4px 0 0;font-size:${big ? 21 : 16}px;font-weight:700;color:${color};letter-spacing:-0.01em;">Nothing pending to pay</p>`
+    : `<p style="margin:4px 0 0;font-size:${numSize}px;font-weight:700;color:${color};letter-spacing:-0.01em;">${sign}${fmtAmount(section.closing)}</p>`;
   return `<div style="background:${tint};border-radius:8px;padding:15px 18px;">
     <p style="margin:0;font-size:10px;color:${labelColor};letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">${heading}</p>
-    <p style="margin:4px 0 0;font-size:${numSize}px;font-weight:700;color:${color};letter-spacing:-0.01em;">${sign}${fmtAmount(section.closing)}</p>
+    ${number}
     <p style="margin:5px 0 0;font-size:13px;color:${INK};">${esc(pr.english)} · <span style="color:${MUTED};">${esc(pr.urdu)}</span></p>
   </div>`;
 }
 
 function heroBlockHtml(statement: Statement, senderName?: string): string {
   if (!statement.hasActivity) {
-    return `<div style="margin:18px 44px 0;background:${SETTLED_TINT};border-radius:8px;padding:16px 18px;">
-      <p style="margin:0;font-size:15px;font-weight:600;color:${MUTED};">You're all settled up — nothing outstanding.</p>
+    return `<div style="margin:18px 44px 0;background:${POS_TINT};border-radius:8px;padding:16px 18px;">
+      <p style="margin:0;font-size:16px;font-weight:700;color:${POS};">🎉 Congratulations — nothing pending, all settled!</p>
+      <p style="margin:5px 0 0;font-size:13px;color:${INK};">Mubarak ho — hisaab bilkul barabar hai!</p>
     </div>`;
   }
   const big = statement.sections.length === 1;
@@ -177,7 +182,7 @@ function sectionHtml(section: StatementSection): string {
   }
 
   const estimatedNote = section.estimated
-    ? `<p style="margin:8px 0 0;font-size:11px;color:${MUTED};">Balance only — itemised repayment history isn't tracked for these loans.</p>`
+    ? `<p style="margin:8px 0 0;font-size:11px;color:${MUTED};">Some entries are summarised from loan balances — itemised rows weren't recorded for them.</p>`
     : '';
 
   return `<div style="padding:16px 44px 0;">
@@ -190,9 +195,9 @@ function sectionHtml(section: StatementSection): string {
         <tr style="color:${MUTED};font-size:10px;letter-spacing:0.05em;text-transform:uppercase;">
           <th style="font-weight:600;text-align:left;padding:8px 6px 6px 0;">Date</th>
           <th style="font-weight:600;text-align:left;padding:8px 6px 6px;">Description</th>
-          <th style="font-weight:600;text-align:right;padding:8px 6px 6px;">Debit</th>
-          <th style="font-weight:600;text-align:right;padding:8px 6px 6px;">Credit</th>
-          <th style="font-weight:600;text-align:right;padding:8px 0 6px 6px;">Balance</th>
+          <th style="font-weight:600;text-align:right;padding:8px 6px 6px;">You received<br><span style="font-weight:500;text-transform:none;letter-spacing:0;">Aap ko mila</span></th>
+          <th style="font-weight:600;text-align:right;padding:8px 6px 6px;">You gave<br><span style="font-weight:500;text-transform:none;letter-spacing:0;">Aap ne diye</span></th>
+          <th style="font-weight:600;text-align:right;padding:8px 0 6px 6px;">Balance<br><span style="font-weight:500;text-transform:none;letter-spacing:0;">Baqi</span></th>
         </tr>
       </thead>
       <tbody>
@@ -296,7 +301,7 @@ export function renderStatementInnerHtml(statement: Statement, opts: StatementPd
 
     <div style="margin-top:auto;padding:14px 44px;background:${SETTLED_TINT};border-top:1px solid ${HAIRLINE};display:flex;justify-content:space-between;align-items:flex-end;gap:16px;">
       <p style="margin:0;font-size:10px;color:${MUTED};line-height:1.6;">
-        <span style="color:${NEG};font-weight:600;">− you need to pay</span> &nbsp;·&nbsp; <span style="color:${POS};font-weight:600;">+ you'll receive</span> &nbsp;·&nbsp; Debit adds to what you owe, Credit is what you've paid<br>
+        <span style="color:${NEG};font-weight:600;">− you need to pay</span> &nbsp;·&nbsp; <span style="color:${POS};font-weight:600;">+ you'll receive</span> &nbsp;·&nbsp; "You received" adds to your balance, "You gave" reduces it<br>
         Generated by Hisaab on ${fmtDateTime(statement.asOf)} · A summary of recorded transactions, not a legal document. E&amp;OE.
       </p>
       <p style="margin:0;font-size:10px;color:${MUTED};white-space:nowrap;">Page 1 of 1</p>

@@ -9,13 +9,20 @@
 // matches ContactDetailSheet.relationshipBalances, so a statement's closing
 // balance lines up with what the app shows on screen.
 //
-// Two data modes are handled:
-//   - Full tracker: every disbursement + repayment is a Transaction row, so we
-//     build a real running-balance ledger from getByLoan-style data.
-//   - Ledger-only ('splits_only'): repayments live only on Loan.remainingAmount
-//     with NO Transaction rows. There is no itemised history to show, so each
-//     still-open loan becomes a single "outstanding" line and the section is
-//     flagged `estimated` so the renderer can add an honest note.
+// Data completeness is handled PER LOAN (hybrid), because a contact can mix
+// full-tracker loans (every disbursement + repayment is a Transaction row)
+// with ledger-only history (older 'splits_only' repayments lived only on
+// Loan.remainingAmount, with no rows):
+//   - Real transaction rows become real ledger lines.
+//   - A loan with no disbursement row gets a synthesised opening line from
+//     its totalAmount + createdAt.
+//   - Any paid-down amount not covered by repayment rows becomes one
+//     synthesised "repayments (summary)" line, so the closing balance always
+//     reconciles with the loan's actual remaining — a repayment can never be
+//     silently invisible on a statement.
+// Settled loans are included (their lines net to zero) so a fully settled
+// relationship still shows its history under the celebration hero.
+// Synthesised lines are flagged `estimated` so renderers can add an honest note.
 
 import type { Currency, Loan, Transaction } from '../db';
 
@@ -122,43 +129,62 @@ export function buildStatement(input: BuildStatementInput): Statement {
       .filter((t) => t.relatedLoanId && loanIds.has(t.relatedLoanId) && !t.deletedAt)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-    const lines: StatementLine[] = [];
-    let running = 0;
+    // Collect dated entries per loan (real rows + synthesised gaps), then merge
+    // chronologically and compute the running balance across the whole bucket.
+    type Entry = Omit<StatementLine, 'balance'>;
+    const entries: Entry[] = [];
 
-    if (events.length > 0) {
-      for (const txn of events) {
-        const loan = txn.relatedLoanId ? loanById.get(txn.relatedLoanId) : undefined;
-        if (!loan) continue;
+    for (const loan of currencyLoans) {
+      const loanTxns = events.filter((t) => t.relatedLoanId === loan.id);
+
+      // Opening: a loan created in ledger-only mode has no disbursement row —
+      // synthesise one from the loan itself so the story starts at the start.
+      const hasOpening = loanTxns.some((t) => t.type === 'loan_given' || t.type === 'loan_taken');
+      if (!hasOpening && isNonZero(loan.totalAmount)) {
+        entries.push({
+          date: loan.createdAt,
+          description: loan.type === 'given' ? 'Loan given' : 'Loan taken',
+          note: loan.notes?.trim() || undefined,
+          delta: loan.type === 'given' ? round2(loan.totalAmount) : round2(-loan.totalAmount),
+          estimated: true,
+        });
+      }
+
+      let recordedRepay = 0;
+      for (const txn of loanTxns) {
         const delta = signedDelta(txn, loan.type);
         if (delta === null) continue;
-        running = round2(running + delta);
-        lines.push({
+        if (txn.type === 'repayment') recordedRepay = round2(recordedRepay + txn.amount);
+        entries.push({
           date: txn.createdAt,
           description: describe(txn, loan.type),
           note: txn.notes?.trim() || undefined,
           delta: round2(delta),
-          balance: running,
         });
       }
-    } else {
-      // Ledger-only mode: no transaction rows exist. Represent each still-open
-      // loan as a single outstanding line so there is at least a balance to
-      // show; the section is flagged estimated so the renderer can say so.
-      const openLoans = currencyLoans
-        .filter((l) => isNonZero(l.remainingAmount))
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      for (const loan of openLoans) {
-        const delta = loan.type === 'given' ? loan.remainingAmount : -loan.remainingAmount;
-        running = round2(running + delta);
-        lines.push({
-          date: loan.createdAt,
-          description: loan.type === 'given' ? 'Outstanding (you lent)' : 'Outstanding (you borrowed)',
-          note: loan.notes?.trim() || undefined,
-          delta: round2(delta),
-          balance: running,
+
+      // Any paid-down amount with no repayment rows behind it (ledger-only
+      // history, or a mode switch) becomes one honest summary line — without
+      // it the statement would overstate what's still owed.
+      const paidDown = round2(loan.totalAmount - loan.remainingAmount);
+      const unrecorded = round2(paidDown - recordedRepay);
+      if (unrecorded > 0.005) {
+        entries.push({
+          date: loan.updatedAt ?? asOf,
+          description: loan.type === 'given' ? 'Repayments received (summary)' : 'Repayments made (summary)',
+          delta: loan.type === 'given' ? -unrecorded : unrecorded,
           estimated: true,
         });
       }
+    }
+
+    entries.sort((a, b) => a.date.localeCompare(b.date));
+
+    const lines: StatementLine[] = [];
+    let running = 0;
+    for (const entry of entries) {
+      running = round2(running + entry.delta);
+      lines.push({ ...entry, balance: running });
     }
 
     if (lines.length === 0) continue; // nothing to show for this currency

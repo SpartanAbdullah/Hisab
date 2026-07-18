@@ -76,13 +76,55 @@ describe('buildStatement', () => {
     expect(s.sections.map((sec) => sec.currency)).toEqual(['AED', 'PKR']);
   });
 
-  it('falls back to an estimated outstanding line in ledger-only mode (no transactions)', () => {
+  it('synthesises opening + repayment-summary lines in ledger-only mode (no transactions)', () => {
     const loans = [loan({ id: 'L1', type: 'taken', totalAmount: 8000, remainingAmount: 3000 })];
     const s = buildStatement({ partyName: 'Ahmed', loans, transactions: [], asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
     expect(s.sections).toHaveLength(1);
     expect(s.sections[0].estimated).toBe(true);
-    expect(s.sections[0].lines).toHaveLength(1);
+    expect(s.sections[0].lines.map((l) => l.description)).toEqual(['Loan taken', 'Repayments made (summary)']);
+    expect(s.sections[0].lines.map((l) => l.delta)).toEqual([-8000, 5000]);
     expect(s.sections[0].closing).toBe(-3000); // negative ⇒ you owe them
+  });
+
+  it('a paid-down balance with no repayment rows gets an honest summary line (mode-switch gap)', () => {
+    // Loan disbursed under full tracker (row exists), later repaid in
+    // ledger-only mode (no rows) — the statement must NOT overstate the debt.
+    const loans = [loan({ id: 'L1', type: 'given', totalAmount: 25000, remainingAmount: 10000 })];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 25000, relatedLoanId: 'L1', createdAt: '2026-05-12T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    const section = s.sections[0];
+    expect(section.lines.map((l) => l.description)).toEqual(['Loan given', 'Repayments received (summary)']);
+    expect(section.lines.map((l) => l.delta)).toEqual([25000, -15000]);
+    expect(section.closing).toBe(10000); // matches the loan's actual remaining
+    expect(section.estimated).toBe(true);
+  });
+
+  it('a ledger-only loan is not dropped when the same currency also has tracked loans (mixed bucket)', () => {
+    const loans = [
+      loan({ id: 'L1', type: 'given', totalAmount: 10000, remainingAmount: 10000 }),
+      loan({ id: 'L2', type: 'given', totalAmount: 4000, remainingAmount: 4000, createdAt: '2026-02-01T00:00:00.000Z' }),
+    ];
+    // Only L1 has a transaction row; L2 was created in ledger-only mode.
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 10000, relatedLoanId: 'L1', createdAt: '2026-01-10T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    expect(s.sections[0].lines).toHaveLength(2);
+    expect(s.sections[0].closing).toBe(14000); // both loans counted
+  });
+
+  it('keeps a fully settled loan history so the statement can celebrate over it', () => {
+    const loans = [loan({ id: 'L1', type: 'given', totalAmount: 5000, remainingAmount: 0, status: 'settled' })];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 5000, relatedLoanId: 'L1', createdAt: '2026-05-01T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'repayment', amount: 5000, relatedLoanId: 'L1', createdAt: '2026-06-01T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    expect(s.hasActivity).toBe(true); // history still shown
+    expect(s.sections[0].lines).toHaveLength(2);
+    expect(s.sections[0].closing).toBe(0); // ⇒ renderers show the settled celebration
   });
 
   it('ignores deleted transactions', () => {

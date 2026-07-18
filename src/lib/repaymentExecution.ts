@@ -32,7 +32,7 @@ export interface RepaymentExecDeps {
   notes?: string;
   emiIdByLoan?: Record<string, string>;
   processTransaction: (input: RepaymentTransactionInput) => Promise<unknown>;
-  applyRepayment: (loanId: string, amount: number) => Promise<void>;
+  applyRepayment: (loanId: string, amount: number, notes?: string) => Promise<void>;
 }
 
 export interface RepaymentExecResult {
@@ -57,7 +57,7 @@ export async function executeAllocatedRepayments(
   for (const item of items) {
     try {
       if (deps.mode === 'splits_only') {
-        await deps.applyRepayment(item.loanId, item.amount);
+        await deps.applyRepayment(item.loanId, item.amount, deps.notes);
       } else {
         await deps.processTransaction({
           type: 'repayment',

@@ -579,6 +579,7 @@ export function QuickEntry({
             const result = await executeAllocatedRepayments(repayAllocations, {
               mode: 'splits_only',
               direction: selectedRepayGroup.direction,
+              notes,
               processTransaction,
               applyRepayment,
             });
@@ -613,7 +614,7 @@ export function QuickEntry({
             return;
           }
           if (!effectiveSingleLoan) throw new Error('Loan not found');
-          await applyRepayment(effectiveSingleLoan.id, amt);
+          await applyRepayment(effectiveSingleLoan.id, amt, notes);
           setConfirmData({
             title: t('confirm_repayment_saved'),
             description: effectiveSingleLoan.type === 'given'

@@ -50,13 +50,32 @@ describe('renderStatementInnerHtml', () => {
     expect(html).toContain('milega'); // Roman-Urdu (receive)
   });
 
-  it('uses the canonical Debit/Credit/Balance ledger with currency stated once', () => {
-    expect(html).toContain('>Debit<');
-    expect(html).toContain('>Credit<');
-    expect(html).toContain('>Balance<');
+  it('uses plain bilingual column language instead of Debit/Credit jargon', () => {
+    expect(html).toContain('You received');
+    expect(html).toContain('Aap ko mila');
+    expect(html).toContain('You gave');
+    expect(html).toContain('Aap ne diye');
+    expect(html).not.toContain('>Debit<');
+    expect(html).not.toContain('>Credit<');
     expect(html).toContain('All amounts in AED');
     expect(html).toContain('All amounts in PKR');
     expect(html).toContain('Opening balance');
+  });
+
+  it('celebrates a fully settled relationship and still shows the history under it', () => {
+    const loans = [loan({ id: 'L1', type: 'given', totalAmount: 5000, remainingAmount: 0, currency: 'AED', status: 'settled' })];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 5000, currency: 'AED', relatedLoanId: 'L1', createdAt: '2026-05-01T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'repayment', amount: 5000, currency: 'AED', relatedLoanId: 'L1', createdAt: '2026-06-01T00:00:00.000Z' }),
+    ];
+    const st = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    const settledHtml = renderStatementInnerHtml(st, {});
+    expect(settledHtml).toContain('All settled 🎉');
+    expect(settledHtml).toContain('Nothing pending to pay');
+    expect(settledHtml).toContain('Congratulations');
+    expect(settledHtml).toContain('Mubarak ho');
+    expect(settledHtml).toContain('Activity'); // history table still present
+    expect(settledHtml).toContain('Repayment received');
   });
 
   it('color-codes from the recipient perspective (pay = −red, receive = +green), CVD-safe', () => {

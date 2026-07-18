@@ -3,6 +3,21 @@
 Rules I (Claude) must follow in this repo, distilled from corrections and near-misses.
 Review at the start of every session.
 
+## Corrections (2026-07-18 — bulk repayment left no record)
+
+- **Trace BOTH app modes end-to-end for any money flow.** Full-tracker creates transaction
+  rows; ledger-only (`splits_only`) historically mutated `loans.remainingAmount` with NO
+  transaction, NO activity for partial payments, and NO statement itemisation. Shipping the
+  bulk-repayment feature on top of that silently vanished the user's payment records. Rule:
+  before calling a money feature done, enumerate every artifact each mode leaves behind
+  (transaction row? activity entry? statement line? loan history?) and prove each exists.
+- **Never gate a primary action behind an edge-case trigger.** The "spread across their
+  loans" offer only appeared on overpayment — invisible the moment the typed amount fit the
+  opened loan. Primary capabilities need persistent, always-visible affordances.
+- **When end-to-end verification is blocked (no login), say so louder** and walk each state
+  transition on paper for both modes — unit tests of the pure math did not catch a
+  record-keeping hole one layer up.
+
 ## Process
 
 - **Search for existing infrastructure before designing new.** The consolidated-repayment

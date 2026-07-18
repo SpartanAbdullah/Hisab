@@ -187,7 +187,7 @@ export function RepaymentModal({
       const rate = parseFloat(conversionRate) || undefined;
 
       if (isLedgerOnlyMode) {
-        await applyRepayment(loan.id, parsedAmount);
+        await applyRepayment(loan.id, parsedAmount, notes);
       } else if (isGiven) {
         if (!account) throw new Error('Account not found');
         const addedAmount = isCrossCurrency && rate ? Math.round(parsedAmount * rate * 100) / 100 : parsedAmount;
@@ -311,6 +311,24 @@ export function RepaymentModal({
               </div>
             </div>
           </div>
+
+          {/* Always-visible bulk hand-off: a person with several loans is ONE
+              thing to pay back — don't make the user discover this only by
+              overtyping the amount. */}
+          {canOfferOverflow && (
+            <button
+              type="button"
+              onClick={() => setShowAllocateOverflow(true)}
+              className="w-full rounded-2xl border border-accent-100 bg-accent-50 py-3 px-4 flex items-center justify-between gap-2 active:scale-[0.98] transition-transform"
+            >
+              <span className="text-[12px] font-semibold text-accent-600 text-left">
+                {t('repay_pay_all_cta').replace('{n}', String(siblingLoans.length + 1))}
+              </span>
+              <span className="text-[12px] font-bold text-accent-600 tabular-nums shrink-0">
+                {formatMoney(totalRemaining([loan, ...siblingLoans]), loan.currency)}
+              </span>
+            </button>
+          )}
 
           <div>
             <label className="form-label">

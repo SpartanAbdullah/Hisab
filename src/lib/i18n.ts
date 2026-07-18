@@ -1869,6 +1869,7 @@ const S = {
     en: "{person} has {n} more active loan(s) ({total} remaining). Spread the extra across them?",
   },
   repay_overflow_cta: { ur: "Sab qarz par baantein", en: "Spread across their loans" },
+  repay_pay_all_cta: { ur: "Sab {n} qarz ek saath utarein", en: "Pay across all {n} loans" },
 
   // ── UX pass: bilingual copy for confirmations, errors, status & validation ──
   // Cross-user money confirmations (were English-only)
