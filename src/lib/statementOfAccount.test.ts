@@ -137,10 +137,10 @@ describe('buildStatement', () => {
     expect(section.closing).toBe(500);
   });
 
-  it('keeps loans settled within the last 7 days itemised (recent settlement is news)', () => {
+  it('shows a loan settled within the last 7 days as ONE celebratory line (news, not noise)', () => {
     const loans = [
       loan({ id: 'open', type: 'given', totalAmount: 500, remainingAmount: 500 }),
-      loan({ id: 'fresh', type: 'given', totalAmount: 100, remainingAmount: 0, status: 'settled', updatedAt: '2026-07-01T00:00:00.000Z' }),
+      loan({ id: 'fresh', type: 'given', totalAmount: 100, remainingAmount: 0, status: 'settled', notes: 'April mess', updatedAt: '2026-07-01T00:00:00.000Z' }),
     ];
     const transactions = [
       txn({ id: 't1', type: 'loan_given', amount: 500, relatedLoanId: 'open', createdAt: '2026-05-01T00:00:00.000Z' }),
@@ -149,8 +149,26 @@ describe('buildStatement', () => {
     ];
     const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
     const descriptions = s.sections[0].lines.map((l) => l.description);
-    expect(descriptions).toContain('Repayment received'); // the fresh settlement stays visible
-    expect(descriptions.join()).not.toContain('Previously settled');
+    expect(descriptions).toContain('Settled in full 🎉 — April mess');
+    expect(descriptions.filter((d) => d === 'Repayment received')).toHaveLength(0); // its history stays folded
+    expect(s.sections[0].lines).toHaveLength(2); // celebration line + open loan
+    expect(s.sections[0].closing).toBe(500);
+  });
+
+  it('collapses a mass catch-up (4+ recent settles) into a single celebratory line', () => {
+    const fresh = (id: string) =>
+      loan({ id, type: 'given', totalAmount: 50, remainingAmount: 0, status: 'settled', updatedAt: '2026-07-01T00:00:00.000Z' });
+    const loans = [
+      loan({ id: 'open', type: 'given', totalAmount: 500, remainingAmount: 500 }),
+      fresh('f1'), fresh('f2'), fresh('f3'), fresh('f4'), fresh('f5'),
+    ];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 500, relatedLoanId: 'open', createdAt: '2026-05-01T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    const descriptions = s.sections[0].lines.map((l) => l.description);
+    expect(descriptions).toContain('Recently settled 🎉 — 5 loans cleared, nothing pending from these');
+    expect(s.sections[0].lines).toHaveLength(2); // one collapse line + the open loan
     expect(s.sections[0].closing).toBe(500);
   });
 

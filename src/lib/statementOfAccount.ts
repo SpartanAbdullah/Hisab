@@ -137,21 +137,24 @@ export function buildStatement(input: BuildStatementInput): Statement {
     // Long histories drown the signal: a contact with dozens of settled loans
     // pushes the OPEN ones (the reason the statement exists) into the
     // brought-forward fold. Every settled loan's entries net to exactly zero
-    // by construction, so on a contact statement that still has open loans we
-    // fold older settled loans into one zero-effect line and keep the open
-    // loans fully itemised. Loans settled in the last 7 days stay itemised —
-    // a just-cleared loan is news the recipient should see. Single-loan and
-    // fully-settled statements keep their complete history.
+    // by construction, so on a contact statement that still has open loans:
+    //   - open loans stay fully itemised (they ARE the statement);
+    //   - loans settled in the last 7 days become ONE celebratory line each —
+    //     a just-cleared loan is news, its full payment history is not — and
+    //     a mass catch-up (4+ recent settles) collapses to a single line;
+    //   - older settled loans fold into one zero-effect count line.
+    // Single-loan and fully-settled statements keep their complete history.
     const hasOpen = currencyLoans.some((l) => isNonZero(l.remainingAmount));
     const RECENT_SETTLE_MS = 7 * 24 * 3600 * 1000;
     const recentlySettled = (l: Loan) =>
       !!l.updatedAt && Date.parse(asOf) - Date.parse(l.updatedAt) <= RECENT_SETTLE_MS;
     const foldedSettled: Loan[] = [];
+    const recentSettled: Loan[] = [];
     const itemisedLoans: Loan[] = [];
     for (const loan of currencyLoans) {
       const isSettledLoan = !isNonZero(loan.remainingAmount);
-      if (scope === 'contact' && hasOpen && isSettledLoan && !recentlySettled(loan)) {
-        foldedSettled.push(loan);
+      if (scope === 'contact' && hasOpen && isSettledLoan) {
+        (recentlySettled(loan) ? recentSettled : foldedSettled).push(loan);
       } else {
         itemisedLoans.push(loan);
       }
@@ -166,6 +169,25 @@ export function buildStatement(input: BuildStatementInput): Statement {
         description: `Previously settled loans (${foldedSettled.length}) — nothing pending from these`,
         delta: 0,
       });
+    }
+    if (recentSettled.length > 3) {
+      const latest = recentSettled.reduce(
+        (a, l) => ((l.updatedAt ?? l.createdAt) > a ? (l.updatedAt ?? l.createdAt) : a),
+        recentSettled[0].updatedAt ?? recentSettled[0].createdAt,
+      );
+      entries.push({
+        date: latest,
+        description: `Recently settled 🎉 — ${recentSettled.length} loans cleared, nothing pending from these`,
+        delta: 0,
+      });
+    } else {
+      for (const loan of recentSettled) {
+        entries.push({
+          date: loan.updatedAt ?? loan.createdAt,
+          description: loan.notes?.trim() ? `Settled in full 🎉 — ${loan.notes.trim()}` : 'Settled in full 🎉',
+          delta: 0,
+        });
+      }
     }
 
     for (const loan of itemisedLoans) {
