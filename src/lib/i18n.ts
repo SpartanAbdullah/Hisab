@@ -291,6 +291,11 @@ const S = {
   soa_share_failed: { ur: "Statement nahi ban saka", en: "Could not create the statement" },
   soa_preview: { ur: "Preview", en: "Preview" },
   soa_none: { ur: "{name} ke saath abhi koi hisaab nahi.", en: "No loan history with {name} yet." },
+  soa_settled_chip: { ur: "Sab clear", en: "All clear" },
+  soa_settled_celebrate: {
+    ur: "Mubarak ho! {name} ke saath hisaab bilkul barabar hai 🎉",
+    en: "Congratulations! Nothing pending with {name} — all settled 🎉",
+  },
   soa_nudge_intro: {
     ur: "Payment save ho gayi. {name} ko naya statement bhejein?",
     en: "Payment recorded. Send {name} an updated statement?",
@@ -311,7 +316,7 @@ const S = {
   rcpt_toggle_statement: { ur: "Statement", en: "Statement" },
   rcpt_received: { ur: "Mil gaye", en: "Received" },
   rcpt_thanks_short: { ur: "Shukriya — record ho gaya.", en: "Thanks — recorded." },
-  rcpt_settled_short: { ur: "Ab hisaab barabar.", en: "All settled now." },
+  rcpt_settled_short: { ur: "Mubarak ho — ab hisaab bilkul barabar! 🎉", en: "Congratulations — all settled now! 🎉" },
   rcpt_remaining_short: { ur: "Baqi {amount}", en: "Remaining {amount}" },
 
   // Group settle-up sheet — the statement, for splits.

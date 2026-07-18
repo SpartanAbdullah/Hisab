@@ -232,13 +232,15 @@ export function SendStatementModal({
               return (
                 <div
                   key={section.currency}
-                  className={`rounded-2xl p-4 border ${settled ? 'bg-cream-soft border-cream-border' : positive ? 'bg-receive-50/60 border-receive-100/70' : 'bg-pay-50/60 border-pay-100/70'}`}
+                  className={`rounded-2xl p-4 border ${settled || positive ? 'bg-receive-50/60 border-receive-100/70' : 'bg-pay-50/60 border-pay-100/70'}`}
                 >
-                  <p className={`text-[10px] font-bold uppercase tracking-widest ${settled ? 'text-ink-500' : positive ? 'text-receive-text' : 'text-pay-text'}`}>
-                    {section.currency}
+                  <p className={`text-[10px] font-bold uppercase tracking-widest ${settled || positive ? 'text-receive-text' : 'text-pay-text'}`}>
+                    {settled ? `${section.currency} · ${t('soa_settled_chip')}` : section.currency}
                   </p>
                   <p className="text-[15px] font-extrabold text-ink-900 mt-1">
-                    {netBalanceLabel(partyName, section.closing, section.currency)}
+                    {settled
+                      ? t('soa_settled_celebrate').replace('{name}', partyName)
+                      : netBalanceLabel(partyName, section.closing, section.currency)}
                   </p>
                   <p className="text-[11px] text-ink-500 mt-1">
                     {section.lines.length} {section.lines.length === 1 ? 'entry' : 'entries'}
