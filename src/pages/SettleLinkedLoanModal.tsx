@@ -10,6 +10,7 @@ import { useToast } from '../components/Toast';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { resolveSettlementSides } from '../lib/settlementSides';
 import type { Loan } from '../db';
 
 interface Props {
@@ -66,23 +67,15 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
     return loan.personName || t('ltr_unknown_person');
   })();
 
-  // Find the accepted linked_transaction_request that birthed this loan.
-  // The request stores both mirrored loan ids; we match on either side and
-  // require status='accepted'. That row's id == loan_pair_id we need, and
-  // it also gives us requesterLoanId / responderLoanId / both user ids.
-  const pair = (() => {
-    return linkedRequests.find(
-      (r) =>
-        r.status === 'accepted' &&
-        (r.requesterLoanId === loan.id || r.responderLoanId === loan.id),
-    ) ?? null;
-  })();
+  // Resolve the accepted linked pair + settlement side mapping via the shared
+  // helper (same one the bulk settlement path uses, so they can't drift).
+  const sides = resolveSettlementSides(loan.id, linkedRequests);
 
   const canSubmit = (() => {
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) return false;
     if (amt - loan.remainingAmount > 0.00001) return false;
-    if (!pair) return false;
+    if (!sides) return false;
     // If opt-in is on, an eligible account must be selected. Otherwise the
     // submit is ledger-only and always allowed.
     if (applyToBalance) {
@@ -93,7 +86,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
   })();
 
   const handleSubmit = async () => {
-    if (!pair || !pair.requesterLoanId || !pair.responderLoanId) {
+    if (!sides) {
       setError(t('stl_create_error'));
       return;
     }
@@ -112,24 +105,15 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
     });
     if (!ok) return;
 
-    // Determine which side of the pair belongs to the current user (the
-    // debtor in 2C-A). The request-row fields are "requester" / "responder"
-    // from the POV of the person who sent the ORIGINAL 2B request — not the
-    // settlement. Map accordingly.
-    const meIsRequester = pair.requesterLoanId === loan.id;
-    const requesterLoanIdForSettlement = loan.id;
-    const responderLoanIdForSettlement: string = meIsRequester ? pair.responderLoanId : pair.requesterLoanId;
-    const counterpartyUserId = meIsRequester ? pair.toUserId : pair.fromUserId;
-
     setSaving(true);
     setError('');
     try {
       const requesterAccountId = applyToBalance && selectedAccountId ? selectedAccountId : null;
       await createRequest({
-        loanPairId: pair.id,
-        requesterLoanId: requesterLoanIdForSettlement,
-        responderLoanId: responderLoanIdForSettlement,
-        toUserId: counterpartyUserId,
+        loanPairId: sides.loanPairId,
+        requesterLoanId: sides.requesterLoanId,
+        responderLoanId: sides.responderLoanId,
+        toUserId: sides.toUserId,
         amount: amt,
         currency: loan.currency,
         note,

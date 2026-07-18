@@ -1876,6 +1876,34 @@ const S = {
   repay_overflow_cta: { ur: "Sab qarz par baantein", en: "Spread across their loans" },
   repay_pay_all_cta: { ur: "Sab {n} qarz ek saath utarein", en: "Pay across all {n} loans" },
 
+  // ── Bulk linked settlement: one lump → one settlement request per loan ──
+  stl_bulk_title: { ur: "Sab qarz ka settlement", en: "Settle across all loans" },
+  stl_bulk_intro: {
+    ur: "Ek amount likhein — har qarz ke liye alag settlement request banegi. {name} confirm karenge to dono taraf ka hisaab update hoga.",
+    en: "Enter one amount — it splits into a settlement request per loan. Once {name} confirms, both sides' books update.",
+  },
+  stl_bulk_send: { ur: "{n} requests bhejein", en: "Send {n} requests" },
+  stl_bulk_sent_title: { ur: "Requests bhej di gayin", en: "Requests sent" },
+  stl_bulk_sent_subtitle: {
+    ur: "{name} confirm karenge to hisaab update ho jayega.",
+    en: "Balances update as {name} confirms them.",
+  },
+  stl_bulk_partial: { ur: "{done} of {total} bheji gayin", en: "Sent {done} of {total}" },
+  stl_bulk_clears: { ur: "poora settle", en: "settles fully" },
+  stl_bulk_confirm_body: {
+    ur: "{name} ko {n} settlement requests jayengi — total {amount}. Har request unke confirm karne par lagegi.",
+    en: "{name} will receive {n} settlement requests totalling {amount}. Each applies once they confirm it.",
+  },
+  stl_bulk_confirm_note: {
+    ur: "Yeh requests hain — jab tak {name} confirm na karein, hisaab change nahi hota.",
+    en: "These are requests — nothing changes until {name} confirms each one.",
+  },
+  stl_bulk_pending_note: {
+    ur: "Jis qarz par pehle se request pending hai, woh yahan shamil nahi.",
+    en: "Loans that already have a pending request aren't included.",
+  },
+  loan_group_settled_label: { ur: "Mukammal settle 🎉", en: "All settled 🎉" },
+
   // ── UX pass: bilingual copy for confirmations, errors, status & validation ──
   // Cross-user money confirmations (were English-only)
   confirm_send_title: { ur: "{name} ko {amount} bhejein?", en: "Send {amount} to {name}?" },

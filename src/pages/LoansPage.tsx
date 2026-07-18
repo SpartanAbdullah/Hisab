@@ -7,6 +7,7 @@ import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { AllocateRepaymentModal } from '../components/AllocateRepaymentModal';
+import { AllocateSettlementModal } from '../components/AllocateSettlementModal';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
@@ -91,6 +92,7 @@ export function LoansPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllocate, setShowAllocate] = useState(false);
+  const [showSettleAll, setShowSettleAll] = useState(false);
   const [statementFor, setStatementFor] = useState<{ personId: string | null; name: string; phone: string | null } | null>(null);
   const [statementIntro, setStatementIntro] = useState<string | undefined>(undefined);
 
@@ -112,6 +114,28 @@ export function LoansPage() {
     ? selectedGroup.loans.filter((l) => l.status === 'active' && l.remainingAmount > 0.01 && !linkedLoanIds.has(l.id))
     : [];
   const hasLinkedInGroup = !!selectedGroup && selectedGroup.loans.some((l) => linkedLoanIds.has(l.id));
+
+  // Active LINKED loans in the group — a lump can settle across these too,
+  // as one settlement request per loan (counterparty confirms each). Loans
+  // with a request already pending are skipped so we never double-ask.
+  const pendingSettlementLoanIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of settlementRequests) {
+      if (r.status !== 'pending') continue;
+      ids.add(r.requesterLoanId);
+      ids.add(r.responderLoanId);
+    }
+    return ids;
+  }, [settlementRequests]);
+  const linkedSettleableLoans = selectedGroup
+    ? selectedGroup.loans.filter(
+        (l) =>
+          l.status === 'active' &&
+          l.remainingAmount > 0.01 &&
+          linkedLoanIds.has(l.id) &&
+          !pendingSettlementLoanIds.has(l.id),
+      )
+    : [];
 
   const activeLoans = loans.filter((l) => l.status === 'active');
   const settledLoans = loans.filter((l) => l.status === 'settled');
@@ -747,7 +771,17 @@ export function LoansPage() {
                 {t('alloc_title')}
               </button>
             )}
-            {hasLinkedInGroup && (
+            {/* Linked loans settle by request — one lump becomes one request
+                per loan, each applied when the counterparty confirms. */}
+            {selectedGroup.status === 'active' && linkedSettleableLoans.length >= 2 && (
+              <button
+                onClick={() => setShowSettleAll(true)}
+                className="w-full bg-accent-600 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+              >
+                <Link2 size={14} strokeWidth={2.2} /> {t('stl_bulk_title')}
+              </button>
+            )}
+            {hasLinkedInGroup && linkedSettleableLoans.length < 2 && (
               <p className="text-[11px] text-ink-500 leading-relaxed">{t('alloc_linked_note')}</p>
             )}
 
@@ -795,6 +829,22 @@ export function LoansPage() {
           </div>
         ) : null}
       </Modal>
+
+      {selectedGroup && (
+        <AllocateSettlementModal
+          open={showSettleAll}
+          onClose={() => setShowSettleAll(false)}
+          loans={linkedSettleableLoans}
+          direction={selectedGroup.direction}
+          currency={selectedGroup.currency}
+          personName={selectedGroup.name}
+          onDone={() => {
+            setShowSettleAll(false);
+            setSelectedGroup(null);
+            void load();
+          }}
+        />
+      )}
 
       {selectedGroup && (
         <AllocateRepaymentModal
@@ -866,10 +916,13 @@ function LoanGroupSummary({
 }) {
   const t = useT();
   const isGiven = group.direction === 'given';
+  const isSettled = group.status === 'settled';
   const settledAmount = group.total - group.remaining;
   const progress = group.total > 0 ? settledAmount / group.total : 0;
   const primaryAmount = group.status === 'active' ? group.remaining : group.total;
-  const tone = isGiven ? 'receive' : 'pay';
+  // A settled group celebrates in green — a red "TO PAY" header over a fully
+  // paid relationship read like money was still owed.
+  const tone = isSettled || isGiven ? 'receive' : 'pay';
 
   return (
     <div
@@ -888,7 +941,7 @@ function LoanGroupSummary({
               : 'var(--color-pay-text)',
         }}
       >
-        {isGiven ? t('loan_receivable') : t('loan_payable')} · {group.currency}
+        {isSettled ? t('loan_group_settled_label') : isGiven ? t('loan_receivable') : t('loan_payable')} · {group.currency}
       </p>
       <p className="text-[22px] font-semibold text-ink-900 tabular-nums tracking-tight mt-1 leading-tight">
         {formatMoney(primaryAmount, group.currency)}
