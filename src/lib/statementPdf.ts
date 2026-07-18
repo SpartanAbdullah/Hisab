@@ -331,7 +331,10 @@ export async function generateStatementPdf(
     subject: `Statement of account as of ${fmtDate(statement.asOf)}`,
     author: opts.fromName || 'Hisaab',
   });
-  const datePart = new Date(statement.asOf).toISOString().slice(0, 10);
+  // Local date, not UTC — a Gulf user generating at 00:15 local would
+  // otherwise get yesterday's date in the filename while the statement
+  // itself says today. en-CA formats as YYYY-MM-DD.
+  const datePart = new Date(statement.asOf).toLocaleDateString('en-CA');
   const filename = `Statement-${sanitizeFilename(statement.partyName)}-${datePart}.pdf`;
   return { blob, filename };
 }

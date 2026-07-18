@@ -134,7 +134,41 @@ export function buildStatement(input: BuildStatementInput): Statement {
     type Entry = Omit<StatementLine, 'balance'>;
     const entries: Entry[] = [];
 
+    // Long histories drown the signal: a contact with dozens of settled loans
+    // pushes the OPEN ones (the reason the statement exists) into the
+    // brought-forward fold. Every settled loan's entries net to exactly zero
+    // by construction, so on a contact statement that still has open loans we
+    // fold older settled loans into one zero-effect line and keep the open
+    // loans fully itemised. Loans settled in the last 7 days stay itemised —
+    // a just-cleared loan is news the recipient should see. Single-loan and
+    // fully-settled statements keep their complete history.
+    const hasOpen = currencyLoans.some((l) => isNonZero(l.remainingAmount));
+    const RECENT_SETTLE_MS = 7 * 24 * 3600 * 1000;
+    const recentlySettled = (l: Loan) =>
+      !!l.updatedAt && Date.parse(asOf) - Date.parse(l.updatedAt) <= RECENT_SETTLE_MS;
+    const foldedSettled: Loan[] = [];
+    const itemisedLoans: Loan[] = [];
     for (const loan of currencyLoans) {
+      const isSettledLoan = !isNonZero(loan.remainingAmount);
+      if (scope === 'contact' && hasOpen && isSettledLoan && !recentlySettled(loan)) {
+        foldedSettled.push(loan);
+      } else {
+        itemisedLoans.push(loan);
+      }
+    }
+    if (foldedSettled.length > 0) {
+      const earliest = foldedSettled.reduce(
+        (a, l) => (a < l.createdAt ? a : l.createdAt),
+        foldedSettled[0].createdAt,
+      );
+      entries.push({
+        date: earliest,
+        description: `Previously settled loans (${foldedSettled.length}) — nothing pending from these`,
+        delta: 0,
+      });
+    }
+
+    for (const loan of itemisedLoans) {
       const loanTxns = events.filter((t) => t.relatedLoanId === loan.id);
 
       // Opening: a loan created in ledger-only mode has no disbursement row —

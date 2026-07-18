@@ -115,6 +115,58 @@ describe('buildStatement', () => {
     expect(s.sections[0].closing).toBe(14000); // both loans counted
   });
 
+  it('folds older settled loans into one zero-effect line when open loans exist (contact scope)', () => {
+    const loans = [
+      loan({ id: 'open', type: 'given', totalAmount: 500, remainingAmount: 500 }),
+      // Settled long ago (no recent updatedAt) — noise on a pending statement.
+      loan({ id: 'old1', type: 'given', totalAmount: 100, remainingAmount: 0, status: 'settled', createdAt: '2025-11-01T00:00:00.000Z' }),
+      loan({ id: 'old2', type: 'given', totalAmount: 200, remainingAmount: 0, status: 'settled', createdAt: '2025-12-01T00:00:00.000Z' }),
+    ];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 500, relatedLoanId: 'open', createdAt: '2026-05-01T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'loan_given', amount: 100, relatedLoanId: 'old1', createdAt: '2025-11-01T00:00:00.000Z' }),
+      txn({ id: 't3', type: 'repayment', amount: 100, relatedLoanId: 'old1', createdAt: '2025-11-20T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    const section = s.sections[0];
+    expect(section.lines[0].description).toBe('Previously settled loans (2) — nothing pending from these');
+    expect(section.lines[0].delta).toBe(0);
+    // Only the fold line + the open loan's disbursement remain visible.
+    expect(section.lines).toHaveLength(2);
+    expect(section.lines[1].description).toBe('Loan given');
+    expect(section.closing).toBe(500);
+  });
+
+  it('keeps loans settled within the last 7 days itemised (recent settlement is news)', () => {
+    const loans = [
+      loan({ id: 'open', type: 'given', totalAmount: 500, remainingAmount: 500 }),
+      loan({ id: 'fresh', type: 'given', totalAmount: 100, remainingAmount: 0, status: 'settled', updatedAt: '2026-07-01T00:00:00.000Z' }),
+    ];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 500, relatedLoanId: 'open', createdAt: '2026-05-01T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'loan_given', amount: 100, relatedLoanId: 'fresh', createdAt: '2026-06-01T00:00:00.000Z' }),
+      txn({ id: 't3', type: 'repayment', amount: 100, relatedLoanId: 'fresh', createdAt: '2026-07-01T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    const descriptions = s.sections[0].lines.map((l) => l.description);
+    expect(descriptions).toContain('Repayment received'); // the fresh settlement stays visible
+    expect(descriptions.join()).not.toContain('Previously settled');
+    expect(s.sections[0].closing).toBe(500);
+  });
+
+  it('a fully settled contact keeps its complete history (no fold without open loans)', () => {
+    const loans = [
+      loan({ id: 'a', type: 'given', totalAmount: 100, remainingAmount: 0, status: 'settled', createdAt: '2025-10-01T00:00:00.000Z' }),
+    ];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 100, relatedLoanId: 'a', createdAt: '2025-10-01T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'repayment', amount: 100, relatedLoanId: 'a', createdAt: '2025-12-01T00:00:00.000Z' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
+    expect(s.sections[0].lines).toHaveLength(2);
+    expect(s.sections[0].closing).toBe(0);
+  });
+
   it('keeps a fully settled loan history so the statement can celebrate over it', () => {
     const loans = [loan({ id: 'L1', type: 'given', totalAmount: 5000, remainingAmount: 0, status: 'settled' })];
     const transactions = [
