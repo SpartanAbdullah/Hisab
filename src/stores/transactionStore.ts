@@ -1401,7 +1401,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           if (useEmiStore.getState().getByLoan(relatedLoanId).length > 0) {
             throw new Error('This repayment is linked to an EMI schedule. Reverse it from the loan details screen after reviewing the installment history.');
           }
-          if (loan.type === 'given') {
+          // Ledger-only records (written by loanStore.applyRepayment) carry no
+          // account legs — there is no balance to reverse, only the loan.
+          const isLedgerRecord = !existing.sourceAccountId && !existing.destinationAccountId;
+          if (isLedgerRecord) {
+            // no balance legs to reverse
+          } else if (loan.type === 'given') {
             const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
             if (!destination) throw new Error('Destination account not found');
             const creditedAmount = existing.conversionRate

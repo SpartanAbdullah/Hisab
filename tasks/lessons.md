@@ -17,6 +17,14 @@ Review at the start of every session.
 - **When end-to-end verification is blocked (no login), say so louder** and walk each state
   transition on paper for both modes — unit tests of the pure math did not catch a
   record-keeping hole one layer up.
+- **When a user says "it does nothing", check the submit handler's FIRST guard line before
+  anything else.** RepaymentModal's `if (!parsedAmount || !accountId) return;` silently killed
+  the Record-payment button in ledger mode (no account picker → accountId always '') while
+  canSubmit kept the button enabled. A deploy log proving the build is current means the bug
+  is real — stop suspecting staleness and re-read the entry-point guards for each mode.
+  Also: every guard that requires an account must carry the `isLedgerOnlyMode ||` exception,
+  and any code path over transactions must tolerate rows with BOTH account ids null (ledger
+  repayment records).
 
 ## Process
 

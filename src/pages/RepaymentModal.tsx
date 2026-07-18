@@ -137,7 +137,10 @@ export function RepaymentModal({
 
   const handleSubmit = async () => {
     const parsedAmount = parseFloat(amount);
-    if (!parsedAmount || !accountId) return;
+    // Ledger-only mode has no account picker — requiring accountId here made
+    // the Record payment button silently dead in that mode (canSubmit enabled
+    // it, this line swallowed the tap). Account is only a tracker-mode need.
+    if (!parsedAmount || (!isLedgerOnlyMode && !accountId)) return;
     // Defense-in-depth: even if canSubmit was bypassed somehow, refuse
     // overpayments and out-of-bounds rates at the action layer.
     if (parsedAmount > loan.remainingAmount + 0.00001) {
