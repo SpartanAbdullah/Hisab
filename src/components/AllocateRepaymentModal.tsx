@@ -10,6 +10,7 @@ import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { allocateRepayment, totalRemaining, type Allocation, type AllocationStrategy } from '../lib/repaymentAllocation';
+import { executeAllocatedRepayments } from '../lib/repaymentExecution';
 import type { Currency, Loan } from '../db';
 
 type Strategy = AllocationStrategy | 'manual';
@@ -21,13 +22,18 @@ interface Props {
   direction: 'given' | 'taken';
   currency: Currency;
   personName: string;
-  onDone: () => void;
+  onDone: (info?: { totalApplied: number }) => void;
+  // Pre-fill for hand-offs (e.g. RepaymentModal overflow: the user already
+  // typed a lump bigger than one loan — carry it in instead of re-asking).
+  initialLump?: number;
+  initialStrategy?: Strategy;
+  initialAccountId?: string;
 }
 
 // Spread one lump repayment across several of a person's loans. Same net math
 // as a single big repayment — it just lets the user decide WHICH loans clear
 // (e.g. wipe the small ones first), which is what users expect.
-export function AllocateRepaymentModal({ open, onClose, loans, direction, currency, personName, onDone }: Props) {
+export function AllocateRepaymentModal({ open, onClose, loans, direction, currency, personName, onDone, initialLump, initialStrategy, initialAccountId }: Props) {
   const { accounts, loadAccounts } = useAccountStore();
   const processTransaction = useTransactionStore((s) => s.processTransaction);
   const applyRepayment = useLoanStore((s) => s.applyRepayment);
@@ -46,12 +52,12 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
 
   useEffect(() => {
     if (!open) return;
-    setLump('');
-    setStrategy('smallest');
+    setLump(initialLump != null && initialLump > 0 ? String(initialLump) : '');
+    setStrategy(initialStrategy ?? 'smallest');
     setManual({});
-    setAccountId('');
+    setAccountId(initialAccountId ?? '');
     if (!isLedgerOnlyMode) void loadAccounts();
-  }, [open, isLedgerOnlyMode, loadAccounts]);
+  }, [open, isLedgerOnlyMode, loadAccounts, initialLump, initialStrategy, initialAccountId]);
 
   const eligibleAccounts = useMemo(
     () => accounts.filter((a) => a.currency === currency),
@@ -112,38 +118,39 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
     if (!ok) return;
 
     setSaving(true);
-    let done = 0;
     try {
-      for (const a of allocations) {
-        if (isLedgerOnlyMode) {
-          await applyRepayment(a.loanId, a.amount);
-        } else {
-          await processTransaction({
-            type: 'repayment',
-            amount: a.amount,
-            loanId: a.loanId,
-            ...(isGiven ? { destinationAccountId: accountId } : { sourceAccountId: accountId }),
-          });
-        }
-        done += 1;
+      const result = await executeAllocatedRepayments(
+        allocations.map((a) => ({ loanId: a.loanId, amount: a.amount })),
+        {
+          mode: isLedgerOnlyMode ? 'splits_only' : 'tracker',
+          direction,
+          accountId: accountId || undefined,
+          processTransaction,
+          applyRepayment,
+        },
+      );
+      if (!result.failed) {
+        toast.show({
+          type: 'success',
+          title: t('alloc_done'),
+          subtitle: `${formatMoney(result.totalApplied, currency)} · ${result.total} ${result.total === 1 ? 'loan' : 'loans'}`,
+        });
+        onDone({ totalApplied: result.totalApplied });
+        onClose();
+      } else {
+        // Each repayment commits independently; report how far we got so a
+        // retry only needs to cover the rest.
+        const err = result.failed.error;
+        toast.show({
+          type: 'error',
+          title: result.done > 0
+            ? t('alloc_partial_title').replace('{done}', String(result.done)).replace('{total}', String(result.total))
+            : t('error'),
+          subtitle: err instanceof Error ? err.message : 'Could not finish. Open the remaining loans to retry.',
+          duration: 6000,
+        });
+        if (result.done > 0) { onDone({ totalApplied: result.totalApplied }); onClose(); }
       }
-      toast.show({
-        type: 'success',
-        title: t('alloc_done'),
-        subtitle: `${formatMoney(totalAllocated, currency)} · ${allocations.length} ${allocations.length === 1 ? 'loan' : 'loans'}`,
-      });
-      onDone();
-      onClose();
-    } catch (err) {
-      // Each repayment commits independently; report how far we got so a retry
-      // only needs to cover the rest.
-      toast.show({
-        type: 'error',
-        title: done > 0 ? `Applied to ${done} of ${allocations.length}` : t('error'),
-        subtitle: err instanceof Error ? err.message : 'Could not finish. Open the remaining loans to retry.',
-        duration: 6000,
-      });
-      if (done > 0) { onDone(); onClose(); }
     } finally {
       setSaving(false);
     }

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronRight, Lock, Sparkles,
+  HandCoins, Handshake, RotateCcw, Target, Delete, Users, Plus, ChevronDown, ChevronRight, Lock, Sparkles,
   Search, X, CreditCard,
 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
@@ -20,6 +20,10 @@ import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { AccountSelect } from '../components/AccountSelect';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
+import { linkedLoanIdSet } from '../lib/linkedLoanIdSet';
+import { buildRepaymentGroups } from '../lib/repaymentGroups';
+import { allocateRepayment, previewAllocations } from '../lib/repaymentAllocation';
+import { executeAllocatedRepayments } from '../lib/repaymentExecution';
 import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
 import { rateIsSane } from '../lib/conversionMath';
 import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
@@ -41,6 +45,10 @@ import { AddAccountStepper } from './AddAccountStepper';
 type EntryKind = TransactionType | 'group_expense';
 type EntryIntent = 'expense' | 'income' | 'transfer' | 'person_money' | 'group_expense' | 'cash_advance';
 type RepaymentDirection = 'received' | 'paid' | null;
+// What a repayment applies to: the person(+currency) GROUP — one lump spread
+// across their loans oldest-first — or one specific loan line (today's
+// behavior, still available under "choose a specific loan").
+type RepayTarget = { kind: 'group'; key: string } | { kind: 'loan'; id: string } | null;
 
 export interface QuickEntryPreset {
   type?: Extract<TransactionType, 'expense' | 'income' | 'transfer' | 'loan_given' | 'loan_taken' | 'repayment'>;
@@ -110,7 +118,8 @@ export function QuickEntry({
   const [category, setCategory] = useState('');
   const [notes, setNotes] = useState('');
   const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
-  const [loanId, setLoanId] = useState('');
+  const [repayTarget, setRepayTarget] = useState<RepayTarget>(null);
+  const [expandedGroupKey, setExpandedGroupKey] = useState('');
   const [loanSearch, setLoanSearch] = useState('');
   const [goalId, setGoalId] = useState('');
   const [conversionRate, setConversionRate] = useState('');
@@ -175,7 +184,7 @@ export function QuickEntry({
     setStep(0); setIntent(null); setAmount(''); setType('expense'); setRepaymentDirection(null);
     setCashAdvance(false);
     setSourceId(''); setDestId(''); setCategory('');
-    setNotes(''); setContact({ id: null, name: '' }); setLoanId(''); setLoanSearch('');
+    setNotes(''); setContact({ id: null, name: '' }); setRepayTarget(null); setExpandedGroupKey(''); setLoanSearch('');
     setGoalId(''); setConversionRate('');
     setHasEmi(false); setEmiInstallments(''); setEmiStartDate('');
   };
@@ -214,7 +223,8 @@ export function QuickEntry({
           : '',
     );
     setContact(preset?.contact ?? { id: null, name: '' });
-    setLoanId('');
+    setRepayTarget(null);
+    setExpandedGroupKey('');
     setCategory('');
     setNotes('');
     setConversionRate('');
@@ -250,53 +260,59 @@ export function QuickEntry({
   const needsGoal = type === 'goal_contribution';
   const showCategory = ['income', 'expense'].includes(type);
   const isGroupExpense = type === 'group_expense';
-  const selectedLoan = loans.find(l => l.id === loanId);
   // A loan is "linked" when an accepted linked_transaction_request mirrors it
   // to another Hisaab user. Such a loan must settle through the dedicated
   // settlement-request flow (so the counterparty confirms) — repaying it
   // locally here would diverge the two mirrored ledgers.
-  const selectedLoanIsLinked = !!selectedLoan && linkedRequests.some(
-    (r) => r.status === 'accepted' && (r.requesterLoanId === selectedLoan.id || r.responderLoanId === selectedLoan.id),
-  );
+  const linkedLoanIds = linkedLoanIdSet(linkedRequests);
+  const selectedLoan = repayTarget?.kind === 'loan' ? loans.find(l => l.id === repayTarget.id) : undefined;
+  const selectedLoanIsLinked = !!selectedLoan && linkedLoanIds.has(selectedLoan.id);
   const hasAccounts = accounts.length > 0;
-  const filteredLoans = loans.filter((loan) => {
-    if (loan.status !== 'active') return false;
-    if (repaymentDirection === 'received' && loan.type !== 'given') return false;
-    if (repaymentDirection === 'paid' && loan.type !== 'taken') return false;
-    if (preset?.contact?.id && loan.personId !== preset.contact.id) return false;
-    return true;
-  });
 
-  // Group the direction-filtered loans by person (+ currency, so someone with
-  // both an AED and a PKR loan shows two honest subtotals rather than a mixed
-  // sum). Reuses LoansPage's person key so grouping stays consistent app-wide.
-  // The search box narrows by name or note. This replaces the old flat list
-  // that buried the loan the user was looking for.
-  const loanQuery = loanSearch.trim().toLowerCase();
-  const repaymentLoanGroups: Array<{ key: string; name: string; currency: Currency; loans: Loan[]; remaining: number }> = (() => {
-    const searched = loanQuery
-      ? filteredLoans.filter(
-          (l) =>
-            l.personName.toLowerCase().includes(loanQuery) ||
-            (l.notes ?? '').toLowerCase().includes(loanQuery),
-        )
-      : filteredLoans;
-    const buckets = new Map<string, { key: string; name: string; currency: Currency; loans: Loan[]; remaining: number }>();
-    for (const l of searched) {
-      const personKey = l.personId ?? l.personName.trim().toLowerCase();
-      const key = `${personKey}:${l.currency}`;
-      const bucket = buckets.get(key) ?? { key, name: l.personName, currency: l.currency, loans: [], remaining: 0 };
-      bucket.loans.push(l);
-      bucket.remaining += l.remainingAmount;
-      buckets.set(key, bucket);
-    }
-    const groups = [...buckets.values()];
-    for (const g of groups) g.loans.sort((a, b) => b.remainingAmount - a.remainingAmount);
-    return groups.sort((a, b) => b.remaining - a.remaining);
-  })();
-  // Only surface the search box once the flat list is long enough that
-  // scanning for the right loan is the friction the user reported.
-  const showLoanSearch = filteredLoans.length > 4;
+  // The person (+ currency) group is the primary repayment target: one lump
+  // settles across their loans oldest-first, so ten borrowings never force
+  // ten entries. Grouping reuses LoansPage's key rule so it stays consistent
+  // app-wide; the search box narrows by name or note. When no direction was
+  // picked (top-level Repayment tile) both directions are listed.
+  const buildGroupsFor = (direction: 'received' | 'paid') =>
+    buildRepaymentGroups({
+      loans,
+      direction,
+      linkedLoanIds,
+      personIdFilter: preset?.contact?.id,
+      query: loanSearch,
+    });
+  const repaymentLoanGroups = repaymentDirection
+    ? buildGroupsFor(repaymentDirection)
+    : [...buildGroupsFor('received'), ...buildGroupsFor('paid')].sort((a, b) => b.totalRemaining - a.totalRemaining);
+  // Pre-search count: drives the empty state and when the search box appears
+  // (only once the list is long enough that scanning is the friction).
+  const repayableLoanCount = loans.filter((l) =>
+    l.status === 'active' &&
+    (repaymentDirection === 'received' ? l.type === 'given' : repaymentDirection === 'paid' ? l.type === 'taken' : true) &&
+    (!preset?.contact?.id || l.personId === preset.contact.id),
+  ).length;
+  const showLoanSearch = repayableLoanCount > 4;
+
+  // Effective repayment context — one loan or a whole group. Every guard,
+  // the account requirement and the conversion card key off these four
+  // instead of a single selected loan.
+  const selectedRepayGroup = repayTarget?.kind === 'group' ? repaymentLoanGroups.find((g) => g.key === repayTarget.key) : undefined;
+  const repayDirectionType = selectedLoan?.type ?? selectedRepayGroup?.direction;
+  const repayCurrency = selectedLoan?.currency ?? selectedRepayGroup?.currency;
+  const repayCap = selectedLoan ? selectedLoan.remainingAmount : selectedRepayGroup?.allocatableRemaining ?? 0;
+  // Oldest-first (FIFO): a consolidated return pays down what they've owed
+  // longest — the split the user would have calculated by hand.
+  const repayAllocations = selectedRepayGroup && parseFloat(amount) > 0
+    ? allocateRepayment(selectedRepayGroup.allocatable, parseFloat(amount), 'oldest')
+    : [];
+  // A group target that reaches exactly one loan behaves byte-identically to
+  // picking that loan directly (incl. the per-loan confirm route).
+  const groupSingleLoan = repayTarget?.kind === 'group' && repayAllocations.length === 1
+    ? loans.find((l) => l.id === repayAllocations[0].loanId)
+    : undefined;
+  const effectiveSingleLoan = selectedLoan ?? groupSingleLoan;
+  const isGroupBatch = repayTarget?.kind === 'group' && repayAllocations.length > 1;
 
   // Group-expense handoff. The actual save happens in App's
   // AddGroupExpenseModal — we just close + relay.
@@ -392,9 +408,9 @@ export function QuickEntry({
   // Determine if cross-currency conversion is needed
   const isCrossCurrency = (() => {
     if (type === 'transfer' && srcAccount && dstAccount) return srcAccount.currency !== dstAccount.currency;
-    if (type === 'repayment' && selectedLoan) {
-      if (selectedLoan.type === 'given' && dstAccount) return dstAccount.currency !== selectedLoan.currency;
-      if (selectedLoan.type === 'taken' && srcAccount) return srcAccount.currency !== selectedLoan.currency;
+    if (type === 'repayment' && repayCurrency && repayDirectionType) {
+      if (repayDirectionType === 'given' && dstAccount) return dstAccount.currency !== repayCurrency;
+      if (repayDirectionType === 'taken' && srcAccount) return srcAccount.currency !== repayCurrency;
     }
     if (type === 'goal_contribution' && srcAccount && selectedGoal) return srcAccount.currency !== selectedGoal.currency;
     return false;
@@ -412,11 +428,13 @@ export function QuickEntry({
   const conversionProps = (() => {
     if (type === 'transfer' && srcAccount && dstAccount)
       return { knownCurrency: srcAccount.currency, otherCurrency: dstAccount.currency, otherSide: 'receiving' as const, rateSemantics: 'other-per-known' as const };
-    if (type === 'repayment' && selectedLoan) {
-      if (selectedLoan.type === 'given' && dstAccount)
-        return { knownCurrency: selectedLoan.currency, otherCurrency: dstAccount.currency, otherSide: 'receiving' as const, rateSemantics: 'other-per-known' as const };
-      if (selectedLoan.type === 'taken' && srcAccount)
-        return { knownCurrency: selectedLoan.currency, otherCurrency: srcAccount.currency, otherSide: 'paying' as const, rateSemantics: 'known-per-other' as const };
+    if (type === 'repayment' && repayCurrency && repayDirectionType) {
+      // Same per-unit rate applies to every loan in a group batch — they all
+      // share the group's currency by construction.
+      if (repayDirectionType === 'given' && dstAccount)
+        return { knownCurrency: repayCurrency, otherCurrency: dstAccount.currency, otherSide: 'receiving' as const, rateSemantics: 'other-per-known' as const };
+      if (repayDirectionType === 'taken' && srcAccount)
+        return { knownCurrency: repayCurrency, otherCurrency: srcAccount.currency, otherSide: 'paying' as const, rateSemantics: 'known-per-other' as const };
     }
     if (type === 'goal_contribution' && srcAccount && selectedGoal)
       return { knownCurrency: selectedGoal.currency, otherCurrency: srcAccount.currency, otherSide: 'paying' as const, rateSemantics: 'known-per-other' as const };
@@ -438,9 +456,10 @@ export function QuickEntry({
     // Phase H2: reject out-of-bounds conversion rates
     if (!rateIsValid()) return false;
     // Phase H2: overpayment guard on repayments (mirrors the simple-mode
-    // check at line 337, now applied to all paths).
-    if (type === 'repayment' && selectedLoan) {
-      if (amt > selectedLoan.remainingAmount + 0.00001) return false;
+    // check at line 337, now applied to all paths). For a group target the
+    // cap is the person's total allocatable remaining.
+    if (type === 'repayment' && repayTarget) {
+      if (amt > repayCap + 0.00001) return false;
     }
     switch (type) {
       case 'income': return !!destId;
@@ -453,11 +472,16 @@ export function QuickEntry({
         if (cashAdvance) return !!destId && !!selectedCashAdvanceCard;
         return (isLedgerOnlyPersonFlow || !!destId) && !!contact.name.trim();
       case 'repayment':
-        if (!loanId) return false;
-        // Linked loans settle via the loan page, not here.
-        if (selectedLoanIsLinked) return false;
+        if (!repayTarget) return false;
+        if (repayTarget.kind === 'loan') {
+          if (!selectedLoan) return false;
+          // Linked loans settle via the loan page, not here.
+          if (selectedLoanIsLinked) return false;
+        } else if (!selectedRepayGroup || selectedRepayGroup.allocatable.length === 0) {
+          return false;
+        }
         if (isLedgerOnlyPersonFlow) return true;
-        return selectedLoan?.type === 'given' ? !!destId : !!sourceId;
+        return repayDirectionType === 'given' ? !!destId : !!sourceId;
       case 'goal_contribution': return !!sourceId && !!goalId;
       default: return false;
     }
@@ -546,18 +570,57 @@ export function QuickEntry({
 
       if (isLedgerOnlyPersonFlow) {
         if (type === 'repayment') {
-          if (!selectedLoan) throw new Error('Loan not found');
-          if (amt > selectedLoan.remainingAmount + 0.00001) {
+          if (amt > repayCap + 0.00001) {
             throw new Error('Repayment cannot exceed the remaining balance');
           }
-          await applyRepayment(selectedLoan.id, amt);
+          if (isGroupBatch && selectedRepayGroup) {
+            // Consolidated repayment (ledger-only): one lump across the
+            // person's loans, oldest first. No accounts are involved.
+            const result = await executeAllocatedRepayments(repayAllocations, {
+              mode: 'splits_only',
+              direction: selectedRepayGroup.direction,
+              processTransaction,
+              applyRepayment,
+            });
+            if (result.failed && result.done === 0) {
+              throw result.failed.error instanceof Error ? result.failed.error : new Error('Failed');
+            }
+            if (result.failed) {
+              // Committed prefix stays — report how far we got so a retry
+              // only needs to cover the rest.
+              toast.show({
+                type: 'error',
+                title: t('alloc_partial_title').replace('{done}', String(result.done)).replace('{total}', String(result.total)),
+                subtitle: result.failed.error instanceof Error ? result.failed.error.message : t('toast_error_generic'),
+                duration: 6000,
+              });
+              reset();
+              onClose();
+              return;
+            }
+            const clearedCount = previewAllocations(selectedRepayGroup.allocatable, repayAllocations).filter((l) => l.cleared).length;
+            setConfirmData({
+              title: t('confirm_repayment_saved'),
+              description:
+                t('qe_group_done_desc')
+                  .replace('{amount}', formatMoney(result.totalApplied, selectedRepayGroup.currency))
+                  .replace('{n}', String(result.total)) +
+                (clearedCount > 0 ? ` · ${t('qe_group_cleared_count').replace('{n}', String(clearedCount))}` : ''),
+              changes: [],
+            });
+            setShowConfirmation(true);
+            reset();
+            return;
+          }
+          if (!effectiveSingleLoan) throw new Error('Loan not found');
+          await applyRepayment(effectiveSingleLoan.id, amt);
           setConfirmData({
             title: t('confirm_repayment_saved'),
-            description: selectedLoan.type === 'given'
-              ? `${selectedLoan.personName} paid you back ${formatMoney(amt, selectedLoan.currency)}.`
-              : `You paid ${selectedLoan.personName} back ${formatMoney(amt, selectedLoan.currency)}.`,
+            description: effectiveSingleLoan.type === 'given'
+              ? `${effectiveSingleLoan.personName} paid you back ${formatMoney(amt, effectiveSingleLoan.currency)}.`
+              : `You paid ${effectiveSingleLoan.personName} back ${formatMoney(amt, effectiveSingleLoan.currency)}.`,
             changes: [],
-            route: `/loan/${selectedLoan.id}`,
+            route: `/loan/${effectiveSingleLoan.id}`,
           });
         } else {
           // Split-only can still mirror a loan to a linked contact. The
@@ -644,6 +707,73 @@ export function QuickEntry({
         }
       }
 
+      // Consolidated repayment (full tracker): one lump across a person's
+      // loans, oldest first, executed as N ordinary single-loan repayments.
+      // Each commits independently — a mid-batch failure keeps the committed
+      // prefix and is reported honestly; a retry with the remainder
+      // recomputes from the reduced remainings, so double-pay is impossible.
+      if (type === 'repayment' && isGroupBatch && selectedRepayGroup) {
+        const direction = selectedRepayGroup.direction;
+        const batchAccountId = direction === 'given' ? destId : sourceId;
+        const account = accounts.find((a) => a.id === batchAccountId);
+        if (!account) throw new Error('Account not found');
+        const rate = parseFloat(conversionRate) || undefined;
+        // Sum the PER-ITEM rounded conversions — the store rounds each of the
+        // N repayments separately, so rounding once on the total here would
+        // drift from the real balance by cents and could let a razor-thin
+        // 'taken' pre-flight pass only to fail mid-batch.
+        const perItemMove = (a: number) => isCrossCurrency && rate
+          ? (direction === 'given' ? Math.round(a * rate * 100) / 100 : Math.round(a / rate * 100) / 100)
+          : a;
+        const totalMove = Math.round(repayAllocations.reduce((a, x) => a + perItemMove(x.amount), 0) * 100) / 100;
+        const accountMove = direction === 'given' ? totalMove : -totalMove;
+        // The store rejects any single deduction that would overdraw the
+        // account, so a 'taken' batch the balance can't fully cover is a
+        // guaranteed mid-batch failure — refuse to start instead.
+        if (direction === 'taken' && account.balance < -accountMove) {
+          toast.show({ type: 'error', title: t('error'), subtitle: t('err_batch_balance_short') });
+          return;
+        }
+        const result = await executeAllocatedRepayments(repayAllocations, {
+          mode: 'tracker',
+          direction,
+          accountId: batchAccountId,
+          conversionRate: isCrossCurrency ? rate : undefined,
+          notes,
+          processTransaction,
+          applyRepayment,
+        });
+        if (result.failed && result.done === 0) {
+          throw result.failed.error instanceof Error ? result.failed.error : new Error('Transaction failed');
+        }
+        if (result.failed) {
+          toast.show({
+            type: 'error',
+            title: t('alloc_partial_title').replace('{done}', String(result.done)).replace('{total}', String(result.total)),
+            subtitle: result.failed.error instanceof Error ? result.failed.error.message : t('toast_error_generic'),
+            duration: 6000,
+          });
+          reset();
+          onClose();
+          return;
+        }
+        const clearedCount = previewAllocations(selectedRepayGroup.allocatable, repayAllocations).filter((l) => l.cleared).length;
+        setConfirmData({
+          title: `${t('tx_repayment')} — Done!`,
+          description:
+            t('qe_group_done_desc')
+              .replace('{amount}', formatMoney(result.totalApplied, selectedRepayGroup.currency))
+              .replace('{n}', String(result.total)) +
+            (clearedCount > 0 ? ` · ${t('qe_group_cleared_count').replace('{n}', String(clearedCount))}` : ''),
+          // `account` was captured before the batch ran, so before/after
+          // reflect the pre-batch balance plus the aggregate move.
+          changes: [{ accountName: account.name, currency: account.currency, before: account.balance, after: account.balance + accountMove }],
+        });
+        setShowConfirmation(true);
+        reset();
+        return;
+      }
+
       switch (type) {
         case 'income': { const d = accounts.find(a => a.id === destId)!; changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt }); input = { type: 'income', amount: amt, destinationAccountId: destId, category, notes }; break; }
         case 'expense': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'expense', amount: amt, sourceAccountId: sourceId, category, notes }; break; }
@@ -678,18 +808,18 @@ export function QuickEntry({
           break;
         }
         case 'repayment': {
-          if (!selectedLoan) throw new Error('Loan not found');
+          if (!effectiveSingleLoan) throw new Error('Loan not found');
           const rate = parseFloat(conversionRate) || undefined;
-          if (selectedLoan.type === 'given' && destId) {
+          if (effectiveSingleLoan.type === 'given' && destId) {
             const d = accounts.find(a => a.id === destId)!;
             const addAmt = isCrossCurrency && rate ? Math.round(amt * rate * 100) / 100 : amt;
             changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + addAmt });
-          } else if (selectedLoan.type === 'taken' && sourceId) {
+          } else if (effectiveSingleLoan.type === 'taken' && sourceId) {
             const s = accounts.find(a => a.id === sourceId)!;
             const deductAmt = isCrossCurrency && rate ? Math.round(amt / rate * 100) / 100 : amt;
             changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - deductAmt });
           }
-          input = { type: 'repayment', amount: amt, loanId, sourceAccountId: selectedLoan.type === 'taken' ? sourceId : undefined, destinationAccountId: selectedLoan.type === 'given' ? destId : undefined, conversionRate: isCrossCurrency ? rate : undefined, notes };
+          input = { type: 'repayment', amount: amt, loanId: effectiveSingleLoan.id, sourceAccountId: effectiveSingleLoan.type === 'taken' ? sourceId : undefined, destinationAccountId: effectiveSingleLoan.type === 'given' ? destId : undefined, conversionRate: isCrossCurrency ? rate : undefined, notes };
           break;
         }
         case 'goal_contribution': {
@@ -754,10 +884,10 @@ export function QuickEntry({
             .replace('{account}', accounts.find(a => a.id === destId)?.name ?? '');
         }
         if (type === 'loan_taken') return `You owe ${resolvedPerson!.name} ${formatMoney(amt, confirmationCurrency)}.`;
-        if (type === 'repayment' && selectedLoan) {
-          return selectedLoan.type === 'given'
-            ? `${selectedLoan.personName} paid you back ${formatMoney(amt, selectedLoan.currency)}.`
-            : `You paid ${selectedLoan.personName} back ${formatMoney(amt, selectedLoan.currency)}.`;
+        if (type === 'repayment' && effectiveSingleLoan) {
+          return effectiveSingleLoan.type === 'given'
+            ? `${effectiveSingleLoan.personName} paid you back ${formatMoney(amt, effectiveSingleLoan.currency)}.`
+            : `You paid ${effectiveSingleLoan.personName} back ${formatMoney(amt, effectiveSingleLoan.currency)}.`;
         }
         return `${formatMoney(amt, confirmationCurrency)} saved.`;
       })();
@@ -767,7 +897,7 @@ export function QuickEntry({
       // and the View button hides gracefully.
       const confirmRoute = (() => {
         if ((type === 'loan_given' || type === 'loan_taken') && resultTx.relatedLoanId) return `/loan/${resultTx.relatedLoanId}`;
-        if (type === 'repayment' && selectedLoan) return `/loan/${selectedLoan.id}`;
+        if (type === 'repayment' && effectiveSingleLoan) return `/loan/${effectiveSingleLoan.id}`;
         if (type === 'goal_contribution') return '/goals';
         return undefined;
       })();
@@ -1355,15 +1485,22 @@ export function QuickEntry({
             {needsLoan && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_which_loan')}</label>
-                {filteredLoans.length === 0 ? (
+                {repayableLoanCount === 0 ? (
                   <p className="text-[12px] text-ink-500 bg-cream-soft border border-cream-hairline rounded-xl p-3 leading-relaxed">
                     {t('loan_no_tx')}
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {selectedLoan && parseFloat(amount) > selectedLoan.remainingAmount + 0.00001 && (
+                    {/* Only when the target still resolves — a search query can
+                        hide the selected group, and an empty error box helps
+                        no one (canSubmit already blocks that state). */}
+                    {(selectedRepayGroup || selectedLoan) && parseFloat(amount) > repayCap + 0.00001 && (
                       <p className="text-[11px] text-pay-text font-semibold leading-relaxed bg-pay-50 border border-pay-100 rounded-xl px-3 py-2">
-                        {t('err_overpayment').replace('{remaining}', formatMoney(selectedLoan.remainingAmount, selectedLoan.currency))}
+                        {selectedRepayGroup
+                          ? t('err_overpayment_group')
+                              .replace('{person}', selectedRepayGroup.name)
+                              .replace('{remaining}', formatMoney(selectedRepayGroup.allocatableRemaining, selectedRepayGroup.currency))
+                          : t('err_overpayment').replace('{remaining}', formatMoney(selectedLoan!.remainingAmount, selectedLoan!.currency))}
                       </p>
                     )}
                     {/* Search — appears once the list is long enough that finding
@@ -1394,45 +1531,123 @@ export function QuickEntry({
                         {t('search_no_matches').replace('{q}', loanSearch.trim())}
                       </p>
                     ) : (
-                      // Loans grouped by person (+ currency), each person a
-                      // labelled section with a subtotal — so the exact loan is
-                      // easy to spot instead of hunting a flat list.
-                      repaymentLoanGroups.map((group) => (
-                        <div key={group.key} className="space-y-1.5">
-                          <div className="flex items-center justify-between px-0.5">
-                            <p className="text-[12px] font-semibold text-ink-900 truncate">{group.name}</p>
-                            <p className="text-[10.5px] text-ink-500 tabular-nums shrink-0 ml-2">
-                              {group.loans.length > 1 ? `${group.loans.length} loans · ` : ''}
-                              {formatMoney(group.remaining, group.currency)}
-                            </p>
+                      // One card per person (+ currency): the person is the
+                      // primary payment target — one lump settles across all
+                      // their loans, oldest first. Single-loan people keep the
+                      // plain per-loan row; "choose a specific loan" expands
+                      // the individual lines for line-level control.
+                      repaymentLoanGroups.map((group) => {
+                        const isSelectedGroup = repayTarget?.kind === 'group' && repayTarget.key === group.key;
+                        const multi = group.allocatable.length > 1;
+                        const expanded = expandedGroupKey === group.key || group.allocatable.length === 0;
+                        const loanRow = (l: Loan) => (
+                          <button key={l.id} type="button"
+                            onClick={() => {
+                              // A different loan can carry a different
+                              // currency — drop any typed conversion.
+                              if (!(repayTarget?.kind === 'loan' && repayTarget.id === l.id)) setConversionRate('');
+                              setRepayTarget({ kind: 'loan', id: l.id });
+                            }}
+                            className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                              repayTarget?.kind === 'loan' && repayTarget.id === l.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-[12.5px] font-medium text-ink-800 truncate">
+                                {l.notes?.trim() ? l.notes : (l.type === 'given' ? t('loan_receivable') : t('loan_payable'))}
+                              </p>
+                              <p className="text-[10px] text-ink-500 mt-0.5">
+                                {new Date(l.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </p>
+                            </div>
+                            <p className="text-[13px] font-semibold text-ink-900 tabular-nums shrink-0 ml-2">{formatMoney(l.remainingAmount, l.currency)}</p>
+                          </button>
+                        );
+                        if (!multi) {
+                          return (
+                            <div key={group.key} className="space-y-1.5">
+                              <div className="flex items-center justify-between px-0.5">
+                                <p className="text-[12px] font-semibold text-ink-900 truncate">{group.name}</p>
+                                <p className="text-[10.5px] text-ink-500 tabular-nums shrink-0 ml-2">
+                                  {group.loans.length > 1 ? `${t('qe_group_n_loans').replace('{n}', String(group.loans.length))} · ` : ''}
+                                  {formatMoney(group.totalRemaining, group.currency)}
+                                </p>
+                              </div>
+                              <div className="space-y-2">{group.loans.map(loanRow)}</div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={group.key} className="space-y-1.5">
+                            <button type="button"
+                              onClick={() => {
+                                if (!isSelectedGroup) setConversionRate('');
+                                setRepayTarget({ kind: 'group', key: group.key });
+                              }}
+                              className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                                isSelectedGroup ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <p className="text-[13px] font-semibold text-ink-900 truncate">{group.name}</p>
+                                <p className="text-[10px] text-ink-500 mt-0.5">
+                                  {t('qe_group_n_loans').replace('{n}', String(group.allocatable.length))} · {t('qe_group_all_loans')}
+                                </p>
+                              </div>
+                              <p className="text-[13px] font-semibold text-ink-900 tabular-nums shrink-0 ml-2">
+                                {formatMoney(group.allocatableRemaining, group.currency)}
+                              </p>
+                            </button>
+                            {group.linked.length > 0 && (
+                              <p className="text-[10.5px] text-ink-500 leading-relaxed px-0.5">{t('alloc_linked_note')}</p>
+                            )}
+                            {isSelectedGroup && repayAllocations.length > 0 && (
+                              <div className="rounded-2xl border border-cream-border bg-cream-soft/60 p-3 space-y-2">
+                                <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-ink-500">{t('qe_group_alloc_note')}</p>
+                                {(() => {
+                                  const ordered = [...group.allocatable].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+                                  const byId = new Map(ordered.map((l) => [l.id, l]));
+                                  return previewAllocations(ordered, repayAllocations).map((line) => {
+                                    const l = byId.get(line.loanId)!;
+                                    return (
+                                      <div key={line.loanId} className="flex items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <p className="text-[11.5px] font-medium text-ink-800 truncate">
+                                            {l.notes?.trim() ? l.notes : (l.type === 'given' ? t('loan_receivable') : t('loan_payable'))}
+                                          </p>
+                                          <p className="text-[9.5px] text-ink-500 mt-0.5">
+                                            {new Date(l.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                          </p>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                          <p className={`text-[12px] font-bold tabular-nums ${line.applied > 0 ? 'text-receive-text' : 'text-ink-400'}`}>
+                                            {line.applied > 0 ? formatMoney(line.applied, group.currency) : '—'}
+                                          </p>
+                                          {line.cleared ? (
+                                            <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-receive-text">{t('alloc_cleared')}</p>
+                                          ) : line.applied > 0 ? (
+                                            <p className="text-[9px] text-ink-500 tabular-nums">
+                                              {t('loan_remaining')}: {formatMoney(line.after, group.currency)}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    );
+                                  });
+                                })()}
+                              </div>
+                            )}
+                            <button type="button"
+                              onClick={() => setExpandedGroupKey((k) => (k === group.key ? '' : group.key))}
+                              className="flex items-center gap-1 px-0.5 py-1 text-[11px] font-semibold text-accent-600 active:opacity-70"
+                            >
+                              <ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                              {t('qe_group_pick_specific')}
+                            </button>
+                            {expanded && <div className="space-y-2">{group.loans.map(loanRow)}</div>}
                           </div>
-                          <div className="space-y-2">
-                            {group.loans.map((l) => (
-                              <button key={l.id} type="button"
-                                onClick={() => {
-                                  // A different loan can carry a different
-                                  // currency — drop any typed conversion.
-                                  if (l.id !== loanId) setConversionRate('');
-                                  setLoanId(l.id);
-                                }}
-                                className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                                  loanId === l.id ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
-                                }`}
-                              >
-                                <div className="min-w-0">
-                                  <p className="text-[12.5px] font-medium text-ink-800 truncate">
-                                    {l.notes?.trim() ? l.notes : (l.type === 'given' ? t('loan_receivable') : t('loan_payable'))}
-                                  </p>
-                                  <p className="text-[10px] text-ink-500 mt-0.5">
-                                    {new Date(l.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-                                  </p>
-                                </div>
-                                <p className="text-[13px] font-semibold text-ink-900 tabular-nums shrink-0 ml-2">{formatMoney(l.remainingAmount, l.currency)}</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 )}
@@ -1448,7 +1663,7 @@ export function QuickEntry({
                 >{t('ltr_repay_linked_cta')}</button>
               </div>
             )}
-            {needsLoan && !selectedLoanIsLinked && selectedLoan?.type === 'given' && (
+            {needsLoan && !selectedLoanIsLinked && repayDirectionType === 'given' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_money_where')}</label>
                 <AccountSelect
@@ -1458,7 +1673,7 @@ export function QuickEntry({
                 />
               </div>
             )}
-            {needsLoan && !selectedLoanIsLinked && selectedLoan?.type === 'taken' && (
+            {needsLoan && !selectedLoanIsLinked && repayDirectionType === 'taken' && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_pay_from')}</label>
                 <AccountSelect

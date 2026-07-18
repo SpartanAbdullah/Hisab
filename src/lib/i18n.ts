@@ -1845,6 +1845,30 @@ const S = {
     ur: "Linked loans yahan shamil nahi — unhein loan page se settle karein.",
     en: "Linked loans aren't included here — settle those from their loan page.",
   },
+  alloc_partial_title: { ur: "{done} of {total} lag gaye", en: "Applied to {done} of {total}" },
+
+  // ── Consolidated repayment: person-first Quick Entry ──
+  // One lump entry settles across a person's loans (oldest first) instead of
+  // forcing one entry per loan line.
+  qe_group_n_loans: { ur: "{n} qarz", en: "{n} loans" },
+  qe_group_pick_specific: { ur: "Koi aik qarz chunein", en: "Choose a specific loan" },
+  qe_group_all_loans: { ur: "Saare qarz (purane pehle)", en: "All their loans (oldest first)" },
+  qe_group_alloc_note: { ur: "Purane qarz pehle utarenge", en: "Oldest loans clear first" },
+  qe_group_done_desc: { ur: "{amount} — {n} qarz par lag gaya", en: "{amount} applied across {n} loans" },
+  qe_group_cleared_count: { ur: "{n} qarz clear ho gaye", en: "{n} cleared" },
+  err_overpayment_group: {
+    ur: "{person} ka total baqi sirf {remaining} hai.",
+    en: "More than {person}'s total remaining. Only {remaining} left.",
+  },
+  err_batch_balance_short: {
+    ur: "Account mein poori payment ke liye raqam kam hai.",
+    en: "Not enough in this account for the whole payment.",
+  },
+  repay_overflow_body: {
+    ur: "{person} ke {n} aur active qarz hain ({total} baqi). Extra unpar lagayein?",
+    en: "{person} has {n} more active loan(s) ({total} remaining). Spread the extra across them?",
+  },
+  repay_overflow_cta: { ur: "Sab qarz par baantein", en: "Spread across their loans" },
 
   // ── UX pass: bilingual copy for confirmations, errors, status & validation ──
   // Cross-user money confirmations (were English-only)

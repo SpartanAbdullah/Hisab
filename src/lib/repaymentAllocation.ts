@@ -53,3 +53,27 @@ export function allocateRepayment(
 export function totalRemaining(loans: AllocatableLoan[]): number {
   return round2(loans.reduce((a, l) => a + Math.max(0, l.remainingAmount), 0));
 }
+
+export interface AllocationPreviewLine {
+  loanId: string;
+  before: number;
+  applied: number; // 0 when untouched
+  after: number;
+  cleared: boolean;
+}
+
+// Per-loan before/after math for the breakdown shown before a lump commits.
+// One line per input loan, input order preserved, so the UI can render the
+// full group including loans the pool never reached.
+export function previewAllocations(
+  loans: AllocatableLoan[],
+  allocations: Allocation[],
+): AllocationPreviewLine[] {
+  const byId = new Map(allocations.map((a) => [a.loanId, a.amount]));
+  return loans.map((l) => {
+    const before = round2(l.remainingAmount);
+    const applied = round2(byId.get(l.id) ?? 0);
+    const after = round2(Math.max(0, before - applied));
+    return { loanId: l.id, before, applied, after, cleared: applied > 0 && after <= 0.001 };
+  });
+}

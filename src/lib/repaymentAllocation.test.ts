@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocateRepayment, totalRemaining, type AllocatableLoan } from './repaymentAllocation';
+import { allocateRepayment, previewAllocations, totalRemaining, type AllocatableLoan } from './repaymentAllocation';
 
 // The scenario from the report: 29, 50, 1000, 6000 owed; pays back 2000.
 const loans: AllocatableLoan[] = [
@@ -71,5 +71,35 @@ describe('allocateRepayment — edges', () => {
       { loanId: 'a', amount: 33.33 },
       { loanId: 'b', amount: 16.67 },
     ]);
+  });
+});
+
+describe('previewAllocations', () => {
+  it('one line per input loan in input order, with untouched loans at applied 0', () => {
+    const allocations = allocateRepayment(loans, 80, 'oldest'); // a:29, b:50, c:1
+    const lines = previewAllocations(loans, allocations);
+    expect(lines).toEqual([
+      { loanId: 'a', before: 29, applied: 29, after: 0, cleared: true },
+      { loanId: 'b', before: 50, applied: 50, after: 0, cleared: true },
+      { loanId: 'c', before: 1000, applied: 1, after: 999, cleared: false },
+      { loanId: 'd', before: 6000, applied: 0, after: 6000, cleared: false },
+    ]);
+  });
+
+  it('amount equal to the full total clears every line', () => {
+    const allocations = allocateRepayment(loans, totalRemaining(loans), 'oldest');
+    const lines = previewAllocations(loans, allocations);
+    expect(lines.every((l) => l.cleared && l.after === 0)).toBe(true);
+  });
+
+  it('after-math stays at 2 dp', () => {
+    const decimals: AllocatableLoan[] = [{ id: 'a', remainingAmount: 100.05, createdAt: '1' }];
+    const lines = previewAllocations(decimals, [{ loanId: 'a', amount: 33.35 }]);
+    expect(lines[0]).toEqual({ loanId: 'a', before: 100.05, applied: 33.35, after: 66.7, cleared: false });
+  });
+
+  it('an untouched zero-applied loan is never marked cleared', () => {
+    const lines = previewAllocations([{ id: 'a', remainingAmount: 10, createdAt: '1' }], []);
+    expect(lines[0].cleared).toBe(false);
   });
 });

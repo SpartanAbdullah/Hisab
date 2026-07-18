@@ -3,7 +3,11 @@ import { Modal } from '../components/Modal';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
+import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useAppModeStore } from '../stores/appModeStore';
+import { AllocateRepaymentModal } from '../components/AllocateRepaymentModal';
+import { linkedLoanIdSet } from '../lib/linkedLoanIdSet';
+import { totalRemaining } from '../lib/repaymentAllocation';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useToast } from '../components/Toast';
@@ -41,7 +45,8 @@ export function RepaymentModal({
 }: Props) {
   const { accounts } = useAccountStore();
   const { processTransaction, getByLoan } = useTransactionStore();
-  const { applyRepayment } = useLoanStore();
+  const { loans, applyRepayment } = useLoanStore();
+  const linkedRequests = useLinkedRequestStore((s) => s.requests);
   const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
@@ -54,6 +59,7 @@ export function RepaymentModal({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showAllocateOverflow, setShowAllocateOverflow] = useState(false);
   const [confirmData, setConfirmData] = useState<{
     title: string;
     description: string;
@@ -72,6 +78,24 @@ export function RepaymentModal({
   const isCrossCurrency = selectedAccount ? selectedAccount.currency !== loan.currency : false;
   const isInstallmentPayment = Boolean(emiId);
   const installmentAmount = presetAmount != null ? Math.min(presetAmount, loan.remainingAmount) : undefined;
+
+  // When the typed amount exceeds THIS loan but the person has other active
+  // loans of the same currency + direction, don't dead-end on the overpayment
+  // error — offer to spread the lump across them (oldest first). Linked loans
+  // are excluded: they settle via the cross-user confirm flow. Instalment
+  // payments (locked amount / emiId) never overflow by design.
+  const linkedLoanIds = linkedLoanIdSet(linkedRequests);
+  const loanPersonKey = loan.personId ?? loan.personName.trim().toLowerCase();
+  const siblingLoans = loans.filter((l) =>
+    l.id !== loan.id &&
+    l.status === 'active' &&
+    l.type === loan.type &&
+    l.currency === loan.currency &&
+    (l.personId ?? l.personName.trim().toLowerCase()) === loanPersonKey &&
+    l.remainingAmount > 0.01 &&
+    !linkedLoanIds.has(l.id),
+  );
+  const canOfferOverflow = !lockAmount && !emiId && !linkedLoanIds.has(loan.id) && siblingLoans.length > 0;
 
   useEffect(() => {
     if (!open) return;
@@ -234,7 +258,7 @@ export function RepaymentModal({
   return (
     <>
       <Modal
-        open={open && !showConfirmation}
+        open={open && !showConfirmation && !showAllocateOverflow}
         onClose={handleClose}
         title={(() => {
           const personName = resolvePersonName({ personId: loan.personId, fallback: loan.personName });
@@ -347,6 +371,23 @@ export function RepaymentModal({
                 {amountValidationMsg}
               </p>
             )}
+            {amountValidationMsg && canOfferOverflow && (
+              <div className="mt-2 rounded-2xl bg-accent-50 border border-accent-100 p-3 space-y-2.5">
+                <p className="text-[11px] text-accent-600 leading-relaxed">
+                  {t('repay_overflow_body')
+                    .replace('{person}', resolvePersonName({ personId: loan.personId, fallback: loan.personName }))
+                    .replace('{n}', String(siblingLoans.length))
+                    .replace('{total}', formatMoney(totalRemaining(siblingLoans), loan.currency))}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAllocateOverflow(true)}
+                  className="w-full rounded-xl bg-ink-900 text-white py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform"
+                >
+                  {t('repay_overflow_cta')}
+                </button>
+              </div>
+            )}
           </div>
 
           {!isLedgerOnlyMode && (
@@ -415,6 +456,25 @@ export function RepaymentModal({
         title={confirmData.title}
         description={confirmData.description}
         balanceChanges={confirmData.changes}
+      />
+
+      {/* Overflow hand-off: the lump the user typed, pre-filled, spread
+          oldest-first across this loan + the person's other active loans. */}
+      <AllocateRepaymentModal
+        open={open && showAllocateOverflow}
+        onClose={() => setShowAllocateOverflow(false)}
+        loans={[loan, ...siblingLoans]}
+        direction={loan.type}
+        currency={loan.currency}
+        personName={resolvePersonName({ personId: loan.personId, fallback: loan.personName })}
+        initialLump={parseFloat(amount) > 0 ? parseFloat(amount) : undefined}
+        initialStrategy="oldest"
+        initialAccountId={selectedAccount && selectedAccount.currency === loan.currency ? accountId : undefined}
+        onDone={(info) => {
+          setShowAllocateOverflow(false);
+          onRepaid?.({ amount: info?.totalApplied ?? 0 });
+          handleClose();
+        }}
       />
     </>
   );

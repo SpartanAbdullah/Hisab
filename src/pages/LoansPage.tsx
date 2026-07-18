@@ -23,6 +23,7 @@ import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
+import { linkedLoanIdSet } from '../lib/linkedLoanIdSet';
 import { useT } from '../lib/i18n';
 import {
   getOldestIsoDate,
@@ -103,15 +104,7 @@ export function LoansPage() {
 
   // Loans mirrored to another Hisaab user (accepted linked pair) — excluded
   // from local multi-loan allocation; they settle through the confirm flow.
-  const linkedLoanIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const r of linkedRequests) {
-      if (r.status !== 'accepted') continue;
-      if (r.requesterLoanId) ids.add(r.requesterLoanId);
-      if (r.responderLoanId) ids.add(r.responderLoanId);
-    }
-    return ids;
-  }, [linkedRequests]);
+  const linkedLoanIds = useMemo(() => linkedLoanIdSet(linkedRequests), [linkedRequests]);
 
   // Active, non-linked loans in the opened person group — the set a lump
   // payment can be spread across.
