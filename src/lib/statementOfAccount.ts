@@ -35,6 +35,11 @@ export interface StatementLine {
   delta: number; // signed change (+ increases what they owe you)
   balance: number; // signed running balance AFTER this line
   estimated?: boolean; // synthetic line (ledger-only mode, no real ledger row)
+  // Gross two-sided flows for fold/summary lines covering settled loans:
+  // equal money was given AND paid back (net zero), and the reader must SEE
+  // both sides — a bare zero row would make their payments look erased.
+  grossGiven?: number;
+  grossRepaid?: number;
 }
 
 export interface StatementSection {
@@ -159,15 +164,19 @@ export function buildStatement(input: BuildStatementInput): Statement {
         itemisedLoans.push(loan);
       }
     }
+    const grossOf = (list: Loan[]) => round2(list.reduce((a, l) => a + l.totalAmount, 0));
     if (foldedSettled.length > 0) {
       const earliest = foldedSettled.reduce(
         (a, l) => (a < l.createdAt ? a : l.createdAt),
         foldedSettled[0].createdAt,
       );
+      const gross = grossOf(foldedSettled);
       entries.push({
         date: earliest,
         description: `Previously settled loans (${foldedSettled.length}) — nothing pending from these`,
         delta: 0,
+        grossGiven: gross,
+        grossRepaid: gross,
       });
     }
     if (recentSettled.length > 3) {
@@ -175,10 +184,13 @@ export function buildStatement(input: BuildStatementInput): Statement {
         (a, l) => ((l.updatedAt ?? l.createdAt) > a ? (l.updatedAt ?? l.createdAt) : a),
         recentSettled[0].updatedAt ?? recentSettled[0].createdAt,
       );
+      const gross = grossOf(recentSettled);
       entries.push({
         date: latest,
         description: `Recently settled 🎉 — ${recentSettled.length} loans cleared, nothing pending from these`,
         delta: 0,
+        grossGiven: gross,
+        grossRepaid: gross,
       });
     } else {
       for (const loan of recentSettled) {
@@ -186,6 +198,8 @@ export function buildStatement(input: BuildStatementInput): Statement {
           date: loan.updatedAt ?? loan.createdAt,
           description: loan.notes?.trim() ? `Settled in full 🎉 — ${loan.notes.trim()}` : 'Settled in full 🎉',
           delta: 0,
+          grossGiven: round2(loan.totalAmount),
+          grossRepaid: round2(loan.totalAmount),
         });
       }
     }
@@ -211,9 +225,16 @@ export function buildStatement(input: BuildStatementInput): Statement {
         const delta = signedDelta(txn, loan.type);
         if (delta === null) continue;
         if (txn.type === 'repayment') recordedRepay = round2(recordedRepay + txn.amount);
+        // A bare "Repayment received" doesn't tell the reader WHICH debt it
+        // reduced — name the loan so partial settlement is legible.
+        const base = describe(txn, loan.type);
+        const description =
+          txn.type === 'repayment' && !txn.notes?.trim() && loan.notes?.trim()
+            ? `${base} — ${loan.notes.trim()}`
+            : base;
         entries.push({
           date: txn.createdAt,
-          description: describe(txn, loan.type),
+          description,
           note: txn.notes?.trim() || undefined,
           delta: round2(delta),
         });

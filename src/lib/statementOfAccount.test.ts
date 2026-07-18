@@ -131,6 +131,9 @@ describe('buildStatement', () => {
     const section = s.sections[0];
     expect(section.lines[0].description).toBe('Previously settled loans (2) — nothing pending from these');
     expect(section.lines[0].delta).toBe(0);
+    // Gross flows visible in both columns — the reader's payments never vanish.
+    expect(section.lines[0].grossGiven).toBe(300);
+    expect(section.lines[0].grossRepaid).toBe(300);
     // Only the fold line + the open loan's disbursement remain visible.
     expect(section.lines).toHaveLength(2);
     expect(section.lines[1].description).toBe('Loan given');
@@ -151,8 +154,26 @@ describe('buildStatement', () => {
     const descriptions = s.sections[0].lines.map((l) => l.description);
     expect(descriptions).toContain('Settled in full 🎉 — April mess');
     expect(descriptions.filter((d) => d === 'Repayment received')).toHaveLength(0); // its history stays folded
+    const celebration = s.sections[0].lines.find((l) => l.description.startsWith('Settled in full'))!;
+    expect(celebration.grossGiven).toBe(100);
+    expect(celebration.grossRepaid).toBe(100);
     expect(s.sections[0].lines).toHaveLength(2); // celebration line + open loan
     expect(s.sections[0].closing).toBe(500);
+  });
+
+  it('names the loan on repayment lines that carry no note of their own', () => {
+    const loans = [
+      loan({ id: 'L1', type: 'given', totalAmount: 500, remainingAmount: 400, notes: 'April mess' }),
+    ];
+    const transactions = [
+      txn({ id: 't1', type: 'loan_given', amount: 500, relatedLoanId: 'L1', createdAt: '2026-05-01T00:00:00.000Z' }),
+      txn({ id: 't2', type: 'repayment', amount: 60, relatedLoanId: 'L1', createdAt: '2026-06-01T00:00:00.000Z' }),
+      txn({ id: 't3', type: 'repayment', amount: 40, relatedLoanId: 'L1', createdAt: '2026-06-10T00:00:00.000Z', notes: 'via Mashreq CDM' }),
+    ];
+    const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'loan' });
+    const descriptions = s.sections[0].lines.map((l) => l.description);
+    expect(descriptions).toContain('Repayment received — April mess'); // note-less row names its loan
+    expect(descriptions).toContain('Repayment received'); // noted row keeps its own note (rendered separately)
   });
 
   it('collapses a mass catch-up (4+ recent settles) into a single celebratory line', () => {
@@ -168,6 +189,9 @@ describe('buildStatement', () => {
     const s = buildStatement({ partyName: 'Ahmed', loans, transactions, asOf: '2026-07-02T00:00:00.000Z', scope: 'contact' });
     const descriptions = s.sections[0].lines.map((l) => l.description);
     expect(descriptions).toContain('Recently settled 🎉 — 5 loans cleared, nothing pending from these');
+    const collapse = s.sections[0].lines.find((l) => l.description.startsWith('Recently settled'))!;
+    expect(collapse.grossGiven).toBe(250); // 5 × 50 — the reader sees what they actually paid
+    expect(collapse.grossRepaid).toBe(250);
     expect(s.sections[0].lines).toHaveLength(2); // one collapse line + the open loan
     expect(s.sections[0].closing).toBe(500);
   });

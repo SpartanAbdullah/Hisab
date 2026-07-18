@@ -88,6 +88,12 @@ function shortDate(iso: string): string {
 }
 
 function lineText(line: StatementLine, currency: string): string {
+  // Fold/summary lines: equal money given and paid back — say so instead of
+  // printing a meaningless "+0.00".
+  if (line.grossGiven || line.grossRepaid) {
+    const gross = formatMoney(line.grossRepaid ?? line.grossGiven ?? 0, currency);
+    return `• ${[shortDate(line.date), line.description].filter(Boolean).join(' · ')} · ${gross} paid & cleared ✓`;
+  }
   // Recipient perspective: negate so a charge (they owe more) reads as −out and
   // a payment they made reads as +in, matching the PDF's Debit/Credit colours.
   const parts = [shortDate(line.date), line.description, signedAmount(-line.delta, currency)];

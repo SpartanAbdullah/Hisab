@@ -154,8 +154,14 @@ function ledgerRowHtml(line: StatementLine): string {
   // this), a Credit is a payment they made (green = reduces what you owe). The
   // running balance is negated to the recipient's side (owe = −red, receive = +green).
   const desc = line.note ? esc(line.note) : esc(line.description);
-  const debit = line.delta > 0.005 ? `<span style="color:${NEG};">${fmtAmount(line.delta)}</span>` : '';
-  const credit = line.delta < -0.005 ? `<span style="color:${POS};">${fmtAmount(line.delta)}</span>` : '';
+  // Fold/summary lines carry gross two-sided flows (given AND repaid, net
+  // zero) — show both so the reader's payments never look erased.
+  const debit = line.grossGiven && line.grossGiven > 0.005
+    ? `<span style="color:${NEG};">${fmtAmount(line.grossGiven)}</span>`
+    : line.delta > 0.005 ? `<span style="color:${NEG};">${fmtAmount(line.delta)}</span>` : '';
+  const credit = line.grossRepaid && line.grossRepaid > 0.005
+    ? `<span style="color:${POS};">${fmtAmount(line.grossRepaid)}</span>`
+    : line.delta < -0.005 ? `<span style="color:${POS};">${fmtAmount(line.delta)}</span>` : '';
   return `<tr>
     <td style="padding:7px 6px 7px 0;color:${MUTED};white-space:nowrap;vertical-align:top;border-top:1px solid ${ROWLINE};">${fmtDateShort(line.date)}</td>
     <td style="padding:7px 6px;color:${INK};vertical-align:top;border-top:1px solid ${ROWLINE};">${desc}</td>
@@ -177,6 +183,11 @@ function sectionHtml(section: StatementSection): string {
   let totalDebit = 0;
   let totalCredit = 0;
   for (const l of lines) {
+    // Gross lines add equally to both sides (net zero on the balance), so
+    // the totals row reflects the REAL money story: everything given,
+    // everything paid back, and the difference still reconciles.
+    if (l.grossGiven) totalDebit += l.grossGiven;
+    if (l.grossRepaid) totalCredit += l.grossRepaid;
     if (l.delta > 0.005) totalDebit += l.delta;
     else if (l.delta < -0.005) totalCredit += -l.delta;
   }
