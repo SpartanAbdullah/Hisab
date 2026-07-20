@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { uncoveredToPaidIds, type CoverableInstallment } from './emiCoverage';
+import { statusSyncToPaid, uncoveredToPaidIds, type CoverableInstallment } from './emiCoverage';
 
 function schedule(parts: Array<[number, number, CoverableInstallment['status']]>): CoverableInstallment[] {
   return parts.map(([installmentNumber, amount, status]) => ({
@@ -83,5 +83,59 @@ describe('uncoveredToPaidIds', () => {
       [2, 100, 'upcoming'],
     ]);
     expect(uncoveredToPaidIds(s, 200)).toEqual(['i1', 'i2']);
+  });
+});
+
+describe('statusSyncToPaid', () => {
+  it('matches uncoveredToPaidIds on the forward direction', () => {
+    const s = schedule([
+      [1, 100, 'upcoming'],
+      [2, 100, 'upcoming'],
+      [3, 100, 'upcoming'],
+    ]);
+    expect(statusSyncToPaid(s, 200)).toEqual({ toPaid: ['i1', 'i2'], toUpcoming: [] });
+  });
+
+  it('un-marks paid instalments the shrunken paid amount no longer covers (repayment deleted)', () => {
+    // All three were paid; a 200 repayment got deleted → only #1 stays covered.
+    const s = schedule([
+      [1, 100, 'paid'],
+      [2, 100, 'paid'],
+      [3, 100, 'paid'],
+    ]);
+    expect(statusSyncToPaid(s, 100)).toEqual({ toPaid: [], toUpcoming: ['i2', 'i3'] });
+  });
+
+  it('un-marks everything when the paid amount drops to zero', () => {
+    const s = schedule([
+      [1, 100, 'paid'],
+      [2, 100, 'paid'],
+    ]);
+    expect(statusSyncToPaid(s, 0)).toEqual({ toPaid: [], toUpcoming: ['i1', 'i2'] });
+  });
+
+  it('can move both directions at once for an out-of-order paid gap', () => {
+    // #2 was marked paid via a targeted EMI click but #1 was not; total paid
+    // covers exactly one instalment → the oldest (#1) should be paid, #2 not.
+    const s = schedule([
+      [1, 100, 'upcoming'],
+      [2, 100, 'paid'],
+    ]);
+    expect(statusSyncToPaid(s, 100)).toEqual({ toPaid: ['i1'], toUpcoming: ['i2'] });
+  });
+
+  it('never un-marks partially covered ones it should keep: boundary rounding', () => {
+    const s = schedule([
+      [1, 333.33, 'paid'],
+      [2, 333.33, 'paid'],
+      [3, 333.34, 'paid'],
+    ]);
+    expect(statusSyncToPaid(s, 666.66)).toEqual({ toPaid: [], toUpcoming: ['i3'] });
+    expect(statusSyncToPaid(s, 1000)).toEqual({ toPaid: [], toUpcoming: [] });
+  });
+
+  it('clamps a negative paid amount to zero coverage', () => {
+    const s = schedule([[1, 100, 'paid']]);
+    expect(statusSyncToPaid(s, -50)).toEqual({ toPaid: [], toUpcoming: ['i1'] });
   });
 });

@@ -122,7 +122,7 @@ export function AccountsPage() {
     const Icon = iconForType[account.type] ?? Wallet;
     const meta = currencyMeta[account.currency];
     const typeLabel = labelForType[account.type] ?? account.type.replace(/_/g, ' ');
-    const masked = account.metadata.lastFour ? ` · ⋯${account.metadata.lastFour}` : '';
+    const masked = account.metadata.last4 ? ` · ⋯${account.metadata.last4}` : '';
     // Credit cards read as "available balance" + how much is owed, so the
     // liability is visible without decoding a negative net-worth figure.
     const isCreditCard = account.type === 'credit_card';
@@ -177,9 +177,16 @@ export function AccountsPage() {
             <p className="text-[10px] text-ink-400 mt-0.5">
               {t('acct_available')}
             </p>
-            {creditLimit > 0 && (
+            {creditLimit > 0 && used > 0.005 && (
               <p className="text-[10px] text-pay-text mt-0.5 tabular-nums">
                 {t('acct_owe').replace('{amount}', formatMoney(used, account.currency))}
+              </p>
+            )}
+            {/* Negative "used" means the card was credited past its limit —
+                formatMoney's abs() used to render that as owed debt. */}
+            {creditLimit > 0 && used < -0.005 && (
+              <p className="text-[10px] text-warn-700 mt-0.5 tabular-nums font-semibold">
+                {t('acct_overpaid').replace('{amount}', formatMoney(Math.abs(used), account.currency))}
               </p>
             )}
           </div>

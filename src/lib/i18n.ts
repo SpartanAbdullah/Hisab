@@ -236,6 +236,59 @@ const S = {
     en: "This action does not move real money. Please check your accounts for actual transfer.",
   },
 
+  // Loan management (edit / money-free settle / delete)
+  loan_edit_details: { ur: "Tafseel Badlein", en: "Edit details" },
+  loan_edit_name: { ur: "Naam", en: "Name" },
+  loan_edit_name_locked: {
+    ur: "Yeh loan ek saved contact se juda hai — naam Contacts se aata hai.",
+    en: "Linked to a saved contact — the name comes from Contacts.",
+  },
+  loan_edit_saved: { ur: "Loan update ho gaya", en: "Loan updated" },
+  loan_settle_nomoney: { ur: "Baghair payment ke settle karein", en: "Settle without payment" },
+  loan_settle_nomoney_title: { ur: "Loan settled mark karein?", en: "Mark this loan settled?" },
+  loan_settle_nomoney_body: {
+    ur: "Baqi {amount} settled record hoga — kisi account ka balance NAHI badlega. Jab paisa app ke bahar ada hua ho ya aap maaf kar rahe hon, yeh use karein.",
+    en: "The remaining {amount} will be recorded as settled WITHOUT touching any account balance. Use this when it was paid outside the app, or you're writing it off.",
+  },
+  loan_settle_nomoney_cta: { ur: "Settled mark karo", en: "Mark settled" },
+  loan_settle_nomoney_note: { ur: "Baghair payment ke settle", en: "Settled without payment" },
+  loan_settle_nomoney_done: { ur: "Loan settle — koi paisa nahi hila", en: "Loan settled — no money moved" },
+  loan_delete: { ur: "Loan delete karein", en: "Delete loan" },
+  loan_delete_title: { ur: "Yeh loan delete karein?", en: "Delete this loan?" },
+  loan_delete_body: {
+    ur: "Loan, uske {n} record(s) aur qiston ka plan hat jayega — jo bhi account balances inhon ne badle thay wapas theek ho jayenge. Yeh wapas nahi ho sakta.",
+    en: "This removes the loan, its {n} record(s) and any instalment plan, and restores every account balance they touched. This cannot be undone.",
+  },
+  loan_delete_cta: { ur: "Delete karo", en: "Delete loan" },
+  loan_deleted: { ur: "Loan delete — balances wapas theek", en: "Loan deleted — balances restored" },
+  ca_pill: { ur: "Cash advance", en: "Cash advance" },
+  repay_card_covered_full: {
+    ur: "{card} ka bill pehle se ada hai — yeh payment sirf is loan record ko update karegi. Card par dobara credit NAHI hoga.",
+    en: "{card}'s bill is already covered — this payment will only update this loan record. The card will not be credited again.",
+  },
+  repay_card_covered_partial: {
+    ur: "{card} apni limit ke qareeb hai — sirf {amount} card par wapas jayega.",
+    en: "{card} is close to its limit — only {amount} will go back onto the card.",
+  },
+
+  // Account picker currency awareness + balance correction
+  acct_rate_needed: { ur: "rate lagega", en: "rate needed" },
+  acct_overpaid: { ur: "Zyada ada: {amount}", en: "Overpaid {amount}" },
+  acct_over_limit_hint: {
+    ur: "Available card ki limit se zyada hai — aksar iski wajah dobara record hui payment hoti hai. 'Balance theek karein' se isay durust karein.",
+    en: "Available is above the card's limit — usually a double-recorded payment. Tap to fix it with a balance correction.",
+  },
+  acct_correct_balance: { ur: "Balance theek karein", en: "Correct balance" },
+  acct_correct_title: { ur: "Balance theek karein", en: "Correct balance" },
+  acct_correct_hint: {
+    ur: "Jo balance ABHI asal mein hai woh likhein — farq ke liye ek correction entry record hogi jo baad mein delete bhi ho sakti hai.",
+    en: "Enter what this balance ACTUALLY is right now — a correction entry is recorded for the difference (and can be deleted later).",
+  },
+  acct_correct_cta: { ur: "Correction save karo", en: "Save correction" },
+  acct_correct_saved: { ur: "Balance theek ho gaya", en: "Balance corrected" },
+  acct_correct_note: { ur: "Balance correction", en: "Balance correction" },
+  action_adjusted: { ur: "Balance theek kiya", en: "Balance corrected" },
+
   // Soft payment reminders
   reminder_title: { ur: "Reminder Message", en: "Reminder Message" },
   reminder_cta: { ur: "Remind", en: "Remind" },

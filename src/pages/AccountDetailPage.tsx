@@ -127,6 +127,9 @@ export function AccountDetailPage() {
   const [dueDayInput, setDueDayInput] = useState('');
   const [showRename, setShowRename] = useState(false);
   const [newName, setNewName] = useState('');
+  const [showCorrect, setShowCorrect] = useState(false);
+  const [correctInput, setCorrectInput] = useState('');
+  const [savingCorrect, setSavingCorrect] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   const load = useCallback(async () => {
@@ -279,6 +282,16 @@ export function AccountDetailPage() {
                         <Pencil size={14} className="text-ink-500" /> Rename
                       </button>
                       <button
+                        onClick={() => {
+                          setShowMenu(false);
+                          setCorrectInput(String(account.balance));
+                          setShowCorrect(true);
+                        }}
+                        className="w-full px-4 py-2.5 flex items-center gap-2.5 text-[13px] font-medium text-ink-800 active:bg-cream-soft"
+                      >
+                        <SlidersHorizontal size={14} className="text-ink-500" /> {t('acct_correct_balance')}
+                      </button>
+                      <button
                         onClick={async () => {
                           setShowMenu(false);
                           if (account.balance !== 0) {
@@ -367,12 +380,28 @@ export function AccountDetailPage() {
                 </div>
                 <div className="flex justify-between mt-2 text-[11px]">
                   <span className="text-white/65 tabular-nums">
-                    {t('cc_used')}: {formatMoney(used, account.currency)} · {Math.round(utilPct)}%
+                    {used < -0.005
+                      ? t('acct_overpaid').replace('{amount}', formatMoney(Math.abs(used), account.currency))
+                      : <>{t('cc_used')}: {formatMoney(used, account.currency)} · {Math.round(utilPct)}%</>}
                   </span>
                   <span className="text-white/85 font-medium tabular-nums">
                     {t('cc_limit')}: {formatMoney(creditLimit, account.currency)}
                   </span>
                 </div>
+                {/* Available above the limit is almost always a double-recorded
+                    payment, never a healthy state — say so instead of the old
+                    silent "0%" and point at the repair tool. */}
+                {used < -0.005 && (
+                  <button
+                    type="button"
+                    onClick={() => { setCorrectInput(String(creditLimit)); setShowCorrect(true); }}
+                    className="mt-3 w-full text-left rounded-2xl bg-warn-600/25 p-3 active:bg-warn-600/35 transition-colors"
+                  >
+                    <p className="text-[11px] text-white/90 leading-relaxed font-medium">
+                      {t('acct_over_limit_hint')}
+                    </p>
+                  </button>
+                )}
                 {account.metadata.dueDay && (
                   <div className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold text-white ${dueUrgent ? 'bg-pay-600/30' : 'bg-warn-600/25'}`}>
                     <CalendarClock size={11} />
@@ -429,7 +458,7 @@ export function AccountDetailPage() {
                 setQuickPreset({ type: 'loan_taken', cashAdvanceCardId: account.id });
                 setShowAdd(true);
               }}
-              className="rounded-2xl bg-warn-50 border border-cream-border px-2 py-3 text-[12px] font-semibold text-warn-600 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              className="rounded-2xl bg-warn-50 border border-warn-100 px-2 py-3 text-[12px] font-semibold text-warn-600 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
             >
               <Banknote size={15} className="text-warn-600" />
               {t('acct_action_cash_advance')}
@@ -610,6 +639,68 @@ export function AccountDetailPage() {
                   className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30 transition-opacity"
                 >
                   {t('save')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Balance correction: set the balance to the true figure via a
+            visible, reversible adjustment entry — the sanctioned repair for
+            drifted accounts (no more fake income/expense entries). */}
+        {showCorrect && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/50 backdrop-blur-sm animate-fade-in"
+            onClick={() => setShowCorrect(false)}
+          >
+            <div
+              className="bg-cream-card rounded-2xl p-5 w-[90%] max-w-sm shadow-xl border border-cream-border"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-[15px] font-semibold text-ink-900 mb-1.5">{t('acct_correct_title')}</h3>
+              <p className="text-[11.5px] text-ink-500 leading-relaxed mb-3">{t('acct_correct_hint')}</p>
+              <label className="block text-[11px] font-semibold text-ink-500 uppercase tracking-[0.1em] mb-1.5">
+                {isCreditCard ? t('cc_available') : 'Balance'} ({account.currency})
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={correctInput}
+                onChange={(e) => setCorrectInput(e.target.value)}
+                autoFocus
+                className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all mb-3 bg-cream-bg"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowCorrect(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold"
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  disabled={savingCorrect || !Number.isFinite(parseFloat(correctInput)) || Math.abs(parseFloat(correctInput) - account.balance) < 0.005}
+                  onClick={async () => {
+                    setSavingCorrect(true);
+                    try {
+                      await useTransactionStore.getState().processTransaction({
+                        type: 'adjustment',
+                        amount: 0,
+                        accountId: account.id,
+                        targetBalance: parseFloat(correctInput),
+                        notes: t('acct_correct_note'),
+                      });
+                      await Promise.all([loadAccounts(), loadTransactions()]);
+                      toast.show({ type: 'success', title: t('acct_correct_saved') });
+                      setShowCorrect(false);
+                    } catch (err) {
+                      toast.show({ type: 'error', title: err instanceof Error ? err.message : 'Failed' });
+                    } finally {
+                      setSavingCorrect(false);
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30 transition-opacity"
+                >
+                  {t('acct_correct_cta')}
                 </button>
               </div>
             </div>
@@ -940,18 +1031,23 @@ function MoneyMathCard({
               </span>
             </div>
           </div>
+          {/* used < 0 = credited past the limit; formatMoney's abs() would
+              flip that into fake debt ("You owe 11,150" on an overpaid card),
+              so the row switches to an explicit overpaid reading. */}
           <div className="mt-2 pt-2 border-t border-cream-hairline flex items-baseline justify-between px-1">
-            <span className="text-[12.5px] text-ink-700">You owe (used)</span>
-            <span className="text-[13.5px] font-semibold text-pay-text tabular-nums">
-              {formatMoney(used, currency)}
+            <span className="text-[12.5px] text-ink-700">
+              {used < -0.005 ? 'Overpaid (above limit)' : 'You owe (used)'}
+            </span>
+            <span className={`text-[13.5px] font-semibold tabular-nums ${used < -0.005 ? 'text-warn-700' : 'text-pay-text'}`}>
+              {formatMoney(Math.abs(used), currency)}
             </span>
           </div>
           <div className="mt-3 pt-3 border-t border-cream-hairline flex items-baseline justify-between px-1">
-            <span className="text-[11px] font-semibold text-pay-text uppercase tracking-[0.08em]">
-              Subtracted from Your Money
+            <span className={`text-[11px] font-semibold uppercase tracking-[0.08em] ${used < -0.005 ? 'text-receive-text' : 'text-pay-text'}`}>
+              {used < -0.005 ? 'Added to Your Money' : 'Subtracted from Your Money'}
             </span>
-            <span className="text-[14px] font-semibold text-pay-text tabular-nums">
-              −{formatMoney(used, currency)}
+            <span className={`text-[14px] font-semibold tabular-nums ${used < -0.005 ? 'text-receive-text' : 'text-pay-text'}`}>
+              {used < -0.005 ? '+' : '−'}{formatMoney(Math.abs(used), currency)}
             </span>
           </div>
         </>

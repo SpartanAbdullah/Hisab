@@ -16,6 +16,7 @@ import { useBudgetStore } from './stores/budgetStore';
 import { useCustomCategoryStore } from './stores/customCategoryStore';
 import { useCommitteeStore } from './stores/committeeStore';
 import { useRecurringStore } from './stores/recurringStore';
+import { useAccountStore } from './stores/accountStore';
 import { runRecurringExpansion } from './lib/recurringRunner';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
@@ -245,6 +246,13 @@ function AppContent() {
     void useNotificationStore.getState().loadNotifications().catch((err) => {
       console.error('loadNotifications failed (non-fatal)', err);
     });
+    // Accounts feed the globally-mounted QuickEntry (and its "you need an
+    // account first" gate). They used to load only when a page that needed
+    // them mounted — on an unmatched URL the FAB opened over an empty store
+    // and told a 13-account user to create their first account.
+    void useAccountStore.getState().loadAccounts().catch((err) => {
+      console.error('loadAccounts failed (non-fatal)', err);
+    });
     // Preload groups on app boot so the QuickEntry "Group expense" picker
     // is ready the moment the user opens it from any page. Previously
     // groups only loaded on /groups visit, which made the picker show
@@ -436,6 +444,10 @@ function AppContent() {
               <Route path="/goals" element={<Navigate to="/" replace />} />
             </>
           )}
+
+          {/* Catch-all: an unmatched URL used to render an empty page with a
+              live BottomNav + FAB floating over nothing. Send it home. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
       <BottomNav onQuickEntry={() => setShowQuickEntry(true)} />

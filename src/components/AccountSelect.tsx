@@ -9,8 +9,9 @@ import { ChevronDown, Lock } from 'lucide-react';
 import { AccountGroupSections } from './AccountGroupSections';
 import { formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
+import { orderAccountsForCurrency } from '../lib/accountCurrencyOrder';
 import { useT } from '../lib/i18n';
-import type { Account, AccountType } from '../db';
+import type { Account, AccountType, Currency } from '../db';
 
 const TYPE_LABEL_KEY: Record<AccountType, 'type_cash' | 'type_bank' | 'type_wallet' | 'type_savings' | 'type_credit_card'> = {
   cash: 'type_cash',
@@ -28,10 +29,18 @@ interface Props {
   locked?: boolean;
   /** Right-hand content per row (defaults to the signed balance). */
   renderRight?: (account: Account) => ReactNode;
+  /**
+   * The currency the flow already knows the money is in (e.g. the loan's).
+   * Matching accounts float to the top of each section; mismatched ones stay
+   * pickable but carry a "rate needed" tag so a PKR account never masquerades
+   * as an option equal to an AED one on an AED loan.
+   */
+  preferredCurrency?: Currency;
 }
 
-export function AccountSelect({ accounts, selectedId, onSelect, locked = false, renderRight }: Props) {
+export function AccountSelect({ accounts, selectedId, onSelect, locked = false, renderRight, preferredCurrency }: Props) {
   const t = useT();
+  const ordered = orderAccountsForCurrency(accounts, preferredCurrency);
   const selected = accounts.find((a) => a.id === selectedId) ?? null;
   const [expanded, setExpanded] = useState(false);
   // Derived, not synced: with no valid selection (none yet, or the selection
@@ -43,12 +52,21 @@ export function AccountSelect({ accounts, selectedId, onSelect, locked = false, 
     <p className="text-[13px] font-semibold text-ink-900 tabular-nums">{formatSignedMoney(a.balance, a.currency)}</p>
   );
 
+  const isMismatch = (a: Account) => Boolean(preferredCurrency && a.currency !== preferredCurrency);
+
   const rowLeft = (a: Account) => (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-sm">{currencyMeta[a.currency]?.flag}</span>
       <div className="min-w-0">
         <p className="text-[13px] font-semibold text-ink-900 truncate">{a.name}</p>
-        <p className="text-[10px] text-ink-500">{t(TYPE_LABEL_KEY[a.type] ?? 'type_bank')}</p>
+        <p className="text-[10px] text-ink-500 flex items-center gap-1">
+          {t(TYPE_LABEL_KEY[a.type] ?? 'type_bank')}
+          {isMismatch(a) && (
+            <span className="inline-flex items-center rounded-full bg-warn-50 text-warn-600 font-semibold px-1.5 py-px">
+              {a.currency} · {t('acct_rate_needed')}
+            </span>
+          )}
+        </p>
       </div>
     </div>
   );
@@ -94,7 +112,7 @@ export function AccountSelect({ accounts, selectedId, onSelect, locked = false, 
         <p className="text-[11px] text-ink-500 mb-2">{t('acct_select_placeholder')}</p>
       )}
       <AccountGroupSections
-        accounts={accounts}
+        accounts={ordered}
         renderAccount={(a) => (
           <button
             key={a.id}

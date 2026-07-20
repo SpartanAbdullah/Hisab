@@ -48,3 +48,34 @@ export function uncoveredToPaidIds(
   }
   return ids;
 }
+
+export interface EmiStatusSync {
+  /** Unpaid instalments now fully covered by the paid-down amount. */
+  toPaid: string[];
+  /** Paid instalments NO LONGER covered (a repayment was deleted) — revert to upcoming. */
+  toUpcoming: string[];
+}
+
+// Full two-way reconcile of a binary schedule against the loan's paid-down
+// amount. uncoveredToPaidIds only ever marks forward; deleting a repayment
+// shrinks the paid-down amount, and instalments past the new coverage must
+// un-mark or the schedule lies ("paid" rows the money no longer backs). Same
+// oldest-first cumulative walk: an instalment is covered iff its full
+// cumulative prefix fits inside paidAmount.
+export function statusSyncToPaid(
+  installments: CoverableInstallment[],
+  paidAmount: number,
+): EmiStatusSync {
+  const covered = round2(Math.max(0, paidAmount));
+  const sorted = installments.slice().sort((a, b) => a.installmentNumber - b.installmentNumber);
+  let cumulative = 0;
+  const toPaid: string[] = [];
+  const toUpcoming: string[] = [];
+  for (const instalment of sorted) {
+    cumulative = round2(cumulative + instalment.amount);
+    const isCovered = cumulative <= covered + COVERAGE_EPSILON;
+    if (isCovered && instalment.status !== 'paid') toPaid.push(instalment.id);
+    if (!isCovered && instalment.status === 'paid') toUpcoming.push(instalment.id);
+  }
+  return { toPaid, toUpcoming };
+}

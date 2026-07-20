@@ -37,14 +37,14 @@ vi.mock('../lib/supabaseDb', async () => {
   let nextTxAddThrows: Error | null = null;
 
   return {
-    __seedAccount: (a: { id: string; balance: number; name?: string; type?: string; currency?: string }) => {
+    __seedAccount: (a: { id: string; balance: number; name?: string; type?: string; currency?: string; metadata?: Record<string, string> }) => {
       accounts.set(a.id, {
         id: a.id,
         balance: a.balance,
         name: a.name ?? a.id,
         type: a.type ?? 'cash',
         currency: a.currency ?? 'AED',
-        metadata: {},
+        metadata: a.metadata ?? {},
         createdAt: new Date().toISOString(),
       });
     },
@@ -178,7 +178,7 @@ import { useInvestmentStore } from './investmentStore';
 
 // Loose-typed accessors on the mock module — these are added by vi.mock above
 // but TypeScript doesn't know about them.
-const seedAccount = (mockDb as unknown as { __seedAccount: (a: { id: string; balance: number; name?: string; type?: string; currency?: string }) => void }).__seedAccount;
+const seedAccount = (mockDb as unknown as { __seedAccount: (a: { id: string; balance: number; name?: string; type?: string; currency?: string; metadata?: Record<string, string> }) => void }).__seedAccount;
 const seedLoan = (mockDb as unknown as { __seedLoan: (l: Record<string, unknown>) => void }).__seedLoan;
 const failNextTxAdd = (mockDb as unknown as { __failNextTxAdd: (err: Error) => void }).__failNextTxAdd;
 const resetDb = (mockDb as unknown as { __reset: () => void }).__reset;
@@ -205,7 +205,7 @@ function seedMarket(market: { id: string; name: string; currency: 'AED' | 'PKR' 
   }));
 }
 
-function seedAndLoad(account: { id: string; balance: number; currency?: string; type?: 'cash' | 'bank' | 'digital_wallet' | 'savings' | 'credit_card'; name?: string }) {
+function seedAndLoad(account: { id: string; balance: number; currency?: string; type?: 'cash' | 'bank' | 'digital_wallet' | 'savings' | 'credit_card'; name?: string; metadata?: Record<string, string> }) {
   seedAccount(account);
   useAccountStore.setState((s) => ({
     accounts: [
@@ -216,7 +216,7 @@ function seedAndLoad(account: { id: string; balance: number; currency?: string; 
         type: account.type ?? 'cash',
         currency: (account.currency ?? 'AED') as 'AED' | 'PKR' | 'PHP' | 'SAR' | 'QAR' | 'OMR' | 'KWD' | 'BHD',
         balance: account.balance,
-        metadata: {},
+        metadata: account.metadata ?? {},
         createdAt: new Date().toISOString(),
       },
     ],
@@ -383,6 +383,242 @@ describe('processTransaction', () => {
     expect(useAccountStore.getState().getAccount('cash')?.balance).toBe(1000);
     // And no transaction row should have been persisted.
     expect(useTransactionStore.getState().transactions).toHaveLength(0);
+  });
+});
+
+// The credit-card model + loan lifecycle fixes: card credits clamp at the
+// limit, paying a card bill settles its cash advances, EMI overpay covers
+// later instalments, repayments are deletable (schedule follows the money),
+// loans are cascade-deletable, and balances are correctable via adjustment.
+describe('processTransaction — credit-card model & loan lifecycle', () => {
+  const seedEmis = (loanId: string, amounts: number[]) => {
+    const schedules = amounts.map((amount, i) => ({
+      id: `emi-${i + 1}`,
+      loanId,
+      installmentNumber: i + 1,
+      dueDate: `2026-0${i + 1}-15`,
+      amount,
+      status: 'upcoming' as const,
+    }));
+    useEmiStore.setState({ schedules });
+    return schedules;
+  };
+
+  async function createCashAdvance(amount: number, card = 'cc', bank = 'bank') {
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'loan_taken',
+      amount,
+      destinationAccountId: bank,
+      sourceAccountId: card,
+      personName: 'ENBD Credit Card',
+    });
+    return useLoanStore.getState().loans.find((l) => l.id === tx.relatedLoanId)!;
+  }
+
+  it('cash-advance repayment with headroom: credits the card the full amount', async () => {
+    seedAndLoad({ id: 'cc', balance: 16500, currency: 'AED', type: 'credit_card', name: 'ENBD', metadata: { creditLimit: '16500' } });
+    seedAndLoad({ id: 'bank', balance: 1000, currency: 'AED' });
+    const loan = await createCashAdvance(1500);
+    // card 15000, bank 2500
+
+    await useTransactionStore.getState().processTransaction({
+      type: 'repayment',
+      amount: 900,
+      loanId: loan.id,
+      sourceAccountId: 'bank',
+    });
+
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(15900);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(1600);
+    expect(useLoanStore.getState().getLoan(loan.id)?.remainingAmount).toBe(600);
+  });
+
+  it('cash-advance repayment when the bill was already paid: card is NOT credited again', async () => {
+    seedAndLoad({ id: 'cc', balance: 16500, currency: 'AED', type: 'credit_card', name: 'ENBD', metadata: { creditLimit: '16500' } });
+    seedAndLoad({ id: 'bank', balance: 2000, currency: 'AED' });
+    seedAndLoad({ id: 'other-bank', balance: 20000, currency: 'AED' });
+    const loan = await createCashAdvance(1500); // card 15000, bank 3500
+
+    // User pays the bill by transfer from another account — card back at limit.
+    // (This also auto-settles the loan now, so re-open it manually to recreate
+    // the legacy "loan survived the bill payment" state the guard must handle.)
+    await useTransactionStore.getState().processTransaction({
+      type: 'transfer', amount: 1500, sourceAccountId: 'other-bank', destinationAccountId: 'cc',
+    });
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(16500);
+    await useLoanStore.getState().updateLoan(loan.id, { remainingAmount: 1500, status: 'active' });
+
+    // The forced EMI-style repayment that used to inflate the card:
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'repayment',
+      amount: 929.17,
+      loanId: loan.id,
+      sourceAccountId: 'bank',
+    });
+
+    // Card must stay at its limit — no double credit.
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(16500);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(2570.83);
+    expect(tx.destinationAccountId).toBeNull();
+    expect(useLoanStore.getState().getLoan(loan.id)?.remainingAmount).toBe(570.83);
+  });
+
+  it('cash-advance repayment with partial headroom: clamps the credit and deletion reverses exactly it', async () => {
+    seedAndLoad({ id: 'cc', balance: 16000, currency: 'AED', type: 'credit_card', name: 'ENBD', metadata: { creditLimit: '16500' } });
+    seedAndLoad({ id: 'bank', balance: 5000, currency: 'AED' });
+    const loan = await createCashAdvance(1500); // card 14500, bank 6500
+
+    // Simulate external drift: someone paid the card down to 500 headroom.
+    await useAccountStore.getState().updateBalance('cc', 1500); // card back to 16000
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'repayment',
+      amount: 900,
+      loanId: loan.id,
+      sourceAccountId: 'bank',
+    });
+
+    // Only the 500 headroom lands on the card.
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(16500);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(5600);
+    expect(tx.destinationAccountId).toBe('cc');
+
+    await useTransactionStore.getState().deleteTransaction(tx.id);
+
+    // Reversal debits the card by the clamped 500, not the full 900.
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(16000);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(6500);
+    expect(useLoanStore.getState().getLoan(loan.id)?.remainingAmount).toBe(1500);
+  });
+
+  it('paying a card bill by transfer settles the cash-advance loans it funded', async () => {
+    seedAndLoad({ id: 'cc', balance: 16500, currency: 'AED', type: 'credit_card', name: 'ENBD', metadata: { creditLimit: '16500' } });
+    seedAndLoad({ id: 'bank', balance: 10000, currency: 'AED' });
+    const loan = await createCashAdvance(1500); // card 15000, bank 11500
+    seedEmis(loan.id, [500, 500, 500]);
+
+    await useTransactionStore.getState().processTransaction({
+      type: 'transfer',
+      amount: 1500,
+      sourceAccountId: 'bank',
+      destinationAccountId: 'cc',
+    });
+
+    // Money moved once (via the transfer)…
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(16500);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(10000);
+    // …and the loan record settled with it, EMIs reconciled, ledger row written.
+    const settled = useLoanStore.getState().getLoan(loan.id);
+    expect(settled?.remainingAmount).toBe(0);
+    expect(settled?.status).toBe('settled');
+    expect(useEmiStore.getState().schedules.every((e) => e.status === 'paid')).toBe(true);
+    const ledgerRows = useTransactionStore.getState().transactions.filter(
+      (t) => t.type === 'repayment' && t.relatedLoanId === loan.id && !t.sourceAccountId && !t.destinationAccountId,
+    );
+    expect(ledgerRows).toHaveLength(1);
+    expect(ledgerRows[0].amount).toBe(1500);
+  });
+
+  it('partial bill payment pays the loan down partially, oldest loan first', async () => {
+    seedAndLoad({ id: 'cc', balance: 16500, currency: 'AED', type: 'credit_card', name: 'ENBD', metadata: { creditLimit: '16500' } });
+    seedAndLoad({ id: 'bank', balance: 10000, currency: 'AED' });
+    const loan = await createCashAdvance(1500);
+
+    await useTransactionStore.getState().processTransaction({
+      type: 'transfer',
+      amount: 600,
+      sourceAccountId: 'bank',
+      destinationAccountId: 'cc',
+    });
+
+    const after = useLoanStore.getState().getLoan(loan.id);
+    expect(after?.remainingAmount).toBe(900);
+    expect(after?.status).toBe('active');
+  });
+
+  it('EMI overpay: a targeted instalment payment also covers the instalments the extra reaches', async () => {
+    seedAndLoad({ id: 'bank', balance: 5000, currency: 'AED' });
+    const loan = {
+      id: 'loan-emi', personName: 'Ali', personId: null, type: 'taken',
+      totalAmount: 900, remainingAmount: 900, currency: 'AED', status: 'active',
+      notes: '', createdAt: new Date().toISOString(),
+    };
+    seedLoan(loan);
+    useLoanStore.setState({ loans: [loan as never] });
+    seedEmis('loan-emi', [300, 300, 300]);
+
+    await useTransactionStore.getState().processTransaction({
+      type: 'repayment',
+      amount: 600, // double one instalment
+      loanId: 'loan-emi',
+      sourceAccountId: 'bank',
+      emiId: 'emi-1',
+    });
+
+    const statuses = useEmiStore.getState().getByLoan('loan-emi').map((e) => e.status);
+    expect(statuses).toEqual(['paid', 'paid', 'upcoming']);
+    expect(useLoanStore.getState().getLoan('loan-emi')?.remainingAmount).toBe(300);
+  });
+
+  it('deleting a repayment on an EMI loan works and un-marks the instalments it covered', async () => {
+    seedAndLoad({ id: 'bank', balance: 5000, currency: 'AED' });
+    const loan = {
+      id: 'loan-emi', personName: 'Ali', personId: null, type: 'taken',
+      totalAmount: 900, remainingAmount: 900, currency: 'AED', status: 'active',
+      notes: '', createdAt: new Date().toISOString(),
+    };
+    seedLoan(loan);
+    useLoanStore.setState({ loans: [loan as never] });
+    seedEmis('loan-emi', [300, 300, 300]);
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'repayment', amount: 600, loanId: 'loan-emi', sourceAccountId: 'bank',
+    });
+    expect(useEmiStore.getState().getByLoan('loan-emi').map((e) => e.status)).toEqual(['paid', 'paid', 'upcoming']);
+
+    // The old blanket guard threw here; deletion must now reverse everything.
+    await useTransactionStore.getState().deleteTransaction(tx.id);
+
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(5000);
+    expect(useLoanStore.getState().getLoan('loan-emi')?.remainingAmount).toBe(900);
+    expect(useEmiStore.getState().getByLoan('loan-emi').map((e) => e.status)).toEqual(['upcoming', 'upcoming', 'upcoming']);
+  });
+
+  it('deleteLoanCascade: removes the loan, its rows and schedule, restoring every balance', async () => {
+    seedAndLoad({ id: 'cc', balance: 16500, currency: 'AED', type: 'credit_card', name: 'ENBD', metadata: { creditLimit: '16500' } });
+    seedAndLoad({ id: 'bank', balance: 10000, currency: 'AED' });
+    const loan = await createCashAdvance(1500); // card 15000, bank 11500
+    seedEmis(loan.id, [500, 500, 500]);
+    await useTransactionStore.getState().processTransaction({
+      type: 'repayment', amount: 500, loanId: loan.id, sourceAccountId: 'bank', emiId: 'emi-1',
+    });
+    // card 15500, bank 11000, remaining 1000
+
+    await useTransactionStore.getState().deleteLoanCascade(loan.id);
+
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(16500);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(10000);
+    expect(useLoanStore.getState().getLoan(loan.id)).toBeUndefined();
+    expect(useTransactionStore.getState().transactions).toHaveLength(0);
+    expect(useEmiStore.getState().schedules).toHaveLength(0);
+  });
+
+  it('adjustment: sets the balance to the target and is reversible by delete', async () => {
+    seedAndLoad({ id: 'cc', balance: 27650, currency: 'AED', type: 'credit_card', name: 'ENBD', metadata: { creditLimit: '16500' } });
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'adjustment',
+      amount: 0, // engine derives the delta
+      accountId: 'cc',
+      targetBalance: 16500,
+    });
+
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(16500);
+    expect(tx.amount).toBe(11150);
+    expect(tx.sourceAccountId).toBe('cc');
+
+    await useTransactionStore.getState().deleteTransaction(tx.id);
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(27650);
   });
 });
 

@@ -46,14 +46,17 @@ export function getActionLabel(
       // Direction: prefer linked-loan type when available; fall back to
       // which slot carries the money. Repayment on a `given` loan flows
       // INTO the user (destinationAccountId set); on a `taken` loan it
-      // flows OUT (sourceAccountId set).
+      // flows OUT (sourceAccountId set). Check source FIRST: cash-advance
+      // repayments set BOTH slots (source = paying account, destination =
+      // the credited card), and the old destination-first check made those
+      // read backwards as "{card} paid you back" when the loan wasn't loaded.
       const dir: "received" | "paid" = opts.loan?.type === "given"
         ? "received"
         : opts.loan?.type === "taken"
           ? "paid"
-          : transaction.destinationAccountId
-            ? "received"
-            : "paid";
+          : transaction.sourceAccountId
+            ? "paid"
+            : "received";
       if (dir === "received") {
         return person
           ? t("action_they_paid_back").replace("{person}", person)
@@ -69,6 +72,8 @@ export function getActionLabel(
         : t("action_saved_goal_nogoal");
     case "opening_balance":
       return t("action_opening_balance");
+    case "adjustment":
+      return t("action_adjusted");
     case "investment_buy":
       return t("action_invested");
     case "investment_sell":

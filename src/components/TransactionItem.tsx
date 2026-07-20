@@ -1,6 +1,6 @@
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  HandCoins, Handshake, RotateCcw, Target, Landmark, Check, Paperclip, TrendingUp,
+  HandCoins, Handshake, RotateCcw, Target, Landmark, Check, Paperclip, TrendingUp, SlidersHorizontal,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { MouseEvent } from 'react';
@@ -25,6 +25,7 @@ const iconMap: Record<string, React.ElementType> = {
   repayment: RotateCcw,
   goal_contribution: Target,
   opening_balance: Landmark,
+  adjustment: SlidersHorizontal,
   investment_buy: TrendingUp,
   investment_sell: TrendingUp,
   investment_dividend: TrendingUp,
@@ -43,6 +44,7 @@ const defaultStyleMap: Record<string, { text: string; bg: string }> = {
   transfer:          { text: 'text-ink-600', bg: 'bg-cream-soft' },
   loan_taken:        { text: 'text-warn-600', bg: 'bg-warn-50' },
   opening_balance:   { text: 'text-info-600', bg: 'bg-info-50' },
+  adjustment:        { text: 'text-info-600', bg: 'bg-info-50' },
   // Investments: buy = money leaving (pay), sell/dividend = money arriving.
   investment_buy:      { text: 'text-pay-text', bg: 'bg-pay-50' },
   investment_sell:     { text: 'text-receive-text', bg: 'bg-receive-50' },
@@ -99,7 +101,7 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
     ? contextIsSource && !contextIsDestination
     : transaction.type === 'opening_balance'
       ? false
-      : transaction.type === 'repayment'
+      : transaction.type === 'repayment' || transaction.type === 'adjustment'
         ? !!transaction.sourceAccountId
         : ['expense', 'loan_given', 'transfer', 'goal_contribution', 'investment_buy'].includes(transaction.type);
 

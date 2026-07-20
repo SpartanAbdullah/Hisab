@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { db } from '../db';
 import { transactionsDb, emiSchedulesDb, loansDb } from '../lib/supabaseDb';
 import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
+import { addMonths, format } from 'date-fns';
 import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType, InvestmentTrade } from '../db';
 import { useAccountStore } from './accountStore';
 import { useLoanStore, type CreateLoanInput } from './loanStore';
@@ -11,8 +12,10 @@ import { useEmiStore } from './emiStore';
 import { useActivityStore } from './activityStore';
 import { useAppModeStore } from './appModeStore';
 import { useInvestmentStore } from './investmentStore';
-import { parseInternalNote } from '../lib/internalNotes';
-import { uncoveredToPaidIds } from '../lib/emiCoverage';
+import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
+import { statusSyncToPaid, uncoveredToPaidIds } from '../lib/emiCoverage';
+import { clampCardCredit } from '../lib/cardCredit';
+import { assertLinkedLoanDeleteAllowed } from '../lib/linkedLoanGuards';
 import { simulateTimeline, validateTradeInput } from '../lib/investmentMath';
 import { rateIsSane } from '../lib/conversionMath';
 import { MutationScope, runSafeMutation } from '../lib/mutationSafety';
@@ -79,6 +82,16 @@ interface OpeningBalanceInput extends BaseTransactionInput {
   destinationAccountId: string;
 }
 
+// Set an account's balance to a known-true figure via a visible, reversible
+// correction entry. The recovery hatch for drifted balances (e.g. a credit
+// card mangled by historical double-credits) — no fake income/expense needed.
+// `amount` on BaseTransactionInput is ignored; the engine derives the delta.
+interface AdjustmentInput extends BaseTransactionInput {
+  type: 'adjustment';
+  accountId: string;
+  targetBalance: number;
+}
+
 // Investment trades funded from (or credited to) a real account. The trade
 // row itself is created INSIDE the mutation scope (trackedAddInvestmentTrade)
 // so a failed money leg never leaves an orphan trade — loan_given precedent.
@@ -126,6 +139,7 @@ export type TransactionInput =
   | RepaymentInput
   | GoalContributionInput
   | OpeningBalanceInput
+  | AdjustmentInput
   | InvestmentBuyInput
   | InvestmentSellInput
   | InvestmentDividendInput;
@@ -145,6 +159,10 @@ interface TransactionState {
   // only receipt_path, never re-runs balance logic (unlike updateTransaction).
   setReceiptPath: (id: string, receiptPath: string | null) => Promise<void>;
   deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean; allowInvestment?: boolean }) => Promise<void>;
+  // Remove a loan AND everything attached to it (repayments, origin entry,
+  // EMI schedule), reversing every balance effect. The escape hatch for a
+  // mis-entered loan that guards used to lock forever.
+  deleteLoanCascade: (loanId: string) => Promise<void>;
   // Used by rollback paths that need to re-insert a transaction with its
   // original id and re-apply the matching balance delta. Not for general use.
   restoreTransaction: (snapshot: Transaction) => Promise<void>;
@@ -488,6 +506,41 @@ async function trackedDeleteEmisByLoan(scope: MutationScope, loanId: string): Pr
   });
 }
 
+// Rebuild a schedule over a new total: same instalment count and start date,
+// fresh 'upcoming' rows (only reachable when the loan has zero repayments).
+// Inverse is a whole-loan wipe — safe because it always runs BEFORE the
+// paired trackedDeleteEmisByLoan inverse re-adds the old rows (LIFO).
+async function trackedRegenerateEmis(
+  scope: MutationScope,
+  loanId: string,
+  totalAmount: number,
+  installments: number,
+  startDueDate: string,
+): Promise<void> {
+  const emiAmount = Math.round((totalAmount / installments) * 100) / 100;
+  const start = new Date(startDueDate);
+  const entries: EmiSchedule[] = [];
+  for (let i = 0; i < installments; i++) {
+    entries.push({
+      id: uuid(),
+      loanId,
+      installmentNumber: i + 1,
+      dueDate: format(addMonths(start, i), 'yyyy-MM-dd'),
+      amount: i === installments - 1
+        ? Math.round((totalAmount - emiAmount * (installments - 1)) * 100) / 100
+        : emiAmount,
+      status: 'upcoming' as EmiStatus,
+    });
+  }
+  await emiSchedulesDb.bulkAdd(entries);
+  useEmiStore.setState(s => ({ schedules: [...s.schedules, ...entries] }));
+  scope.register(async () => {
+    await emiSchedulesDb.deleteByLoan(loanId);
+    const ids = new Set(entries.map(e => e.id));
+    useEmiStore.setState(s => ({ schedules: s.schedules.filter(e => !ids.has(e.id)) }));
+  });
+}
+
 // After a mutation commits, we log to activity. Failures here must NOT surface
 // to the user — the money already moved and rolling it back now would be
 // worse. Swallow and console.error.
@@ -533,6 +586,68 @@ async function findCashAdvanceCardForLoan(loanId: string): Promise<string | null
   );
 
   return cashAdvance?.sourceAccountId ?? null;
+}
+
+// Reverse lookup of findCashAdvanceCardForLoan: the still-open taken loans a
+// given credit card funded, oldest first. Used by the pay-card-bill path so a
+// bill payment settles the debt's loan record instead of leaving it to be
+// paid a second time.
+async function findActiveCashAdvanceLoansForCard(cardId: string): Promise<Loan[]> {
+  let transactions = useTransactionStore.getState().transactions;
+  if (transactions.length === 0) {
+    transactions = await transactionsDb.getAll();
+    useTransactionStore.setState({ transactions });
+  }
+  const loanIds = new Set(
+    transactions
+      .filter((t) => t.type === 'loan_taken' && t.sourceAccountId === cardId && t.relatedLoanId)
+      .map((t) => t.relatedLoanId as string),
+  );
+  return useLoanStore.getState().loans
+    .filter((l) => loanIds.has(l.id) && l.type === 'taken' && l.status === 'active' && l.remainingAmount > 0.005)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+// Two-way EMI reconcile: sync the schedule's binary statuses to the loan's
+// CURRENT paid-down amount — marking newly covered instalments paid AND
+// un-marking paid instalments the money no longer backs (repayment deleted).
+// Must run AFTER the loan row inside the scope reflects its final remaining.
+async function trackedSyncEmisToLoan(scope: MutationScope, loanId: string): Promise<void> {
+  const loan = useLoanStore.getState().loans.find(l => l.id === loanId);
+  if (!loan) return;
+  const schedules = useEmiStore.getState().schedules.filter(e => e.loanId === loanId);
+  if (schedules.length === 0) return;
+  const paid = Math.round((loan.totalAmount - loan.remainingAmount) * 100) / 100;
+  const { toPaid, toUpcoming } = statusSyncToPaid(schedules, paid);
+  if (toPaid.length === 0 && toUpcoming.length === 0) return;
+  const targets = new Map<string, EmiStatus>();
+  for (const id of toPaid) targets.set(id, 'paid');
+  for (const id of toUpcoming) targets.set(id, 'upcoming');
+  const before = schedules
+    .filter(e => targets.has(e.id))
+    .map(e => ({ id: e.id, status: e.status }));
+  await Promise.all([...targets.entries()].map(([id, status]) => emiSchedulesDb.update(id, { status })));
+  useEmiStore.setState(state => ({
+    schedules: state.schedules.map(e => (targets.has(e.id) ? { ...e, status: targets.get(e.id)! } : e)),
+  }));
+  scope.register(async () => {
+    await Promise.all(before.map(s => emiSchedulesDb.update(s.id, { status: s.status })));
+    useEmiStore.setState(state => ({
+      schedules: state.schedules.map(e => {
+        const prev = before.find(b => b.id === e.id);
+        return prev ? { ...e, status: prev.status } : e;
+      }),
+    }));
+  });
+}
+
+// The card credit a repayment row actually applied — the clamped figure from
+// its internal note when present, else the full row amount. Reversals must
+// debit exactly this.
+function cardCreditedAmountOf(transaction: Transaction): number {
+  const meta = parseInternalNote(transaction.notes).meta;
+  const stamped = meta.cardCreditedAmount ? parseFloat(meta.cardCreditedAmount) : NaN;
+  return Number.isFinite(stamped) ? stamped : transaction.amount;
 }
 
 
@@ -590,6 +705,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         let relatedInvestmentId: string | null = null;
         let conversionRate: number | null = null;
         let description = '';
+        // Set when a branch needs to stamp internal meta into the row's notes
+        // (e.g. a clamped card credit); wins over input.notes at build time.
+        let notesOverride: string | null = null;
 
         switch (input.type) {
           case 'income': {
@@ -640,6 +758,56 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             } else {
               await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
               description = `Moved ${currency} ${input.amount}: ${src.name} → ${dest.name}`;
+            }
+
+            // Paying a card bill IS paying back its cash advances — the same
+            // debt lives in two records (card balance + loan). Apply the
+            // credited amount to still-open cash-advance loans this card funded
+            // (oldest first) as ledger-only repayments: the money already moved
+            // via the transfer legs above, so these rows carry no account legs.
+            // Without this, a paid-off bill left the loan open and forced the
+            // user to "pay" it a second time (the double-credit disaster).
+            if (dest.type === 'credit_card') {
+              let pool = src.currency !== dest.currency
+                ? Math.round(input.amount * (conversionRate ?? 0) * 100) / 100
+                : input.amount;
+              const fundedLoans = await findActiveCashAdvanceLoansForCard(dest.id);
+              let settledCount = 0;
+              for (const fundedLoan of fundedLoans) {
+                if (pool <= 0.005) break;
+                if (fundedLoan.currency !== dest.currency) continue;
+                const applied = Math.round(Math.min(fundedLoan.remainingAmount, pool) * 100) / 100;
+                if (applied <= 0.005) continue;
+                await trackedApplyRepayment(scope, fundedLoan.id, applied);
+                await trackedMarkCoveredEmisPaid(scope, fundedLoan.id);
+                const record: Transaction = {
+                  id: uuid(),
+                  type: 'repayment',
+                  amount: applied,
+                  currency: fundedLoan.currency,
+                  sourceAccountId: null,
+                  destinationAccountId: null,
+                  relatedPerson: fundedLoan.personName,
+                  personId: fundedLoan.personId ?? null,
+                  relatedLoanId: fundedLoan.id,
+                  relatedGoalId: null,
+                  relatedInvestmentId: null,
+                  conversionRate: null,
+                  category: '',
+                  notes: buildInternalNote('Covered by card bill payment', { linkedTransactionId: transactionId }),
+                  createdAt: input.createdAt ?? new Date().toISOString(),
+                  isReconciled: false,
+                  reconciledAt: null,
+                  reconciledBy: null,
+                };
+                record.updatedAt = record.createdAt;
+                await trackedAddTransaction(scope, record);
+                pool = Math.round((pool - applied) * 100) / 100;
+                settledCount += 1;
+              }
+              if (settledCount > 0) {
+                description += ` · settled ${settledCount} cash-advance record${settledCount > 1 ? 's' : ''}`;
+              }
             }
             break;
           }
@@ -745,6 +913,16 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 throw new Error('Cash advance card currency must match the loan currency');
               }
 
+              // Card credit is CLAMPED to the card's remaining headroom. If the
+              // bill was already paid another way (a transfer), headroom is 0 and
+              // the credit leg is skipped entirely — the same debt must never be
+              // credited back twice (the Available-above-Limit bug). When the
+              // clamp bites partially, the actual credited figure is stamped into
+              // the row's internal note so deletion reverses exactly that.
+              const cardCredit = cashAdvanceCard
+                ? clampCardCredit(cashAdvanceCard, input.amount)
+                : { credited: 0, skipped: 0 };
+
               if (src.currency !== loan.currency) {
                 if (!input.conversionRate) throw new Error('Conversion rate required — different currencies');
                 conversionRate = input.conversionRate;
@@ -752,10 +930,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 checkBalanceForTransaction(src, srcDeduct, input.type);
                 sourceAccountId = input.sourceAccountId;
                 await trackedBalanceDelta(scope, input.sourceAccountId, -srcDeduct);
-                if (cashAdvanceCard) {
+                if (cashAdvanceCard && cardCredit.credited > 0) {
                   destinationAccountId = cashAdvanceCard.id;
-                  await trackedBalanceDelta(scope, cashAdvanceCard.id, input.amount);
-                  description = `Repaid ${loan.currency} ${input.amount} to ${cashAdvanceCard.name} from ${src.name} (deducted ${src.currency} ${srcDeduct}, rate: ${input.conversionRate})`;
+                  await trackedBalanceDelta(scope, cashAdvanceCard.id, cardCredit.credited);
+                  description = `Repaid ${loan.currency} ${cardCredit.credited} to ${cashAdvanceCard.name} from ${src.name} (deducted ${src.currency} ${srcDeduct}, rate: ${input.conversionRate})`;
+                } else if (cashAdvanceCard) {
+                  description = `Repaid ${loan.currency} ${input.amount} on the ${cashAdvanceCard.name} cash advance from ${src.name} — card bill already covered (rate: ${input.conversionRate})`;
                 } else {
                   description = `Repaid ${loan.currency} ${input.amount} (deducted ${src.currency} ${srcDeduct}) to ${loan.personName} (rate: ${input.conversionRate})`;
                 }
@@ -763,19 +943,31 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 checkBalanceForTransaction(src, input.amount, input.type);
                 sourceAccountId = input.sourceAccountId;
                 await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
-                if (cashAdvanceCard) {
+                if (cashAdvanceCard && cardCredit.credited > 0) {
                   destinationAccountId = cashAdvanceCard.id;
-                  await trackedBalanceDelta(scope, cashAdvanceCard.id, input.amount);
-                  description = `Repaid ${currency} ${input.amount} to ${cashAdvanceCard.name} from ${src.name}`;
+                  await trackedBalanceDelta(scope, cashAdvanceCard.id, cardCredit.credited);
+                  description = `Repaid ${currency} ${cardCredit.credited} to ${cashAdvanceCard.name} from ${src.name}`;
+                } else if (cashAdvanceCard) {
+                  description = `Repaid ${currency} ${input.amount} on the ${cashAdvanceCard.name} cash advance from ${src.name} — card bill already covered`;
                 } else {
                   description = `Repaid ${currency} ${input.amount} to ${loan.personName}`;
                 }
+              }
+
+              if (cashAdvanceCard && cardCredit.credited > 0 && cardCredit.skipped > 0) {
+                notesOverride = buildInternalNote(input.notes ?? '', {
+                  cardCreditedAmount: String(cardCredit.credited),
+                });
               }
             }
 
             await trackedApplyRepayment(scope, input.loanId, input.amount);
             if (input.emiId) {
               await trackedMarkEmiPaid(scope, input.emiId);
+              // Overpaying against one instalment must also cover the later
+              // instalments the extra money reaches — the amount is editable
+              // now, so a targeted payment is no longer capped at one EMI.
+              await trackedMarkCoveredEmisPaid(scope, input.loanId);
             } else {
               // No specific instalment was targeted (generic / partial repayment,
               // multi-loan allocation, full payoff). Reconcile the schedule to the
@@ -845,6 +1037,22 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             destinationAccountId = input.destinationAccountId;
             await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
             description = `Opening Balance — ${currency} ${input.amount} in ${destAccount.name}`;
+            break;
+          }
+
+          case 'adjustment': {
+            const account = accountStore.getAccount(input.accountId);
+            if (!account) throw new Error('Account not found');
+            const delta = Math.round((input.targetBalance - account.balance) * 100) / 100;
+            if (Math.abs(delta) < 0.005) throw new Error('Balance is already exactly that — nothing to correct');
+            currency = account.currency;
+            amount = Math.abs(delta);
+            // Direction is carried by which leg the account sits on, so the
+            // stored amount stays positive like every other row.
+            if (delta > 0) destinationAccountId = input.accountId;
+            else sourceAccountId = input.accountId;
+            await trackedBalanceDelta(scope, input.accountId, delta);
+            description = `Balance corrected — ${account.name} set to ${currency} ${input.targetBalance}`;
             break;
           }
 
@@ -1011,7 +1219,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           relatedInvestmentId,
           conversionRate,
           category: input.category ?? (relatedInvestmentId ? 'Investments' : ''),
-          notes: input.notes ?? '',
+          notes: notesOverride ?? input.notes ?? '',
           createdAt: input.createdAt ?? new Date().toISOString(),
           isReconciled: false,
           reconciledAt: null,
@@ -1112,9 +1320,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             if (hasRepayments) {
               throw new Error('This loan already has repayments. Remove those repayments first.');
             }
-            if (emiStore.getByLoan(relatedLoanId).length > 0) {
-              throw new Error('This loan already has an EMI schedule. Delete and recreate it after editing.');
-            }
+            // A schedule no longer blocks the edit — it is regenerated over the
+            // new amount below (same instalment count and start date).
+            const priorSchedule = emiStore.getByLoan(relatedLoanId);
 
             const previousSource = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
             const nextSource = accountStore.getAccount(loanGivenInput.sourceAccountId);
@@ -1139,6 +1347,17 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               status: 'active',
               notes: loanGivenInput.notes ?? '',
             });
+
+            if (priorSchedule.length > 0) {
+              await trackedDeleteEmisByLoan(scope, relatedLoanId);
+              await trackedRegenerateEmis(
+                scope,
+                relatedLoanId,
+                loanGivenInput.amount,
+                priorSchedule.length,
+                priorSchedule[0].dueDate,
+              );
+            }
 
             updated = {
               ...existing,
@@ -1166,9 +1385,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             if (hasRepayments) {
               throw new Error('This loan already has repayments. Remove those repayments first.');
             }
-            if (emiStore.getByLoan(relatedLoanId).length > 0) {
-              throw new Error('This loan already has an EMI schedule. Delete and recreate it after editing.');
-            }
+            // A schedule no longer blocks the edit — it is regenerated over the
+            // new amount below (same instalment count and start date).
+            const priorSchedule = emiStore.getByLoan(relatedLoanId);
 
             const previousDestination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
             if (!previousDestination) throw new Error('Destination account not found');
@@ -1221,6 +1440,17 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               status: 'active',
               notes: loanTakenInput.notes ?? '',
             });
+
+            if (priorSchedule.length > 0) {
+              await trackedDeleteEmisByLoan(scope, relatedLoanId);
+              await trackedRegenerateEmis(
+                scope,
+                relatedLoanId,
+                loanTakenInput.amount,
+                priorSchedule.length,
+                priorSchedule[0].dueDate,
+              );
+            }
 
             updated = {
               ...existing,
@@ -1398,9 +1628,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           if (!relatedLoanId) throw new Error('Loan record not found for this repayment');
           const loan = useLoanStore.getState().getLoan(relatedLoanId);
           if (!loan) throw new Error('Loan not found');
-          if (useEmiStore.getState().getByLoan(relatedLoanId).length > 0) {
-            throw new Error('This repayment is linked to an EMI schedule. Reverse it from the loan details screen after reviewing the installment history.');
-          }
           // Ledger-only records (written by loanStore.applyRepayment) carry no
           // account legs — there is no balance to reverse, only the loan.
           const isLedgerRecord = !existing.sourceAccountId && !existing.destinationAccountId;
@@ -1424,14 +1651,35 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             if (existing.destinationAccountId) {
               const cashAdvanceCard = accountStore.getAccount(existing.destinationAccountId);
               if (!cashAdvanceCard) throw new Error('Cash advance card not found');
-              checkBalance(cashAdvanceCard, existing.amount);
-              await trackedBalanceDelta(scope, cashAdvanceCard.id, -existing.amount);
+              // Reverse exactly what was credited — clamped repayments stamp
+              // the true figure into their internal note.
+              const creditedBack = cardCreditedAmountOf(existing);
+              checkBalance(cashAdvanceCard, creditedBack);
+              await trackedBalanceDelta(scope, cashAdvanceCard.id, -creditedBack);
             }
           }
           await trackedUpdateLoan(scope, relatedLoanId, {
             remainingAmount: Math.min(loan.totalAmount, Math.round((loan.remainingAmount + existing.amount) * 100) / 100),
             status: 'active',
           });
+          // The schedule must follow the money: un-mark instalments this
+          // repayment had covered (and re-mark any still covered). This is the
+          // reverse flow the old blanket guard ("linked to an EMI schedule")
+          // claimed existed elsewhere but never did — repayments on EMI loans
+          // are now deletable, which also un-deadlocks loan edit/delete.
+          await trackedSyncEmisToLoan(scope, relatedLoanId);
+          break;
+        }
+
+        case 'adjustment': {
+          const adjustedId = existing.destinationAccountId ?? existing.sourceAccountId;
+          const adjusted = adjustedId ? accountStore.getAccount(adjustedId) : undefined;
+          if (!adjusted) throw new Error('Account not found');
+          // destination leg = balance was raised → reverse lowers it (and may
+          // need the money to still be there); source leg = the opposite.
+          const delta = existing.destinationAccountId ? -existing.amount : existing.amount;
+          if (delta < 0) checkBalance(adjusted, existing.amount);
+          await trackedBalanceDelta(scope, adjusted.id, delta);
           break;
         }
 
@@ -1498,6 +1746,88 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       `Deleted ${existing.type.replace(/_/g, ' ')} entry`,
       existing.id,
       'transaction',
+    );
+  },
+
+  deleteLoanCascade: async (loanId) => {
+    await ensureSupportingStoresLoaded();
+    if (get().transactions.length === 0) {
+      const transactions = await transactionsDb.getAll();
+      set({ transactions });
+    }
+
+    const loan = useLoanStore.getState().getLoan(loanId);
+    if (!loan) throw new Error('Loan not found');
+    // Linked (cross-user) active loans must not vanish from one side only.
+    assertLinkedLoanDeleteAllowed(loan);
+
+    const related = get().transactions.filter((t) => t.relatedLoanId === loanId);
+    const repayments = related.filter((t) => t.type === 'repayment');
+    const origins = related.filter((t) => t.type === 'loan_given' || t.type === 'loan_taken');
+
+    await runSafeMutation(async (scope) => {
+      const accountStore = useAccountStore.getState();
+
+      // 1) Reverse every repayment's balance legs and remove the rows. The
+      //    per-row loan restore is skipped — the loan itself dies at the end.
+      for (const r of repayments) {
+        const isLedgerRecord = !r.sourceAccountId && !r.destinationAccountId;
+        if (!isLedgerRecord && loan.type === 'given') {
+          const destination = r.destinationAccountId ? accountStore.getAccount(r.destinationAccountId) : undefined;
+          if (!destination) throw new Error('Destination account not found');
+          const credited = r.conversionRate
+            ? Math.round(r.amount * r.conversionRate * 100) / 100
+            : r.amount;
+          checkBalance(destination, credited);
+          await trackedBalanceDelta(scope, destination.id, -credited);
+        } else if (!isLedgerRecord) {
+          const source = r.sourceAccountId ? accountStore.getAccount(r.sourceAccountId) : undefined;
+          if (!source) throw new Error('Source account not found');
+          const deducted = r.conversionRate
+            ? Math.round((r.amount / r.conversionRate) * 100) / 100
+            : r.amount;
+          await trackedBalanceDelta(scope, source.id, deducted);
+          if (r.destinationAccountId) {
+            const cashAdvanceCard = accountStore.getAccount(r.destinationAccountId);
+            if (!cashAdvanceCard) throw new Error('Cash advance card not found');
+            const creditedBack = cardCreditedAmountOf(r);
+            checkBalance(cashAdvanceCard, creditedBack);
+            await trackedBalanceDelta(scope, cashAdvanceCard.id, -creditedBack);
+          }
+        }
+        await trackedDeleteTransaction(scope, r);
+      }
+
+      // 2) Reverse the principal legs of the origin entry (if any — ledger-only
+      //    loans have none) and remove it. Mirrors the single-delete branches.
+      for (const o of origins) {
+        if (o.type === 'loan_given') {
+          const source = o.sourceAccountId ? accountStore.getAccount(o.sourceAccountId) : undefined;
+          if (!source) throw new Error('Source account not found');
+          await trackedBalanceDelta(scope, source.id, o.amount);
+        } else {
+          const destination = o.destinationAccountId ? accountStore.getAccount(o.destinationAccountId) : undefined;
+          if (!destination) throw new Error('Destination account not found');
+          await trackedBalanceDelta(scope, destination.id, -o.amount);
+          if (o.sourceAccountId) {
+            const cashAdvanceCard = accountStore.getAccount(o.sourceAccountId);
+            if (!cashAdvanceCard) throw new Error('Cash advance card not found');
+            await trackedBalanceDelta(scope, cashAdvanceCard.id, o.amount);
+          }
+        }
+        await trackedDeleteTransaction(scope, o);
+      }
+
+      // 3) Schedule and loan row last, so LIFO rollback restores them first.
+      await trackedDeleteEmisByLoan(scope, loanId);
+      await trackedDeleteLoan(scope, loanId);
+    }, refetchMoneyStores);
+
+    await logActivitySafe(
+      'transaction_deleted',
+      `Deleted loan with ${loan.personName} (${loan.currency} ${loan.totalAmount}) — ${repayments.length + origins.length} record(s) removed, balances restored`,
+      loanId,
+      'loan',
     );
   },
 

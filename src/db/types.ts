@@ -24,6 +24,7 @@ export type TransactionType =
   | 'transfer'
   | 'goal_contribution'
   | 'opening_balance'
+  | 'adjustment'
   | 'investment_buy'
   | 'investment_sell'
   | 'investment_dividend';

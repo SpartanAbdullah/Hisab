@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { format, isPast, differenceInDays } from 'date-fns';
-import { AlertCircle, Bell, CheckCircle, Clock, RotateCcw, ChevronRight, Handshake, FileText } from 'lucide-react';
+import { AlertCircle, Bell, CheckCircle, Clock, CreditCard, MoreVertical, Pencil, RotateCcw, ChevronRight, Handshake, FileText, Trash2 } from 'lucide-react';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
+import { Modal } from '../components/Modal';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { usePersonStore } from '../stores/personStore';
@@ -33,9 +34,10 @@ import type { EmiSchedule, Transaction, SettlementRequest } from '../db';
 
 export function LoanDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { loans, loadLoans } = useLoanStore();
+  const navigate = useNavigate();
+  const { loans, loadLoans, applyRepayment, updateLoan } = useLoanStore();
   const { schedules, loadSchedules, reconcileCovered } = useEmiStore();
-  const { loadTransactions, getByLoan } = useTransactionStore();
+  const { loadTransactions, getByLoan, deleteLoanCascade } = useTransactionStore();
   const { loadAccounts, accounts } = useAccountStore();
   const linkedRequests = useLinkedRequestStore((s) => s.requests);
   const settlementRequests = useSettlementRequestStore((s) => s.requests);
@@ -46,6 +48,13 @@ export function LoanDetailPage() {
   const toast = useToast();
   const [cancellingSettlementId, setCancellingSettlementId] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showEditDetails, setShowEditDetails] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [settlingNoMoney, setSettlingNoMoney] = useState(false);
+  const [deletingLoan, setDeletingLoan] = useState(false);
   const [showRepayment, setShowRepayment] = useState(false);
   const [showSettleLinked, setShowSettleLinked] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
@@ -95,6 +104,14 @@ export function LoanDetailPage() {
 
   const displayName = resolvePersonName({ personId: loan.personId, fallback: loan.personName });
   const loanTransactions = getByLoan(loan.id);
+
+  // Card-funded (cash advance) loans: the "counterparty" is the user's own
+  // credit card, not a person — human-only affordances (WhatsApp reminders,
+  // statements, person avatar) must not render for a piece of plastic.
+  const cashAdvanceTx = loanTransactions.find(
+    (t) => t.type === 'loan_taken' && Boolean(t.sourceAccountId),
+  );
+  const isCardLoan = Boolean(cashAdvanceTx);
 
   const linkedPair = linkedRequests.find(
     (r) => r.status === 'accepted' && (r.requesterLoanId === loan.id || r.responderLoanId === loan.id),
@@ -147,11 +164,81 @@ export function LoanDetailPage() {
     void loadAccounts();
   };
 
+  // Money-free settle: the remaining balance is recorded as paid WITHOUT any
+  // account leg — for debts cleared outside the app or written off. Kills the
+  // fake-entry workaround users invented to close a loan.
+  const handleSettleNoMoney = async () => {
+    const ok = await confirmDestructive({
+      title: t('loan_settle_nomoney_title'),
+      description: t('loan_settle_nomoney_body').replace('{amount}', formatMoney(loan.remainingAmount, loan.currency)),
+      confirmLabel: t('loan_settle_nomoney_cta'),
+      cancelLabel: t('not_now'),
+      tone: 'warning',
+    });
+    if (!ok) return;
+    setSettlingNoMoney(true);
+    try {
+      await applyRepayment(loan.id, loan.remainingAmount, t('loan_settle_nomoney_note'));
+      toast.show({ type: 'success', title: t('loan_settle_nomoney_done') });
+      refreshLoanDetail();
+    } catch (err) {
+      toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
+    } finally {
+      setSettlingNoMoney(false);
+    }
+  };
+
+  // Cascade delete: loan + repayments + origin entry + EMI schedule, with
+  // every balance effect reversed. The escape hatch for a mis-entered loan.
+  const handleDeleteLoan = async () => {
+    const recordCount = loanTransactions.length;
+    const ok = await confirmDestructive({
+      title: t('loan_delete_title'),
+      description: t('loan_delete_body').replace('{n}', String(recordCount)),
+      confirmLabel: t('loan_delete_cta'),
+      cancelLabel: t('not_now'),
+      tone: 'destructive',
+    });
+    if (!ok) return;
+    setDeletingLoan(true);
+    try {
+      await deleteLoanCascade(loan.id);
+      toast.show({ type: 'success', title: t('loan_deleted') });
+      navigate('/loans');
+    } catch (err) {
+      toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
+    } finally {
+      setDeletingLoan(false);
+    }
+  };
+
+  const handleSaveDetails = async () => {
+    setSavingEdit(true);
+    try {
+      await updateLoan(loan.id, {
+        ...(loan.personId ? {} : { personName: editName.trim() || loan.personName }),
+        notes: editNotes.trim(),
+      });
+      toast.show({ type: 'success', title: t('loan_edit_saved') });
+      setShowEditDetails(false);
+      refreshLoanDetail();
+    } catch (err) {
+      toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   // Post-repayment nudge. On a loan the user GAVE, money came back to them, so
   // default to a "payment received" receipt for the payer; on a loan they TOOK
   // (they paid) keep the statement-only nudge. Read the freshest remaining from
   // the store since the repayment has already committed by this point.
   const handleRepaid = (info?: { amount: number }) => {
+    // A credit card doesn't get sent statements or receipts — skip the nudge.
+    if (isCardLoan) {
+      refreshLoanDetail();
+      return;
+    }
     const name = displayName || loan.personName;
     if (loan.type === 'given') {
       const remaining = useLoanStore.getState().loans.find((l) => l.id === loan.id)?.remainingAmount ?? loan.remainingAmount;
@@ -224,7 +311,7 @@ export function LoanDetailPage() {
           back
           action={
             <div className="flex items-center gap-2">
-              {loan.status === 'active' && loan.remainingAmount > 0 && (
+              {loan.status === 'active' && loan.remainingAmount > 0 && !isCardLoan && (
                 <button
                   onClick={() => setShowReminder(true)}
                   className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[11.5px] font-semibold text-white transition-colors"
@@ -233,15 +320,67 @@ export function LoanDetailPage() {
                   <Bell size={12} strokeWidth={2.4} /> {t('reminder_cta')}
                 </button>
               )}
+              <div className="relative">
+                <button
+                  onClick={() => setShowMenu(!showMenu)}
+                  className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+                  aria-label="More"
+                >
+                  <MoreVertical size={15} className="text-white" />
+                </button>
+                {showMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                    <div className="absolute right-0 top-11 z-50 bg-cream-card rounded-2xl shadow-xl shadow-navy-900/15 border border-cream-border py-1.5 w-56 animate-fade-in">
+                      <button
+                        onClick={() => {
+                          setShowMenu(false);
+                          setEditName(displayName || loan.personName);
+                          setEditNotes(loan.notes ?? '');
+                          setShowEditDetails(true);
+                        }}
+                        className="w-full px-4 py-2.5 flex items-center gap-2.5 text-[13px] font-medium text-ink-800 active:bg-cream-soft"
+                      >
+                        <Pencil size={14} className="text-ink-500" /> {t('loan_edit_details')}
+                      </button>
+                      {loan.status === 'active' && loan.remainingAmount > 0 && !isLinkedLoan && (
+                        <button
+                          onClick={() => { setShowMenu(false); void handleSettleNoMoney(); }}
+                          disabled={settlingNoMoney}
+                          className="w-full px-4 py-2.5 flex items-center gap-2.5 text-[13px] font-medium text-ink-800 active:bg-cream-soft disabled:opacity-50"
+                        >
+                          <CheckCircle size={14} className="text-receive-text" /> {t('loan_settle_nomoney')}
+                        </button>
+                      )}
+                      {!(isLinkedLoan && loan.status === 'active') && (
+                        <button
+                          onClick={() => { setShowMenu(false); void handleDeleteLoan(); }}
+                          disabled={deletingLoan}
+                          className="w-full px-4 py-2.5 flex items-center gap-2.5 text-[13px] font-medium text-pay-text active:bg-pay-50 disabled:opacity-50"
+                        >
+                          <Trash2 size={14} /> {t('loan_delete')}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
               <LanguageToggle />
             </div>
           }
         />
 
         <div className="px-5 pb-7">
-          {/* Person identity */}
+          {/* Identity: a person's avatar — or a card face for cash advances,
+              which have no human counterparty. */}
           <div className="flex items-center gap-3 mb-5">
-            <UserAvatar name={displayName || loan.personName} size={56} />
+            {isCardLoan ? (
+              <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                <CreditCard size={24} className="text-white/85" strokeWidth={1.8} />
+              </div>
+            ) : (
+              <UserAvatar name={displayName || loan.personName} size={56} />
+            )}
             <div className="min-w-0">
               <p className="text-white text-[17px] font-semibold tracking-tight truncate">
                 {displayName || loan.personName}
@@ -249,6 +388,7 @@ export function LoanDetailPage() {
               <p className="text-[11px] text-white/55 mt-0.5">
                 since {format(new Date(loan.createdAt), 'd MMM yyyy')}
                 {isLinkedLoan && <span className="ml-1.5 inline-flex items-center text-[9.5px] font-semibold uppercase tracking-[0.1em] text-accent-500/90 bg-accent-500/15 rounded-full px-1.5 py-0.5">linked</span>}
+                {isCardLoan && <span className="ml-1.5 inline-flex items-center gap-1 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-warn-600 bg-warn-50 rounded-full px-2 py-0.5">{t('ca_pill')}</span>}
               </p>
             </div>
           </div>
@@ -567,7 +707,7 @@ export function LoanDetailPage() {
             <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
               {t('tx_history')}
             </h2>
-            {(loanTransactions.length > 0 || loan.remainingAmount > 0.005) && (
+            {(loanTransactions.length > 0 || loan.remainingAmount > 0.005) && !isCardLoan && (
               <button
                 type="button"
                 onClick={() => { setStatementIntro(undefined); setShowStatement(true); }}
@@ -619,11 +759,43 @@ export function LoanDetailPage() {
           loan={loan}
           emiId={selectedEmi.id}
           presetAmount={Math.min(selectedEmi.amount, loan.remainingAmount)}
-          lockAmount
           installmentNumber={selectedEmi.installmentNumber}
           onRepaid={handleRepaid}
         />
       )}
+      <Modal open={showEditDetails} onClose={() => setShowEditDetails(false)} title={t('loan_edit_details')}
+        footer={
+          <button onClick={handleSaveDetails} disabled={savingEdit} className="cta-primary">
+            {savingEdit ? '…' : t('save')}
+          </button>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="form-label">{t('loan_edit_name')}</label>
+            {loan.personId ? (
+              <p className="text-[12px] text-ink-500 bg-cream-soft border border-cream-hairline rounded-2xl p-3 leading-relaxed">
+                {t('loan_edit_name_locked')}
+              </p>
+            ) : (
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="input-field"
+              />
+            )}
+          </div>
+          <div>
+            <label className="form-label">{t('quick_note')}</label>
+            <input
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              placeholder="Optional..."
+              className="input-field"
+            />
+          </div>
+        </div>
+      </Modal>
       <EditTransactionModal
         open={!!selectedTransaction}
         transaction={selectedTransaction}

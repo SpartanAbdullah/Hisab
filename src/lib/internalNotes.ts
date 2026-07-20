@@ -8,6 +8,10 @@ export interface InternalNoteMeta {
   groupName?: string;
   linkedTransactionId?: string;
   paidFromAccountId?: string;
+  // Cash-advance repayments: the amount ACTUALLY credited to the funding card
+  // when the credit was clamped below the repayment amount (card near/at its
+  // limit). Deletion reverses exactly this, not the row's full amount.
+  cardCreditedAmount?: string;
 }
 
 export interface ParsedInternalNote {

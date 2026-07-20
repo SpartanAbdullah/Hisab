@@ -148,6 +148,20 @@ export function QuickEntry({
     if (open) void loadGroups().catch(() => {});
   }, [open, loadGroups]);
 
+  // Same safety-net for accounts and loans. QuickEntry can open over a page
+  // that never loaded them (an unmatched URL, a cold deep-link) — the gate
+  // used to read an empty store and lie: "You need an account first" with 13
+  // accounts existing. Cache-first loads make this cheap on a warm cache.
+  useEffect(() => {
+    if (!open) return;
+    const { accounts: loadedAccounts, loadAccounts } = useAccountStore.getState();
+    if (loadedAccounts.length === 0) void loadAccounts().catch(() => {});
+    const { loans: loadedLoans, loadLoans } = useLoanStore.getState();
+    if (loadedLoans.length === 0) void loadLoans().catch(() => {});
+    const { schedules, loadSchedules } = useEmiStore.getState();
+    if (schedules.length === 0) void loadSchedules().catch(() => {});
+  }, [open]);
+
   // FIX 4: Rename Transfer to Move
   // Eighth tile (`group_expense`) is a sentinel — not a TransactionType.
   // Picking it routes Step 2 to a group picker instead of the normal
@@ -1076,8 +1090,10 @@ export function QuickEntry({
                 const Icon = tx.icon;
                 const isActive = intent === tx.value;
                 // Tone-map by transaction semantics: receive (green) for inflows,
-                // pay (coral) for outflows, accent (violet) for goals, neutral
-                // (ink/cream) for transfer, warn for loan_taken.
+                // pay (coral) for outflows, accent (violet) for people/groups,
+                // warn (amber) for cash advance — card debt deserves its own
+                // colour, not the neutral cream that made it look like Move —
+                // and neutral (ink/cream) for transfer.
                 const tone =
                   tx.value === 'income'
                     ? 'receive'
@@ -1085,6 +1101,8 @@ export function QuickEntry({
                     ? 'pay'
                     : tx.value === 'group_expense' || tx.value === 'person_money'
                     ? 'accent'
+                    : tx.value === 'cash_advance'
+                    ? 'warn'
                     : 'neutral';
                 const inactiveBg = {
                   receive: 'bg-receive-50',
@@ -1198,23 +1216,24 @@ export function QuickEntry({
         {/* Step 2: Details */}
         {step === 2 && (
           <div className="space-y-4 animate-fade-in">
-            {/* Summary */}
-            <div className="bg-cream-card border border-cream-border rounded-2xl p-3.5 flex items-center justify-between">
+            {/* Summary. Cash advance wears its warn identity here too — the
+                same amber as its intent tile, so the mode is unmistakable. */}
+            <div className={`rounded-2xl p-3.5 flex items-center justify-between border ${cashAdvance ? 'bg-warn-50 border-warn-100' : 'bg-cream-card border-cream-border'}`}>
               <div className="flex items-center gap-2.5">
                 {(() => {
                   const Icon = cashAdvance ? CreditCard : TX_TYPES.find(tx => tx.value === type)?.icon;
                   if (!Icon) return null;
                   return (
-                    <div className="w-8 h-8 rounded-xl bg-cream-soft border border-cream-hairline flex items-center justify-center">
-                      <Icon size={14} className="text-ink-600" />
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center border ${cashAdvance ? 'bg-warn-100/60 border-warn-100 text-warn-600' : 'bg-cream-soft border-cream-hairline text-ink-600'}`}>
+                      <Icon size={14} />
                     </div>
                   );
                 })()}
-                <span className="text-[13px] font-semibold text-ink-900 tracking-tight">
+                <span className={`text-[13px] font-semibold tracking-tight ${cashAdvance ? 'text-warn-700' : 'text-ink-900'}`}>
                   {cashAdvance ? t('intent_cash_advance') : TX_TYPES.find(tx => tx.value === type)?.label}
                 </span>
               </div>
-              <span className="font-semibold text-[15px] tabular-nums text-ink-900">{parseFloat(amount).toLocaleString()}</span>
+              <span className={`font-semibold text-[15px] tabular-nums ${cashAdvance ? 'text-warn-700' : 'text-ink-900'}`}>{parseFloat(amount).toLocaleString()}</span>
             </div>
 
             {/* Group expense branch — pick an existing group OR create a
@@ -1670,6 +1689,7 @@ export function QuickEntry({
                 <AccountSelect
                   accounts={accounts}
                   selectedId={destId}
+                  preferredCurrency={repayCurrency}
                   onSelect={(id) => { setDestId(id); setConversionRate(''); }}
                 />
               </div>
@@ -1680,6 +1700,7 @@ export function QuickEntry({
                 <AccountSelect
                   accounts={accounts}
                   selectedId={sourceId}
+                  preferredCurrency={repayCurrency}
                   onSelect={(id) => { setSourceId(id); setConversionRate(''); }}
                   renderRight={(a) => (
                     <>

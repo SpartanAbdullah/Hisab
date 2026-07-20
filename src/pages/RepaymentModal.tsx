@@ -10,6 +10,7 @@ import { linkedLoanIdSet } from '../lib/linkedLoanIdSet';
 import { totalRemaining } from '../lib/repaymentAllocation';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { clampCardCredit } from '../lib/cardCredit';
 import { useToast } from '../components/Toast';
 import { AccountSelect } from '../components/AccountSelect';
 import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
@@ -219,12 +220,17 @@ export function RepaymentModal({
           after: account.balance - deductedAmount,
         });
         if (cashAdvanceCard && cashAdvanceCard.currency === loan.currency) {
-          changes.push({
-            accountName: cashAdvanceCard.name,
-            currency: cashAdvanceCard.currency,
-            before: cashAdvanceCard.balance,
-            after: cashAdvanceCard.balance + parsedAmount,
-          });
+          // Mirror the store's clamp: the card only receives what its limit
+          // still allows — a bill already paid by transfer receives nothing.
+          const { credited } = clampCardCredit(cashAdvanceCard, parsedAmount);
+          if (credited > 0) {
+            changes.push({
+              accountName: cashAdvanceCard.name,
+              currency: cashAdvanceCard.currency,
+              before: cashAdvanceCard.balance,
+              after: cashAdvanceCard.balance + credited,
+            });
+          }
         }
         await processTransaction({
           type: 'repayment',
@@ -419,6 +425,7 @@ export function RepaymentModal({
             <AccountSelect
               accounts={accounts}
               selectedId={accountId}
+              preferredCurrency={loan.currency}
               onSelect={(id) => {
                 setAccountId(id);
                 // A different account can mean a different currency — the
@@ -428,6 +435,26 @@ export function RepaymentModal({
             />
           </div>
           )}
+
+          {/* Cash-advance guard rail: when the funding card's bill is already
+              (partly) covered, say so BEFORE the user pays — the card will not
+              be credited past its limit, and a fully covered bill means this
+              payment only updates the loan record. */}
+          {!isLedgerOnlyMode && !isGiven && cashAdvanceCard && cashAdvanceCard.currency === loan.currency && parseFloat(amount) > 0 && (() => {
+            const preview = clampCardCredit(cashAdvanceCard, parseFloat(amount));
+            if (preview.skipped <= 0) return null;
+            return (
+              <div className="rounded-2xl bg-warn-50 border border-warn-100 p-3">
+                <p className="text-[11.5px] text-warn-600 leading-relaxed font-medium">
+                  {preview.credited <= 0
+                    ? t('repay_card_covered_full').replace('{card}', cashAdvanceCard.name)
+                    : t('repay_card_covered_partial')
+                        .replace('{card}', cashAdvanceCard.name)
+                        .replace('{amount}', formatMoney(preview.credited, cashAdvanceCard.currency))}
+                </p>
+              </div>
+            );
+          })()}
 
           {/* Cross-currency: the user types what actually landed in (or left)
               the account; the rate is derived. The old free-form rate input's
