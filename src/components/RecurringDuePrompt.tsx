@@ -7,6 +7,8 @@ import { useAccountStore } from '../stores/accountStore';
 import { useToast } from './Toast';
 import { formatMoney } from '../lib/constants';
 import { brandIconFor } from '../lib/brandIcon';
+import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
+import { useT } from '../lib/i18n';
 import type { RecurringTransaction } from '../db';
 import type { RecurringDueDetail } from '../lib/recurringRunner';
 
@@ -22,6 +24,7 @@ export function RecurringDuePrompt() {
   const processTransaction = useTransactionStore((s) => s.processTransaction);
   const accounts = useAccountStore((s) => s.accounts);
   const toast = useToast();
+  const t = useT();
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
@@ -51,13 +54,38 @@ export function RecurringDuePrompt() {
   const handleConfirm = async () => {
     setWorking(true);
     try {
+      // Idempotency stamp: (templateId @ dueDate) written into the internal
+      // note. A second Confirm — retry after a partial failure, a stale modal
+      // on another device — is detected and refused instead of double-posting.
+      const expansionKey = `${current.id}@${current.nextDueDate}`;
+      const txStore = useTransactionStore.getState();
+      if (txStore.transactions.length === 0) {
+        try { await txStore.loadTransactions(); } catch { /* stamp check degrades gracefully */ }
+      }
+      const alreadyPosted = useTransactionStore.getState().transactions.some(
+        (t) => parseInternalNote(t.notes).meta.recurringExpansion === expansionKey,
+      );
+      if (alreadyPosted) {
+        toast.show({ type: 'success', title: t('rec_already_posted') });
+        try { await advanceTemplate(current.id); } catch { /* re-prompts next boot */ }
+        pop();
+        return;
+      }
+
+      const stampedNotes = buildInternalNote(current.notes ?? '', { recurringExpansion: expansionKey });
+      // Post on the DUE date (noon-anchored, opening-balance precedent) — a
+      // late confirm must not misfile last month's rent into this month's
+      // budget, and delete+recreate can't fix the date afterwards.
+      const createdAt = new Date(`${current.nextDueDate}T12:00:00`).toISOString();
+
       if (current.type === 'income' && current.destinationAccountId) {
         await processTransaction({
           type: 'income',
           destinationAccountId: current.destinationAccountId,
           amount: current.amount,
           category: current.category,
-          notes: current.notes,
+          notes: stampedNotes,
+          createdAt,
         });
       } else if (current.type === 'expense' && current.sourceAccountId) {
         await processTransaction({
@@ -65,7 +93,8 @@ export function RecurringDuePrompt() {
           sourceAccountId: current.sourceAccountId,
           amount: current.amount,
           category: current.category,
-          notes: current.notes,
+          notes: stampedNotes,
+          createdAt,
         });
       } else if (
         current.type === 'transfer' &&
@@ -78,13 +107,21 @@ export function RecurringDuePrompt() {
           destinationAccountId: current.destinationAccountId,
           amount: current.amount,
           category: current.category,
-          notes: current.notes,
+          notes: stampedNotes,
+          createdAt,
         });
       } else {
         throw new Error('Template is missing the account references needed to post.');
       }
-      await advanceTemplate(current.id);
-      toast.show({ type: 'success', title: `${current.label || current.category} posted` });
+
+      // The money has moved — from here on this entry IS posted, whatever
+      // happens to the due-date advance. Never tell the user it failed.
+      try {
+        await advanceTemplate(current.id);
+        toast.show({ type: 'success', title: `${current.label || current.category} posted` });
+      } catch {
+        toast.show({ type: 'success', title: `${current.label || current.category} posted`, subtitle: t('rec_posted_advance_failed') });
+      }
       pop();
     } catch (err) {
       toast.show({
@@ -99,10 +136,24 @@ export function RecurringDuePrompt() {
 
   const handleSkip = async () => {
     setWorking(true);
+    const prevDue = current.nextDueDate;
+    const templateId = current.id;
     try {
       // Advance the due date so we don't keep nagging this session.
-      await advanceTemplate(current.id);
+      await advanceTemplate(templateId);
       pop();
+      // A mis-tap next to Confirm used to silently swallow a month — say what
+      // happened and offer the way back.
+      toast.show({
+        type: 'success',
+        title: `${current.label || current.category}: skipped`,
+        action: {
+          label: t('undo'),
+          onPress: () => {
+            void updateTemplate(templateId, { nextDueDate: prevDue }).catch(() => {});
+          },
+        },
+      });
     } catch {
       pop();
     } finally {

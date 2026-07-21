@@ -293,7 +293,7 @@ describe('processTransaction', () => {
         amount: 200,
         sourceAccountId: 'cash',
       }),
-    ).rejects.toThrow(/sirf|nahi/i);
+    ).rejects.toThrow(/only has|sirf/i);
 
     // Source balance must NOT have moved.
     expect(useAccountStore.getState().getAccount('cash')?.balance).toBe(50);
@@ -619,6 +619,143 @@ describe('processTransaction — credit-card model & loan lifecycle', () => {
 
     await useTransactionStore.getState().deleteTransaction(tx.id);
     expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(27650);
+  });
+});
+
+// Mistake-and-recovery mechanics: Undo hardening, the delete-anyway escape,
+// soft-deleted-account tolerance, transfer-delete reversing its auto-settles,
+// linked-loan repayment protection, and goal self-stored contributions.
+describe('deleteTransaction — recovery mechanics', () => {
+  it('restoreTransaction refuses types whose money it cannot re-apply (Undo hardening)', async () => {
+    seedAndLoad({ id: 'bank', balance: 1000, currency: 'AED' });
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'transfer', amount: 100, sourceAccountId: 'bank', destinationAccountId: 'bank2',
+    }).catch(() => null);
+    // Build a fake snapshot directly — the guard must reject regardless.
+    const snapshot = {
+      id: 'snap-1', type: 'transfer' as const, amount: 100, currency: 'AED' as const,
+      sourceAccountId: 'bank', destinationAccountId: 'bank2', relatedPerson: null,
+      personId: null, relatedLoanId: null, relatedGoalId: null, conversionRate: null,
+      category: '', notes: '', createdAt: new Date().toISOString(),
+    };
+    await expect(useTransactionStore.getState().restoreTransaction(snapshot)).rejects.toThrow(/only supported/i);
+    void tx;
+  });
+
+  it('blocked delete carries the escape code, and allowNegative completes it', async () => {
+    seedAndLoad({ id: 'bank', balance: 0, currency: 'AED' });
+    const income = await useTransactionStore.getState().processTransaction({
+      type: 'income', amount: 500, destinationAccountId: 'bank',
+    });
+    await useTransactionStore.getState().processTransaction({
+      type: 'expense', amount: 400, sourceAccountId: 'bank',
+    });
+
+    // 100 left < 500 to reverse → blocked, with the typed escape code.
+    await expect(useTransactionStore.getState().deleteTransaction(income.id))
+      .rejects.toMatchObject({ code: 'REVERSAL_NEEDS_NEGATIVE' });
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(100);
+
+    await useTransactionStore.getState().deleteTransaction(income.id, { allowNegative: true });
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(-400);
+    expect(useTransactionStore.getState().transactions.find((t) => t.id === income.id)).toBeUndefined();
+  });
+
+  it('deleting a row whose account was since (soft-)deleted skips the leg instead of stranding the row', async () => {
+    seedAndLoad({ id: 'bank', balance: 1000, currency: 'AED' });
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'expense', amount: 200, sourceAccountId: 'bank',
+    });
+    // Simulate the account being retired: gone from the live store.
+    useAccountStore.setState((s) => ({ accounts: s.accounts.filter((a) => a.id !== 'bank') }));
+
+    await useTransactionStore.getState().deleteTransaction(tx.id);
+    expect(useTransactionStore.getState().transactions).toHaveLength(0);
+  });
+
+  it('deleting a card-bill transfer re-opens the cash-advance loans it auto-settled', async () => {
+    seedAndLoad({ id: 'cc', balance: 16500, currency: 'AED', type: 'credit_card', name: 'ENBD', metadata: { creditLimit: '16500' } });
+    seedAndLoad({ id: 'bank', balance: 10000, currency: 'AED' });
+    const advance = await useTransactionStore.getState().processTransaction({
+      type: 'loan_taken', amount: 1500, destinationAccountId: 'bank', sourceAccountId: 'cc', personName: 'ENBD Card',
+    });
+    const loanId = advance.relatedLoanId!;
+    const billPay = await useTransactionStore.getState().processTransaction({
+      type: 'transfer', amount: 1500, sourceAccountId: 'bank', destinationAccountId: 'cc',
+    });
+    expect(useLoanStore.getState().getLoan(loanId)?.status).toBe('settled');
+
+    await useTransactionStore.getState().deleteTransaction(billPay.id);
+
+    // Loan re-opened, ledger row gone, balances back to post-advance state.
+    const loan = useLoanStore.getState().getLoan(loanId);
+    expect(loan?.status).toBe('active');
+    expect(loan?.remainingAmount).toBe(1500);
+    expect(useAccountStore.getState().getAccount('cc')?.balance).toBe(15000);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(11500);
+    expect(
+      useTransactionStore.getState().transactions.filter((t) => t.type === 'repayment' && t.relatedLoanId === loanId),
+    ).toHaveLength(0);
+  });
+
+  it('repayments on an ACTIVE linked loan cannot be deleted one-sided', async () => {
+    seedAndLoad({ id: 'bank', balance: 5000, currency: 'AED' });
+    const loan = {
+      id: 'linked-1', personName: 'Maryam', personId: null, type: 'taken',
+      totalAmount: 1000, remainingAmount: 1000, currency: 'AED', status: 'active',
+      notes: '', createdAt: new Date().toISOString(), loanPairId: 'pair-1',
+    };
+    seedLoan(loan);
+    useLoanStore.setState({ loans: [loan as never] });
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'repayment', amount: 300, loanId: 'linked-1', sourceAccountId: 'bank',
+    });
+
+    await expect(useTransactionStore.getState().deleteTransaction(tx.id)).rejects.toThrow(/linked/i);
+  });
+});
+
+describe('goal contributions — self-stored + rollback', () => {
+  const seedGoal = (over: Record<string, unknown> = {}) => {
+    const goal = {
+      id: 'goal-1', title: 'Umrah', targetAmount: 10000, savedAmount: 0,
+      currency: 'AED' as const, storedInAccountId: '', createdAt: new Date().toISOString(),
+      targetDate: null, ...over,
+    };
+    useGoalStore.setState({ goals: [goal as never] });
+    return goal;
+  };
+
+  it('contributing FROM the storedIn account moves no balances — record only, and delete reverses only the goal', async () => {
+    seedAndLoad({ id: 'hbl', balance: 30000, currency: 'AED' });
+    seedGoal({ storedInAccountId: 'hbl' });
+
+    const tx = await useTransactionStore.getState().processTransaction({
+      type: 'goal_contribution', amount: 20000, sourceAccountId: 'hbl', goalId: 'goal-1',
+    });
+
+    // The money physically stayed in HBL — no debit.
+    expect(useAccountStore.getState().getAccount('hbl')?.balance).toBe(30000);
+    expect(useGoalStore.getState().getGoal('goal-1')?.savedAmount).toBe(20000);
+
+    await useTransactionStore.getState().deleteTransaction(tx.id);
+    expect(useAccountStore.getState().getAccount('hbl')?.balance).toBe(30000);
+    expect(useGoalStore.getState().getGoal('goal-1')?.savedAmount).toBe(0);
+  });
+
+  it('rollback restores the exact prior savedAmount (snapshot, not delta)', async () => {
+    seedAndLoad({ id: 'bank', balance: 5000, currency: 'AED' });
+    seedGoal({ savedAmount: 750 });
+    failNextTxAdd(new Error('Simulated DB failure'));
+
+    await expect(
+      useTransactionStore.getState().processTransaction({
+        type: 'goal_contribution', amount: 500, sourceAccountId: 'bank', goalId: 'goal-1',
+      }),
+    ).rejects.toThrow(/Simulated/);
+
+    expect(useGoalStore.getState().getGoal('goal-1')?.savedAmount).toBe(750);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(5000);
   });
 });
 

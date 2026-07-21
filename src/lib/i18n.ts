@@ -289,6 +289,71 @@ const S = {
   acct_correct_note: { ur: "Balance correction", en: "Balance correction" },
   action_adjusted: { ur: "Balance theek kiya", en: "Balance corrected" },
 
+  // Delete/reversal recovery (blocked-delete family)
+  err_reversal_spent: {
+    ur: "{account} se woh paisay pehle hi kharch ho chuke hain — sirf {available} baqi hai. 'Phir bhi delete karein' se balance minus mein ja sakta hai, ya pehle {account} ka balance theek karein.",
+    en: "That money was already spent from {account} — only {available} is left there. Delete anyway to let it go negative, or correct {account}'s balance first.",
+  },
+  del_anyway_title: { ur: "Paisay pehle hi kharch ho chuke", en: "Money already spent" },
+  del_anyway_body: {
+    ur: "{account} ke paas ab yeh raqam nahi hai. Delete karne par {account} ka balance {after} ho jayega — baad mein 'Balance theek karein' se durust kar sakte hain.",
+    en: "{account} no longer holds this amount. Deleting will take {account} to {after} — you can fix it afterwards with Correct balance.",
+  },
+  del_anyway_cta: { ur: "Phir bhi delete karein", en: "Delete anyway" },
+  err_linked_repayment_delete: {
+    ur: "Yeh payment {person} ke sath linked loan ki hai. Sirf apni taraf se delete karne se dono ke records alag ho jayenge — loan page se settle ya adjust karein.",
+    en: "This payment belongs to a loan linked with {person}. Deleting it one-sided would break both of your records — settle or adjust it from the loan page instead.",
+  },
+  tx_delete_no_undo_note: {
+    ur: "Delete ho gaya. Balances wapas theek kar diye gaye hain.",
+    en: "Deleted. The affected balances were restored.",
+  },
+  tx_readonly_note: {
+    ur: "Yeh entry linked balances ki hifazat ke liye read-only hai. Delete karne par iske balance asraat wapas ho jate hain.",
+    en: "This entry is kept read-only to protect linked balances. Deleting it reverses its balance effects and removes the entry.",
+  },
+
+  // Savings goal management
+  goal_menu_edit: { ur: "Goal edit karein", en: "Edit goal" },
+  goal_menu_correct: { ur: "Saved raqam theek karein", en: "Correct saved amount" },
+  goal_menu_delete: { ur: "Goal delete karein", en: "Delete goal" },
+  goal_manage: { ur: "Manage", en: "Manage" },
+  goal_edit_saved: { ur: "Goal update ho gaya", en: "Goal updated" },
+  goal_currency_locked: {
+    ur: "Currency tab badal sakti hai jab kuch save na kiya ho.",
+    en: "Currency can only change while nothing is saved yet.",
+  },
+  goal_delete_title: { ur: "Yeh goal delete karein?", en: "Delete this goal?" },
+  goal_delete_body: {
+    ur: "'{title}' hat jayega. Iski purani entries History mein rahengi aur account balances par koi asar nahi hoga.",
+    en: "'{title}' will be removed. Its past entries stay in History and no account balance changes.",
+  },
+  goal_delete_cta: { ur: "Delete karo", en: "Delete goal" },
+  goal_deleted: { ur: "Goal delete ho gaya", en: "Goal deleted" },
+  goal_correct_title: { ur: "Saved raqam theek karein", en: "Correct saved amount" },
+  goal_correct_hint: {
+    ur: "Jo raqam WAQAI is goal ke liye rakhi hai woh likhein — sirf goal ka record badlega, koi account balance nahi.",
+    en: "Enter what is ACTUALLY set aside for this goal — only the goal's record changes, no account balance moves.",
+  },
+  goal_correct_saved: { ur: "Saved raqam theek ho gayi", en: "Saved amount corrected" },
+  goal_drift_warn: {
+    ur: "{account} mein {balance} hai — yahan save shuda {saved} se kam.",
+    en: "{account} holds {balance} — less than the {saved} saved here.",
+  },
+  goal_drift_fix: { ur: "Account se milao", en: "Match account" },
+  goal_deadline: { ur: "Deadline (optional)", en: "Deadline (optional)" },
+
+  // Recurring expansion safety
+  rec_posted_advance_failed: {
+    ur: "Entry post ho gayi, lekin agli due date aage nahi barh saki — agli baar dobara pooch sakta hai. Dobara confirm NA karein.",
+    en: "The entry was posted, but the next due date couldn't move — it may ask again later. Do NOT confirm it twice.",
+  },
+  rec_already_posted: {
+    ur: "Yeh charge is due date ke liye pehle hi post ho chuka hai.",
+    en: "This charge was already posted for this due date.",
+  },
+  rec_posted_on_due: { ur: "{date} ki tareekh par record hoga", en: "Will be recorded on its due date, {date}" },
+
   // Soft payment reminders
   reminder_title: { ur: "Reminder Message", en: "Reminder Message" },
   reminder_cta: { ur: "Remind", en: "Remind" },
@@ -2447,4 +2512,12 @@ export function useT() {
     const entry = S[key];
     return entry ? entry[lang] : key;
   };
+}
+
+// Non-hook accessor for stores/libs that compose user-facing strings outside
+// React (thrown guard errors, toasts built in async flows). Reads the live
+// language from the store so the copy matches the UI.
+export function tStatic(key: Key): string {
+  const entry = S[key];
+  return entry ? entry[useI18nStore.getState().lang] : key;
 }

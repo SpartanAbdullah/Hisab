@@ -43,7 +43,7 @@ const categoryColorMap: Record<string, { bg: string; text: string }> = {
 };
 
 export function GoalsPage() {
-  const { goals, loadGoals, addContribution } = useGoalStore();
+  const { goals, loadGoals, addContribution, updateGoal, correctSavedAmount, deleteGoal } = useGoalStore();
   const { accounts, loadAccounts } = useAccountStore();
   const { expenses, loadExpenses, markPaid, updateStatus } = useUpcomingExpenseStore();
   const processTransaction = useTransactionStore(s => s.processTransaction);
@@ -88,6 +88,70 @@ export function GoalsPage() {
   const [addAmount, setAddAmount] = useState('');
   const [addMode, setAddMode] = useState<'add' | 'out'>('add');
   const [savingAdd, setSavingAdd] = useState(false);
+  // Goal management: edit details / correct saved amount / delete — the
+  // recovery paths goals never had (a typo used to be permanent).
+  const [menuGoalId, setMenuGoalId] = useState<string | null>(null);
+  const [editGoal, setEditGoal] = useState<Goal | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editTarget, setEditTarget] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [savingGoalEdit, setSavingGoalEdit] = useState(false);
+  const [correctGoal, setCorrectGoal] = useState<Goal | null>(null);
+  const [correctAmount, setCorrectAmount] = useState('');
+  const [savingCorrect, setSavingCorrect] = useState(false);
+
+  const handleGoalEditSave = async () => {
+    if (!editGoal) return;
+    const target = parseFloat(editTarget);
+    if (!editTitle.trim() || !(target > 0)) return;
+    setSavingGoalEdit(true);
+    try {
+      await updateGoal(editGoal.id, {
+        title: editTitle.trim(),
+        targetAmount: target,
+        targetDate: editDate || null,
+      });
+      toast.show({ type: 'success', title: t('goal_edit_saved') });
+      setEditGoal(null);
+    } catch (err) {
+      toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
+    } finally {
+      setSavingGoalEdit(false);
+    }
+  };
+
+  const handleGoalCorrect = async () => {
+    if (!correctGoal) return;
+    const target = parseFloat(correctAmount);
+    if (!Number.isFinite(target) || target < 0) return;
+    setSavingCorrect(true);
+    try {
+      await correctSavedAmount(correctGoal.id, target);
+      toast.show({ type: 'success', title: t('goal_correct_saved') });
+      setCorrectGoal(null);
+    } catch (err) {
+      toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
+    } finally {
+      setSavingCorrect(false);
+    }
+  };
+
+  const handleGoalDelete = async (g: Goal) => {
+    const ok = await confirmDestructive({
+      title: t('goal_delete_title'),
+      description: t('goal_delete_body').replace('{title}', g.title),
+      confirmLabel: t('goal_delete_cta'),
+      cancelLabel: t('not_now'),
+      tone: 'destructive',
+    });
+    if (!ok) return;
+    try {
+      await deleteGoal(g.id);
+      toast.show({ type: 'success', title: t('goal_deleted') });
+    } catch (err) {
+      toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
+    }
+  };
 
   const load = useCallback(async () => {
     await Promise.all([loadGoals(), loadAccounts(), loadExpenses()]);
@@ -369,7 +433,74 @@ export function GoalsPage() {
                   </p>
                   {isComplete && <p className="text-[10px] text-receive-600 font-bold">{t('goal_done')}</p>}
                 </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setMenuGoalId(menuGoalId === g.id ? null : g.id)}
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-ink-400 active:bg-cream-soft"
+                    aria-label={t('goal_manage')}
+                  >
+                    <MoreHorizontal size={16} />
+                  </button>
+                  {menuGoalId === g.id && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setMenuGoalId(null)} />
+                      <div className="absolute right-0 top-9 z-50 bg-cream-card rounded-2xl shadow-xl shadow-navy-900/15 border border-cream-border py-1.5 w-52 animate-fade-in">
+                        <button
+                          onClick={() => {
+                            setMenuGoalId(null);
+                            setEditTitle(g.title);
+                            setEditTarget(String(g.targetAmount));
+                            setEditDate(g.targetDate ?? '');
+                            setEditGoal(g);
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-[13px] font-medium text-ink-800 active:bg-cream-soft"
+                        >
+                          {t('goal_menu_edit')}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMenuGoalId(null);
+                            setCorrectAmount(String(g.savedAmount));
+                            setCorrectGoal(g);
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-[13px] font-medium text-ink-800 active:bg-cream-soft"
+                        >
+                          {t('goal_menu_correct')}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMenuGoalId(null);
+                            void handleGoalDelete(g);
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-[13px] font-medium text-pay-text active:bg-pay-50"
+                        >
+                          {t('goal_menu_delete')}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
+
+              {/* Drift check: the linked account holds less than this goal
+                  claims is stored there (a balance correction desynced them).
+                  One tap re-syncs savedAmount to the account's reality. */}
+              {account && account.balance < g.savedAmount - 0.005 && (
+                <div className="mt-3 rounded-xl bg-warn-50 border border-warn-100 p-3 flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-warn-700 leading-relaxed">
+                    {t('goal_drift_warn')
+                      .replace('{account}', account.name)
+                      .replace('{balance}', formatMoney(account.balance, account.currency))
+                      .replace('{saved}', formatMoney(g.savedAmount, g.currency))}
+                  </p>
+                  <button
+                    onClick={() => void correctSavedAmount(g.id, account.balance).then(() => toast.show({ type: 'success', title: t('goal_correct_saved') }))}
+                    className="shrink-0 rounded-lg bg-warn-600 text-white text-[10.5px] font-semibold px-2.5 py-1.5 active:opacity-80"
+                  >
+                    {t('goal_drift_fix')}
+                  </button>
+                </div>
+              )}
 
               <div className="mt-4 bg-cream-soft/60 rounded-full h-2.5 overflow-hidden">
                 <div
@@ -426,11 +557,15 @@ export function GoalsPage() {
                 </div>
               )}
 
-              {!isComplete && (
-                <button onClick={() => setSelectedGoal(g)}
-                  className="mt-4 w-full py-2.5 rounded-2xl border-2 border-dashed border-accent-100 text-accent-600 text-[12px] font-bold active:bg-accent-50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
-                >{t('goal_add_money')}</button>
-              )}
+              {/* Completed goals keep an affordance too — an over-typed add
+                  used to strand the goal at >100% with no way back in. */}
+              <button onClick={() => { setAddMode(isComplete ? 'out' : 'add'); setSelectedGoal(g); }}
+                className={`mt-4 w-full py-2.5 rounded-2xl border-2 border-dashed text-[12px] font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 ${
+                  isComplete
+                    ? 'border-cream-border text-ink-500 active:bg-cream-soft'
+                    : 'border-accent-100 text-accent-600 active:bg-accent-50'
+                }`}
+              >{isComplete ? t('goal_manage') : t('goal_add_money')}</button>
             </div>
           );
         })}
@@ -439,6 +574,82 @@ export function GoalsPage() {
       </div>
 
       <AddGoalModal open={showAdd} onClose={() => setShowAdd(false)} />
+      <Modal
+        open={!!editGoal}
+        onClose={() => setEditGoal(null)}
+        title={t('goal_menu_edit')}
+        footer={
+          <button
+            onClick={handleGoalEditSave}
+            disabled={savingGoalEdit || !editTitle.trim() || !(parseFloat(editTarget) > 0)}
+            className="cta-primary"
+          >
+            {t('save')}
+          </button>
+        }
+      >
+        {editGoal && (
+          <div className="space-y-4">
+            <div>
+              <label className="form-label">{t('goal_name')}</label>
+              <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="input-field" />
+            </div>
+            <div>
+              <label className="form-label">{t('goal_target')} ({editGoal.currency})</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editTarget}
+                onChange={(e) => setEditTarget(e.target.value)}
+                className="input-field tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="form-label">{t('goal_deadline')}</label>
+              <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="input-field" />
+            </div>
+            {editGoal.savedAmount > 0.005 && (
+              <p className="text-[11.5px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
+                {t('goal_currency_locked')}
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
+      <Modal
+        open={!!correctGoal}
+        onClose={() => setCorrectGoal(null)}
+        title={t('goal_correct_title')}
+        footer={
+          <button
+            onClick={handleGoalCorrect}
+            disabled={savingCorrect || !Number.isFinite(parseFloat(correctAmount)) || parseFloat(correctAmount) < 0}
+            className="cta-primary"
+          >
+            {t('save')}
+          </button>
+        }
+      >
+        {correctGoal && (
+          <div className="space-y-4">
+            <p className="text-[12px] text-ink-500 leading-relaxed">{t('goal_correct_hint')}</p>
+            <div>
+              <label className="form-label">{t('goal_saved')} ({correctGoal.currency})</label>
+              <input
+                type="number"
+                step="0.01"
+                value={correctAmount}
+                onChange={(e) => setCorrectAmount(e.target.value)}
+                autoFocus
+                className="input-field text-center text-xl font-bold tabular-nums"
+              />
+            </div>
+            <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
+              {t('goal_track_note')}
+            </p>
+          </div>
+        )}
+      </Modal>
       <AddUpcomingExpenseModal open={showAddExpense} onClose={() => setShowAddExpense(false)} />
       <Modal
         open={!!selectedGoal}

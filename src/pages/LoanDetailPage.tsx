@@ -206,6 +206,31 @@ export function LoanDetailPage() {
       toast.show({ type: 'success', title: t('loan_deleted') });
       navigate('/loans');
     } catch (err) {
+      // Reversal blocked because a credited account spent the money since —
+      // offer to proceed with that account going visibly negative.
+      const blocked = err as Error & { code?: string; accountName?: string; balanceAfter?: number; accountCurrency?: string };
+      if (blocked?.code === 'REVERSAL_NEEDS_NEGATIVE') {
+        const proceed = await confirmDestructive({
+          title: t('del_anyway_title'),
+          description: t('del_anyway_body')
+            .replace(/\{account\}/g, blocked.accountName ?? '')
+            .replace('{after}', `${blocked.accountCurrency ?? ''} ${(blocked.balanceAfter ?? 0).toLocaleString()}`),
+          confirmLabel: t('del_anyway_cta'),
+          cancelLabel: t('not_now'),
+          tone: 'warning',
+        });
+        if (proceed) {
+          try {
+            await deleteLoanCascade(loan.id, { allowNegative: true });
+            toast.show({ type: 'success', title: t('loan_deleted') });
+            navigate('/loans');
+          } catch (retryErr) {
+            toast.show({ type: 'error', title: t('error'), subtitle: retryErr instanceof Error ? retryErr.message : undefined });
+          }
+        }
+        setDeletingLoan(false);
+        return;
+      }
       toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
     } finally {
       setDeletingLoan(false);

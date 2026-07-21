@@ -12,6 +12,7 @@ import { CategoryPicker } from './CategoryPicker';
 import { ReceiptField } from './ReceiptField';
 import { AccountSelect } from './AccountSelect';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
+import { confirmDestructive } from './ConfirmDestructiveSheet';
 import { parseInternalNote } from '../lib/internalNotes';
 import { useT } from '../lib/i18n';
 import { getActionLabel } from '../lib/transactionLabel';
@@ -183,27 +184,68 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   };
 
   const handleDelete = async () => {
-    // Deleting a single entry is fully reversible (restoreTransaction re-adds
-    // the row and re-applies balances), so instead of a blocking "are you
-    // sure?" we delete instantly and offer Undo in the toast.
     const snapshot = transaction;
+    // One-tap Undo is only offered for the types restoreTransaction can
+    // faithfully restore (expense/income — row + balance). For everything
+    // else an "undone" row would come back WITHOUT its money effects and a
+    // re-delete would reverse balances twice, minting money.
+    const canUndo = snapshot.type === 'expense' || snapshot.type === 'income';
     setSaving(true);
     try {
       await deleteTransaction(transaction.id);
       onClose();
-      toast.show({
-        type: 'success',
-        title: t('tx_deleted'),
-        action: {
-          label: t('undo'),
-          onPress: () => {
-            void restoreTransaction(snapshot).catch(() =>
-              toast.show({ type: 'error', title: t('undo_failed') }),
-            );
-          },
-        },
-      });
+      toast.show(
+        canUndo
+          ? {
+              type: 'success',
+              title: t('tx_deleted'),
+              action: {
+                label: t('undo'),
+                onPress: () => {
+                  void restoreTransaction(snapshot).catch(() =>
+                    toast.show({ type: 'error', title: t('undo_failed') }),
+                  );
+                },
+              },
+            }
+          : {
+              type: 'success',
+              title: t('tx_deleted'),
+              subtitle: t('tx_delete_no_undo_note'),
+            },
+      );
     } catch (error) {
+      // The reversal was blocked because the credited money was since spent.
+      // Real escape: let the user delete anyway, taking the account visibly
+      // negative (correctable afterwards) instead of stranding the row.
+      const blocked = error as Error & { code?: string; accountName?: string; balanceAfter?: number; accountCurrency?: string };
+      if (blocked?.code === 'REVERSAL_NEEDS_NEGATIVE') {
+        const after = formatSignedMoney(blocked.balanceAfter ?? 0, (blocked.accountCurrency || transaction.currency) as typeof transaction.currency);
+        const ok = await confirmDestructive({
+          title: t('del_anyway_title'),
+          description: t('del_anyway_body')
+            .replace(/\{account\}/g, blocked.accountName ?? '')
+            .replace('{after}', after),
+          confirmLabel: t('del_anyway_cta'),
+          cancelLabel: t('not_now'),
+          tone: 'warning',
+        });
+        if (ok) {
+          try {
+            await deleteTransaction(transaction.id, { allowNegative: true });
+            onClose();
+            toast.show({ type: 'success', title: t('tx_deleted'), subtitle: t('tx_delete_no_undo_note') });
+          } catch (retryErr) {
+            toast.show({
+              type: 'error',
+              title: t('error'),
+              subtitle: retryErr instanceof Error ? retryErr.message : 'Failed',
+            });
+          }
+        }
+        setSaving(false);
+        return;
+      }
       toast.show({
         type: 'error',
         title: t('error'),
@@ -249,7 +291,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           {transaction.relatedPerson && <p className="text-[13px] text-ink-700">Person: <span className="font-semibold">{transaction.relatedPerson}</span></p>}
           {transaction.notes && <p className="text-[12px] text-ink-500">{parseInternalNote(transaction.notes).visibleNote}</p>}
           <p className="text-[12px] text-ink-500 bg-cream-soft rounded-xl p-3 leading-relaxed">
-            This entry is kept read-only to protect linked balances. Deleting it restores the affected balances and removes the entry.
+            {t('tx_readonly_note')}
           </p>
           {noteMeta.groupExpenseId && (
             <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3 leading-relaxed">

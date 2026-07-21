@@ -189,6 +189,18 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     const account = get().accounts.find((a) => a.id === id);
     if (!account) throw new Error(`Account ${id} not found`);
     if (account.balance !== 0) throw new Error('Account must have zero balance to delete');
+    // A savings goal may claim its money lives here — deleting the account
+    // would silently orphan that link (goals.stored_in_account_id has no FK).
+    // Dynamic import: goalStore is otherwise unrelated to this store.
+    const { useGoalStore } = await import('./goalStore');
+    const goalStore = useGoalStore.getState();
+    if (goalStore.goals.length === 0) await goalStore.loadGoals();
+    const linkedGoal = useGoalStore.getState().goals.find((g) => g.storedInAccountId === id);
+    if (linkedGoal) {
+      throw new Error(
+        `The savings goal "${linkedGoal.title}" stores its money in this account. Edit that goal (or correct its saved amount) first.`,
+      );
+    }
     try {
       await accountsDb.delete(id);
     } catch (err) {

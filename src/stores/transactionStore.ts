@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { db } from '../db';
-import { transactionsDb, emiSchedulesDb, loansDb } from '../lib/supabaseDb';
+import { transactionsDb, emiSchedulesDb, loansDb, goalsDb } from '../lib/supabaseDb';
 import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
 import { addMonths, format } from 'date-fns';
 import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType, InvestmentTrade } from '../db';
@@ -13,6 +13,7 @@ import { useActivityStore } from './activityStore';
 import { useAppModeStore } from './appModeStore';
 import { useInvestmentStore } from './investmentStore';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
+import { tStatic } from '../lib/i18n';
 import { statusSyncToPaid, uncoveredToPaidIds } from '../lib/emiCoverage';
 import { clampCardCredit } from '../lib/cardCredit';
 import { assertLinkedLoanDeleteAllowed } from '../lib/linkedLoanGuards';
@@ -158,11 +159,11 @@ interface TransactionState {
   // Attach/detach a receipt photo (storage path or null). Lightweight — patches
   // only receipt_path, never re-runs balance logic (unlike updateTransaction).
   setReceiptPath: (id: string, receiptPath: string | null) => Promise<void>;
-  deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean; allowInvestment?: boolean }) => Promise<void>;
+  deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean; allowInvestment?: boolean; allowNegative?: boolean }) => Promise<void>;
   // Remove a loan AND everything attached to it (repayments, origin entry,
   // EMI schedule), reversing every balance effect. The escape hatch for a
   // mis-entered loan that guards used to lock forever.
-  deleteLoanCascade: (loanId: string) => Promise<void>;
+  deleteLoanCascade: (loanId: string, options?: { allowNegative?: boolean }) => Promise<void>;
   // Used by rollback paths that need to re-insert a transaction with its
   // original id and re-apply the matching balance delta. Not for general use.
   restoreTransaction: (snapshot: Transaction) => Promise<void>;
@@ -180,10 +181,49 @@ const INITIAL_TRANSACTION_STATE = {
 type BalanceCheckedTransactionType = Extract<TransactionInput['type'], 'expense' | 'loan_given' | 'loan_taken' | 'repayment'>;
 type BalanceCheckedAccount = { name: string; balance: number; type: string; metadata: Record<string, string> };
 
-// Insufficient balance check helper
+// Insufficient balance check helper (creation-time: spending money you don't
+// have). Bilingual via tStatic — the old hardcoded Roman Urdu leaked to
+// English users on every money surface.
 function checkBalance(account: BalanceCheckedAccount, amount: number) {
   if (account.balance < amount) {
-    throw new Error(`${account.name} mein sirf ${account.balance.toLocaleString()} hain. Itne pesay nahi hain.`);
+    throw new Error(
+      tStatic('err_insufficient')
+        .replace('{account}', account.name)
+        .replace('{available}', account.balance.toLocaleString())
+        .replace('{amount}', amount.toLocaleString()),
+    );
+  }
+}
+
+// Reversal-time balance guard. Unlike creation, a blocked reversal has a real
+// escape: the user may confirm the account going negative (the credited money
+// was since spent — reality already diverged, and a visible negative beats a
+// permanently stuck row). The error carries a code + fields so the UI can
+// offer exactly that retry with { allowNegative: true }.
+export interface ReversalBlocked extends Error {
+  code: 'REVERSAL_NEEDS_NEGATIVE';
+  accountName: string;
+  balanceAfter: number;
+  accountCurrency: string;
+}
+
+function checkReversalBalance(
+  account: BalanceCheckedAccount & { currency?: string },
+  amount: number,
+  allowNegative: boolean | undefined,
+) {
+  if (allowNegative) return;
+  if (account.balance < amount) {
+    const err = new Error(
+      tStatic('err_reversal_spent')
+        .replace(/\{account\}/g, account.name)
+        .replace('{available}', account.balance.toLocaleString()),
+    ) as ReversalBlocked;
+    err.code = 'REVERSAL_NEEDS_NEGATIVE';
+    err.accountName = account.name;
+    err.balanceAfter = Math.round((account.balance - amount) * 100) / 100;
+    err.accountCurrency = account.currency ?? '';
+    throw err;
   }
 }
 
@@ -342,8 +382,18 @@ async function trackedUpdateLoan(
 }
 
 async function trackedAddContribution(scope: MutationScope, goalId: string, amount: number): Promise<void> {
+  // Snapshot-based inverse: addContribution clamps savedAmount at 0, so a
+  // negated delta is asymmetric whenever the forward step hit the clamp —
+  // rollback must restore the exact prior figure, not undo a delta.
+  const prevSaved = useGoalStore.getState().getGoal(goalId)?.savedAmount;
   await useGoalStore.getState().addContribution(goalId, amount);
-  scope.register(() => useGoalStore.getState().addContribution(goalId, -amount));
+  scope.register(async () => {
+    if (prevSaved === undefined) return;
+    await goalsDb.update(goalId, { savedAmount: prevSaved });
+    useGoalStore.setState((s) => ({
+      goals: s.goals.map((g) => (g.id === goalId ? { ...g, savedAmount: prevSaved } : g)),
+    }));
+  });
 }
 
 // Investment trade rows ride inside the money-mutation scope so a failed
@@ -983,6 +1033,21 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             const goal = goalStore.getGoal(input.goalId);
             if (!goal) throw new Error('Goal not found');
 
+            // Contributing FROM the account the goal is stored in: the money
+            // physically stays where it is — debiting the source (with no
+            // credit back) would push its balance below reality. Record-only:
+            // savedAmount moves, no balance legs, flagged in the internal note
+            // so the delete path skips the refund symmetrically.
+            if (goal.storedInAccountId && goal.storedInAccountId === input.sourceAccountId) {
+              currency = goal.currency;
+              sourceAccountId = input.sourceAccountId;
+              relatedGoalId = input.goalId;
+              await trackedAddContribution(scope, input.goalId, input.amount);
+              notesOverride = buildInternalNote(input.notes ?? '', { goalSelfStored: '1' });
+              description = `Goal contribution: ${currency} ${input.amount} → "${goal.title}" (kept in ${src.name})`;
+              break;
+            }
+
             if (src.currency !== goal.currency) {
               if (!input.conversionRate) throw new Error('Conversion rate required — different currencies');
               conversionRate = input.conversionRate;
@@ -1547,34 +1612,66 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
     await runSafeMutation(async (scope) => {
       const accountStore = useAccountStore.getState();
+      // Accounts are soft-deleted; a missing account on a REVERSAL leg means
+      // the user retired it — there is no live balance left to maintain, so
+      // the leg is skipped instead of stranding the row behind 'not found'.
 
       switch (existing.type) {
         case 'expense': {
           const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
-          if (!source) throw new Error('Source account not found');
-          await trackedBalanceDelta(scope, source.id, existing.amount);
+          if (source) await trackedBalanceDelta(scope, source.id, existing.amount);
           break;
         }
 
         case 'income':
         case 'opening_balance': {
           const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
-          if (!destination) throw new Error('Destination account not found');
-          checkBalance(destination, existing.amount);
-          await trackedBalanceDelta(scope, destination.id, -existing.amount);
+          if (destination) {
+            checkReversalBalance(destination, existing.amount, options.allowNegative);
+            await trackedBalanceDelta(scope, destination.id, -existing.amount);
+          }
           break;
         }
 
         case 'transfer': {
           const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
           const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
-          if (!source || !destination) throw new Error('Account not found');
           const destinationAmount = existing.conversionRate
             ? Math.round(existing.amount * existing.conversionRate * 100) / 100
             : existing.amount;
-          checkBalance(destination, destinationAmount);
-          await trackedBalanceDelta(scope, destination.id, -destinationAmount);
-          await trackedBalanceDelta(scope, source.id, existing.amount);
+          if (destination) {
+            checkReversalBalance(destination, destinationAmount, options.allowNegative);
+            await trackedBalanceDelta(scope, destination.id, -destinationAmount);
+          }
+          if (source) await trackedBalanceDelta(scope, source.id, existing.amount);
+
+          // A bill payment into a credit card auto-settled that card's
+          // cash-advance loans via ledger rows stamped with this transfer's
+          // id. Deleting the transfer must re-open those loans and remove the
+          // rows — otherwise the card debt returns while the loans stay
+          // settled (the mirror image of the original double-credit bug).
+          const settledRows = get().transactions.filter(
+            (t) =>
+              t.type === 'repayment' &&
+              !t.sourceAccountId &&
+              !t.destinationAccountId &&
+              t.relatedLoanId &&
+              parseInternalNote(t.notes).meta.linkedTransactionId === existing.id,
+          );
+          for (const row of settledRows) {
+            const rowLoan = useLoanStore.getState().getLoan(row.relatedLoanId!);
+            if (rowLoan) {
+              await trackedUpdateLoan(scope, rowLoan.id, {
+                remainingAmount: Math.min(
+                  rowLoan.totalAmount,
+                  Math.round((rowLoan.remainingAmount + row.amount) * 100) / 100,
+                ),
+                status: 'active',
+              });
+              await trackedSyncEmisToLoan(scope, rowLoan.id);
+            }
+            await trackedDeleteTransaction(scope, row);
+          }
           break;
         }
 
@@ -1589,9 +1686,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           }
 
           const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
-          if (!source) throw new Error('Source account not found');
-
-          await trackedBalanceDelta(scope, source.id, existing.amount);
+          if (source) await trackedBalanceDelta(scope, source.id, existing.amount);
           await trackedDeleteEmisByLoan(scope, relatedLoanId);
           await trackedDeleteLoan(scope, relatedLoanId);
           break;
@@ -1608,14 +1703,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           }
 
           const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
-          if (!destination) throw new Error('Destination account not found');
-
-          await trackedBalanceDelta(scope, destination.id, -existing.amount);
+          if (destination) await trackedBalanceDelta(scope, destination.id, -existing.amount);
 
           if (existing.sourceAccountId) {
             const cashAdvanceCard = accountStore.getAccount(existing.sourceAccountId);
-            if (!cashAdvanceCard) throw new Error('Cash advance card not found');
-            await trackedBalanceDelta(scope, cashAdvanceCard.id, existing.amount);
+            if (cashAdvanceCard) await trackedBalanceDelta(scope, cashAdvanceCard.id, existing.amount);
           }
 
           await trackedDeleteEmisByLoan(scope, relatedLoanId);
@@ -1628,6 +1720,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           if (!relatedLoanId) throw new Error('Loan record not found for this repayment');
           const loan = useLoanStore.getState().getLoan(relatedLoanId);
           if (!loan) throw new Error('Loan not found');
+          // A repayment on an ACTIVE linked (cross-user) loan exists on both
+          // users' books — deleting it one-sided would silently diverge them.
+          if (loan.loanPairId && loan.status === 'active') {
+            throw new Error(tStatic('err_linked_repayment_delete').replace('{person}', loan.personName));
+          }
           // Ledger-only records (written by loanStore.applyRepayment) carry no
           // account legs — there is no balance to reverse, only the loan.
           const isLedgerRecord = !existing.sourceAccountId && !existing.destinationAccountId;
@@ -1635,27 +1732,28 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             // no balance legs to reverse
           } else if (loan.type === 'given') {
             const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
-            if (!destination) throw new Error('Destination account not found');
             const creditedAmount = existing.conversionRate
               ? Math.round(existing.amount * existing.conversionRate * 100) / 100
               : existing.amount;
-            checkBalance(destination, creditedAmount);
-            await trackedBalanceDelta(scope, destination.id, -creditedAmount);
+            if (destination) {
+              checkReversalBalance(destination, creditedAmount, options.allowNegative);
+              await trackedBalanceDelta(scope, destination.id, -creditedAmount);
+            }
           } else {
             const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
-            if (!source) throw new Error('Source account not found');
             const deductedAmount = existing.conversionRate
               ? Math.round((existing.amount / existing.conversionRate) * 100) / 100
               : existing.amount;
-            await trackedBalanceDelta(scope, source.id, deductedAmount);
+            if (source) await trackedBalanceDelta(scope, source.id, deductedAmount);
             if (existing.destinationAccountId) {
               const cashAdvanceCard = accountStore.getAccount(existing.destinationAccountId);
-              if (!cashAdvanceCard) throw new Error('Cash advance card not found');
-              // Reverse exactly what was credited — clamped repayments stamp
-              // the true figure into their internal note.
-              const creditedBack = cardCreditedAmountOf(existing);
-              checkBalance(cashAdvanceCard, creditedBack);
-              await trackedBalanceDelta(scope, cashAdvanceCard.id, -creditedBack);
+              if (cashAdvanceCard) {
+                // Reverse exactly what was credited — clamped repayments stamp
+                // the true figure into their internal note.
+                const creditedBack = cardCreditedAmountOf(existing);
+                checkReversalBalance(cashAdvanceCard, creditedBack, options.allowNegative);
+                await trackedBalanceDelta(scope, cashAdvanceCard.id, -creditedBack);
+              }
             }
           }
           await trackedUpdateLoan(scope, relatedLoanId, {
@@ -1674,40 +1772,44 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         case 'adjustment': {
           const adjustedId = existing.destinationAccountId ?? existing.sourceAccountId;
           const adjusted = adjustedId ? accountStore.getAccount(adjustedId) : undefined;
-          if (!adjusted) throw new Error('Account not found');
-          // destination leg = balance was raised → reverse lowers it (and may
-          // need the money to still be there); source leg = the opposite.
-          const delta = existing.destinationAccountId ? -existing.amount : existing.amount;
-          if (delta < 0) checkBalance(adjusted, existing.amount);
-          await trackedBalanceDelta(scope, adjusted.id, delta);
+          if (adjusted) {
+            // destination leg = balance was raised → reverse lowers it (and may
+            // need the money to still be there); source leg = the opposite.
+            const delta = existing.destinationAccountId ? -existing.amount : existing.amount;
+            if (delta < 0) checkReversalBalance(adjusted, existing.amount, options.allowNegative);
+            await trackedBalanceDelta(scope, adjusted.id, delta);
+          }
           break;
         }
 
         case 'goal_contribution': {
+          if (!existing.relatedGoalId) throw new Error('Savings contribution details not found');
+          // Self-stored contributions moved no balances (goalSelfStored flag)
+          // — only the goal's saved total reverses.
+          const selfStored = existingNoteMeta.goalSelfStored === '1';
           const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
-          if (!source || !existing.relatedGoalId) throw new Error('Savings contribution details not found');
           const restoredAmount = existing.conversionRate
             ? Math.round((existing.amount / existing.conversionRate) * 100) / 100
             : existing.amount;
-          if (existing.destinationAccountId) {
+          if (!selfStored && existing.destinationAccountId) {
             const destination = accountStore.getAccount(existing.destinationAccountId);
-            if (!destination) throw new Error('Savings destination account not found');
-            checkBalance(destination, existing.amount);
-            await trackedBalanceDelta(scope, destination.id, -existing.amount);
+            if (destination) {
+              checkReversalBalance(destination, existing.amount, options.allowNegative);
+              await trackedBalanceDelta(scope, destination.id, -existing.amount);
+            }
           }
-          await trackedBalanceDelta(scope, source.id, restoredAmount);
+          if (!selfStored && source) await trackedBalanceDelta(scope, source.id, restoredAmount);
           await trackedAddContribution(scope, existing.relatedGoalId, -existing.amount);
           break;
         }
 
         case 'investment_buy': {
           const source = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
-          if (!source) throw new Error('Source account not found');
           // Refund exactly what was deducted (same conversion arithmetic as apply).
           const deducted = existing.conversionRate
             ? Math.round((existing.amount / existing.conversionRate) * 100) / 100
             : existing.amount;
-          await trackedBalanceDelta(scope, source.id, deducted);
+          if (source) await trackedBalanceDelta(scope, source.id, deducted);
           // Two-way lookup: relatedInvestmentId is primary, transactionId is
           // the fallback for rows restored from backups that predate the link
           // column — otherwise the trade row would survive as phantom shares.
@@ -1722,13 +1824,14 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         case 'investment_sell':
         case 'investment_dividend': {
           const destination = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
-          if (!destination) throw new Error('Destination account not found');
           const credited = existing.conversionRate
             ? Math.round(existing.amount * existing.conversionRate * 100) / 100
             : existing.amount;
-          // The credited money may have been spent since — income-delete precedent.
-          checkBalance(destination, credited);
-          await trackedBalanceDelta(scope, destination.id, -credited);
+          if (destination) {
+            // The credited money may have been spent since — income-delete precedent.
+            checkReversalBalance(destination, credited, options.allowNegative);
+            await trackedBalanceDelta(scope, destination.id, -credited);
+          }
           const invTrades = useInvestmentStore.getState().trades;
           const trade = (existing.relatedInvestmentId
             ? invTrades.find((t) => t.id === existing.relatedInvestmentId)
@@ -1749,7 +1852,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     );
   },
 
-  deleteLoanCascade: async (loanId) => {
+  deleteLoanCascade: async (loanId, options = {}) => {
     await ensureSupportingStoresLoaded();
     if (get().transactions.length === 0) {
       const transactions = await transactionsDb.getAll();
@@ -1770,29 +1873,31 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
       // 1) Reverse every repayment's balance legs and remove the rows. The
       //    per-row loan restore is skipped — the loan itself dies at the end.
+      //    Missing (soft-deleted) accounts simply skip their leg.
       for (const r of repayments) {
         const isLedgerRecord = !r.sourceAccountId && !r.destinationAccountId;
         if (!isLedgerRecord && loan.type === 'given') {
           const destination = r.destinationAccountId ? accountStore.getAccount(r.destinationAccountId) : undefined;
-          if (!destination) throw new Error('Destination account not found');
           const credited = r.conversionRate
             ? Math.round(r.amount * r.conversionRate * 100) / 100
             : r.amount;
-          checkBalance(destination, credited);
-          await trackedBalanceDelta(scope, destination.id, -credited);
+          if (destination) {
+            checkReversalBalance(destination, credited, options.allowNegative);
+            await trackedBalanceDelta(scope, destination.id, -credited);
+          }
         } else if (!isLedgerRecord) {
           const source = r.sourceAccountId ? accountStore.getAccount(r.sourceAccountId) : undefined;
-          if (!source) throw new Error('Source account not found');
           const deducted = r.conversionRate
             ? Math.round((r.amount / r.conversionRate) * 100) / 100
             : r.amount;
-          await trackedBalanceDelta(scope, source.id, deducted);
+          if (source) await trackedBalanceDelta(scope, source.id, deducted);
           if (r.destinationAccountId) {
             const cashAdvanceCard = accountStore.getAccount(r.destinationAccountId);
-            if (!cashAdvanceCard) throw new Error('Cash advance card not found');
-            const creditedBack = cardCreditedAmountOf(r);
-            checkBalance(cashAdvanceCard, creditedBack);
-            await trackedBalanceDelta(scope, cashAdvanceCard.id, -creditedBack);
+            if (cashAdvanceCard) {
+              const creditedBack = cardCreditedAmountOf(r);
+              checkReversalBalance(cashAdvanceCard, creditedBack, options.allowNegative);
+              await trackedBalanceDelta(scope, cashAdvanceCard.id, -creditedBack);
+            }
           }
         }
         await trackedDeleteTransaction(scope, r);
@@ -1803,16 +1908,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       for (const o of origins) {
         if (o.type === 'loan_given') {
           const source = o.sourceAccountId ? accountStore.getAccount(o.sourceAccountId) : undefined;
-          if (!source) throw new Error('Source account not found');
-          await trackedBalanceDelta(scope, source.id, o.amount);
+          if (source) await trackedBalanceDelta(scope, source.id, o.amount);
         } else {
           const destination = o.destinationAccountId ? accountStore.getAccount(o.destinationAccountId) : undefined;
-          if (!destination) throw new Error('Destination account not found');
-          await trackedBalanceDelta(scope, destination.id, -o.amount);
+          if (destination) await trackedBalanceDelta(scope, destination.id, -o.amount);
           if (o.sourceAccountId) {
             const cashAdvanceCard = accountStore.getAccount(o.sourceAccountId);
-            if (!cashAdvanceCard) throw new Error('Cash advance card not found');
-            await trackedBalanceDelta(scope, cashAdvanceCard.id, o.amount);
+            if (cashAdvanceCard) await trackedBalanceDelta(scope, cashAdvanceCard.id, o.amount);
           }
         }
         await trackedDeleteTransaction(scope, o);
@@ -1847,6 +1949,14 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   // over leaving the ledger row missing entirely. The mutationScope upstream
   // will surface drift via refetch.
   restoreTransaction: async (snapshot) => {
+    // Only expense/income balance effects can be faithfully re-applied here.
+    // Anything else (loans, EMIs, goals, cards, trades) would resurrect the
+    // row WITHOUT its money — and a later re-delete would reverse balances a
+    // second time, minting money. Callers (Undo toasts) must not offer this
+    // for other types; this guard makes that a hard rule, not a convention.
+    if (snapshot.type !== 'expense' && snapshot.type !== 'income') {
+      throw new Error('Undo is only supported for expense and income entries');
+    }
     const accountStore = useAccountStore.getState();
     await transactionsDb.add(snapshot);
     await mirrorPut(db.transactions, snapshot);

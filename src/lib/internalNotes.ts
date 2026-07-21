@@ -12,6 +12,12 @@ export interface InternalNoteMeta {
   // when the credit was clamped below the repayment amount (card near/at its
   // limit). Deletion reverses exactly this, not the row's full amount.
   cardCreditedAmount?: string;
+  // Goal contribution made FROM the account the goal is stored in — no
+  // balance legs were applied (money stayed put); deletion must skip them too.
+  goalSelfStored?: string;
+  // Recurring expansion idempotency key: `${templateId}@${dueDate}`. A due
+  // charge posts at most once per (template, due date) across retries/devices.
+  recurringExpansion?: string;
 }
 
 export interface ParsedInternalNote {
