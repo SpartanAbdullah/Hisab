@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { tStatic } from './i18n';
 import type {
   Account, Transaction, Loan, EmiSchedule, Goal,
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
@@ -825,8 +826,27 @@ export const groupExpensesDb = {
     if (changes.isReconciled !== undefined) row.is_reconciled = changes.isReconciled;
     if (changes.reconciledAt !== undefined) row.reconciled_at = changes.reconciledAt;
     if (changes.reconciledBy !== undefined) row.reconciled_by = changes.reconciledBy;
-    const { error } = await supabase.from('group_expenses').update(row).eq('id', id);
+    // .select() makes RLS-filtered writes VISIBLE: creator-only policies turn
+    // a non-creator's update into 0 affected rows, which supabase-js otherwise
+    // reports as success — the "edited but nothing changed" trap.
+    const { data, error } = await supabase.from('group_expenses').update(row).eq('id', id).select('id');
     if (error) throw error;
+    if ((data ?? []).length === 0) {
+      throw new Error(tStatic('grp_only_creator_edit'));
+    }
+  },
+  // Liveness probe for mirror-transaction guards. Unlike get(), this
+  // DISTINGUISHES "row really gone" (0 rows → false) from transport/auth
+  // failures (throws) — a flaky connection must keep the guard, not release
+  // it and let a live group's mirror be deleted out from under the group.
+  async probeExists(id: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('group_expenses')
+      .select('id')
+      .eq('id', id)
+      .is('deleted_at', null);
+    if (error) throw error;
+    return (data ?? []).length > 0;
   },
   async setReconciled(id: string, isReconciled: boolean): Promise<void> {
     const { error } = await supabase.rpc('reconcile_group_expense', {
@@ -836,11 +856,15 @@ export const groupExpensesDb = {
     if (error) throw error;
   },
   async delete(id: string) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('group_expenses')
       .update({ deleted_at: new Date().toISOString(), deleted_by: getUserId() })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
     if (error) throw error;
+    if ((data ?? []).length === 0) {
+      throw new Error(tStatic('grp_only_creator_delete'));
+    }
   },
   async deleteByGroup(groupId: string) {
     const { error } = await supabase.from('group_expenses').delete().eq('group_id', groupId);
@@ -895,6 +919,22 @@ export const groupSettlementsDb = {
       updated_by: s.updatedBy ?? getUserId(),
     });
     if (error) throw error;
+  },
+  // Soft-delete one settlement (tombstone; every read filters deleted_at).
+  // .select() surfaces RLS-filtered 0-row writes as an honest error, and the
+  // deleted_at filter makes a two-device race idempotent (second write 0-rows
+  // instead of double-tombstoning and double-fanning-out).
+  async deleteOne(id: string) {
+    const { data, error } = await supabase
+      .from('group_settlements')
+      .update({ deleted_at: new Date().toISOString(), deleted_by: getUserId() })
+      .eq('id', id)
+      .is('deleted_at', null)
+      .select('id');
+    if (error) throw error;
+    if ((data ?? []).length === 0) {
+      throw new Error(tStatic('grp_only_recorder_settlement'));
+    }
   },
   async deleteByGroup(groupId: string) {
     const { error } = await supabase.from('group_settlements').delete().eq('group_id', groupId);

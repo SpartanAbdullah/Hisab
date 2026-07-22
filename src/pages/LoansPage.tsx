@@ -12,6 +12,7 @@ import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
+import { VerifiedBadge } from '../components/VerifiedBadge';
 import { MoneyDisplay } from '../components/MoneyDisplay';
 import { UserAvatar } from '../components/UserAvatar';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -438,6 +439,7 @@ export function LoansPage() {
             <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
               {group.name}
             </p>
+            {isSettled && <VerifiedBadge size={14} title={t('status_settled')} />}
             {status && (
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold shrink-0 ${
@@ -941,7 +943,13 @@ function LoanGroupSummary({
               : 'var(--color-pay-text)',
         }}
       >
-        {isSettled ? t('loan_group_settled_label') : isGiven ? t('loan_receivable') : t('loan_payable')} · {group.currency}
+        {isSettled ? (
+          <span className="inline-flex items-center gap-1">
+            <VerifiedBadge size={13} title={t('status_settled')} /> {t('loan_group_settled_label')}
+          </span>
+        ) : (
+          isGiven ? t('loan_receivable') : t('loan_payable')
+        )} · {group.currency}
       </p>
       <p className="text-[22px] font-semibold text-ink-900 tabular-nums tracking-tight mt-1 leading-tight">
         {formatMoney(primaryAmount, group.currency)}
@@ -993,12 +1001,13 @@ function LoanDrilldownRow({ loan, onClick }: { loan: Loan; onClick: () => void }
             {formatMoney(loan.totalAmount, loan.currency)}
           </p>
           <span
-            className={`text-[10px] font-semibold uppercase rounded-full px-2 py-0.5 ${
+            className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase rounded-full px-2 py-0.5 ${
               loan.status === 'settled'
                 ? 'bg-receive-50 text-receive-text'
                 : 'bg-warn-50 text-warn-600'
             }`}
           >
+            {loan.status === 'settled' && <VerifiedBadge size={12} />}
             {loan.status}
           </span>
         </div>

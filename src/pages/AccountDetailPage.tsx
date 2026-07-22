@@ -16,7 +16,7 @@ import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { daysUntilDayOfMonth } from '../lib/inboxInfo';
-import { useT } from '../lib/i18n';
+import { useT, type I18nKey } from '../lib/i18n';
 import {
   Wallet,
   Landmark,
@@ -97,12 +97,12 @@ const iconMap: Record<string, React.ElementType> = {
   savings: PiggyBank,
   credit_card: CreditCard,
 };
-const typeLabelMap: Record<string, string> = {
-  cash: 'Cash',
-  bank: 'Bank',
-  digital_wallet: 'Digital wallet',
-  savings: 'Savings',
-  credit_card: 'Credit card',
+const typeLabelKeys: Record<string, I18nKey> = {
+  cash: 'type_cash',
+  bank: 'type_bank',
+  digital_wallet: 'type_wallet',
+  savings: 'type_savings',
+  credit_card: 'type_credit_card',
 };
 
 export function AccountDetailPage() {
@@ -157,7 +157,7 @@ export function AccountDetailPage() {
         <main className="min-h-dvh bg-cream-bg flex items-center justify-center">
           <div className="flex items-center gap-2 text-ink-500 text-[13px]">
             <div className="w-3 h-3 rounded-full bg-cream-hairline animate-pulse" />
-            Loading…
+            {t('loading')}
           </div>
         </main>
       );
@@ -225,7 +225,7 @@ export function AccountDetailPage() {
         type: 'opening_balance',
         amount,
         destinationAccountId: account.id,
-        notes: openingNote.trim() || 'Opening Balance',
+        notes: openingNote.trim() || t('tx_opening_balance'),
         createdAt: openingDate ? new Date(`${openingDate}T12:00:00`).toISOString() : undefined,
       });
       await Promise.all([loadAccounts(), loadTransactions()]);
@@ -252,7 +252,7 @@ export function AccountDetailPage() {
                   setShowAdd(true);
                 }}
                 className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[11.5px] font-semibold text-white transition-colors"
-                aria-label="Add entry"
+                aria-label={t('add_entry')}
               >
                 <Plus size={12} strokeWidth={2.4} /> {t('add_entry')}
               </button>
@@ -279,7 +279,7 @@ export function AccountDetailPage() {
                         }}
                         className="w-full px-4 py-2.5 flex items-center gap-2.5 text-[13px] font-medium text-ink-800 active:bg-cream-soft"
                       >
-                        <Pencil size={14} className="text-ink-500" /> Rename
+                        <Pencil size={14} className="text-ink-500" /> {t('rename')}
                       </button>
                       <button
                         onClick={() => {
@@ -340,7 +340,7 @@ export function AccountDetailPage() {
             </div>
             <div className="min-w-0">
               <p className="text-[10.5px] font-semibold text-white/55 tracking-[0.12em] uppercase">
-                {typeLabelMap[account.type] ?? account.type.replace('_', ' ')}
+                {typeLabelKeys[account.type] ? t(typeLabelKeys[account.type]) : account.type.replace('_', ' ')}
               </p>
               <p className="text-[11px] text-white/70 flex items-center gap-1 mt-0.5">
                 <span>{meta?.flag}</span> {account.currency}
@@ -352,7 +352,7 @@ export function AccountDetailPage() {
           </div>
 
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
-            {isCreditCard ? t('cc_available') : 'Balance'}
+            {isCreditCard ? t('cc_available') : t('label_balance')}
           </p>
           <div className="mt-1.5">
             <MoneyDisplay
@@ -660,7 +660,7 @@ export function AccountDetailPage() {
               <h3 className="text-[15px] font-semibold text-ink-900 mb-1.5">{t('acct_correct_title')}</h3>
               <p className="text-[11.5px] text-ink-500 leading-relaxed mb-3">{t('acct_correct_hint')}</p>
               <label className="block text-[11px] font-semibold text-ink-500 uppercase tracking-[0.1em] mb-1.5">
-                {isCreditCard ? t('cc_available') : 'Balance'} ({account.currency})
+                {isCreditCard ? t('cc_available') : t('label_balance')} ({account.currency})
               </label>
               <input
                 type="number"
@@ -955,6 +955,7 @@ function MoneyMathCard({
   creditLimit: number;
   used: number;
 }) {
+  const t = useT();
   const currency = account.currency;
 
   if (!isCreditCard) {
@@ -965,18 +966,18 @@ function MoneyMathCard({
             <Calculator size={13} className="text-accent-600" />
           </div>
           <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
-            How this affects Your Money
+            {t('mm_title')}
           </p>
         </div>
         <div className="flex items-baseline justify-between px-1">
-          <span className="text-[12.5px] text-ink-600">Balance</span>
+          <span className="text-[12.5px] text-ink-600">{t('label_balance')}</span>
           <span className="text-[13px] font-semibold text-ink-900 tabular-nums">
             {formatMoney(account.balance, currency)}
           </span>
         </div>
         <div className="mt-3 pt-3 border-t border-cream-hairline flex items-baseline justify-between px-1">
           <span className="text-[11px] font-semibold text-receive-text uppercase tracking-[0.08em]">
-            Added to Your Money
+            {t('mm_added')}
           </span>
           <span className="text-[14px] font-semibold text-receive-text tabular-nums">
             +{formatMoney(account.balance, currency)}
@@ -1000,7 +1001,7 @@ function MoneyMathCard({
           <Calculator size={13} className="text-pay-text" />
         </div>
         <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
-          How this affects Your Money
+          {t('mm_title')}
         </p>
       </div>
 
@@ -1008,23 +1009,21 @@ function MoneyMathCard({
         <div className="rounded-xl bg-warn-50 border border-cream-border px-3 py-2.5 flex items-start gap-2">
           <Info size={12} className="text-warn-600 mt-0.5 shrink-0" />
           <p className="text-[11px] text-ink-700 leading-relaxed">
-            No credit limit set — Hisaab can't tell how much of this card you've
-            used. Open the card details to set the limit so your net worth
-            reflects what you actually owe.
+            {t('mm_no_limit_warn')}
           </p>
         </div>
       ) : (
         <>
           <div className="space-y-1.5 px-1">
             <div className="flex items-baseline justify-between">
-              <span className="text-[12.5px] text-ink-600">Credit limit</span>
+              <span className="text-[12.5px] text-ink-600">{t('cc_settings_limit')}</span>
               <span className="text-[13px] font-medium text-ink-900 tabular-nums">
                 {formatMoney(creditLimit, currency)}
               </span>
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-[12.5px] text-ink-600">
-                Available (balance)
+                {t('mm_available_balance')}
               </span>
               <span className="text-[13px] font-medium text-ink-900 tabular-nums">
                 − {formatMoney(available, currency)}
@@ -1036,7 +1035,7 @@ function MoneyMathCard({
               so the row switches to an explicit overpaid reading. */}
           <div className="mt-2 pt-2 border-t border-cream-hairline flex items-baseline justify-between px-1">
             <span className="text-[12.5px] text-ink-700">
-              {used < -0.005 ? 'Overpaid (above limit)' : 'You owe (used)'}
+              {used < -0.005 ? t('mm_overpaid_above') : t('mm_you_owe_used')}
             </span>
             <span className={`text-[13.5px] font-semibold tabular-nums ${used < -0.005 ? 'text-warn-700' : 'text-pay-text'}`}>
               {formatMoney(Math.abs(used), currency)}
@@ -1044,7 +1043,7 @@ function MoneyMathCard({
           </div>
           <div className="mt-3 pt-3 border-t border-cream-hairline flex items-baseline justify-between px-1">
             <span className={`text-[11px] font-semibold uppercase tracking-[0.08em] ${used < -0.005 ? 'text-receive-text' : 'text-pay-text'}`}>
-              {used < -0.005 ? 'Added to Your Money' : 'Subtracted from Your Money'}
+              {used < -0.005 ? t('mm_added') : t('mm_subtracted')}
             </span>
             <span className={`text-[14px] font-semibold tabular-nums ${used < -0.005 ? 'text-receive-text' : 'text-pay-text'}`}>
               {used < -0.005 ? '+' : '−'}{formatMoney(Math.abs(used), currency)}

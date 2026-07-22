@@ -1,4 +1,5 @@
 import { ChevronRight } from 'lucide-react';
+import { VerifiedBadge } from './VerifiedBadge';
 import type { SplitGroup } from '../db';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -80,8 +81,10 @@ export function GroupCard({
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
-            {group.name}
+          <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight flex items-center gap-1.5">
+            <span className="truncate">{group.name}</span>
+            {/* Verified seal: this user is square in the group. */}
+            {balanceLoaded && isSquare && <VerifiedBadge size={14} title={t('status_settled')} />}
           </p>
           <p className="text-[11px] text-ink-500 mt-0.5">
             {connected} / {group.members.length} {membersLabel}

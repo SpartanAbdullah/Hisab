@@ -48,6 +48,8 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const [splitType, setSplitType] = useState<SplitType>('equal');
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [exactAmounts, setExactAmounts] = useState<Record<string, string>>({});
+  const [percentages, setPercentages] = useState<Record<string, string>>({});
+  const [shares, setShares] = useState<Record<string, string>>({});
   const [category, setCategory] = useState('General');
   const [paidFromAccountId, setPaidFromAccountId] = useState('');
   // Whether "Not tracked in my wallet" is the deliberate choice — as opposed
@@ -57,6 +59,13 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
 
   const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
   const currentUserName = localStorage.getItem('hisaab_user_name') ?? '';
+  // Creator-only editing (matches the RLS policy on the shared row). Rows
+  // created before created_by existed (null) stay editable — the DB layer's
+  // 0-row check is the backstop for those.
+  const isCreator = !expense?.createdBy || expense.createdBy === currentUserId;
+  const creatorName = expense?.createdBy
+    ? group.members.find((m) => m.profileId === expense.createdBy)?.name ?? null
+    : null;
   const paidByMember = group.members.find(member => member.id === paidBy);
   const isPaidByMe = Boolean(
     paidByMember?.profileId === currentUserId ||
@@ -86,6 +95,40 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         const values: Record<string, string> = {};
         expense.splits.forEach(split => { values[split.memberId] = String(split.amount); });
         setExactAmounts(values);
+      }
+      // Percentage/shares were previously dropped on edit — the fallback
+      // recomputed them as equal splits. Re-derive the editors' inputs from
+      // the stored amounts so the original proportions survive a save.
+      if (expense.splitType === 'percentage' && expense.amount > 0) {
+        // Remainder-correct: independently rounded per-member percentages can
+        // sum to 99.93 or 100.07 and then fail the modal's own 100% check on
+        // an untouched expense. Pin the last member to whatever closes the
+        // gap so the seeded set always sums to exactly 100.
+        const values: Record<string, string> = {};
+        let running = 0;
+        expense.splits.forEach((split, index) => {
+          if (index === expense.splits.length - 1) {
+            values[split.memberId] = String(Math.round((100 - running) * 100) / 100);
+          } else {
+            const pct = Math.round((split.amount / expense.amount) * 100 * 100) / 100;
+            values[split.memberId] = String(pct);
+            running = Math.round((running + pct) * 100) / 100;
+          }
+        });
+        setPercentages(values);
+      }
+      if (expense.splitType === 'shares') {
+        // Raw share counts aren't persisted (only amounts). Normalize by the
+        // smallest amount so proportions survive AND the scale stays share-
+        // like — a newly toggled member's default share of '1' then means
+        // "same as the smallest", not a rounding error against raw amounts.
+        const smallest = Math.min(...expense.splits.map(s => s.amount).filter(a => a > 0));
+        const values: Record<string, string> = {};
+        expense.splits.forEach(split => {
+          const share = smallest > 0 ? Math.round((split.amount / smallest) * 100) / 100 : 1;
+          values[split.memberId] = String(share);
+        });
+        setShares(values);
       }
     }
   }, [expense, group, open]);
@@ -124,6 +167,26 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       const splits = selectedMembers.map(id => ({ memberId: id, amount: parseFloat(exactAmounts[id] || '0') }));
       const total = splits.reduce((sum, split) => sum + split.amount, 0);
       if (Math.abs(total - amt) > 0.01) return { valid: false, splits, error: t('group_total_mismatch') };
+      return { valid: true, splits };
+    }
+    if (splitType === 'percentage') {
+      const splits = selectedMembers.map(id => {
+        const pct = parseFloat(percentages[id] || '0');
+        return { memberId: id, amount: Math.round((pct / 100) * amt * 100) / 100 };
+      });
+      // Round the float sum to 2dp BEFORE comparing — 99.99 must fail and
+      // 100.00 must pass without 1e-14 float dust flipping the verdict.
+      const totalPct = Math.round(selectedMembers.reduce((sum, id) => sum + parseFloat(percentages[id] || '0'), 0) * 100) / 100;
+      if (Math.abs(totalPct - 100) > 0.01) return { valid: false, splits, error: t('group_pct_mismatch') };
+      return { valid: true, splits };
+    }
+    if (splitType === 'shares') {
+      const totalShares = selectedMembers.reduce((sum, id) => sum + parseFloat(shares[id] || '1'), 0);
+      if (totalShares === 0) return { valid: false, splits: [], error: t('val_shares_zero') };
+      const splits = selectedMembers.map(id => {
+        const share = parseFloat(shares[id] || '1');
+        return { memberId: id, amount: Math.round((share / totalShares) * amt * 100) / 100 };
+      });
       return { valid: true, splits };
     }
     return { valid: true, splits: selectedMembers.map(id => ({ memberId: id, amount: amt / selectedMembers.length })) };
@@ -172,10 +235,21 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       description: 'It will be removed for everyone in the group.',
       confirmLabel: 'Delete',
     });
-    if (ok) {
+    if (!ok) return;
+    setSaving(true);
+    try {
       await deleteGroupExpense(expense.id);
       toast.show({ type: 'success', title: 'Expense deleted' });
       onClose();
+    } catch (err) {
+      // Honest failure — previously a silently no-op'd delete toasted success.
+      toast.show({
+        type: 'error',
+        title: t('grp_expense_not_deleted'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -191,16 +265,25 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
       ))}
       footer={
       <div className="flex gap-2">
-        <button onClick={handleDelete} className="px-4 py-3.5 rounded-2xl bg-pay-50 text-pay-text active:bg-pay-100 transition-all">
+        <button onClick={handleDelete} disabled={saving || !isCreator} className="px-4 py-3.5 rounded-2xl bg-pay-50 text-pay-text active:bg-pay-100 transition-all disabled:opacity-30">
           <Trash2 size={16} />
         </button>
-        <button onClick={handleSave} disabled={saving || !description.trim() || amt <= 0}
+        <button onClick={handleSave} disabled={saving || !isCreator || !description.trim() || amt <= 0}
           className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
           {saving ? t('quick_processing') : 'Save Changes'}
         </button>
       </div>
     }>
       <div className="space-y-5 p-5">
+        {/* Only the creator's shared row is writable (RLS). Everyone else
+            used to get a fake success toast while nothing changed. */}
+        {!isCreator && (
+          <p className="text-[12px] text-warn-700 bg-warn-50 border border-warn-100 rounded-xl p-3 leading-relaxed">
+            {creatorName
+              ? t('grp_creator_banner').replace('{name}', creatorName)
+              : t('grp_creator_banner_generic')}
+          </p>
+        )}
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_desc')}</label>
           <input className={`${inputClass} mt-1.5`} value={description} onChange={e => setDescription(e.target.value)} />
@@ -250,7 +333,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
                   <p className="text-[13px] font-semibold text-ink-800">{t('acct_select_placeholder')}…</p>
                 </button>
               ) : (
-                <AccountSelect accounts={accounts} selectedId={paidFromAccountId} onSelect={setPaidFromAccountId} />
+                <AccountSelect accounts={accounts} selectedId={paidFromAccountId} onSelect={setPaidFromAccountId} preferredCurrency={group.currency} />
               )}
             </div>
           </div>
@@ -277,10 +360,10 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_split_type')}</label>
           <div className="grid grid-cols-4 gap-1.5 mt-1.5">
-            {(['equal', 'exact'] as SplitType[]).map(split => (
+            {(['equal', 'exact', 'percentage', 'shares'] as SplitType[]).map(split => (
               <button key={split} onClick={() => setSplitType(split)}
                 className={`py-2 rounded-xl text-[11px] font-bold transition-all ${splitType === split ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-500'}`}>
-                {split === 'equal' ? t('group_split_equal') : t('group_split_exact')}
+                {split === 'equal' ? t('group_split_equal') : split === 'exact' ? t('group_split_exact') : split === 'percentage' ? t('group_split_pct') : t('group_split_shares')}
               </button>
             ))}
           </div>
@@ -297,6 +380,24 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
             <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
             <input className="flex-1 border border-cream-border rounded-xl px-3 py-2 text-sm bg-cream-card" type="number" inputMode="decimal"
               value={exactAmounts[id] || ''} onChange={e => setExactAmounts({ ...exactAmounts, [id]: e.target.value })} placeholder="0" />
+          </div>
+        ))}
+
+        {amt > 0 && splitType === 'percentage' && selectedMembers.map(id => (
+          <div key={id} className="flex items-center gap-2">
+            <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
+            <input className="flex-1 border border-cream-border rounded-xl px-3 py-2 text-sm bg-cream-card" type="number" inputMode="decimal"
+              value={percentages[id] || ''} onChange={e => setPercentages({ ...percentages, [id]: e.target.value })} placeholder="%" />
+            <span className="text-[11px] text-ink-500">%</span>
+          </div>
+        ))}
+
+        {amt > 0 && splitType === 'shares' && selectedMembers.map(id => (
+          <div key={id} className="flex items-center gap-2">
+            <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
+            <input className="flex-1 border border-cream-border rounded-xl px-3 py-2 text-sm bg-cream-card" type="number" inputMode="decimal"
+              value={shares[id] || '1'} onChange={e => setShares({ ...shares, [id]: e.target.value })} placeholder="1" />
+            <span className="text-[11px] text-ink-500">{t('group_split_shares')}</span>
           </div>
         ))}
 

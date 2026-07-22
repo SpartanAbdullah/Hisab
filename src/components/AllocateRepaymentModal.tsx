@@ -108,9 +108,10 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
     if (!canSubmit) return;
     const ok = await confirmDestructive({
       title: `${t('alloc_apply')} · ${formatMoney(totalAllocated, currency)}`,
-      description: isGiven
-        ? `${personName} is paying back ${formatMoney(totalAllocated, currency)} across ${allocations.length} loan(s).`
-        : `You're paying ${personName} ${formatMoney(totalAllocated, currency)} across ${allocations.length} loan(s).`,
+      description: (isGiven ? t('alloc_confirm_received') : t('alloc_confirm_paid'))
+        .replace('{person}', personName)
+        .replace('{amount}', formatMoney(totalAllocated, currency))
+        .replace('{n}', String(allocations.length)),
       confirmLabel: t('alloc_apply'),
       cancelLabel: t('confirm_repayment_no'),
       tone: 'warning',
@@ -133,7 +134,7 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
         toast.show({
           type: 'success',
           title: t('alloc_done'),
-          subtitle: `${formatMoney(result.totalApplied, currency)} · ${result.total} ${result.total === 1 ? 'loan' : 'loans'}`,
+          subtitle: `${formatMoney(result.totalApplied, currency)} · ${result.total === 1 ? t('qe_group_one_loan') : t('qe_group_n_loans').replace('{n}', String(result.total))}`,
         });
         onDone({ totalApplied: result.totalApplied });
         onClose();
@@ -212,7 +213,7 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
               onClick={() => setLump(String(maxRemaining))}
               className="mt-2 text-[11px] text-accent-600 font-bold active:opacity-70"
             >
-              Full amount: {formatMoney(maxRemaining, currency)}
+              {t('repay_full_amount').replace('{amount}', formatMoney(maxRemaining, currency))}
             </button>
             {totalAllocated > maxRemaining + 0.001 && (
               <p className="mt-2 text-[11px] text-pay-text font-semibold">{t('alloc_over')}</p>
@@ -242,7 +243,7 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
                 );
               })}
               {eligibleAccounts.length === 0 && (
-                <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3">No {currency} account to record this against.</p>
+                <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3">{t('alloc_no_account').replace('{currency}', currency)}</p>
               )}
             </div>
           </div>
@@ -262,7 +263,7 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
                       <p className="text-[12.5px] font-semibold text-ink-900 truncate">
                         {l.notes?.trim() || `${isGiven ? t('loan_receivable') : t('loan_payable')}`}
                       </p>
-                      <p className="text-[10.5px] text-ink-500 tabular-nums">{formatMoney(l.remainingAmount, l.currency)} remaining</p>
+                      <p className="text-[10.5px] text-ink-500 tabular-nums">{formatMoney(l.remainingAmount, l.currency)} {t('loan_remaining').toLowerCase()}</p>
                     </div>
                     {strategy === 'manual' ? (
                       <input

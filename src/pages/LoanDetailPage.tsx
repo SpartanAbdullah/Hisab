@@ -7,6 +7,7 @@ import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
 import { Modal } from '../components/Modal';
+import { VerifiedBadge } from '../components/VerifiedBadge';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { usePersonStore } from '../stores/personStore';
@@ -90,7 +91,7 @@ export function LoanDetailPage() {
         <main className="min-h-dvh bg-cream-bg flex items-center justify-center">
           <div className="flex items-center gap-2 text-ink-500 text-[13px]">
             <div className="w-3 h-3 rounded-full bg-cream-hairline animate-pulse" />
-            Loading…
+            {t('loading')}
           </div>
         </main>
       );
@@ -153,9 +154,8 @@ export function LoanDetailPage() {
   const isGiven = loan.type === 'given';
   // Hero label flips based on direction: "X owes you" (receivable) vs
   // "You owe X" (payable). Plain copy beats abbreviations on a hero.
-  const heroLabel = isGiven
-    ? `${displayName || loan.personName} owes you`
-    : `You owe ${displayName || loan.personName}`;
+  const heroLabel = (isGiven ? t('loan_hero_owes_you') : t('loan_hero_you_owe'))
+    .replace('{name}', displayName || loan.personName);
 
   const refreshLoanDetail = () => {
     void loadLoans();
@@ -287,8 +287,8 @@ export function LoanDetailPage() {
       if (marked > 0) {
         toast.show({
           type: 'success',
-          title: marked === 1 ? 'Instalment marked paid' : `${marked} instalments marked paid`,
-          subtitle: 'Matched to money you already repaid — nothing was charged.',
+          title: marked === 1 ? t('emi_marked_paid_one') : t('emi_marked_paid_many').replace('{n}', String(marked)),
+          subtitle: t('emi_marked_paid_sub'),
         });
       }
       refreshLoanDetail();
@@ -411,7 +411,7 @@ export function LoanDetailPage() {
                 {displayName || loan.personName}
               </p>
               <p className="text-[11px] text-white/55 mt-0.5">
-                since {format(new Date(loan.createdAt), 'd MMM yyyy')}
+                {t('loan_since_date').replace('{date}', format(new Date(loan.createdAt), 'd MMM yyyy'))}
                 {isLinkedLoan && <span className="ml-1.5 inline-flex items-center text-[9.5px] font-semibold uppercase tracking-[0.1em] text-accent-500/90 bg-accent-500/15 rounded-full px-1.5 py-0.5">linked</span>}
                 {isCardLoan && <span className="ml-1.5 inline-flex items-center gap-1 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-warn-600 bg-warn-50 rounded-full px-2 py-0.5">{t('ca_pill')}</span>}
               </p>
@@ -430,9 +430,9 @@ export function LoanDetailPage() {
             />
           </div>
           <p className="text-[12px] text-white/55 mt-2">
-            of {formatMoney(loan.totalAmount, loan.currency)}
+            {t('loan_of_total').replace('{amount}', formatMoney(loan.totalAmount, loan.currency))}
             {totalCount > 0 && (
-              <> · {paidCount} of {totalCount} instalments cleared</>
+              <> · {t('emi_cleared_line').replace('{paid}', String(paidCount)).replace('{total}', String(totalCount))}</>
             )}
           </p>
 
@@ -466,7 +466,7 @@ export function LoanDetailPage() {
 
           {loan.status === 'settled' && (
             <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-receive-600/25 px-3 py-1 text-[11px] font-semibold text-white">
-              <CheckCircle size={12} /> {t('loan_completed')}
+              <VerifiedBadge size={14} /> {t('loan_completed')}
             </div>
           )}
           {loan.notes && (
@@ -485,20 +485,19 @@ export function LoanDetailPage() {
           <div className="rounded-[20px] bg-receive-50 border border-receive-100 p-4">
             <div className="flex items-center gap-2">
               <CheckCircle size={15} className="text-receive-text shrink-0" strokeWidth={2.2} />
-              <p className="text-[13px] font-semibold text-ink-900">Already paid?</p>
+              <p className="text-[13px] font-semibold text-ink-900">{t('emi_reconcile_title')}</p>
             </div>
             <p className="text-[11.5px] text-ink-600 mt-1.5 leading-relaxed">
-              You've repaid {formatMoney(paidDownAmount, loan.currency)} on this loan, but{' '}
-              {coveredUnpaidIds.size} instalment{coveredUnpaidIds.size > 1 ? 's' : ''} still show
-              {coveredUnpaidIds.size > 1 ? '' : 's'} unpaid. Mark{' '}
-              {coveredUnpaidIds.size > 1 ? 'them' : 'it'} paid without paying again.
+              {t('emi_reconcile_body')
+                .replace('{amount}', formatMoney(paidDownAmount, loan.currency))
+                .replace('{n}', String(coveredUnpaidIds.size))}
             </p>
             <button
               onClick={handleReconcile}
               disabled={reconciling}
               className="mt-3 w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
             >
-              {reconciling ? 'Marking…' : `Mark ${coveredUnpaidIds.size} as paid`}
+              {reconciling ? t('emi_reconcile_marking') : t('emi_reconcile_cta').replace('{n}', String(coveredUnpaidIds.size))}
             </button>
           </div>
         )}
@@ -531,12 +530,12 @@ export function LoanDetailPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
-                  Next instalment ·{' '}
+                  {t('emi_next_label')} ·{' '}
                   {nextInstalment.isOverdue
-                    ? `${Math.abs(daysToNext ?? 0)} days overdue`
+                    ? t('reminder_overdue_days').replace('{count}', String(Math.abs(daysToNext ?? 0)))
                     : daysToNext === 0
-                    ? 'today'
-                    : `in ${daysToNext} days`}
+                    ? t('reminder_duration_today')
+                    : t('emi_due_in_days').replace('{n}', String(daysToNext))}
                 </p>
                 <p className="text-[18px] font-semibold text-ink-900 tabular-nums tracking-tight mt-0.5">
                   {formatMoney(nextInstalment.amount, loan.currency)}
@@ -616,7 +615,7 @@ export function LoanDetailPage() {
         {enrichedEmis.length > 0 && (
           <div>
             <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5 px-1">
-              Schedule · {paidCount}/{totalCount}
+              {t('emi_schedule_heading')} · {paidCount}/{totalCount}
             </h2>
             <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
               {enrichedEmis.map((schedule) => {
@@ -649,13 +648,13 @@ export function LoanDetailPage() {
 
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-medium text-ink-900 tracking-tight">
-                        Instalment {schedule.installmentNumber}
+                        {t('emi_instalment_n').replace('{n}', String(schedule.installmentNumber))}
                       </p>
                       <p className="text-[10.5px] text-ink-500 mt-0.5">
                         {format(new Date(schedule.dueDate), 'd MMM yyyy')}
-                        {isPaid && ' · paid'}
+                        {isPaid && ` · ${t('emi_row_paid')}`}
                         {schedule.isOverdue && (
-                          <span className="text-pay-text font-semibold"> · overdue</span>
+                          <span className="text-pay-text font-semibold"> · {t('emi_row_overdue')}</span>
                         )}
                       </p>
                     </div>
@@ -815,7 +814,7 @@ export function LoanDetailPage() {
             <input
               value={editNotes}
               onChange={(e) => setEditNotes(e.target.value)}
-              placeholder="Optional..."
+              placeholder={t('quick_note_placeholder')}
               className="input-field"
             />
           </div>

@@ -14,6 +14,7 @@ import { usePersonStore } from '../stores/personStore';
 import { useLoanStore } from '../stores/loanStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { UserAvatar } from '../components/UserAvatar';
+import { VerifiedBadge } from '../components/VerifiedBadge';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { useToast } from '../components/Toast';
 import { ContactDetailSheet } from './ContactDetailSheet';
@@ -475,16 +476,17 @@ export function ContactsPage() {
                         <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
                           {person.name}
                         </p>
+                        {/* Verified seal right after the name — linked means a
+                            real Hisaab account sits on the other side. */}
+                        {person.linkedProfileId && (
+                          <VerifiedBadge size={14} title={t('contact_linked_pill')} />
+                        )}
                         {/* WhatsApp badge — at a glance, whether this contact
                             has a number saved for reminders. */}
                         {hasWhatsAppNumber(person.phone) && (
                           <MessageCircle size={13} strokeWidth={2.2} className="shrink-0" style={{ color: '#1FA855' }} aria-label="WhatsApp added" />
                         )}
-                        {person.linkedProfileId ? (
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] rounded-full bg-accent-100 text-accent-600 px-1.5 py-0.5 shrink-0">
-                            linked
-                          </span>
-                        ) : (
+                        {!person.linkedProfileId && (
                           <span className="text-[10px] font-medium uppercase tracking-[0.08em] rounded-full bg-cream-soft border border-cream-hairline text-ink-500 px-1.5 py-0.5 shrink-0">
                             local
                           </span>

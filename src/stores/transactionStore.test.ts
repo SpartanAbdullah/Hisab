@@ -145,6 +145,13 @@ vi.mock('../lib/supabaseDb', async () => {
       async add(a: Record<string, unknown>) { activities.set(a.id as string, a); },
     },
 
+    // Mirror-liveness probe: false = the group expense is gone (orphan mirror
+    // released). Tests never exercise live group guards.
+    groupExpensesDb: {
+      async get() { return null; },
+      async probeExists() { return false; },
+    },
+
     investmentMarketsDb: {
       async getAll() { return Array.from(investmentMarkets.values()); },
       async add(m: Record<string, unknown>) { investmentMarkets.set(m.id as string, m); },

@@ -118,16 +118,16 @@ export function RecurringDuePrompt() {
       // happens to the due-date advance. Never tell the user it failed.
       try {
         await advanceTemplate(current.id);
-        toast.show({ type: 'success', title: `${current.label || current.category} posted` });
+        toast.show({ type: 'success', title: t('rec_posted_title').replace('{name}', current.label || current.category) });
       } catch {
-        toast.show({ type: 'success', title: `${current.label || current.category} posted`, subtitle: t('rec_posted_advance_failed') });
+        toast.show({ type: 'success', title: t('rec_posted_title').replace('{name}', current.label || current.category), subtitle: t('rec_posted_advance_failed') });
       }
       pop();
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not post',
-        subtitle: err instanceof Error ? err.message : 'Try again later.',
+        title: t('rec_post_failed_title'),
+        subtitle: err instanceof Error ? err.message : t('err_page_msg'),
       });
     } finally {
       setWorking(false);
@@ -165,7 +165,7 @@ export function RecurringDuePrompt() {
     setWorking(true);
     try {
       await updateTemplate(current.id, { active: false });
-      toast.show({ type: 'success', title: 'Paused. Resume anytime from Recurring.' });
+      toast.show({ type: 'success', title: t('rec_paused_toast') });
       // Drop everything from the queue belonging to this template.
       setQueue((prev) => prev.filter((t) => t.id !== current.id));
     } finally {
@@ -174,7 +174,7 @@ export function RecurringDuePrompt() {
   };
 
   return (
-    <Modal open={!!current} onClose={pop} title="Recurring entry due">
+    <Modal open={!!current} onClose={pop} title={t('rec_due_title')}>
       <div className="space-y-4">
         <div className="rounded-2xl bg-cream-soft border border-cream-border p-4 flex items-start gap-3">
           {/* Brand/category glyph when we can infer one ("Netflix" → 🎬,
@@ -198,16 +198,16 @@ export function RecurringDuePrompt() {
               {formatMoney(current.amount, current.currency)}
             </p>
             <p className="text-[11px] text-ink-500 mt-1">
-              Due {current.nextDueDate} ·{' '}
+              {t('rec_due_on').replace('{date}', current.nextDueDate)} ·{' '}
               {current.type === 'income'
-                ? `to ${accountName(current.destinationAccountId)}`
-                : `from ${accountName(current.sourceAccountId)}`}
+                ? t('rec_to_account').replace('{account}', accountName(current.destinationAccountId))
+                : t('rec_from_account').replace('{account}', accountName(current.sourceAccountId))}
             </p>
           </div>
         </div>
 
         <button onClick={handleConfirm} disabled={working} className="cta-primary flex items-center justify-center gap-2">
-          <CheckCircle size={14} /> {working ? 'Posting…' : 'Confirm & post'}
+          <CheckCircle size={14} /> {working ? t('rec_posting') : t('rec_confirm_post')}
         </button>
         <div className="flex gap-2">
           <button
@@ -215,19 +215,19 @@ export function RecurringDuePrompt() {
             disabled={working}
             className="cta-secondary flex-1 flex items-center justify-center gap-1"
           >
-            <SkipForward size={12} /> Skip this one
+            <SkipForward size={12} /> {t('rec_skip_one')}
           </button>
           <button
             onClick={handlePause}
             disabled={working}
             className="cta-secondary flex-1 flex items-center justify-center gap-1"
           >
-            <Pause size={12} /> Pause
+            <Pause size={12} /> {t('rec_pause')}
           </button>
         </div>
         {queue.length > 1 && (
           <p className="text-[11px] text-ink-500 text-center">
-            {queue.length - 1} more after this one
+            {t('rec_more_after').replace('{n}', String(queue.length - 1))}
           </p>
         )}
       </div>

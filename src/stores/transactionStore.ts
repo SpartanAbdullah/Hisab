@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { db } from '../db';
-import { transactionsDb, emiSchedulesDb, loansDb, goalsDb } from '../lib/supabaseDb';
+import { transactionsDb, emiSchedulesDb, loansDb, goalsDb, groupExpensesDb } from '../lib/supabaseDb';
 import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
 import { addMonths, format } from 'date-fns';
 import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType, InvestmentTrade } from '../db';
@@ -275,6 +275,21 @@ function isEditableTransactionType(type: Transaction['type']): type is 'expense'
 // Tracked mutation helpers. Each performs the forward write and registers its
 // inverse on the scope. Inverses run LIFO on rollback. Every helper here is
 // delta-based or snapshot-based so concurrent mutations commute.
+
+// A mirror transaction is locked to its group expense ("edit it from the
+// group screen") — but only while that group expense still EXISTS. Group
+// deletion cascades the shared rows away server-side, and the old
+// unconditional guard then locked every member's mirror forever. Only a
+// CONFIRMED 0-row probe releases the mirror; probeExists throws on
+// transport/auth failures, so a flaky connection keeps the guard (fail
+// safe) instead of letting a live group's mirror slip out from under it.
+async function groupExpenseStillExists(groupExpenseId: string): Promise<boolean> {
+  try {
+    return await groupExpensesDb.probeExists(groupExpenseId);
+  } catch {
+    return true;
+  }
+}
 
 async function trackedBalanceDelta(scope: MutationScope, accountId: string, delta: number): Promise<void> {
   const accounts = useAccountStore.getState();
@@ -1318,7 +1333,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     if (!existing) throw new Error('Transaction not found');
 
     const existingNoteMeta = parseInternalNote(existing.notes).meta;
-    if (existingNoteMeta.groupExpenseId && !options.allowLinkedGroupExpense) {
+    if (
+      existingNoteMeta.groupExpenseId &&
+      !options.allowLinkedGroupExpense &&
+      await groupExpenseStillExists(existingNoteMeta.groupExpenseId)
+    ) {
       throw new Error('This expense belongs to a group. Edit it from the group details screen.');
     }
 
@@ -1594,7 +1613,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     if (!existing) return;
 
     const existingNoteMeta = parseInternalNote(existing.notes).meta;
-    if (existingNoteMeta.groupExpenseId && !options.allowLinkedGroupExpense) {
+    if (
+      existingNoteMeta.groupExpenseId &&
+      !options.allowLinkedGroupExpense &&
+      await groupExpenseStillExists(existingNoteMeta.groupExpenseId)
+    ) {
       throw new Error('This expense belongs to a group. Delete it from the group details screen.');
     }
 

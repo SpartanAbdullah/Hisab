@@ -103,7 +103,7 @@ export function RepaymentModal({
     setAmount(installmentAmount != null ? String(installmentAmount) : '');
     setAccountId('');
     setConversionRate('');
-    setNotes(installmentNumber ? `EMI #${installmentNumber} paid` : '');
+    setNotes(installmentNumber ? t('emi_note_paid').replace('{n}', String(installmentNumber)) : '');
   }, [installmentAmount, installmentNumber, open]);
 
   const handleClose = () => {
@@ -244,8 +244,10 @@ export function RepaymentModal({
       }
 
       setConfirmData({
-        title: `${isInstallmentPayment ? t('loan_mark_paid') : t('loan_repay')} - Done!`,
-        description: `${formatMoney(parsedAmount, loan.currency)} ${isGiven ? 'received from' : 'repaid to'} ${resolvePersonName({ personId: loan.personId, fallback: loan.personName })}`,
+        title: t('title_done').replace('{label}', isInstallmentPayment ? t('loan_mark_paid') : t('loan_repay')),
+        description: (isGiven ? t('repay_done_received_from') : t('repay_done_paid_to'))
+          .replace('{amount}', formatMoney(parsedAmount, loan.currency))
+          .replace('{person}', resolvePersonName({ personId: loan.personId, fallback: loan.personName })),
         changes,
       });
       setShowConfirmation(true);
@@ -313,7 +315,7 @@ export function RepaymentModal({
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-ink-500">Total</p>
+                <p className="text-[10px] text-ink-500">{t('label_total')}</p>
                 <p className="text-[13px] font-semibold text-ink-500 tabular-nums">
                   {formatMoney(loan.totalAmount, loan.currency)}
                 </p>
@@ -390,7 +392,7 @@ export function RepaymentModal({
                 onClick={() => setAmount(String(loan.remainingAmount))}
                 className="mt-2 text-[11px] text-accent-600 font-bold active:opacity-70"
               >
-                Full amount: {formatMoney(loan.remainingAmount, loan.currency)}
+                {t('repay_full_amount').replace('{amount}', formatMoney(loan.remainingAmount, loan.currency))}
               </button>
             ) : null}
             {amountValidationMsg && (
@@ -479,7 +481,7 @@ export function RepaymentModal({
             <input
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              placeholder="Optional..."
+              placeholder={t('quick_note_placeholder')}
               className="input-field"
             />
           </div>

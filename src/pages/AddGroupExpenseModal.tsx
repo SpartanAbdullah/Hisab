@@ -324,7 +324,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
             {!dontTrackInAccounts && (
               <>
                 <div className="mt-2">
-                  <AccountSelect accounts={accounts} selectedId={paidFromAccountId} onSelect={setPaidFromAccountId} />
+                  <AccountSelect accounts={accounts} selectedId={paidFromAccountId} onSelect={setPaidFromAccountId} preferredCurrency={group.currency} />
                 </div>
                 <p className="text-[10.5px] text-ink-500 mt-1.5 leading-relaxed">{t('group_paid_from_hint')}</p>
               </>

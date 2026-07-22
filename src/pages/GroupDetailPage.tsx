@@ -12,6 +12,7 @@ import { GroupInviteModal } from '../components/GroupInviteModal';
 import { ProgressRing } from '../components/ProgressRing';
 import { PageErrorState } from '../components/PageErrorState';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { VerifiedBadge } from '../components/VerifiedBadge';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
@@ -70,6 +71,19 @@ function getActivityDisplay(
         note: settlement?.note || undefined,
         amount: formatMoney(amount, group.currency),
         amountClass: 'text-receive-text',
+      };
+    }
+    case 'settlement_deleted': {
+      const fromId = typeof payload.fromMember === 'string' ? payload.fromMember : undefined;
+      const toId = typeof payload.toMember === 'string' ? payload.toMember : undefined;
+      const amount = typeof payload.amount === 'number' ? payload.amount : 0;
+      return {
+        icon: <Handshake size={16} />,
+        iconBg: 'bg-warn-50 text-warn-600',
+        title: `${memberName(fromId)} → ${memberName(toId)}`,
+        subtitle: 'Settlement removed',
+        amount: formatMoney(amount, group.currency),
+        amountClass: 'text-warn-600',
       };
     }
     case 'expense_added': {
@@ -172,7 +186,7 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const t = useT();
   const toast = useToast();
-  const { groups, getGroupExpenses, getSimplifiedDebts, getPairwiseDebts, deleteGroup, leaveGroup, getGroupEvents, getSettlements, loadGroups, setGroupExpenseReconciled } = useSplitStore();
+  const { groups, getGroupExpenses, getSimplifiedDebts, getPairwiseDebts, deleteGroup, leaveGroup, getGroupEvents, getSettlements, deleteSettlement, loadGroups, setGroupExpenseReconciled } = useSplitStore();
   const markGroupRead = useNotificationStore((state) => state.markGroupRead);
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
@@ -365,14 +379,42 @@ export function GroupDetailPage() {
     .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.paid - a.paid || a.member.name.localeCompare(b.member.name));
 
   const handleDelete = async () => {
+    // Unsettled debts vanish with the group — say so explicitly instead of
+    // the generic body, so nobody deletes away money they're still owed.
+    const outstanding = pairwiseDebts.reduce((s, d) => s + d.amount, 0);
     const ok = await confirmDestructive({
       title: t('group_delete_confirm'),
-      description: t('del_group_body'),
+      description: outstanding > 0.005
+        ? `${t('group_delete_unsettled').replace('{amount}', formatMoney(outstanding, group.currency))} ${t('del_group_body')}`
+        : t('del_group_body'),
       confirmLabel: 'Delete group',
     });
     if (ok) {
       await deleteGroup(group.id);
       navigate('/groups');
+    }
+  };
+
+  const handleRemoveSettlement = async (settlement: (typeof settlements)[number]) => {
+    const fromName = group.members.find((m) => m.id === settlement.fromMember)?.name ?? '?';
+    const toName = group.members.find((m) => m.id === settlement.toMember)?.name ?? '?';
+    const ok = await confirmDestructive({
+      title: t('stl_remove_title'),
+      description: t('stl_remove_body')
+        .replace('{from}', fromName)
+        .replace('{to}', toName)
+        .replace('{amount}', formatMoney(settlement.amount, group.currency)),
+      confirmLabel: t('stl_remove_cta'),
+      cancelLabel: t('not_now'),
+      tone: 'warning',
+    });
+    if (!ok) return;
+    try {
+      await deleteSettlement(group.id, settlement.id);
+      toast.show({ type: 'success', title: t('stl_removed') });
+      void reload();
+    } catch (err) {
+      toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
     }
   };
 
@@ -624,7 +666,9 @@ export function GroupDetailPage() {
               </p>
               <p className="text-[11px] text-ink-500 mt-0.5">
                 {totalOutstanding === 0 ? (
-                  <span className="text-receive-text font-semibold">All settled</span>
+                  <span className="text-receive-text font-semibold inline-flex items-center gap-1">
+                    <VerifiedBadge size={13} title={t('group_settled')} /> {t('group_settled')}
+                  </span>
                 ) : (
                   <>
                     <span className="text-pay-text font-semibold">{formatMoney(totalOutstanding, group.currency)}</span>
@@ -973,9 +1017,29 @@ export function GroupDetailPage() {
                       {display.note && (
                         <p className="text-[11px] text-ink-500 mt-1.5 italic break-words">“{display.note}”</p>
                       )}
-                      <p className="text-[10px] font-semibold text-ink-400 tabular-nums mt-2 tracking-wide">
-                        {formatActivityTime(event.createdAt)}
-                      </p>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-[10px] font-semibold text-ink-400 tabular-nums tracking-wide">
+                          {formatActivityTime(event.createdAt)}
+                        </p>
+                        {/* A wrong settle-up (wrong row, double-record from two
+                            phones) used to be permanent — the recorder can now
+                            remove it and balances recalculate. */}
+                        {event.eventType === 'settlement_added' &&
+                          (() => {
+                            const settlement = settlements.find((s) => s.id === event.entityId);
+                            if (!settlement) return null;
+                            if (settlement.createdBy && settlement.createdBy !== currentUserId) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => void handleRemoveSettlement(settlement)}
+                                className="text-[10px] font-semibold text-pay-text active:opacity-70 flex items-center gap-1"
+                              >
+                                <Trash2 size={10} /> {t('stl_remove_cta')}
+                              </button>
+                            );
+                          })()}
+                      </div>
                     </div>
                   </div>
                 </div>

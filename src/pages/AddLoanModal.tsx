@@ -194,7 +194,7 @@ export function AddLoanModal({ open, onClose }: Props) {
 
         <div>
           <label className="form-label">{t('loan_to_whom')}</label>
-          <ContactPicker value={contact} onChange={setContact} placeholder="Naam likho..." required className="input-field" />
+          <ContactPicker value={contact} onChange={setContact} placeholder={t('quick_who_placeholder')} required className="input-field" />
           {wouldBranchToLinked ? (
             <p className="text-[11px] text-accent-600 mt-1.5">{t('ltr_branch_helper')}</p>
           ) : (
@@ -203,7 +203,7 @@ export function AddLoanModal({ open, onClose }: Props) {
         </div>
 
         <div>
-          <label className="form-label">Amount</label>
+          <label className="form-label">{t('amount_label')}</label>
           <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="input-field text-center text-lg font-bold tabular-nums" required />
         </div>
 
@@ -247,7 +247,7 @@ export function AddLoanModal({ open, onClose }: Props) {
                   !cashAdvanceSourceId ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-cream-card text-ink-500'
                 }`}
               >
-                No credit card
+                {t('cash_advance_none')}
               </button>
               {availableCashAdvanceCards.map(a => (
                 <button key={a.id} type="button" onClick={() => setCashAdvanceSourceId(a.id)}
@@ -265,7 +265,7 @@ export function AddLoanModal({ open, onClose }: Props) {
 
         <div>
           <label className="form-label">{t('quick_note')}</label>
-          <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Koi detail..." className="input-field" />
+          <input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('quick_note_placeholder')} className="input-field" />
         </div>
 
         <p className="text-[12px] text-ink-500 bg-cream-soft/80 border border-cream-hairline rounded-2xl p-3 leading-relaxed">
@@ -284,7 +284,7 @@ export function AddLoanModal({ open, onClose }: Props) {
               <input type="number" value={installments} onChange={e => setInstallments(e.target.value)} placeholder="12" className="input-field" required />
             </div>
             <div>
-              <label className="form-label">Start Date</label>
+              <label className="form-label">{t('kameti_start_date')}</label>
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-field" required />
             </div>
           </div>

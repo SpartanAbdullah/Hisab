@@ -38,6 +38,7 @@ import type {
 import { useActivityStore } from './activityStore';
 import { useTransactionStore } from './transactionStore';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
+import { tStatic } from '../lib/i18n';
 import { refreshAfterSuccessfulLeave } from '../lib/groupLeave';
 import { computePairwiseDebts } from '../lib/groupDebts';
 import { coreExpenseFieldsChanged } from '../lib/groupExpenseDiff';
@@ -107,6 +108,10 @@ interface SplitState {
     amount: number;
     note?: string;
   }) => Promise<GroupSettlement>;
+  // Undo a wrongly recorded settle-up (wrong row, wrong amount, double-record
+  // from two phones). Creator-only; debts self-correct on reload since all
+  // balance math derives from the settlement rows.
+  deleteSettlement: (groupId: string, settlementId: string) => Promise<void>;
 
   getSimplifiedDebts: (groupId: string) => Promise<SimplifiedDebt[]>;
   // Raw direct "you owe X to Y" debts with no rerouting — the default settle-up view.
@@ -526,6 +531,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   },
 
   deleteGroup: async (id) => {
+    // Personal mirror transactions are deliberately NOT deleted here: they
+    // record money that really left the user's accounts, and deleting them
+    // would refund balances for spending that genuinely happened. Once the
+    // group rows die (FK cascade for every member), the liveness probe in
+    // the transaction guards releases each mirror for normal edit/delete.
     await groupExpensesDb.deleteByGroup(id);
     await groupSettlementsDb.deleteByGroup(id);
     await splitGroupsDb.delete(id);
@@ -722,7 +732,17 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
 
     const currentUserId = getCurrentUserId();
-    const existingMeta = parseInternalNote(existing.notes).meta;
+    // Creator-only, enforced BEFORE any side effects. RLS would silently
+    // 0-row the shared write anyway — but by then this user's own mirror
+    // transaction would already have been mutated, desyncing the two.
+    if (existing.createdBy && existing.createdBy !== currentUserId) {
+      throw new Error(tStatic('grp_only_creator_edit'));
+    }
+    const parsedExistingNote = parseInternalNote(existing.notes);
+    const existingMeta = parsedExistingNote.meta;
+    // The user's visible note must survive edits — it used to be silently
+    // erased because every rewrite passed '' as the visible part.
+    const visibleNote = parsedExistingNote.visibleNote;
     const nextPaidFromAccountId = changes.paidFromAccountId === undefined
       ? existingMeta.paidFromAccountId
       : changes.paidFromAccountId ?? undefined;
@@ -765,7 +785,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
           amount: nextExpense.amount,
           sourceAccountId: nextPaidFromAccountId,
           category: nextExpense.category,
-          notes: buildInternalNote('', {
+          notes: buildInternalNote(visibleNote, {
             expenseDescription: nextExpense.description,
             groupExpenseId: nextExpense.id,
             groupId: group.id,
@@ -812,7 +832,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         amount: nextExpense.amount,
         sourceAccountId: nextPaidFromAccountId,
         category: nextExpense.category,
-        notes: buildInternalNote('', {
+        notes: buildInternalNote(visibleNote, {
           expenseDescription: nextExpense.description,
           groupExpenseId: nextExpense.id,
           groupId: group.id,
@@ -837,7 +857,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
         splitType: nextExpense.splitType,
         splits: nextExpense.splits,
         category: nextExpense.category,
-        notes: buildInternalNote('', {
+        notes: buildInternalNote(visibleNote, {
           linkedTransactionId,
           paidFromAccountId: nextPaidFromAccountId,
         }),
@@ -920,6 +940,13 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     const currentUserId = getCurrentUserId();
     const currentMember = findCurrentMember(group);
 
+    // Creator-only, checked BEFORE the mirror is touched — otherwise a
+    // non-creator's attempt deletes their own mirror while RLS silently
+    // keeps the shared row alive.
+    if (expense.createdBy && expense.createdBy !== currentUserId) {
+      throw new Error(tStatic('grp_only_creator_delete'));
+    }
+
     const meta = parseInternalNote(expense.notes).meta;
     if (meta.linkedTransactionId) {
       await useTransactionStore.getState().deleteTransaction(meta.linkedTransactionId, { allowLinkedGroupExpense: true });
@@ -959,6 +986,53 @@ export const useSplitStore = create<SplitState>((set, get) => ({
 
   getSettlements: async (groupId) => {
     return groupSettlementsDb.getByGroup(groupId);
+  },
+
+  deleteSettlement: async (groupId, settlementId) => {
+    const group = await hydrateGroup(get().groups.find((item) => item.id === groupId) ?? await splitGroupsDb.get(groupId));
+    if (!group) throw new Error('Group not found');
+    const currentUserId = getCurrentUserId();
+    const settlements = await groupSettlementsDb.getByGroup(groupId);
+    const settlement = settlements.find((s) => s.id === settlementId);
+    if (!settlement) return;
+    // Creator-only, checked client-side for an honest message; the RLS-backed
+    // 0-row check in deleteOne is the enforcement backstop.
+    if (settlement.createdBy && settlement.createdBy !== currentUserId) {
+      throw new Error(tStatic('grp_only_recorder_settlement'));
+    }
+    await groupSettlementsDb.deleteOne(settlementId);
+
+    const currentMember = findCurrentMember(group);
+    const actorName = currentMember?.name ?? getCurrentUserName();
+    const fromName = group.members.find((m) => m.id === settlement.fromMember)?.name ?? 'someone';
+    const toName = group.members.find((m) => m.id === settlement.toMember)?.name ?? 'someone';
+    await fanOutGroupUpdate(
+      group,
+      {
+        id: uuid(),
+        groupId: group.id,
+        actorProfileId: currentUserId,
+        eventType: 'settlement_deleted',
+        entityType: 'group_settlement',
+        entityId: settlement.id,
+        summary: `${actorName} removed a settlement (${fromName} → ${toName})`,
+        payload: {
+          amount: settlement.amount,
+          fromMember: settlement.fromMember,
+          toMember: settlement.toMember,
+        },
+        createdAt: new Date().toISOString(),
+      },
+      `${actorName} removed a settlement`,
+      `The ${fromName} → ${toName} settlement in ${group.name} was undone.`,
+    );
+
+    await useActivityStore.getState().logActivity(
+      'group_settlement',
+      `Removed a settlement in ${group.name}`,
+      settlement.id,
+      'group_settlement',
+    );
   },
 
   addSettlement: async (input) => {

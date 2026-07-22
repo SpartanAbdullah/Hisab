@@ -11,6 +11,7 @@ import { buildWhatsAppUrl, hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { formatMoney } from '../lib/constants';
 import { computeTrustScore, trustLevelStyle } from '../lib/trustScore';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { VerifiedBadge } from '../components/VerifiedBadge';
 import type { Person } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
 import { EditTransactionModal } from '../components/EditTransactionModal';
@@ -309,7 +310,13 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             {(person.name[0] ?? '?').toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[14px] font-semibold text-ink-900 truncate">{person.name}</p>
+            {/* Inner span carries `truncate` — ellipsis doesn't work on flex
+                containers, and a bare text node can't shrink (min-content),
+                which clipped the badge off-screen for long names. */}
+            <p className="text-[14px] font-semibold text-ink-900 flex items-center gap-1.5 min-w-0">
+              <span className="truncate">{person.name}</span>
+              {isLinked && <VerifiedBadge size={15} title={t('contact_linked_pill')} />}
+            </p>
             {isLinked && person.linkedProfileId ? (
               // Surface WHICH Hisaab account this contact is paired with so the
               // user can verify before syncing or unlinking. The display name

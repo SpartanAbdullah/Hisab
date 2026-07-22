@@ -170,7 +170,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
         });
       }
 
-      toast.show({ type: 'success', title: 'Entry updated' });
+      toast.show({ type: 'success', title: t('tx_updated') });
       onClose();
     } catch (error) {
       toast.show({
@@ -263,14 +263,17 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
       <Modal
         open={open}
         onClose={onClose}
-        title="Entry details"
+        title={t('tx_details_title')}
         footer={(
+          // Group-linked mirrors are no longer hard-disabled: the store guard
+          // routes LIVE group expenses to the group screen but releases
+          // orphans whose group was deleted (previously locked forever).
           <button
             onClick={handleDelete}
-            disabled={saving || Boolean(noteMeta.groupExpenseId)}
+            disabled={saving}
             className="w-full rounded-2xl bg-pay-50 text-pay-text py-3.5 text-sm font-bold disabled:opacity-40"
           >
-            {saving ? t('quick_processing') : 'Delete entry'}
+            {saving ? t('quick_processing') : t('tx_delete_entry')}
           </button>
         )}
       >
@@ -286,16 +289,16 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
               {formatMoney(transaction.amount, transaction.currency)}
             </p>
           </div>
-          {source && <p className="text-[13px] text-ink-700">From: <span className="font-semibold">{source.name}</span></p>}
-          {destination && <p className="text-[13px] text-ink-700">To: <span className="font-semibold">{destination.name}</span></p>}
-          {transaction.relatedPerson && <p className="text-[13px] text-ink-700">Person: <span className="font-semibold">{transaction.relatedPerson}</span></p>}
+          {source && <p className="text-[13px] text-ink-700">{t('label_from')} <span className="font-semibold">{source.name}</span></p>}
+          {destination && <p className="text-[13px] text-ink-700">{t('label_to')} <span className="font-semibold">{destination.name}</span></p>}
+          {transaction.relatedPerson && <p className="text-[13px] text-ink-700">{t('label_person')} <span className="font-semibold">{transaction.relatedPerson}</span></p>}
           {transaction.notes && <p className="text-[12px] text-ink-500">{parseInternalNote(transaction.notes).visibleNote}</p>}
           <p className="text-[12px] text-ink-500 bg-cream-soft rounded-xl p-3 leading-relaxed">
             {t('tx_readonly_note')}
           </p>
           {noteMeta.groupExpenseId && (
             <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3 leading-relaxed">
-              This entry belongs to a group expense. Edit or delete it from the group details screen.
+              {t('tx_group_expense_warn')}
             </p>
           )}
         </div>
@@ -314,7 +317,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           <button
             onClick={handleDelete}
             disabled={saving}
-            aria-label="Delete entry"
+            aria-label={t('tx_delete_entry')}
             className="min-h-[44px] min-w-[44px] px-4 rounded-2xl bg-pay-50 text-pay-text active:bg-pay-100 transition-all disabled:opacity-50 flex items-center justify-center"
           >
             <Trash2 size={16} />
@@ -343,7 +346,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
         </div>
 
         <div>
-          <label className="form-label">Amount</label>
+          <label className="form-label">{t('amount_label')}</label>
           <input
             type="number"
             step="0.01"
@@ -379,7 +382,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                   !selectedCashAdvanceCard ? 'border-accent-500 bg-accent-50 text-accent-600' : 'border-cream-border bg-cream-card text-ink-500'
                 }`}
               >
-                No credit card
+                {t('cash_advance_none')}
               </button>
               {availableCashAdvanceCards.map((account) => (
                 <button
@@ -429,7 +432,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             className="input-field"
-            placeholder="Optional..."
+            placeholder={t('quick_note_placeholder')}
           />
         </div>
 

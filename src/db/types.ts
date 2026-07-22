@@ -284,7 +284,8 @@ export type GroupEventType =
   | 'expense_added'
   | 'expense_updated'
   | 'expense_deleted'
-  | 'settlement_added';
+  | 'settlement_added'
+  | 'settlement_deleted';
 
 export interface GroupInvite {
   id: string;

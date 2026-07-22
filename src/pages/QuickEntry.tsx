@@ -631,9 +631,9 @@ export function QuickEntry({
           await applyRepayment(effectiveSingleLoan.id, amt, notes);
           setConfirmData({
             title: t('confirm_repayment_saved'),
-            description: effectiveSingleLoan.type === 'given'
-              ? `${effectiveSingleLoan.personName} paid you back ${formatMoney(amt, effectiveSingleLoan.currency)}.`
-              : `You paid ${effectiveSingleLoan.personName} back ${formatMoney(amt, effectiveSingleLoan.currency)}.`,
+            description: (effectiveSingleLoan.type === 'given' ? t('repay_done_received_desc') : t('repay_done_paid_desc'))
+              .replace('{person}', effectiveSingleLoan.personName)
+              .replace('{amount}', formatMoney(amt, effectiveSingleLoan.currency)),
             changes: [],
             route: `/loan/${effectiveSingleLoan.id}`,
           });
@@ -677,9 +677,9 @@ export function QuickEntry({
           });
           setConfirmData({
             title: t('confirm_loan_saved'),
-            description: loan.type === 'given'
-              ? `${loan.personName} owes you ${formatMoney(amt, loan.currency)}.`
-              : `You owe ${loan.personName} ${formatMoney(amt, loan.currency)}.`,
+            description: (loan.type === 'given' ? t('loan_done_owes_you') : t('loan_done_you_owe'))
+              .replace('{person}', loan.personName)
+              .replace('{amount}', formatMoney(amt, loan.currency)),
             changes: [],
             route: `/loan/${loan.id}`,
           });
@@ -877,8 +877,8 @@ export function QuickEntry({
           console.error('generateSchedule failed after successful transaction', err);
           toast.show({
             type: 'error',
-            title: 'EMI schedule not created',
-            subtitle: 'Your transaction was saved, but setting up the installment plan failed. Open the loan to retry.',
+            title: t('emi_schedule_failed_title'),
+            subtitle: t('emi_schedule_failed_sub'),
             duration: 6000,
           });
         }
@@ -888,21 +888,21 @@ export function QuickEntry({
       const confirmationCurrency = changes[0]?.currency ?? localStorage.getItem('hisaab_primary_currency') ?? 'PKR';
       const resultDescription = (() => {
         const first = changes[0];
-        if (type === 'expense' && first) return `${formatMoney(amt, first.currency)} was deducted from ${first.accountName}.`;
-        if (type === 'income' && first) return `${formatMoney(amt, first.currency)} was added to ${first.accountName}.`;
-        if (type === 'transfer' && changes.length === 2) return `${formatMoney(amt, changes[0].currency)} moved from ${changes[0].accountName} to ${changes[1].accountName}.`;
-        if (type === 'loan_given') return `${resolvedPerson!.name} owes you ${formatMoney(amt, confirmationCurrency)}.`;
+        if (type === 'expense' && first) return t('qe_done_deducted').replace('{amount}', formatMoney(amt, first.currency)).replace('{account}', first.accountName);
+        if (type === 'income' && first) return t('qe_done_added').replace('{amount}', formatMoney(amt, first.currency)).replace('{account}', first.accountName);
+        if (type === 'transfer' && changes.length === 2) return t('qe_done_moved').replace('{amount}', formatMoney(amt, changes[0].currency)).replace('{src}', changes[0].accountName).replace('{dst}', changes[1].accountName);
+        if (type === 'loan_given') return t('loan_done_owes_you').replace('{person}', resolvedPerson!.name).replace('{amount}', formatMoney(amt, confirmationCurrency));
         if (type === 'loan_taken' && cashAdvance && selectedCashAdvanceCard) {
           return t('qe_ca_done_desc')
             .replace('{amount}', formatMoney(amt, selectedCashAdvanceCard.currency))
             .replace('{card}', selectedCashAdvanceCard.name)
             .replace('{account}', accounts.find(a => a.id === destId)?.name ?? '');
         }
-        if (type === 'loan_taken') return `You owe ${resolvedPerson!.name} ${formatMoney(amt, confirmationCurrency)}.`;
+        if (type === 'loan_taken') return t('loan_done_you_owe').replace('{person}', resolvedPerson!.name).replace('{amount}', formatMoney(amt, confirmationCurrency));
         if (type === 'repayment' && effectiveSingleLoan) {
-          return effectiveSingleLoan.type === 'given'
-            ? `${effectiveSingleLoan.personName} paid you back ${formatMoney(amt, effectiveSingleLoan.currency)}.`
-            : `You paid ${effectiveSingleLoan.personName} back ${formatMoney(amt, effectiveSingleLoan.currency)}.`;
+          return (effectiveSingleLoan.type === 'given' ? t('repay_done_received_desc') : t('repay_done_paid_desc'))
+            .replace('{person}', effectiveSingleLoan.personName)
+            .replace('{amount}', formatMoney(amt, effectiveSingleLoan.currency));
         }
         return `${formatMoney(amt, confirmationCurrency)} saved.`;
       })();
@@ -917,7 +917,7 @@ export function QuickEntry({
         return undefined;
       })();
       setConfirmData({
-        title: emiFailed ? `${typeLabel} — Saved (EMI pending)` : `${typeLabel} — Done!`,
+        title: (emiFailed ? t('title_saved_emi_pending') : t('title_done')).replace('{label}', typeLabel),
         description: resultDescription,
         changes,
         route: confirmRoute,
@@ -1243,7 +1243,7 @@ export function QuickEntry({
             {isGroupExpense && (
               <div className="space-y-3 animate-fade-in">
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
-                  Which group?
+                  {t('qe_which_group')}
                 </label>
                 {groupsLoading && groups.length === 0 ? (
                   // Skeleton — visible only when groups truly haven't
@@ -1494,7 +1494,7 @@ export function QuickEntry({
                       <input type="number" value={emiInstallments} onChange={e => setEmiInstallments(e.target.value)} placeholder="12" className={inputClass} />
                     </div>
                     <div>
-                      <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">Start Date</label>
+                      <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('kameti_start_date')}</label>
                       <input type="date" value={emiStartDate} onChange={e => setEmiStartDate(e.target.value)} className={inputClass} />
                     </div>
                   </div>
