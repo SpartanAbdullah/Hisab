@@ -46,16 +46,26 @@ describe('advanceDate', () => {
     expect(advanceDate('2028-01-31', 'monthly')).toBe('2028-02-29');
   });
 
-  it('does not skip a month across the short-month boundary (31st progression)', () => {
-    // The old bug skipped February. Walk a 31st-of-month subscription through
-    // the year and assert every step lands in the very next month.
+  it('month-end stays month-end across the short-month boundary (31st progression)', () => {
+    // The original bug skipped February entirely; the follow-up drift parked
+    // month-end subscriptions on the 28th forever after one February. Now a
+    // due date on the LAST day of its month anchors to the last day of the
+    // next month: Jan 31 → Feb 28 → Mar 31 → Apr 30.
     const jan = '2026-01-31';
     const feb = advanceDate(jan, 'monthly');
     const mar = advanceDate(feb, 'monthly');
     const apr = advanceDate(mar, 'monthly');
     expect(feb).toBe('2026-02-28');
-    expect(mar).toBe('2026-03-28'); // anchor not restored without a stored day (Phase 2)
-    expect(apr).toBe('2026-04-28');
+    expect(mar).toBe('2026-03-31');
+    expect(apr).toBe('2026-04-30');
+  });
+
+  it('mid-month days clamp into February but do NOT become month-end anchored', () => {
+    // A 30th-of-month sub clamps to Feb 28 (unavoidable), and Feb 28 IS
+    // month-end, so it continues on last days after — the heuristic favours
+    // the real-world month-end cluster over preserving a 30th anchor.
+    expect(advanceDate('2026-01-15', 'monthly')).toBe('2026-02-15');
+    expect(advanceDate('2026-02-15', 'monthly')).toBe('2026-03-15');
   });
 
   it('clamps a 30th-of-month sub into February correctly', () => {

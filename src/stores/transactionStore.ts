@@ -152,7 +152,7 @@ interface TransactionState {
   processTransaction: (input: TransactionInput) => Promise<Transaction>;
   updateTransaction: (
     id: string,
-    input: ExpenseInput | LoanGivenInput | LoanTakenInput,
+    input: ExpenseInput | IncomeInput | TransferInput | LoanGivenInput | LoanTakenInput,
     options?: { allowLinkedGroupExpense?: boolean }
   ) => Promise<Transaction>;
   setReconciled: (id: string, isReconciled: boolean) => Promise<void>;
@@ -268,8 +268,8 @@ async function ensureSupportingStoresLoaded() {
   }
 }
 
-function isEditableTransactionType(type: Transaction['type']): type is 'expense' | 'loan_given' | 'loan_taken' {
-  return type === 'expense' || type === 'loan_given' || type === 'loan_taken';
+function isEditableTransactionType(type: Transaction['type']): type is 'expense' | 'income' | 'transfer' | 'loan_given' | 'loan_taken' {
+  return type === 'expense' || type === 'income' || type === 'transfer' || type === 'loan_given' || type === 'loan_taken';
 }
 
 // Tracked mutation helpers. Each performs the forward write and registers its
@@ -1342,11 +1342,23 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     }
 
     if (!isEditableTransactionType(existing.type)) {
-      throw new Error('Only expenses and lend/borrow entries can be edited right now.');
+      throw new Error('This entry type cannot be edited — delete and re-enter it instead.');
     }
 
     if (existing.type !== input.type) {
       throw new Error('Changing the transaction type is not supported yet.');
+    }
+
+    // A card-bill transfer that auto-settled cash-advance loans carries
+    // ledger rows keyed to ITS amount — editing it would desync them.
+    // Deletion reverses everything, so delete + re-enter is the honest path.
+    if (
+      existing.type === 'transfer' &&
+      get().transactions.some(
+        (t2) => t2.type === 'repayment' && parseInternalNote(t2.notes).meta.linkedTransactionId === existing.id,
+      )
+    ) {
+      throw new Error('This bill payment settled cash-advance records. Delete it and re-enter instead of editing.');
     }
 
     const { updated, description } = await runSafeMutation<{ updated: Transaction; description: string }>(
@@ -1391,6 +1403,93 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               reconciledBy: null,
             };
             description = `Updated expense: ${nextSource.currency} ${expenseInput.amount} from ${nextSource.name}`;
+            break;
+          }
+
+          case 'income': {
+            const incomeInput = input as IncomeInput;
+            const previousDest = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
+            const nextDest = accountStore.getAccount(incomeInput.destinationAccountId);
+            if (!nextDest) throw new Error('Destination account not found');
+
+            if (previousDest && previousDest.id === nextDest.id) {
+              // Same account — only the net delta moves. Shrinking the income
+              // needs that much still present (income-delete precedent).
+              const delta = Math.round((incomeInput.amount - existing.amount) * 100) / 100;
+              if (delta < -0.004) checkReversalBalance(nextDest, -delta, undefined);
+              if (Math.abs(delta) > 0.004) await trackedBalanceDelta(scope, nextDest.id, delta);
+            } else {
+              if (previousDest) {
+                checkReversalBalance(previousDest, existing.amount, undefined);
+                await trackedBalanceDelta(scope, previousDest.id, -existing.amount);
+              }
+              await trackedBalanceDelta(scope, nextDest.id, incomeInput.amount);
+            }
+
+            updated = {
+              ...existing,
+              amount: incomeInput.amount,
+              currency: nextDest.currency,
+              destinationAccountId: incomeInput.destinationAccountId,
+              category: incomeInput.category ?? '',
+              notes: incomeInput.notes ?? '',
+              isReconciled: false,
+              reconciledAt: null,
+              reconciledBy: null,
+            };
+            description = `Updated income: ${nextDest.currency} ${incomeInput.amount} → ${nextDest.name}`;
+            break;
+          }
+
+          case 'transfer': {
+            const transferInput = input as TransferInput;
+            const previousSource = existing.sourceAccountId ? accountStore.getAccount(existing.sourceAccountId) : undefined;
+            const previousDest = existing.destinationAccountId ? accountStore.getAccount(existing.destinationAccountId) : undefined;
+            const nextSource = accountStore.getAccount(transferInput.sourceAccountId);
+            const nextDest = accountStore.getAccount(transferInput.destinationAccountId);
+            if (!nextSource || !nextDest) throw new Error('Account not found');
+            if (nextSource.id === nextDest.id) throw new Error('Choose a different destination account');
+            if (nextSource.currency !== nextDest.currency && !transferInput.conversionRate) {
+              throw new Error('Conversion rate required for cross-currency move');
+            }
+
+            // Reverse the old legs first, then apply the new ones. Balance
+            // checks run against FRESH store state (the reversal may credit
+            // or debit the very accounts the new legs touch).
+            const previousDestAmount = existing.conversionRate
+              ? Math.round(existing.amount * existing.conversionRate * 100) / 100
+              : existing.amount;
+            if (previousDest) {
+              checkReversalBalance(previousDest, previousDestAmount, undefined);
+              await trackedBalanceDelta(scope, previousDest.id, -previousDestAmount);
+            }
+            if (previousSource) await trackedBalanceDelta(scope, previousSource.id, existing.amount);
+
+            const freshSource = useAccountStore.getState().getAccount(nextSource.id);
+            if (!freshSource) throw new Error('Account not found');
+            checkBalance(freshSource, transferInput.amount);
+            await trackedBalanceDelta(scope, nextSource.id, -transferInput.amount);
+
+            const nextRate = nextSource.currency !== nextDest.currency ? transferInput.conversionRate! : null;
+            const nextDestAmount = nextRate
+              ? Math.round(transferInput.amount * nextRate * 100) / 100
+              : transferInput.amount;
+            await trackedBalanceDelta(scope, nextDest.id, nextDestAmount);
+
+            updated = {
+              ...existing,
+              amount: transferInput.amount,
+              currency: nextSource.currency,
+              sourceAccountId: transferInput.sourceAccountId,
+              destinationAccountId: transferInput.destinationAccountId,
+              conversionRate: nextRate,
+              category: transferInput.category ?? existing.category,
+              notes: transferInput.notes ?? '',
+              isReconciled: false,
+              reconciledAt: null,
+              reconciledBy: null,
+            };
+            description = `Updated transfer: ${nextSource.currency} ${transferInput.amount} ${nextSource.name} → ${nextDest.name}`;
             break;
           }
 
@@ -1557,6 +1656,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           }
         }
 
+        // Date correction: budgets/analytics bucket by createdAt, so a wrong
+        // month was previously permanent (delete+recreate lands on today).
+        if (input.createdAt) {
+          updated = { ...updated, createdAt: input.createdAt };
+        }
         updated = { ...updated, updatedAt: new Date().toISOString() };
         await trackedUpdateTransaction(scope, id, updated, existing);
 

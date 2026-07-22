@@ -375,6 +375,36 @@ const S = {
   },
   grp_expense_not_deleted: { ur: "Expense delete nahi hua", en: "Expense not deleted" },
   qe_group_one_loan: { ur: "1 qarz", en: "1 loan" },
+  edit_date_label: { ur: "Tareekh", en: "Date" },
+  edit_date_hint: {
+    ur: "Budget aur analytics is nayi tareekh ke mahine mein ginenge.",
+    en: "Budgets and analytics will count this under the new date's month.",
+  },
+  edit_rate_label: { ur: "Rate ({src} → {dst})", en: "Rate ({src} → {dst})" },
+  tx_group_orphan_note: {
+    ur: "Jis group se yeh entry judi thi woh delete ho chuka hai — ab yeh aam entry hai jise aap delete kar sakte hain.",
+    en: "The group this entry belonged to was deleted — it's a normal entry now and can be deleted here.",
+  },
+  lsr_err_account_deleted: {
+    ur: "Bhejne wale ne woh account delete kar diya jis se yeh settlement judna thi. Un se kahein request cancel kar ke dobara bhejein, ya aap isay reject kar dein.",
+    en: "The sender deleted the account this settlement was tied to. Ask them to cancel and re-send it, or reject this request.",
+  },
+  lsr_err_amount_exceeds: {
+    ur: "Raqam ab kisi ek taraf ke baqaya se zyada hai (shayad darmiyan mein koi payment record hui). Request reject kar ke nayi bhejwayein.",
+    en: "The amount now exceeds what's left on one side (a payment was likely recorded in between). Reject this and have a fresh one sent.",
+  },
+  lsr_err_loan_inactive: {
+    ur: "Yeh loan ab active nahi raha — request purani ho chuki hai. Isay reject kar dein.",
+    en: "That loan is no longer active — this request is stale. Reject it.",
+  },
+  lsr_err_not_target: {
+    ur: "Yeh request aap ke liye nahi hai.",
+    en: "This request isn't addressed to you.",
+  },
+  lsr_err_not_found: {
+    ur: "Yeh request ab mojood nahi (shayad cancel ho gayi). Inbox refresh karein.",
+    en: "This request no longer exists (it may have been cancelled). Refresh your inbox.",
+  },
 
   // Recurring expansion safety
   rec_posted_advance_failed: {

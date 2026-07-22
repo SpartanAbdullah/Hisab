@@ -19,6 +19,7 @@ import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { formatMoney } from '../lib/constants';
 import { approxOther, plausibilityCheck } from '../lib/currencyValidation';
+import { friendlyLinkedError } from '../lib/linkedErrorMap';
 import { useT } from '../lib/i18n';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
@@ -163,8 +164,8 @@ export function InboxPage() {
   // includes the message as the toast subtitle, so users can read it and
   // we can see it in DevTools / Sentry.
   const errorSubtitle = (err: unknown): string => {
-    if (err instanceof Error) return err.message;
-    if (typeof err === 'string') return err;
+    if (err instanceof Error) return friendlyLinkedError(err.message);
+    if (typeof err === 'string') return friendlyLinkedError(err);
     try {
       return JSON.stringify(err);
     } catch {

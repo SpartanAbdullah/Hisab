@@ -90,7 +90,14 @@ export const useRecurringStore = create<RecurringState>((set, get) => ({
     const template = get().templates.find((t) => t.id === id);
     if (!template) return;
     const next = advanceDate(template.nextDueDate, template.cadence);
-    await recurringTransactionsDb.update(id, { nextDueDate: next });
+    // Compare-and-set: if another device already advanced this template,
+    // don't advance it AGAIN (which would silently skip a month) — refresh
+    // to the server's truth instead.
+    const won = await recurringTransactionsDb.advanceIfDue(id, template.nextDueDate, next);
+    if (!won) {
+      await get().loadTemplates();
+      return;
+    }
     set((s) => ({
       templates: s.templates.map((t) => (t.id === id ? { ...t, nextDueDate: next } : t)),
     }));
@@ -126,9 +133,15 @@ export function advanceDate(yyyyMmDd: string, cadence: RecurringCadence): string
       break;
     case 'monthly': {
       const day = base.getUTCDate();
+      // Month-end anchoring: a due date sitting on the LAST day of its month
+      // stays on the last day (Jan 31 → Feb 28 → Mar 31), instead of the old
+      // permanent drift to the 28th after every short month. Mid-month days
+      // clamp only when the target month is shorter.
+      const wasMonthEnd = day === daysInUTCMonth(base.getUTCFullYear(), base.getUTCMonth());
       base.setUTCDate(1); // park on the 1st so the month step can't overflow
       base.setUTCMonth(base.getUTCMonth() + 1);
-      base.setUTCDate(Math.min(day, daysInUTCMonth(base.getUTCFullYear(), base.getUTCMonth())));
+      const dim = daysInUTCMonth(base.getUTCFullYear(), base.getUTCMonth());
+      base.setUTCDate(wasMonthEnd ? dim : Math.min(day, dim));
       break;
     }
     case 'yearly': {

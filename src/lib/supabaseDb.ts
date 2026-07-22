@@ -1805,6 +1805,21 @@ export const recurringTransactionsDb = {
     const { error } = await supabase.from('recurring_transactions').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
+  // Compare-and-set due-date advance: only wins if next_due_date is still the
+  // value this device expanded. A second device that already advanced makes
+  // this 0-row (returns false) instead of double-advancing — the cross-device
+  // half of expansion safety (the post itself is deduped by its note stamp).
+  async advanceIfDue(id: string, expectedDueDate: string, nextDueDate: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('recurring_transactions')
+      .update({ next_due_date: nextDueDate })
+      .eq('id', id)
+      .eq('user_id', getUserId())
+      .eq('next_due_date', expectedDueDate)
+      .select('id');
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  },
   async delete(id: string) {
     const { error } = await supabase.from('recurring_transactions').delete().eq('id', id).eq('user_id', getUserId());
     if (error) throw error;

@@ -13,6 +13,7 @@ import { ReceiptField } from './ReceiptField';
 import { AccountSelect } from './AccountSelect';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { confirmDestructive } from './ConfirmDestructiveSheet';
+import { groupExpensesDb } from '../lib/supabaseDb';
 import { parseInternalNote } from '../lib/internalNotes';
 import { useT } from '../lib/i18n';
 import { getActionLabel } from '../lib/transactionLabel';
@@ -35,6 +36,9 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
 
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
+  const [destAccountId, setDestAccountId] = useState('');
+  const [conversionRate, setConversionRate] = useState('');
+  const [txDate, setTxDate] = useState('');
   const [cashAdvanceCardId, setCashAdvanceCardId] = useState('');
   const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
   const [originalPersonId, setOriginalPersonId] = useState<string | null>(null);
@@ -42,6 +46,10 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const [notes, setNotes] = useState('');
   const [receiptPath, setReceiptPath] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Group-mirror liveness, probed once on open: true = group expense still
+  // exists (route to the group screen), false = orphan (freely deletable),
+  // null = not a group mirror. Assume LIVE until the probe answers.
+  const [groupLive, setGroupLive] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -50,11 +58,32 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   }, [open, loadAccounts]);
 
   useEffect(() => {
+    if (!open || !transaction) return;
+    const gid = parseInternalNote(transaction.notes).meta.groupExpenseId;
+    if (!gid) {
+      setGroupLive(null);
+      return;
+    }
+    setGroupLive(true);
+    void groupExpensesDb
+      .probeExists(gid)
+      .then((alive) => setGroupLive(alive))
+      .catch(() => setGroupLive(true));
+  }, [open, transaction]);
+
+  useEffect(() => {
     if (!transaction || !open) return;
 
     const parsedNote = parseInternalNote(transaction.notes);
     setAmount(String(transaction.amount));
-    setAccountId(transaction.type === 'loan_taken' ? transaction.destinationAccountId ?? '' : transaction.sourceAccountId ?? '');
+    setAccountId(
+      transaction.type === 'loan_taken' || transaction.type === 'income'
+        ? transaction.destinationAccountId ?? ''
+        : transaction.sourceAccountId ?? '',
+    );
+    setDestAccountId(transaction.type === 'transfer' ? transaction.destinationAccountId ?? '' : '');
+    setConversionRate(transaction.conversionRate ? String(transaction.conversionRate) : '');
+    setTxDate((transaction.createdAt ?? '').slice(0, 10));
     setCashAdvanceCardId(transaction.type === 'loan_taken' ? transaction.sourceAccountId ?? '' : '');
     // Hydrate contact from personId when present (post-backfill or post-Phase-1
     // rows); fall back to the legacy string cache for the exceptional case
@@ -98,26 +127,50 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const editableAmount = parseFloat(amount);
   // Dirty = any editable field differs from the hydrated transaction (receipt
   // changes persist immediately, so they're excluded).
-  const origAccountId = transaction.type === 'loan_taken' ? (transaction.destinationAccountId ?? '') : (transaction.sourceAccountId ?? '');
+  const origAccountId = transaction.type === 'loan_taken' || transaction.type === 'income'
+    ? (transaction.destinationAccountId ?? '')
+    : (transaction.sourceAccountId ?? '');
   const origCashAdvance = transaction.type === 'loan_taken' ? (transaction.sourceAccountId ?? '') : '';
+  const origDate = (transaction.createdAt ?? '').slice(0, 10);
   const isDirty =
     amount !== String(transaction.amount) ||
     accountId !== origAccountId ||
+    destAccountId !== (transaction.type === 'transfer' ? transaction.destinationAccountId ?? '' : '') ||
+    txDate !== origDate ||
     cashAdvanceCardId !== origCashAdvance ||
     category !== (transaction.category ?? '') ||
     notes !== parseInternalNote(transaction.notes).visibleNote ||
     (contact.id ?? null) !== originalPersonId;
   const isExpense = transaction.type === 'expense';
+  const isIncome = transaction.type === 'income';
+  const isTransfer = transaction.type === 'transfer';
   const isLoanGiven = transaction.type === 'loan_given';
   const isLoanTaken = transaction.type === 'loan_taken';
   const noteMeta = parseInternalNote(transaction.notes).meta;
-  const isDirectlyEditable = (isExpense || isLoanGiven || isLoanTaken) && !noteMeta.groupExpenseId;
+  const isDirectlyEditable = (isExpense || isIncome || isTransfer || isLoanGiven || isLoanTaken) && !noteMeta.groupExpenseId;
+
+  const transferSource = isTransfer ? accounts.find((a) => a.id === accountId) : null;
+  const transferDest = isTransfer ? accounts.find((a) => a.id === destAccountId) : null;
+  const transferCrossCurrency = Boolean(
+    transferSource && transferDest && transferSource.currency !== transferDest.currency,
+  );
 
   const canSave = (() => {
     if (!(editableAmount > 0) || !accountId) return false;
     if ((isLoanGiven || isLoanTaken) && !contact.name.trim()) return false;
+    if (isTransfer) {
+      if (!destAccountId || destAccountId === accountId) return false;
+      if (transferCrossCurrency && !(parseFloat(conversionRate) > 0)) return false;
+    }
+    if (!txDate) return false;
     return true;
   })();
+
+  // Only send createdAt when the user actually changed the date — the stored
+  // value keeps its original time-of-day otherwise.
+  const editedCreatedAt = txDate && txDate !== origDate
+    ? new Date(`${txDate}T12:00:00`).toISOString()
+    : undefined;
 
   // A non-null original id that the user has since typed over creates a
   // different contact rather than renaming the existing one — surface that
@@ -140,6 +193,26 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           sourceAccountId: accountId,
           category,
           notes,
+          createdAt: editedCreatedAt,
+        });
+      } else if (isIncome) {
+        await updateTransaction(transaction.id, {
+          type: 'income',
+          amount: editableAmount,
+          destinationAccountId: accountId,
+          category,
+          notes,
+          createdAt: editedCreatedAt,
+        });
+      } else if (isTransfer) {
+        await updateTransaction(transaction.id, {
+          type: 'transfer',
+          amount: editableAmount,
+          sourceAccountId: accountId,
+          destinationAccountId: destAccountId,
+          conversionRate: transferCrossCurrency ? parseFloat(conversionRate) : undefined,
+          notes,
+          createdAt: editedCreatedAt,
         });
       } else if (isLoanGiven) {
         const trimmedName = contact.name.trim();
@@ -153,6 +226,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           personName: resolved.name,
           personId: resolved.id,
           notes,
+          createdAt: editedCreatedAt,
         });
       } else if (isLoanTaken) {
         const trimmedName = contact.name.trim();
@@ -167,6 +241,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           personName: resolved.name,
           personId: resolved.id,
           notes,
+          createdAt: editedCreatedAt,
         });
       }
 
@@ -265,12 +340,12 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
         onClose={onClose}
         title={t('tx_details_title')}
         footer={(
-          // Group-linked mirrors are no longer hard-disabled: the store guard
-          // routes LIVE group expenses to the group screen but releases
-          // orphans whose group was deleted (previously locked forever).
+          // Group mirrors: the on-open probe decides. LIVE group expense →
+          // delete disabled (route via the group screen); orphan whose group
+          // was deleted → freely deletable (previously locked forever).
           <button
             onClick={handleDelete}
-            disabled={saving}
+            disabled={saving || groupLive === true}
             className="w-full rounded-2xl bg-pay-50 text-pay-text py-3.5 text-sm font-bold disabled:opacity-40"
           >
             {saving ? t('quick_processing') : t('tx_delete_entry')}
@@ -296,9 +371,14 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           <p className="text-[12px] text-ink-500 bg-cream-soft rounded-xl p-3 leading-relaxed">
             {t('tx_readonly_note')}
           </p>
-          {noteMeta.groupExpenseId && (
+          {noteMeta.groupExpenseId && groupLive !== false && (
             <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3 leading-relaxed">
               {t('tx_group_expense_warn')}
+            </p>
+          )}
+          {noteMeta.groupExpenseId && groupLive === false && (
+            <p className="text-[12px] text-ink-600 bg-cream-soft rounded-xl p-3 leading-relaxed">
+              {t('tx_group_orphan_note')}
             </p>
           )}
         </div>
@@ -327,7 +407,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
             disabled={saving || !canSave}
             className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
           >
-            {saving ? t('quick_processing') : 'Save Changes'}
+            {saving ? t('quick_processing') : t('save')}
           </button>
         </div>
       )}
@@ -358,17 +438,70 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
 
         <div>
           <label className="form-label">
-            {isLoanTaken ? t('loan_received_into') : t('quick_from')}
+            {isLoanTaken ? t('loan_received_into') : isIncome ? t('quick_to') : t('quick_from')}
           </label>
           <AccountSelect
             accounts={accounts}
             selectedId={accountId}
             onSelect={(id) => {
               setAccountId(id);
-              // The main account can't also fund itself as a cash advance.
+              // The main account can't also fund itself as a cash advance,
+              // and a transfer can't target its own source.
               if (cashAdvanceCardId === id) setCashAdvanceCardId('');
+              if (isTransfer && destAccountId === id) setDestAccountId('');
+              setConversionRate('');
             }}
           />
+        </div>
+
+        {isTransfer && (
+          <div>
+            <label className="form-label">{t('quick_to')}</label>
+            <AccountSelect
+              accounts={accounts.filter((a) => a.id !== accountId)}
+              selectedId={destAccountId}
+              onSelect={(id) => {
+                setDestAccountId(id);
+                setConversionRate('');
+              }}
+            />
+          </div>
+        )}
+
+        {isTransfer && transferCrossCurrency && transferSource && transferDest && (
+          <div>
+            <label className="form-label">
+              {t('edit_rate_label')
+                .replace('{src}', transferSource.currency)
+                .replace('{dst}', transferDest.currency)}
+            </label>
+            <input
+              type="number"
+              step="0.0001"
+              value={conversionRate}
+              onChange={(event) => setConversionRate(event.target.value)}
+              className="input-field text-center tabular-nums"
+              placeholder="0.00"
+            />
+            {parseFloat(conversionRate) > 0 && editableAmount > 0 && (
+              <p className="text-[11px] text-ink-500 mt-1.5 tabular-nums">
+                {formatMoney(editableAmount, transferSource.currency)} → {formatMoney(Math.round(editableAmount * parseFloat(conversionRate) * 100) / 100, transferDest.currency)}
+              </p>
+            )}
+          </div>
+        )}
+
+        <div>
+          <label className="form-label">{t('edit_date_label')}</label>
+          <input
+            type="date"
+            value={txDate}
+            onChange={(event) => setTxDate(event.target.value)}
+            className="input-field"
+          />
+          {txDate !== origDate && (
+            <p className="text-[11px] text-ink-500 mt-1.5">{t('edit_date_hint')}</p>
+          )}
         </div>
 
         {isLoanTaken && availableCashAdvanceCards.length > 0 && (
@@ -419,10 +552,10 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           </div>
         )}
 
-        {isExpense && (
+        {(isExpense || isIncome) && (
           <div>
             <label className="form-label">{t('category')}</label>
-            <CategoryPicker type="expense" value={category} onChange={setCategory} includeCurrent />
+            <CategoryPicker type={isIncome ? 'income' : 'expense'} value={category} onChange={setCategory} includeCurrent />
           </div>
         )}
 
