@@ -5,8 +5,13 @@
 
 import { format } from 'date-fns';
 import { formatMoney } from './constants';
+import { moneyFormatter } from './maskMoney';
 import type { Statement, StatementLine } from './statementOfAccount';
 import { trimSection } from './statementOfAccount';
+
+// formatMoney-compatible formatter threaded through the render helpers so the
+// "Hide amounts" toggle swaps every figure for the mask in one place.
+export type MoneyFmt = (amount: number, currency: string) => string;
 
 // A friendly opener so the statement reads as a message between two people, not
 // a bank export. The style is user-selectable; default 'hello'.
@@ -24,17 +29,17 @@ export function greetingLine(style: GreetingStyle, name: string): string {
 }
 
 // Human sentence for a signed net balance. Positive ⇒ they owe you.
-export function netBalanceLabel(partyName: string, closing: number, currency: string): string {
-  if (closing > 0.005) return `${partyName} owes you ${formatMoney(closing, currency)}`;
-  if (closing < -0.005) return `You owe ${partyName} ${formatMoney(Math.abs(closing), currency)}`;
+export function netBalanceLabel(partyName: string, closing: number, currency: string, fmt: MoneyFmt = formatMoney): string {
+  if (closing > 0.005) return `${partyName} owes you ${fmt(closing, currency)}`;
+  if (closing < -0.005) return `You owe ${partyName} ${fmt(Math.abs(closing), currency)}`;
   return `Settled up with ${partyName}`;
 }
 
 // Roman-Urdu companion to netBalanceLabel, for the bilingual hero line on the
 // PDF (the audience is Pakistan/Gulf and the doc is sent over WhatsApp).
-export function netBalanceLabelUrdu(partyName: string, closing: number, currency: string): string {
-  if (closing > 0.005) return `${partyName} aap ko ${formatMoney(closing, currency)} dena hai`;
-  if (closing < -0.005) return `Aap ko ${partyName} ko ${formatMoney(Math.abs(closing), currency)} dena hai`;
+export function netBalanceLabelUrdu(partyName: string, closing: number, currency: string, fmt: MoneyFmt = formatMoney): string {
+  if (closing > 0.005) return `${partyName} aap ko ${fmt(closing, currency)} dena hai`;
+  if (closing < -0.005) return `Aap ko ${partyName} ko ${fmt(Math.abs(closing), currency)} dena hai`;
   return `${partyName} ke saath hisaab barabar hai`;
 }
 
@@ -49,8 +54,13 @@ export interface PayReceiveText {
   english: string;
   urdu: string;
 }
-export function payOrReceiveLabel(closing: number, currency: string, senderName?: string): PayReceiveText {
-  const money = formatMoney(Math.abs(closing), currency);
+export function payOrReceiveLabel(
+  closing: number,
+  currency: string,
+  senderName?: string,
+  fmt: MoneyFmt = formatMoney,
+): PayReceiveText {
+  const money = fmt(Math.abs(closing), currency);
   const who = senderName?.trim();
   if (closing > 0.005) {
     // Recipient owes the sender ⇒ recipient must PAY.
@@ -77,9 +87,9 @@ export function payOrReceiveLabel(closing: number, currency: string, senderName?
   };
 }
 
-function signedAmount(delta: number, currency: string): string {
+function signedAmount(delta: number, currency: string, fmt: MoneyFmt = formatMoney): string {
   const sign = delta < 0 ? '−' : '+'; // − vs +
-  return `${sign}${formatMoney(Math.abs(delta), currency)}`;
+  return `${sign}${fmt(Math.abs(delta), currency)}`;
 }
 
 function shortDate(iso: string): string {
@@ -87,16 +97,16 @@ function shortDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? '' : format(d, 'd MMM yyyy');
 }
 
-function lineText(line: StatementLine, currency: string): string {
+function lineText(line: StatementLine, currency: string, fmt: MoneyFmt = formatMoney): string {
   // Fold/summary lines: equal money given and paid back — say so instead of
   // printing a meaningless "+0.00".
   if (line.grossGiven || line.grossRepaid) {
-    const gross = formatMoney(line.grossRepaid ?? line.grossGiven ?? 0, currency);
+    const gross = fmt(line.grossRepaid ?? line.grossGiven ?? 0, currency);
     return `• ${[shortDate(line.date), line.description].filter(Boolean).join(' · ')} · ${gross} paid & cleared ✓`;
   }
   // Recipient perspective: negate so a charge (they owe more) reads as −out and
   // a payment they made reads as +in, matching the PDF's Debit/Credit colours.
-  const parts = [shortDate(line.date), line.description, signedAmount(-line.delta, currency)];
+  const parts = [shortDate(line.date), line.description, signedAmount(-line.delta, currency, fmt)];
   return `• ${parts.filter(Boolean).join(' · ')}`; // • date · desc · +amt
 }
 
@@ -105,12 +115,14 @@ export interface RenderStatementTextOptions {
   maxLinesPerSection?: number; // keep the message short; older lines fold to b/f
   greeting?: string; // pre-composed opener, e.g. "Hello Rashid,"
   fromName?: string; // signs the message off: "Thank you, {fromName}"
+  hideAmounts?: boolean; // privacy: every figure renders as the fixed-width mask
 }
 
 export function renderStatementText(statement: Statement, opts: RenderStatementTextOptions = {}): string {
   const { partyName, sections } = statement;
   const asOf = opts.asOfLabel ?? shortDate(statement.asOf);
   const maxLines = opts.maxLinesPerSection ?? 10;
+  const money = moneyFormatter(!!opts.hideAmounts);
 
   const out: string[] = [];
   if (opts.greeting?.trim()) {
@@ -128,18 +140,18 @@ export function renderStatementText(statement: Statement, opts: RenderStatementT
   }
 
   for (const section of sections) {
-    const pr = payOrReceiveLabel(section.closing, section.currency, opts.fromName);
+    const pr = payOrReceiveLabel(section.closing, section.currency, opts.fromName, money);
     out.push(''); // blank line between blocks
     out.push(pr.english);
 
     const { opening, lines } = trimSection(section, maxLines);
     if (opening) {
       out.push(
-        `• Balance brought forward · ${signedAmount(-opening.balance, section.currency)}` +
+        `• Balance brought forward · ${signedAmount(-opening.balance, section.currency, money)}` +
           ` (${opening.count} earlier ${opening.count === 1 ? 'entry' : 'entries'})`,
       );
     }
-    for (const line of lines) out.push(lineText(line, section.currency));
+    for (const line of lines) out.push(lineText(line, section.currency, money));
 
     // Settled: the English celebration already opened the block — close with
     // the Urdu companion instead of repeating it.

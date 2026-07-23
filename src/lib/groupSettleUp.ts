@@ -7,6 +7,7 @@
 // tested; the PDF renderer and modal compose these.
 
 import { formatMoney } from './constants';
+import { moneyFormatter } from './maskMoney';
 import type { GroupDebt } from './groupDebts';
 
 export interface MemberSettleUp {
@@ -29,12 +30,14 @@ export interface MemberCardOptions {
   currency: string;
   greeting?: string;
   fromName?: string;
+  hideAmounts?: boolean; // privacy: every figure renders as the fixed-width mask
 }
 
 // Recipient-focused WhatsApp body for one member: their net + the exact
 // transfers they should make/receive.
 export function buildMemberCardText(su: MemberSettleUp, opts: MemberCardOptions): string {
   const { groupName, currency, greeting, fromName } = opts;
+  const money = moneyFormatter(!!opts.hideAmounts);
   const out: string[] = [];
   if (greeting?.trim()) {
     out.push(greeting.trim());
@@ -42,14 +45,14 @@ export function buildMemberCardText(su: MemberSettleUp, opts: MemberCardOptions)
   }
   out.push(`*Settle up — ${groupName}*`);
 
-  if (su.net > 0.005) out.push(`You'll receive ${formatMoney(su.net, currency)} overall.`);
-  else if (su.net < -0.005) out.push(`You need to pay ${formatMoney(Math.abs(su.net), currency)} overall.`);
+  if (su.net > 0.005) out.push(`You'll receive ${money(su.net, currency)} overall.`);
+  else if (su.net < -0.005) out.push(`You need to pay ${money(Math.abs(su.net), currency)} overall.`);
   else out.push(`You're all settled up in ${groupName}.`);
 
   if (su.owes.length > 0 || su.owed.length > 0) {
     out.push('');
-    for (const d of su.owes) out.push(`• You pay ${d.toName} ${formatMoney(d.amount, currency)}`);
-    for (const d of su.owed) out.push(`• ${d.fromName} pays you ${formatMoney(d.amount, currency)}`);
+    for (const d of su.owes) out.push(`• You pay ${d.toName} ${money(d.amount, currency)}`);
+    for (const d of su.owed) out.push(`• ${d.fromName} pays you ${money(d.amount, currency)}`);
   }
 
   if (fromName?.trim()) {

@@ -994,6 +994,27 @@ export function SettingsPage() {
           </div>
         </div>
 
+        {/* Trust — the security/philosophy work translated into human
+            sentences, plus the business-model-as-feature answer to
+            "why is this free?". Plain-speech, both languages. */}
+        <div className={sectionClass}>
+          <div className="px-4 py-3.5">
+            <p className="text-[13px] font-semibold text-ink-900 mb-2.5">{t('trust_title')}</p>
+            <div className="space-y-2">
+              {[t('trust_line_1'), t('trust_line_2'), t('trust_line_3'), t('trust_line_4')].map((line) => (
+                <div key={line} className="flex items-start gap-2.5">
+                  <span className="text-receive-text text-[12px] mt-px shrink-0">✓</span>
+                  <p className="text-[12px] text-ink-700 leading-relaxed">{line}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="px-4 py-3.5">
+            <p className="text-[13px] font-semibold text-ink-900 mb-1">{t('trust_why_free_title')}</p>
+            <p className="text-[12px] text-ink-600 leading-relaxed">{t('trust_why_free_body')}</p>
+          </div>
+        </div>
+
         {/* Legal and support */}
         <div className={sectionClass}>
           <button

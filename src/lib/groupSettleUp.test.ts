@@ -41,6 +41,18 @@ describe('buildMemberCardText', () => {
     const text = buildMemberCardText(memberSettleUp(debts, 'Z'), { groupName: 'Dubai Trip', currency: 'AED' });
     expect(text).toContain("You're all settled up in Dubai Trip.");
   });
+
+  it('masks every amount when hideAmounts is on, keeping names and structure', () => {
+    const su = memberSettleUp(debts, 'A');
+    const text = buildMemberCardText(su, { groupName: 'Dubai Trip', currency: 'AED', hideAmounts: true });
+    expect(text).toContain('You need to pay AED ●●,●●● overall.');
+    expect(text).toContain('You pay Bilal AED ●●,●●●');
+    expect(text).toContain('Chand pays you AED ●●,●●●');
+    expect(text).not.toContain('90.00');
+    expect(text).not.toContain('120.00');
+    expect(text).not.toContain('30.00');
+    expect(text).toContain('*Settle up — Dubai Trip*'); // structure survives
+  });
 });
 
 describe('buildFullPlanText', () => {

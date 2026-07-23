@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { profilesDb } from '../lib/supabaseDb';
 import type { Language } from '../lib/i18n';
 import { ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle, Sparkles } from 'lucide-react';
 import { BrandMark } from '../components/BrandMark';
@@ -24,14 +26,14 @@ function LangBtn({ lang, setLang }: { lang: Language; setLang: (l: Language) => 
   );
 }
 
-// Continuous 4-dot progress for the post-welcome steps (1–4). The active step
+// Continuous 5-dot progress for the post-welcome steps (1–5). The active step
 // fills brighter; completed steps stay lit so the journey reads as honest and
-// continuous rather than four disconnected "STEP n of 4" counters. Welcome
+// continuous rather than five disconnected "STEP n of 5" counters. Welcome
 // (step 0) is uncounted and never renders this row.
-function StepDots({ current }: { current: 1 | 2 | 3 | 4 }) {
+function StepDots({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
   return (
-    <div className="flex items-center gap-1.5 mb-3" role="presentation" aria-label={`Step ${current} of 4`}>
-      {[1, 2, 3, 4].map((n) => (
+    <div className="flex items-center gap-1.5 mb-3" role="presentation" aria-label={`Step ${current} of 5`}>
+      {[1, 2, 3, 4, 5].map((n) => (
         <span
           key={n}
           className={`h-1.5 rounded-full transition-all duration-300 ${
@@ -43,15 +45,38 @@ function StepDots({ current }: { current: 1 | 2 | 3 | 4 }) {
   );
 }
 
+// The intent answer routes the user's FIRST DAY: which tab they land on and
+// which differentiator they meet first. Someone who came for udhaar should be
+// logging a loan in minute one, not staring at an expense tracker.
+type OnboardIntent = 'spending' | 'loans' | 'kameti' | 'splits' | 'budgets';
+
+const INTENT_OPTIONS: Array<{ value: OnboardIntent; emoji: string; labelKey: string; leansTo: AppMode }> = [
+  { value: 'spending', emoji: '\u{1F4B8}', labelKey: 'onboard_intent_spending', leansTo: 'full_tracker' },
+  { value: 'loans', emoji: '\u{1F91D}', labelKey: 'onboard_intent_loans', leansTo: 'full_tracker' },
+  { value: 'kameti', emoji: '\u{1F465}', labelKey: 'onboard_intent_kameti', leansTo: 'full_tracker' },
+  { value: 'splits', emoji: '\u{1F9FE}', labelKey: 'onboard_intent_splits', leansTo: 'splits_only' },
+  { value: 'budgets', emoji: '\u{1F3AF}', labelKey: 'onboard_intent_budgets', leansTo: 'full_tracker' },
+];
+
+const INTENT_LANDING: Record<OnboardIntent, string> = {
+  spending: '/',
+  loans: '/loans',
+  kameti: '/kameti',
+  splits: '/groups',
+  budgets: '/budgets',
+};
+
 export function OnboardingPage() {
   const { completeOnboarding } = useOnboardingStore();
   const { setMode } = useAppModeStore();
   const { lang, setLang } = useI18nStore();
   const t = useT();
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState<Currency>('AED');
   const [selectedMode, setSelectedMode] = useState<AppMode>('full_tracker');
+  const [intent, setIntent] = useState<OnboardIntent | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Mode quiz state. Each answer leans toward a mode; on completion we suggest
@@ -92,6 +117,15 @@ export function OnboardingPage() {
       }
     }
     await completeOnboarding(name.trim(), currency, selectedMode);
+    // Land the user where their stated intent lives — locally instant,
+    // durably mirrored to the profile (best-effort; column may not exist
+    // until the migration is applied).
+    if (intent) {
+      localStorage.setItem('hisaab_onboarding_intent', intent);
+      profilesDb.updateCurrent({ onboarding_intent: intent }).catch(() => {});
+      const dest = INTENT_LANDING[intent];
+      if (dest !== '/') navigate(dest, { replace: true });
+    }
   };
 
   return (
@@ -121,10 +155,12 @@ export function OnboardingPage() {
             </p>
             <div className="mt-8 space-y-3 text-left w-full max-w-[280px]">
               {[
+                // Trust leads: our permanent constraint IS the promise — no
+                // bank sync means nothing to break and nothing to leak.
+                { icon: '\u{1F512}', text: t('onboard_bullet_0') },
                 { icon: '\u{1F91D}', text: t('onboard_bullet_1') },
                 { icon: '\u{1F4CB}', text: t('onboard_bullet_2') },
                 { icon: '\u{1F514}', text: t('onboard_bullet_3') },
-                { icon: '\u{1F4B3}', text: t('onboard_bullet_4') },
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-3 bg-white/8 rounded-2xl px-4 py-3 border border-white/10 backdrop-blur-sm">
                   <span className="text-lg">{item.icon}</span>
@@ -203,11 +239,42 @@ export function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 2: Safety Reassurance */}
+        {/* Step 2: Intent — "what brings you here" routes the first day */}
         {step === 2 && (
+          <div className="flex-1 flex flex-col px-8 pt-20 animate-fade-in">
+            <div className="mb-6">
+              <StepDots current={2} />
+              <h2 className="text-2xl font-bold tracking-tight text-white">{t('onboard_intent_title')}</h2>
+              <p className="text-white/60 text-[13px] mt-2 leading-relaxed">{t('onboard_intent_sub')}</p>
+            </div>
+            <div className="space-y-3 flex-1">
+              {INTENT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => {
+                    setIntent(opt.value);
+                    setSelectedMode(opt.leansTo);
+                    setStep(3);
+                  }}
+                  className="w-full flex items-center gap-3.5 rounded-2xl border-2 border-white/10 bg-white/5 px-4 py-4 text-left active:scale-[0.98] transition-all backdrop-blur-sm"
+                >
+                  <span className="text-2xl shrink-0">{opt.emoji}</span>
+                  <span className="text-[13.5px] text-white/90 font-medium leading-snug">{t(opt.labelKey as Parameters<typeof t>[0])}</span>
+                </button>
+              ))}
+            </div>
+            <div className="pb-6">
+              <button onClick={() => setStep(3)} className="text-[12px] text-white/45 w-full text-center min-h-[44px] font-medium">{t('onboard_intent_skip')}</button>
+              <button onClick={() => setStep(1)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Safety Reassurance */}
+        {step === 3 && (
           <div className="flex-1 flex flex-col px-8 pt-16 animate-fade-in">
             <div className="flex justify-center mb-3">
-              <StepDots current={2} />
+              <StepDots current={3} />
             </div>
             <div className="flex items-center justify-center mb-6">
               <div className="w-16 h-16 rounded-3xl bg-receive-600/25 flex items-center justify-center backdrop-blur-sm border border-receive-600/30">
@@ -234,7 +301,7 @@ export function OnboardingPage() {
               ))}
             </div>
             <div className="mt-auto pb-4">
-              <Button variant="secondary" size="lg" onClick={() => setStep(3)} icon={<ArrowRight size={16} />}>
+              <Button variant="secondary" size="lg" onClick={() => setStep(4)} icon={<ArrowRight size={16} />}>
                 {t('onboard_safety_btn')}
               </Button>
               <p className="text-white/25 text-[10px] text-center mt-3">{t('onboard_safety_footer')}</p>
@@ -242,10 +309,10 @@ export function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 3: Mode quiz → recommendation */}
-        {step === 3 && (
+        {/* Step 4: Mode quiz → recommendation */}
+        {step === 4 && (
           <div className="flex-1 flex flex-col px-8 pt-16 animate-fade-in">
-            <StepDots current={3} />
+            <StepDots current={4} />
 
             {!quizDone ? (
               /* ── Quiz: one fun question at a time ── */
@@ -274,7 +341,7 @@ export function OnboardingPage() {
                 </div>
                 <div className="pb-6">
                   <button onClick={() => setQuizSkipped(true)} className="text-[12px] text-white/45 w-full text-center min-h-[44px] font-medium">{t('quiz_skip')}</button>
-                  <button onClick={() => setStep(2)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
+                  <button onClick={() => setStep(3)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
                 </div>
               </>
             ) : (
@@ -347,7 +414,7 @@ export function OnboardingPage() {
                 </div>
 
                 <div className="pb-4">
-                  <Button variant="secondary" size="lg" onClick={() => setStep(4)} icon={<ArrowRight size={16} />}>
+                  <Button variant="secondary" size="lg" onClick={() => setStep(5)} icon={<ArrowRight size={16} />}>
                     {t('onboard_next')}
                   </Button>
                   <button onClick={() => { setQuizAnswers([]); setQuizSkipped(false); }} className="text-[11px] text-white/40 w-full text-center min-h-[44px] mt-2 font-medium">
@@ -359,11 +426,11 @@ export function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 4 (full_tracker): create the first account so the user lands ready */}
-        {step === 4 && selectedMode === 'full_tracker' && (
+        {/* Step 5 (full_tracker): create the first account so the user lands ready */}
+        {step === 5 && selectedMode === 'full_tracker' && (
           <div className="flex-1 flex flex-col px-8 pt-16 animate-fade-in">
             <div className="mb-6">
-              <StepDots current={4} />
+              <StepDots current={5} />
               <h2 className="text-2xl font-bold tracking-tight text-white">{name.trim()}, {t('onboard_acct_title')}</h2>
               <p className="text-white/60 text-[13px] mt-2 leading-relaxed">{t('onboard_acct_sub')}</p>
             </div>
@@ -406,16 +473,16 @@ export function OnboardingPage() {
                 {t('onboard_acct_create')}
               </Button>
               <button onClick={() => handleFinish(false)} disabled={loading} className="text-[12px] text-white/45 w-full text-center min-h-[44px] font-medium">{t('onboard_acct_skip')}</button>
-              <button onClick={() => setStep(3)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
+              <button onClick={() => setStep(4)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
             </div>
           </div>
         )}
 
-        {/* Step 4 (splits_only): fresh start — no account needed */}
-        {step === 4 && selectedMode === 'splits_only' && (
+        {/* Step 5 (splits_only): fresh start — no account needed */}
+        {step === 5 && selectedMode === 'splits_only' && (
           <div className="flex-1 flex flex-col px-8 pt-20 animate-fade-in">
             <div className="mb-8">
-              <StepDots current={4} />
+              <StepDots current={5} />
               <h2 className="text-2xl font-bold tracking-tight text-white">{name.trim()}, {t('onboard_how_start')}</h2>
               <p className="text-white/60 text-[13px] mt-2">{t('onboard_how_sub')}</p>
               <p className="text-receive-50 text-[12px] font-semibold mt-3">{t('onboard_start_instruction')}</p>
@@ -471,7 +538,7 @@ export function OnboardingPage() {
               </div>
             )}
             <div className="pb-8">
-              <button onClick={() => setStep(3)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
+              <button onClick={() => setStep(4)} className="text-[11px] text-white/30 w-full text-center min-h-[44px] font-medium">{t('onboard_back')}</button>
             </div>
           </div>
         )}

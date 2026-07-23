@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FileText, Copy, MessageCircle } from 'lucide-react';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
+import { moneyFormatter } from '../lib/maskMoney';
 import { poolAmount, memberPosition } from '../lib/committeeMath';
 import { generateKametiSlipPdf } from '../lib/kametiSlipPdf';
 import { shareStatementFile } from '../lib/shareStatement';
@@ -35,6 +36,13 @@ export function KametiPayoutSlipSheet({ open, onClose, committee, recipient, rou
   const toast = useToast();
   const [preparing, setPreparing] = useState(false);
   const [copying, setCopying] = useState(false);
+  // Privacy: hide every figure in the shared slip/text. The witness link (if
+  // present) still opens the live ledger with real amounts — noted in the UI.
+  const [hideAmounts, setHideAmounts] = useState(false);
+
+  useEffect(() => {
+    if (open) setHideAmounts(false);
+  }, [open]);
 
   const organiserName = useMemo(() => (localStorage.getItem('hisaab_user_name') ?? '').trim() || undefined, []);
   const pool = poolAmount(committee.contributionAmount, committee.memberCount);
@@ -48,7 +56,7 @@ export function KametiPayoutSlipSheet({ open, onClose, committee, recipient, rou
     lines.push(`*${t('kslip_title')} — ${committee.name}*`);
     lines.push(
       t('kslip_received_line')
-        .replace('{amount}', formatMoney(pool, committee.currency))
+        .replace('{amount}', moneyFormatter(hideAmounts)(pool, committee.currency))
         .replace('{r}', String(round))
         .replace('{n}', String(committee.totalRounds)),
     );
@@ -60,7 +68,7 @@ export function KametiPayoutSlipSheet({ open, onClose, committee, recipient, rou
     lines.push('');
     lines.push(organiserName ? `— ${organiserName}, via Hisaab` : '— via Hisaab');
     return lines.join('\n');
-  }, [t, committee, pool, round, witnessUrl, organiserName]);
+  }, [t, committee, pool, round, witnessUrl, organiserName, hideAmounts]);
 
   const whatsappUrl = buildWhatsAppUrl(recipient.phone ?? null, message);
 
@@ -86,6 +94,7 @@ export function KametiPayoutSlipSheet({ open, onClose, committee, recipient, rou
         witnessUrl,
         date: new Date().toISOString(),
         organiserName,
+        hideAmounts,
       });
       const outcome = await shareStatementFile({ blob, filename, title: `${t('kslip_title')} — ${committee.name}`, text: `${recipient.name} · ${t('kslip_title')} (Hisaab)` });
       if (outcome === 'downloaded') toast.show({ type: 'success', title: t('soa_downloaded') });
@@ -143,6 +152,22 @@ export function KametiPayoutSlipSheet({ open, onClose, committee, recipient, rou
             {t('kslip_intro').replace('{name}', recipient.name).replace('{r}', String(round))}
           </p>
         </div>
+
+        {/* Privacy: hide the numbers — the witness link still shows live amounts. */}
+        <label className="flex items-center justify-between gap-3 rounded-2xl bg-cream-card border border-cream-border px-4 py-3 cursor-pointer">
+          <span className="text-[12.5px] font-semibold text-ink-800">
+            {t('soa_hide_amounts')}
+            <span className="block text-[10.5px] font-normal text-ink-500 mt-0.5">
+              {witnessUrl ? `${t('soa_hide_amounts_sub')} ${t('kslip_hide_witness_note')}` : t('soa_hide_amounts_sub')}
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={hideAmounts}
+            onChange={(e) => setHideAmounts(e.target.checked)}
+            className="w-4 h-4 accent-accent-600 shrink-0"
+          />
+        </label>
 
         <div>
           <p className="form-label">{t('soa_preview')}</p>

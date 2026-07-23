@@ -39,6 +39,15 @@ describe('buildReceiptText', () => {
     expect(r.message).toContain('Muhammad Abdullah');
   });
 
+  it('masks the amounts when hideAmounts is on, keeping the date and structure', () => {
+    const r = buildReceiptText({ receivedAmount: 500, currency: 'AED', remaining: 1500, date: '2026-07-03T09:00:00.000Z', hideAmounts: true });
+    expect(r.english).toBe('Received AED ●●,●●● from you on 03 Jul 2026 — remaining AED ●●,●●●.');
+    expect(r.urdu).toContain('baqi AED ●●,●●●');
+    expect(r.english).not.toContain('500'); // no digits leak in amount positions
+    expect(r.message).toContain('*Payment received*');
+    expect(r.message).toContain('03 Jul 2026'); // the date survives
+  });
+
   it('omits greeting and sign-off when absent', () => {
     const r = buildReceiptText({ receivedAmount: 500, currency: 'AED', remaining: 1500, date: '2026-07-03T09:00:00.000Z' });
     expect(r.message).not.toContain('Thank you,');

@@ -31,6 +31,30 @@ describe('renderKametiSlipInnerHtml', () => {
     expect(html).toContain('#047857'); // received teal
   });
 
+  it('masks every amount when hideAmounts is on, while names/round/witness survive', () => {
+    const masked = renderKametiSlipInnerHtml({
+      committeeName: 'Office Committee',
+      currency: 'PKR',
+      round: 3,
+      totalRounds: 10,
+      pool: 80000,
+      recipientName: 'Bilal',
+      contributed: 24000,
+      net: 56000,
+      witnessUrl: 'https://usehisaab.com/kameti/witness/abc123',
+      date: '2026-07-03T09:00:00.000Z',
+      organiserName: 'Muhammad Abdullah',
+      hideAmounts: true,
+    });
+    expect(masked).not.toContain('80,000.00'); // pool hero
+    expect(masked).not.toContain('24,000.00'); // contributed
+    expect(masked).not.toContain('56,000.00'); // net
+    expect(masked).toContain('●●,●●●');
+    expect(masked).toContain('Round 3 of 10'); // round survives
+    expect(masked).toContain('Bilal received the Round 3 payout.'); // names survive
+    expect(masked).toContain('usehisaab.com/kameti/witness/abc123'); // trust seal survives
+  });
+
   it('omits the witness block when no url is given', () => {
     const bare = renderKametiSlipInnerHtml({
       committeeName: 'C', currency: 'PKR', round: 1, totalRounds: 5, pool: 5000,

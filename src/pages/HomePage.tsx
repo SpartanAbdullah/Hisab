@@ -31,6 +31,10 @@ import { useSettlementRequestStore } from "../stores/settlementRequestStore";
 import { usePersonStore } from "../stores/personStore";
 import { useBudgetStore, computeBudgetUsages } from "../stores/budgetStore";
 import { useRecurringStore } from "../stores/recurringStore";
+import { useEmiStore } from "../stores/emiStore";
+import { useCommitteeStore } from "../stores/committeeStore";
+import { buildThisWeek, thisWeekTotals } from "../lib/thisWeek";
+import { CalendarClock } from "lucide-react";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
 import { SettlementNudgeBanner } from "../components/SettlementNudgeBanner";
 import { BudgetWarningBanner } from "../components/BudgetWarningBanner";
@@ -75,6 +79,9 @@ export function HomePage() {
   const { loans, loadLoans } = useLoanStore();
   const { loadGoals } = useGoalStore();
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
+  // Raw slices only — filtering happens inside useMemo (React #185).
+  const emiSchedules = useEmiStore((s) => s.schedules);
+  const committees = useCommitteeStore((s) => s.committees);
   const mode = useAppModeStore((s) => s.mode);
   const {
     groups,
@@ -112,6 +119,10 @@ export function HomePage() {
       loadLoans(),
       loadGoals(),
       loadExpenses(),
+      // "This week" sources: instalment schedules + kameti dates. Both are
+      // cheap reads and usually warm (kameti boot-loads in App.tsx).
+      useEmiStore.getState().loadSchedules(),
+      useCommitteeStore.getState().loadAll(),
     ]);
   }, [
     loadAccounts,
@@ -189,6 +200,41 @@ export function HomePage() {
       return Number.isFinite(due) && due <= horizon;
     }).length;
   }, [recurringTemplates, renderNowMs]);
+
+  // Cash-advance loans, keyed to their funding card — the Loan row carries
+  // no card link, only the origin transaction does. thisWeek uses this to
+  // keep the same debt (card owed + its EMIs) from double-counting.
+  const cardFundedLoanIds = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const txn of transactions) {
+      if (txn.type === "loan_taken" && txn.relatedLoanId && txn.sourceAccountId) {
+        map.set(txn.relatedLoanId, txn.sourceAccountId);
+      }
+    }
+    return map;
+  }, [transactions]);
+
+  // "This week" rows: the pure lib merges EMIs, kameti rounds, recurring
+  // charges, one-off bills and card due days into one 7-day forward view.
+  const thisWeekRows = useMemo(
+    () =>
+      buildThisWeek({
+        loans,
+        schedules: emiSchedules,
+        committees,
+        templates: recurringTemplates,
+        upcoming: expenses,
+        accounts,
+        cardFundedLoanIds,
+        today: new Date(renderNowMs),
+      }),
+    [loans, emiSchedules, committees, recurringTemplates, expenses, accounts, cardFundedLoanIds, renderNowMs],
+  );
+  // Header total: the largest outgoing currency bucket (usually the only one).
+  const thisWeekOut = useMemo(() => {
+    const totals = thisWeekTotals(thisWeekRows).filter((entry) => entry.out > 0);
+    return totals[0] ?? null;
+  }, [thisWeekRows]);
   const getMonthStats = (accountId: string) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -985,6 +1031,69 @@ export function HomePage() {
                 onClick={() => navigate("/investments")}
               />
             </div>
+          </div>
+        )}
+
+        {/* "This week" — every KNOWN obligation in the next 7 days, merged:
+            EMIs, kameti rounds, recurring charges, bills, card due days.
+            The forward view no bank-sync app can match, from data Hisaab
+            uniquely holds. Hidden when the week is clear (no noise). */}
+        {dataReady && thisWeekRows.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2.5 px-1">
+              <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                {t("home_this_week")}
+              </h2>
+              {thisWeekOut && (
+                <span className="text-[10.5px] font-semibold text-pay-text tabular-nums">
+                  {t("home_week_out").replace("{amount}", formatMoney(thisWeekOut.out, thisWeekOut.currency))}
+                </span>
+              )}
+            </div>
+            <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+              {thisWeekRows.slice(0, 5).map((row) => (
+                <button
+                  key={row.id}
+                  onClick={() => navigate(row.href)}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left active:bg-cream-soft transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
+                    <CalendarClock size={14} className={row.daysUntil <= 1 ? "text-warn-600" : "text-ink-500"} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-ink-900 truncate tracking-tight">{row.label}</p>
+                    <p className="text-[10.5px] text-ink-500 leading-tight">
+                      {(() => {
+                        // Structured sub → translated line (the lib stays
+                        // i18n-free). 'none' rows show only the due phrase.
+                        const sub =
+                          row.sub.kind === "emi" ? `EMI #${row.sub.n}`
+                          : row.sub.kind === "round" ? (
+                              row.sub.count > 1
+                                ? t("tw_rounds_count").replace("{c}", String(row.sub.count))
+                                : t("kameti_round_of").replace("{r}", String(row.sub.r)).replace("{n}", String(row.sub.total))
+                            )
+                          : row.sub.kind === "cadence" ? t(`tw_cad_${row.sub.cadence}` as Parameters<typeof t>[0])
+                          : row.sub.kind === "category" ? row.sub.text
+                          : null;
+                        const due = row.daysUntil === 0 ? t("cc_due_today") : t("cc_due_in").replace("{n}", String(row.daysUntil));
+                        return sub ? `${sub} · ${due}` : due;
+                      })()}
+                    </p>
+                  </div>
+                  {row.amount !== null && (
+                    <p className={`text-[13px] font-semibold tabular-nums tracking-tight ${row.direction === "receive" ? "text-receive-text" : "text-ink-900"}`}>
+                      {row.direction === "receive" ? "+" : ""}{formatMoney(row.amount, row.currency)}
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
+            {thisWeekRows.length > 5 && (
+              <p className="text-[10.5px] text-ink-400 mt-1.5 px-1">
+                {t("home_week_more").replace("{n}", String(thisWeekRows.length - 5))}
+              </p>
+            )}
           </div>
         )}
 

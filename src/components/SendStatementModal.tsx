@@ -3,7 +3,7 @@ import { FileText, Copy, MessageCircle, CheckCircle2 } from 'lucide-react';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
 import { useT } from '../lib/i18n';
-import { formatMoney } from '../lib/constants';
+import { moneyFormatter } from '../lib/maskMoney';
 import { buildStatement } from '../lib/statementOfAccount';
 import { renderStatementText, netBalanceLabel, greetingLine, type GreetingStyle } from '../lib/statementText';
 import { generateStatementPdf } from '../lib/statementPdf';
@@ -65,6 +65,9 @@ export function SendStatementModal({
   // 'receipt' = a warm "payment received" acknowledgement; 'statement' = the
   // full ledger. Defaults to receipt when a payment just arrived.
   const [mode, setMode] = useState<'statement' | 'receipt'>('statement');
+  // Privacy: hide every figure in the shared artefacts (PDF, text, preview).
+  // Names, dates and structure survive; the numbers become the mask.
+  const [hideAmounts, setHideAmounts] = useState(false);
   // Freeze the "as of" instant when the sheet opens so every artefact (PDF,
   // text, preview) reports the same generation time.
   const [asOf, setAsOf] = useState('');
@@ -73,6 +76,7 @@ export function SendStatementModal({
     if (open) {
       setAsOf(new Date().toISOString());
       setMode(receipt ? 'receipt' : 'statement');
+      setHideAmounts(false);
     }
     // `receipt` is read only at open-time to choose the default mode.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,13 +94,15 @@ export function SendStatementModal({
 
   const greeting = useMemo(() => greetingLine(greetingStyle, partyName), [greetingStyle, partyName]);
   const receiptText = useMemo(
-    () => (receipt ? buildReceiptText({ ...receipt, fromName: preparedName, greeting }) : null),
-    [receipt, preparedName, greeting],
+    () => (receipt ? buildReceiptText({ ...receipt, fromName: preparedName, greeting, hideAmounts }) : null),
+    [receipt, preparedName, greeting, hideAmounts],
   );
   const statementMessage = useMemo(
-    () => (statement ? renderStatementText(statement, { greeting, fromName: preparedName }) : ''),
-    [statement, greeting, preparedName],
+    () => (statement ? renderStatementText(statement, { greeting, fromName: preparedName, hideAmounts }) : ''),
+    [statement, greeting, preparedName, hideAmounts],
   );
+  // In-modal money formatter — the headline receipt card mirrors the toggle.
+  const showMoney = moneyFormatter(hideAmounts);
   const message = mode === 'receipt' && receiptText ? receiptText.message : statementMessage;
   const hasContent = mode === 'receipt' ? !!receiptText : !!statement?.hasActivity;
   const whatsappUrl = buildWhatsAppUrl(phone, message);
@@ -112,7 +118,7 @@ export function SendStatementModal({
     if (!statement) return;
     setPreparing(true);
     try {
-      const { blob, filename } = await generateStatementPdf(statement, { fromName: preparedName, phone, refCode, greeting });
+      const { blob, filename } = await generateStatementPdf(statement, { fromName: preparedName, phone, refCode, greeting, hideAmounts });
       const outcome = await shareStatementFile({
         blob,
         filename,
@@ -215,13 +221,13 @@ export function SendStatementModal({
         {mode === 'receipt' && receipt ? (
           <div className="rounded-2xl p-4 border bg-receive-50/60 border-receive-100/70">
             <p className="text-[10px] font-bold uppercase tracking-widest text-receive-text">{t('rcpt_received')}</p>
-            <p className="text-[18px] font-extrabold text-ink-900 mt-1 tabular-nums">{formatMoney(receipt.receivedAmount, receipt.currency)}</p>
+            <p className="text-[18px] font-extrabold text-ink-900 mt-1 tabular-nums">{showMoney(receipt.receivedAmount, receipt.currency)}</p>
             <p className="text-[11px] text-ink-500 mt-1">
               {receipt.remaining == null
                 ? t('rcpt_thanks_short')
                 : receipt.remaining <= 0.005
                 ? t('rcpt_settled_short')
-                : t('rcpt_remaining_short').replace('{amount}', formatMoney(receipt.remaining, receipt.currency))}
+                : t('rcpt_remaining_short').replace('{amount}', showMoney(receipt.remaining, receipt.currency))}
             </p>
           </div>
         ) : statement && statement.sections.length > 0 ? (
@@ -240,7 +246,7 @@ export function SendStatementModal({
                   <p className="text-[15px] font-extrabold text-ink-900 mt-1">
                     {settled
                       ? t('soa_settled_celebrate').replace('{name}', partyName)
-                      : netBalanceLabel(partyName, section.closing, section.currency)}
+                      : netBalanceLabel(partyName, section.closing, section.currency, showMoney)}
                   </p>
                   <p className="text-[11px] text-ink-500 mt-1">
                     {section.lines.length} {section.lines.length === 1 ? 'entry' : 'entries'}
@@ -275,6 +281,22 @@ export function SendStatementModal({
               ))}
             </div>
           </div>
+        )}
+
+        {/* Privacy: hide the numbers — names, dates and structure stay. */}
+        {hasContent && (
+          <label className="flex items-center justify-between gap-3 rounded-2xl bg-cream-card border border-cream-border px-4 py-3 cursor-pointer">
+            <span className="text-[12.5px] font-semibold text-ink-800">
+              {t('soa_hide_amounts')}
+              <span className="block text-[10.5px] font-normal text-ink-500 mt-0.5">{t('soa_hide_amounts_sub')}</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={hideAmounts}
+              onChange={(e) => setHideAmounts(e.target.checked)}
+              className="w-4 h-4 accent-accent-600 shrink-0"
+            />
+          </label>
         )}
 
         {/* Text preview — mirrors what the WhatsApp ping / copy will contain. */}

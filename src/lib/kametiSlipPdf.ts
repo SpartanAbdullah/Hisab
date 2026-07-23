@@ -5,6 +5,7 @@
 // renderNodeToImage core and the statement's visual language.
 
 import { renderHtmlToA4Pdf } from './renderNodeToImage';
+import { AMOUNT_MASK } from './maskMoney';
 
 const NAVY = '#0B0E2A';
 const INK = '#1A1A24';
@@ -39,6 +40,10 @@ export interface KametiSlipInput {
   witnessUrl?: string; // anonymous "verify live" link
   date: string; // ISO payout date
   organiserName?: string;
+  // Privacy: every figure renders as the fixed-width mask. NOTE the witness
+  // link (when present) still opens the live ledger with real amounts — the
+  // slip's trust seal is deliberately not maskable.
+  hideAmounts?: boolean;
 }
 
 function esc(s: string): string {
@@ -61,6 +66,8 @@ function sanitizeFilename(name: string): string {
 
 export function renderKametiSlipInnerHtml(input: KametiSlipInput): string {
   const { committeeName, currency, round, totalRounds, pool, recipientName, contributed, net, witnessUrl, date, organiserName } = input;
+  // "Hide amounts": bare-number mask (currency is stated once in the hero label).
+  const fmt = input.hideAmounts ? () => AMOUNT_MASK : fmtAmount;
 
   const witnessBlock = witnessUrl
     ? `<div style="padding:18px 44px 0;">
@@ -98,7 +105,7 @@ export function renderKametiSlipInnerHtml(input: KametiSlipInput): string {
 
     <div style="margin:18px 44px 0;background:${POS_TINT};border-radius:8px;padding:16px 18px;">
       <p style="margin:0;font-size:10px;color:${POS};letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">You received · ${esc(currency)}</p>
-      <p style="margin:4px 0 0;font-size:34px;font-weight:700;color:${POS};letter-spacing:-0.01em;">${fmtAmount(pool)}</p>
+      <p style="margin:4px 0 0;font-size:34px;font-weight:700;color:${POS};letter-spacing:-0.01em;">${fmt(pool)}</p>
       <p style="margin:5px 0 0;font-size:13px;color:${INK};">${esc(recipientName)} received the Round ${round} payout.</p>
     </div>
 
@@ -106,11 +113,11 @@ export function renderKametiSlipInnerHtml(input: KametiSlipInput): string {
       <div style="display:flex;gap:44px;">
         <div>
           <p style="margin:0;font-size:10px;color:${MUTED};letter-spacing:0.05em;text-transform:uppercase;">Contributed so far</p>
-          <p style="margin:4px 0 0;font-size:20px;font-weight:600;">${fmtAmount(contributed)}</p>
+          <p style="margin:4px 0 0;font-size:20px;font-weight:600;">${fmt(contributed)}</p>
         </div>
         <div>
           <p style="margin:0;font-size:10px;color:${MUTED};letter-spacing:0.05em;text-transform:uppercase;">Net position</p>
-          <p style="margin:4px 0 0;font-size:20px;font-weight:600;color:${net >= 0 ? POS : INK};">${net >= 0 ? '+' : '−'}${fmtAmount(net)}</p>
+          <p style="margin:4px 0 0;font-size:20px;font-weight:600;color:${net >= 0 ? POS : INK};">${net >= 0 ? '+' : '−'}${fmt(net)}</p>
         </div>
       </div>
     </div>

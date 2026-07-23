@@ -4,6 +4,7 @@
 // figures, currency stated once, E&OE).
 
 import { renderHtmlToA4Pdf } from './renderNodeToImage';
+import { AMOUNT_MASK } from './maskMoney';
 import type { GroupDebt } from './groupDebts';
 
 const NAVY = '#0B0E2A';
@@ -42,6 +43,7 @@ export interface GroupSettleUpPdfInput {
   simplify: boolean;
   asOf: string; // ISO
   fromName?: string;
+  hideAmounts?: boolean; // privacy: every figure renders as the fixed-width mask
 }
 
 function esc(s: string): string {
@@ -64,13 +66,15 @@ function sanitizeFilename(name: string): string {
 
 export function renderGroupSettleUpInnerHtml(input: GroupSettleUpPdfInput): string {
   const { groupName, emoji, currency, debts, expenses, simplify, asOf } = input;
+  // "Hide amounts": bare-number mask (currency is stated once in the header).
+  const fmt = input.hideAmounts ? () => AMOUNT_MASK : fmtAmount;
 
   const transfersRows = debts.length === 0
     ? `<tr><td colspan="3" style="padding:10px 6px;color:${MUTED};font-style:italic;border-top:1px solid ${ROWLINE};">Everyone is settled up — nothing outstanding.</td></tr>`
     : debts.map((d) => `<tr>
         <td style="padding:8px 6px;border-top:1px solid ${ROWLINE};">${esc(d.fromName)}</td>
         <td style="padding:8px 6px;border-top:1px solid ${ROWLINE};color:${MUTED};">→ ${esc(d.toName)}</td>
-        <td style="padding:8px 0 8px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};font-weight:600;">${fmtAmount(d.amount)}</td>
+        <td style="padding:8px 0 8px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};font-weight:600;">${fmt(d.amount)}</td>
       </tr>`).join('');
 
   const expenseTotal = expenses.reduce((s, e) => s + e.amount, 0);
@@ -80,7 +84,7 @@ export function renderGroupSettleUpInnerHtml(input: GroupSettleUpPdfInput): stri
         <td style="padding:7px 6px 7px 0;color:${MUTED};white-space:nowrap;border-top:1px solid ${ROWLINE};">${fmtDate(e.date)}</td>
         <td style="padding:7px 6px;border-top:1px solid ${ROWLINE};">${esc(e.description || '—')}</td>
         <td style="padding:7px 6px;color:${MUTED};border-top:1px solid ${ROWLINE};">${esc(e.paidByName)}</td>
-        <td style="padding:7px 0 7px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};">${fmtAmount(e.amount)}</td>
+        <td style="padding:7px 0 7px 6px;text-align:right;white-space:nowrap;border-top:1px solid ${ROWLINE};">${fmt(e.amount)}</td>
       </tr>`).join('');
 
   return `
@@ -127,7 +131,7 @@ export function renderGroupSettleUpInnerHtml(input: GroupSettleUpPdfInput): stri
         <tfoot>
           <tr style="border-top:2px solid ${NAVY};">
             <td colspan="3" style="padding:10px 6px 0 0;font-weight:600;">Total</td>
-            <td style="padding:10px 0 0 6px;text-align:right;font-weight:700;">${fmtAmount(expenseTotal)}</td>
+            <td style="padding:10px 0 0 6px;text-align:right;font-weight:700;">${fmt(expenseTotal)}</td>
           </tr>
         </tfoot>
       </table>

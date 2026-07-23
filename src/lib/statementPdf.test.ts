@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderStatementInnerHtml } from './statementPdf';
+import { renderStatementInnerHtml, type StatementPdfOptions } from './statementPdf';
 import { buildStatement } from './statementOfAccount';
 import type { Loan, Transaction } from '../db';
 
@@ -12,7 +12,7 @@ function txn(p: Partial<Transaction> & Pick<Transaction, 'id' | 'type' | 'amount
 
 // Positive AED (they owe you) + negative PKR (you owe them), with a repayment
 // so both Debit and Credit columns are exercised.
-function sampleHtml(): string {
+function sampleHtml(extraOpts: Partial<StatementPdfOptions> = {}): string {
   const loans = [
     loan({ id: 'L1', type: 'given', totalAmount: 10500, remainingAmount: 8000, currency: 'AED' }),
     loan({ id: 'L2', type: 'taken', totalAmount: 30000, remainingAmount: 30000, currency: 'PKR', createdAt: '2026-06-25T00:00:00.000Z' }),
@@ -24,7 +24,7 @@ function sampleHtml(): string {
     txn({ id: 'b1', type: 'loan_taken', amount: 30000, currency: 'PKR', relatedLoanId: 'L2', createdAt: '2026-06-25T00:00:00.000Z', notes: 'Rent deposit' }),
   ];
   const statement = buildStatement({ partyName: 'Maryam Corpuz', loans, transactions, asOf: '2026-07-02T14:30:00.000Z', scope: 'contact' });
-  return renderStatementInnerHtml(statement, { phone: '+971 52 449 5778', fromName: 'Muhammad Abdullah', greeting: 'Hello Maryam Corpuz,' });
+  return renderStatementInnerHtml(statement, { phone: '+971 52 449 5778', fromName: 'Muhammad Abdullah', greeting: 'Hello Maryam Corpuz,', ...extraOpts });
 }
 
 describe('renderStatementInnerHtml', () => {
@@ -99,6 +99,25 @@ describe('renderStatementInnerHtml', () => {
     expect(html).toContain('Hello Maryam Corpuz,');
     expect(html).toContain('Thank you,');
     expect(html).toContain('>Muhammad Abdullah<');
+  });
+
+  it('masks every amount when hideAmounts is on, while names/dates/structure survive', () => {
+    const masked = sampleHtml({ hideAmounts: true });
+    // No amount leaks — ledger cells, running balances, tfoot totals, hero
+    // number, and the bilingual hero prose all carry the mask instead.
+    expect(masked).not.toContain('8,000.00'); // AED net
+    expect(masked).not.toContain('10,000.00'); // ledger debit
+    expect(masked).not.toContain('2,500.00'); // ledger credit
+    expect(masked).not.toContain('30,000.00'); // PKR side
+    expect(masked).not.toContain('500.00'); // second loan-given row
+    expect(masked).toContain('●●,●●●'); // bare ledger mask
+    expect(masked).toContain('AED ●●,●●●'); // hero prose via moneyFormatter
+    // The trust scaffolding is untouched: names, dates, statement no, period.
+    expect(masked).toContain('Maryam Corpuz');
+    expect(masked).toMatch(/No\. HIS-\d{6}-[0-9A-Z]{4}/);
+    expect(masked).toContain('Period 21 Jun 2026 – 02 Jul 2026');
+    expect(masked).toContain('21 Jun'); // ledger dates survive
+    expect(masked).toContain('You need to pay Muhammad Abdullah');
   });
 
   it('omits greeting and sign-off when not provided', () => {

@@ -406,6 +406,60 @@ const S = {
     en: "This request no longer exists (it may have been cancelled). Refresh your inbox.",
   },
 
+  // Trust-led onboarding + intent routing (Monarch-inspired quick wins)
+  onboard_bullet_0: {
+    ur: "Bank ka password nahi chahiye — kabhi nahi",
+    en: "No bank passwords. No sync to break.",
+  },
+  onboard_intent_title: {
+    ur: "Aap Hisaab kis liye use karenge?",
+    en: "What brings you to Hisaab?",
+  },
+  onboard_intent_sub: {
+    ur: "Hum aap ka pehla din isi hisaab se set karenge.",
+    en: "We'll shape your first day around it.",
+  },
+  onboard_intent_spending: { ur: "Apna kharcha track karna hai", en: "Track my spending" },
+  onboard_intent_loans: { ur: "Udhaar ka hisaab rakhna hai", en: "Keep track of loans (udhaar)" },
+  onboard_intent_kameti: { ur: "Kameti chalani ya track karni hai", en: "Run or track a kameti" },
+  onboard_intent_splits: { ur: "Doston ke sath kharche baantne hain", en: "Split expenses with friends" },
+  onboard_intent_budgets: { ur: "Budget banana aur bachana hai", en: "Set budgets and save" },
+  onboard_intent_skip: { ur: "Sab kuch dekhna hai", en: "A bit of everything" },
+
+  // Home "This week" forward view
+  home_this_week: { ur: "Is haftay", en: "This week" },
+  home_week_out: { ur: "{amount} jane hain", en: "{amount} going out" },
+  home_week_more: { ur: "+{n} aur is haftay", en: "+{n} more this week" },
+  tw_rounds_count: { ur: "Is haftay {c} baariyan", en: "{c} rounds this week" },
+  tw_cad_daily: { ur: "Rozana", en: "Daily" },
+  tw_cad_weekly: { ur: "Haftawar", en: "Weekly" },
+  tw_cad_monthly: { ur: "Mahana", en: "Monthly" },
+  tw_cad_yearly: { ur: "Salana", en: "Yearly" },
+
+  // Settings trust section
+  trust_title: { ur: "Aap ka paisa, aap ka data", en: "Your money, your data" },
+  trust_line_1: {
+    ur: "Hisaab sirf record rakhta hai — aap ke paise ko haath nahi laga sakta.",
+    en: "Hisaab only keeps records — it can't touch your money.",
+  },
+  trust_line_2: {
+    ur: "Bank ka password ya PIN kabhi nahi manga jata.",
+    en: "It never asks for a bank password or PIN.",
+  },
+  trust_line_3: {
+    ur: "Aap ka data kabhi becha nahi jata, aur ads kabhi nahi aayenge.",
+    en: "Your data is never sold, and there will never be ads.",
+  },
+  trust_line_4: {
+    ur: "Har ghalti wapas ho sakti hai — koi entry hamesha ke liye phansti nahi.",
+    en: "Every mistake can be undone — no entry is ever stuck forever.",
+  },
+  trust_why_free_title: { ur: "Hisaab free kyun hai?", en: "Why is Hisaab free?" },
+  trust_why_free_body: {
+    ur: "Rozmarra ka hisaab hamesha free rahega. Aage chal kar kuch premium extras aa sakte hain — lekin ads ya data bech kar kamai kabhi nahi hogi. Hum kahin nahi ja rahe.",
+    en: "Everyday tracking stays free, always. Premium extras may come later — but we will never make money from ads or from selling your data. We're not going anywhere.",
+  },
+
   // Recurring expansion safety
   rec_posted_advance_failed: {
     ur: "Entry post ho gayi, lekin agli due date aage nahi barh saki — agli baar dobara pooch sakta hai. Dobara confirm NA karein.",
@@ -486,6 +540,9 @@ const S = {
   soa_greet_salaam: { ur: "Salaam", en: "Salaam" },
   soa_greet_dear: { ur: "Dear", en: "Dear" },
   soa_greet_none: { ur: "None", en: "None" },
+  soa_hide_amounts: { ur: "Raqam chhupayein", en: "Hide amounts" },
+  soa_hide_amounts_sub: { ur: "Structure aur naam nazar aayenge, raqam nahi — share ke liye behtar.", en: "Names, dates and structure stay visible — the numbers don't." },
+  kslip_hide_witness_note: { ur: "Witness link par asal raqam phir bhi nazar aayegi.", en: "The witness link still shows the real amounts." },
 
   // Payment-received receipt — a warm acknowledgement sent back to the payer.
   rcpt_title: { ur: "Payment mil gayi", en: "Payment received" },

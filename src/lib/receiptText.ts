@@ -10,7 +10,7 @@
 // and statement. Pure + unit-tested; the UI (SendStatementModal) composes it.
 
 import { format } from 'date-fns';
-import { formatMoney } from './constants';
+import { moneyFormatter } from './maskMoney';
 
 export interface ReceiptTextInput {
   receivedAmount: number;
@@ -21,6 +21,7 @@ export interface ReceiptTextInput {
   date: string; // ISO timestamp of when it was received
   fromName?: string; // the receiver's own name — signs the receipt off
   greeting?: string; // optional opener, e.g. "Hello Rashid,"
+  hideAmounts?: boolean; // privacy: every figure renders as the fixed-width mask
 }
 
 export interface ReceiptText {
@@ -36,7 +37,8 @@ function shortDate(iso: string): string {
 
 export function buildReceiptText(input: ReceiptTextInput): ReceiptText {
   const { receivedAmount, currency, remaining, date, fromName, greeting } = input;
-  const amountStr = formatMoney(receivedAmount, currency);
+  const money = moneyFormatter(!!input.hideAmounts);
+  const amountStr = money(receivedAmount, currency);
   const dateStr = shortDate(date);
   const on = dateStr ? ` on ${dateStr}` : '';
 
@@ -49,7 +51,7 @@ export function buildReceiptText(input: ReceiptTextInput): ReceiptText {
     english = `Received ${amountStr} from you${on} — now fully settled.`;
     urdu = `${amountStr} mil gaye — ab hisaab barabar. Shukriya!`;
   } else {
-    const remStr = formatMoney(remaining, currency);
+    const remStr = money(remaining, currency);
     english = `Received ${amountStr} from you${on} — remaining ${remStr}.`;
     urdu = `${amountStr} mil gaye — baqi ${remStr}. Shukriya!`;
   }

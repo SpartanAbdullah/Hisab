@@ -37,6 +37,8 @@ export function GroupSettleUpModal({ open, onClose, group, debts, expenses, simp
   const toast = useToast();
   const [selectedId, setSelectedId] = useState<string>('');
   const [greetingStyle, setGreetingStyle] = useState<GreetingStyle>('hello');
+  // Privacy: hide every figure in the shared card/PDF — names and structure stay.
+  const [hideAmounts, setHideAmounts] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [copying, setCopying] = useState(false);
 
@@ -46,6 +48,7 @@ export function GroupSettleUpModal({ open, onClose, group, debts, expenses, simp
     if (open) {
       setSelectedId(currentMemberId ?? group.members[0]?.id ?? '');
       setGreetingStyle('hello');
+      setHideAmounts(false);
     }
   }, [open, currentMemberId, group.members]);
 
@@ -57,8 +60,8 @@ export function GroupSettleUpModal({ open, onClose, group, debts, expenses, simp
     [greetingStyle, selectedMember?.name],
   );
   const message = useMemo(
-    () => buildMemberCardText(su, { groupName: group.name, currency: group.currency, greeting, fromName: myName || undefined }),
-    [su, group.name, group.currency, greeting, myName],
+    () => buildMemberCardText(su, { groupName: group.name, currency: group.currency, greeting, fromName: myName || undefined, hideAmounts }),
+    [su, group.name, group.currency, greeting, myName, hideAmounts],
   );
   const whatsappUrl = buildWhatsAppUrl(null, message); // group members have no stored phone → picker
 
@@ -89,6 +92,7 @@ export function GroupSettleUpModal({ open, onClose, group, debts, expenses, simp
       const { blob, filename } = await generateGroupSettleUpPdf({
         groupName: group.name, emoji: group.emoji, currency: group.currency,
         debts, expenses: planExpenses, simplify, asOf: new Date().toISOString(), fromName: myName || undefined,
+        hideAmounts,
       });
       const outcome = await shareStatementFile({ blob, filename, title: `${t('gsu_title')} — ${group.name}`, text: `${group.name} · ${t('gsu_title')} (Hisaab)` });
       if (outcome === 'downloaded') toast.show({ type: 'success', title: t('soa_downloaded') });
@@ -186,6 +190,20 @@ export function GroupSettleUpModal({ open, onClose, group, debts, expenses, simp
             ))}
           </div>
         </div>
+
+        {/* Privacy: hide the numbers — names and structure stay. */}
+        <label className="flex items-center justify-between gap-3 rounded-2xl bg-cream-card border border-cream-border px-4 py-3 cursor-pointer">
+          <span className="text-[12.5px] font-semibold text-ink-800">
+            {t('soa_hide_amounts')}
+            <span className="block text-[10.5px] font-normal text-ink-500 mt-0.5">{t('soa_hide_amounts_sub')}</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={hideAmounts}
+            onChange={(e) => setHideAmounts(e.target.checked)}
+            className="w-4 h-4 accent-accent-600 shrink-0"
+          />
+        </label>
 
         {/* Preview of the member card. */}
         <div>
