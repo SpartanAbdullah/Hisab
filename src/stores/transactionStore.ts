@@ -159,6 +159,8 @@ interface TransactionState {
   // Attach/detach a receipt photo (storage path or null). Lightweight — patches
   // only receipt_path, never re-runs balance logic (unlike updateTransaction).
   setReceiptPath: (id: string, receiptPath: string | null) => Promise<void>;
+  // Metadata-only category patch — no balance legs (payee-memory re-file).
+  setCategory: (id: string, category: string) => Promise<void>;
   deleteTransaction: (id: string, options?: { allowLinkedGroupExpense?: boolean; allowInvestment?: boolean; allowNegative?: boolean }) => Promise<void>;
   // Remove a loan AND everything attached to it (repayments, origin entry,
   // EMI schedule), reversing every balance effect. The escape hatch for a
@@ -1701,6 +1703,22 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     const existing = get().transactions.find((t) => t.id === id) ?? await transactionsDb.get(id);
     if (!existing) throw new Error('Transaction not found');
     const changes: Partial<Transaction> = { receiptPath, updatedAt: new Date().toISOString() };
+    await transactionsDb.update(id, changes);
+    const updated = { ...existing, ...changes };
+    await mirrorPut(db.transactions, updated);
+    markMirrorStale('transactions');
+    set(state => ({
+      transactions: state.transactions.map(t => (t.id === id ? updated : t)),
+    }));
+  },
+
+  // Category-only patch (payee-memory bulk re-file). Never re-runs balance
+  // legs — a category is pure metadata, so this stays as light as
+  // setReceiptPath and is safe to loop over dozens of rows.
+  setCategory: async (id, category) => {
+    const existing = get().transactions.find((t) => t.id === id) ?? await transactionsDb.get(id);
+    if (!existing) throw new Error('Transaction not found');
+    const changes: Partial<Transaction> = { category, updatedAt: new Date().toISOString() };
     await transactionsDb.update(id, changes);
     const updated = { ...existing, ...changes };
     await mirrorPut(db.transactions, updated);

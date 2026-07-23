@@ -436,6 +436,22 @@ const S = {
   tw_cad_monthly: { ur: "Mahana", en: "Monthly" },
   tw_cad_yearly: { ur: "Salana", en: "Yearly" },
 
+  // Mera Hisaab net-position card + payee memory
+  home_mera_hisaab: { ur: "Mera Hisaab", en: "Mera Hisaab" },
+  mh_receivable: { ur: "Log denge", en: "Owed to you" },
+  mh_payable: { ur: "Aap ne dene", en: "You owe" },
+  mh_vs_last: { ur: "pichle mahine se", en: "vs last month" },
+  qe_payee_filled: {
+    ur: "Pichli dafa se bhar diya — {category}",
+    en: "Filled from last time — {category}",
+  },
+  qe_payee_refile_q: {
+    ur: "{payee} hamesha {category} mein file karein?",
+    en: "Always file {payee} under {category}?",
+  },
+  qe_payee_refile_action: { ur: "{n} purani update karo", en: "Update {n} past" },
+  qe_payee_refiled: { ur: "{n} purani entries update ho gayin", en: "{n} past entries re-filed" },
+
   // Settings trust section
   trust_title: { ur: "Aap ka paisa, aap ka data", en: "Your money, your data" },
   trust_line_1: {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
@@ -34,7 +34,15 @@ import { useRecurringStore } from "../stores/recurringStore";
 import { useEmiStore } from "../stores/emiStore";
 import { useCommitteeStore } from "../stores/committeeStore";
 import { buildThisWeek, thisWeekTotals } from "../lib/thisWeek";
-import { CalendarClock } from "lucide-react";
+import {
+  computeMeraHisaab,
+  monthKeyOf,
+  NET_SNAPSHOTS_KEY,
+  previousMonthNet,
+  upsertSnapshot,
+  type NetSnapshot,
+} from "../lib/meraHisaab";
+import { CalendarClock, Scale } from "lucide-react";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
 import { SettlementNudgeBanner } from "../components/SettlementNudgeBanner";
 import { BudgetWarningBanner } from "../components/BudgetWarningBanner";
@@ -55,7 +63,7 @@ import { CoachCards } from "../components/CoachCards";
 import { buildCoachCards } from "../lib/coachInsights";
 import { AddAccountStepper } from "./AddAccountStepper";
 import { QuickEntry } from "./QuickEntry";
-import { formatMoney } from "../lib/constants";
+import { formatMoney, formatSignedMoney } from "../lib/constants";
 import { currencyMeta } from "../lib/design-tokens";
 import { useT } from "../lib/i18n";
 import { useAsyncLoad } from "../hooks/useAsyncLoad";
@@ -235,6 +243,33 @@ export function HomePage() {
     const totals = thisWeekTotals(thisWeekRows).filter((entry) => entry.out > 0);
     return totals[0] ?? null;
   }, [thisWeekRows]);
+
+  // "Mera Hisaab" — the net position INCLUDING people: accounts (cards as
+  // −owed) + receivables − payables, with cash advances never counted twice.
+  const meraTotals = useMemo(
+    () => computeMeraHisaab({ accounts, loans, cardFundedLoanIds }),
+    [accounts, loans, cardFundedLoanIds],
+  );
+  const meraPrimary = useMemo(
+    () => meraTotals.find((entry) => entry.currency === primaryCurrency) ?? meraTotals[0] ?? null,
+    [meraTotals, primaryCurrency],
+  );
+  // Monthly snapshot for the vs-last-month delta. Captured once per load
+  // when data is ready; localStorage keeps a rolling 13 months.
+  const [meraPrevNet, setMeraPrevNet] = useState<number | null>(null);
+  useEffect(() => {
+    if (!dataReady || !meraPrimary) return;
+    try {
+      const raw = localStorage.getItem(NET_SNAPSHOTS_KEY);
+      const snapshots: NetSnapshot[] = raw ? JSON.parse(raw) : [];
+      const monthKey = monthKeyOf(new Date(renderNowMs));
+      setMeraPrevNet(previousMonthNet(snapshots, monthKey, meraPrimary.currency));
+      localStorage.setItem(NET_SNAPSHOTS_KEY, JSON.stringify(upsertSnapshot(snapshots, monthKey, meraTotals)));
+    } catch (err) {
+      console.error("net snapshot failed (non-fatal)", err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataReady, meraPrimary?.currency]);
   const getMonthStats = (accountId: string) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1031,6 +1066,51 @@ export function HomePage() {
                 onClick={() => navigate("/investments")}
               />
             </div>
+          </div>
+        )}
+
+        {/* "Mera Hisaab" — one net-position number that includes PEOPLE:
+            accounts (cards as −owed) + what people owe you − what you owe.
+            Loans as balance-sheet items is THE differentiator, visible
+            daily; settling a loan visibly moves this number. */}
+        {dataReady && meraPrimary && (loans.length > 0 || accounts.length > 0) && (
+          <div className="rounded-[18px] bg-cream-card border border-cream-border p-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] flex items-center gap-1.5">
+                <Scale size={11} /> {t("home_mera_hisaab")}
+              </h2>
+              {meraPrevNet !== null && Math.abs(meraPrimary.net - meraPrevNet) > 0.005 && (
+                <span className={`text-[10.5px] font-semibold tabular-nums ${meraPrimary.net >= meraPrevNet ? "text-receive-text" : "text-pay-text"}`}>
+                  {meraPrimary.net >= meraPrevNet ? "▲" : "▼"} {formatMoney(Math.abs(meraPrimary.net - meraPrevNet), meraPrimary.currency)} · {t("mh_vs_last")}
+                </span>
+              )}
+            </div>
+            <p className={`text-[24px] font-semibold tabular-nums tracking-tight ${meraPrimary.net < 0 ? "text-pay-text" : "text-ink-900"}`}>
+              {formatSignedMoney(meraPrimary.net, meraPrimary.currency)}
+            </p>
+            {(meraPrimary.receivable > 0.005 || meraPrimary.payable > 0.005) && (
+              <p className="text-[11px] text-ink-500 mt-1 tabular-nums">
+                {meraPrimary.receivable > 0.005 && (
+                  <span className="text-receive-text font-medium">
+                    {t("mh_receivable")} +{formatMoney(meraPrimary.receivable, meraPrimary.currency)}
+                  </span>
+                )}
+                {meraPrimary.receivable > 0.005 && meraPrimary.payable > 0.005 && <span> · </span>}
+                {meraPrimary.payable > 0.005 && (
+                  <span className="text-pay-text font-medium">
+                    {t("mh_payable")} −{formatMoney(meraPrimary.payable, meraPrimary.currency)}
+                  </span>
+                )}
+              </p>
+            )}
+            {meraTotals.length > 1 && (
+              <p className="text-[10.5px] text-ink-400 mt-1 tabular-nums">
+                {meraTotals
+                  .filter((entry) => entry.currency !== meraPrimary.currency)
+                  .map((entry) => formatSignedMoney(entry.net, entry.currency))
+                  .join(" · ")}
+              </p>
+            )}
           </div>
         )}
 

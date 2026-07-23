@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
@@ -30,6 +30,7 @@ import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { SpendingWarningModal } from '../components/SpendingWarningModal';
 import { useToast } from '../components/Toast';
+import { buildPayeeProfiles, matchPayee, mismatchedTxnIds, normalizePayee } from '../lib/payeeMemory';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { currencyMeta } from '../lib/design-tokens';
@@ -90,6 +91,7 @@ export function QuickEntry({
 }: Props) {
   const { accounts } = useAccountStore();
   const { processTransaction } = useTransactionStore();
+  const transactions = useTransactionStore((s) => s.transactions);
   const { loans } = useLoanStore();
   const { createLoan, applyRepayment } = useLoanStore();
   const { goals } = useGoalStore();
@@ -405,6 +407,42 @@ export function QuickEntry({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, step, type]);
+
+  // ── Payee memory ──────────────────────────────────────────────────────────
+  // Typing a payee you've used before ("Careem") pre-fills the category and
+  // account you always pick — entry speed is the product in a manual-entry
+  // app. Exact-match only, only-when-empty (never fights a user's pick).
+  const payeeProfiles = useMemo(() => buildPayeeProfiles(transactions), [transactions]);
+  const payeeMatch = useMemo(
+    () => (type === 'expense' && !isGroupExpense ? matchPayee(payeeProfiles, notes) : null),
+    [payeeProfiles, notes, type, isGroupExpense],
+  );
+  // Tracks what the AUTOFILL set (vs a deliberate user pick) so editing the
+  // payee away reverts it — an auto-filled value must always have a way back.
+  const autoFilledCategoryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) {
+      autoFilledCategoryRef.current = null;
+      return;
+    }
+    if (!payeeMatch) {
+      // The note no longer matches: revert OUR fill (never a user's pick).
+      if (autoFilledCategoryRef.current && category === autoFilledCategoryRef.current) {
+        setCategory('');
+      }
+      autoFilledCategoryRef.current = null;
+      return;
+    }
+    if (!category && payeeMatch.category) {
+      setCategory(payeeMatch.category);
+      autoFilledCategoryRef.current = payeeMatch.category;
+    }
+    if (!sourceId && !sourceLockId && payeeMatch.accountId) {
+      const account = accounts.find((a) => a.id === payeeMatch.accountId);
+      if (account && account.currency === activeCurrency) setSourceId(payeeMatch.accountId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payeeMatch, open]);
 
   // Active currency for the amount step + quick-amount presets. Prefer the
   // preset account's currency (when QuickEntry was launched pinned to an
@@ -859,6 +897,43 @@ export function QuickEntry({
         if (type === 'income' && destId) localStorage.setItem('hisaab_qe_last_dest', destId);
       }
 
+      // Payee memory, learning half: the user filed a KNOWN payee under a
+      // different category than its history. Offer a one-tap retroactive
+      // re-file of the past entries (category is pure metadata — no balance
+      // legs move, and each row keeps its own Undo path via editing).
+      if (type === 'expense' && category && payeeMatch && payeeMatch.category !== category) {
+        const staleIds = mismatchedTxnIds(transactions, normalizePayee(notes), category)
+          .filter((txnId) => txnId !== resultTx.id);
+        if (staleIds.length > 0) {
+          const payeeName = payeeMatch.payee;
+          const chosenCategory = category;
+          toast.show({
+            type: 'info',
+            title: t('qe_payee_refile_q').replace('{payee}', payeeName).replace('{category}', chosenCategory),
+            action: {
+              label: t('qe_payee_refile_action').replace('{n}', String(staleIds.length)),
+              onPress: () => {
+                void (async () => {
+                  let done = 0;
+                  for (const txnId of staleIds) {
+                    try {
+                      await useTransactionStore.getState().setCategory(txnId, chosenCategory);
+                      done += 1;
+                    } catch (err) {
+                      console.error('payee re-file failed for one entry (non-fatal)', err);
+                    }
+                  }
+                  toast.show({
+                    type: 'success',
+                    title: t('qe_payee_refiled').replace('{n}', String(done)),
+                  });
+                })();
+              },
+            },
+          });
+        }
+      }
+
       // EMI scheduling is a follow-up write, not part of the transaction
       // itself. If it fails we must NOT show "Transaction Failed" — the money
       // has already moved and a retry would duplicate the transaction. Surface
@@ -1124,9 +1199,13 @@ export function QuickEntry({
                     // Clear account picks left over from a previously chosen
                     // type — a stale credit-card sourceId would otherwise turn
                     // a person-borrow into a silent cash advance. Preset
-                    // accounts re-apply via the hydration effect.
+                    // accounts re-apply via the hydration effect. Category
+                    // clears too: a payee-autofilled expense category must
+                    // not silently ride onto an Income entry (whose picker
+                    // wouldn't even show it as selected).
                     setSourceId('');
                     setDestId('');
+                    setCategory('');
                     if (tx.value === 'person_money') {
                       setCashAdvance(false);
                       setStep(3);
@@ -1754,6 +1833,12 @@ export function QuickEntry({
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('quick_note')}</label>
                 <input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('quick_note_placeholder')} className={inputClass} />
+                {/* Payee memory: the app remembered this payee's usual filing. */}
+                {payeeMatch && category === payeeMatch.category && payeeMatch.category && (
+                  <p className="text-[11px] text-accent-600 mt-1.5">
+                    {t('qe_payee_filled').replace('{category}', payeeMatch.category)}
+                  </p>
+                )}
               </div>
             )}
 
