@@ -41,6 +41,14 @@ describe('planNotifications', () => {
     expect(paid).toHaveLength(0);
   });
 
+  it('a no-limit card still gets bill reminders (statement 0 = unknowable, not paid)', () => {
+    // dueDay 26 (2 days out from NOW=24 Jul), NO creditLimit.
+    const plan = planNotifications(inputs({ accounts: [card({ metadata: { dueDay: '26' } })] }));
+    expect(plan.map((p) => p.key).sort()).toEqual(['card:c1:t0', 'card:c1:t1'].sort());
+    // No amount known → body carries no dangling dash.
+    expect(plan.find((p) => p.key === 'card:c1:t0')?.body).not.toContain('—');
+  });
+
   it('EMIs remind T-1/T-0, but card-funded ones defer to the funding card', () => {
     const base = inputs({ loans: [loan()], schedules: [emi()] });
     const plain = planNotifications(base);

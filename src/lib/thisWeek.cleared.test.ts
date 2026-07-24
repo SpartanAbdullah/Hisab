@@ -60,6 +60,14 @@ describe('cleared-card praise rows', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('a no-limit card (unknowable amount) keeps its date-only due row, not dropped', () => {
+    // dueDay 26, NO creditLimit → statement is 0 because the amount is
+    // unknowable, not because nothing is owed. Must still surface a row.
+    const rows = buildThisWeek(inputs([card({ metadata: { dueDay: '26' } })], [payment({ amount: 100 })]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: 'card-c1', amount: null });
+  });
+
   it('praise survives ON the due day for an early payer (no due-day vanish)', () => {
     const dueDayToday = new Date(2026, 6, 26, 9, 0, 0);
     const rows = buildThisWeek({

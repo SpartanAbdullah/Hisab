@@ -16,6 +16,9 @@ import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 import { tStatic } from '../lib/i18n';
 import { statusSyncToPaid, uncoveredToPaidIds } from '../lib/emiCoverage';
 import { clampCardCredit } from '../lib/cardCredit';
+import { allocateBillPayment } from '../lib/cardStatement';
+import { daysUntilDayOfMonth } from '../lib/inboxInfo';
+import { localIso } from '../lib/thisWeek';
 import { assertLinkedLoanDeleteAllowed } from '../lib/linkedLoanGuards';
 import { simulateTimeline, validateTradeInput } from '../lib/investmentMath';
 import { rateIsSane } from '../lib/conversionMath';
@@ -839,22 +842,71 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             }
 
             // Paying a card bill IS paying back its cash advances — the same
-            // debt lives in two records (card balance + loan). Apply the
-            // credited amount to still-open cash-advance loans this card funded
-            // (oldest first) as ledger-only repayments: the money already moved
-            // via the transfer legs above, so these rows carry no account legs.
-            // Without this, a paid-off bill left the loan open and forced the
-            // user to "pay" it a second time (the double-credit disaster).
+            // debt lives in two records (card balance + loan). We knock the
+            // paid amount off the funded loans as ledger-only repayments (no
+            // account legs — the money already moved via the transfer legs
+            // above); without this, a paid bill left the loan open and forced
+            // a second "pay" (the double-credit disaster).
+            //
+            // STATEMENT-NATIVE allocation: this cycle's instalment(s) first,
+            // then purchases, then prepay — so paying THIS month's statement
+            // steps each plan one instalment (not the whole advance), while
+            // paying the full balance still clears everything. A card missing
+            // a limit or statement day falls back to the legacy greedy settle
+            // (no behaviour change for those).
             if (dest.type === 'credit_card') {
-              let pool = src.currency !== dest.currency
+              const pool = src.currency !== dest.currency
                 ? Math.round(input.amount * (conversionRate ?? 0) * 100) / 100
                 : input.amount;
-              const fundedLoans = await findActiveCashAdvanceLoansForCard(dest.id);
+              const cardLimit = parseFloat(dest.metadata?.creditLimit || '0');
+              const cardDueDay = parseInt(dest.metadata?.dueDay ?? '', 10);
+              const statementNative = cardLimit > 0 && Number.isFinite(cardDueDay) && cardDueDay >= 1;
+              const fundedLoans = (await findActiveCashAdvanceLoansForCard(dest.id))
+                .filter((l) => l.currency === dest.currency);
+
+              // plan: how much principal to knock off each advance.
+              const plan: Array<{ loan: Loan; applied: number }> = [];
+              if (statementNative && fundedLoans.length > 0) {
+                const when = input.createdAt ? new Date(input.createdAt) : new Date();
+                const dueIn = daysUntilDayOfMonth(cardDueDay, when) ?? 0;
+                const nextStatementIso = localIso(
+                  new Date(when.getFullYear(), when.getMonth(), when.getDate() + dueIn),
+                );
+                const schedules = useEmiStore.getState().schedules;
+                const sumRemaining = fundedLoans.reduce((s, l) => s + l.remainingAmount, 0);
+                // dest.balance is the PRE-credit balance (captured before the
+                // transfer legs above ran), so this is the true pre-payment
+                // revolving = used − Σ(advance remaining).
+                const revolvingPurchases = Math.max(
+                  0,
+                  Math.round(((cardLimit - dest.balance) - sumRemaining) * 100) / 100,
+                );
+                const advances = fundedLoans.map((l) => {
+                  const next = schedules
+                    .filter((s2) => s2.loanId === l.id && s2.status !== 'paid')
+                    .sort((a, b) => a.installmentNumber - b.installmentNumber)[0];
+                  const dueThisCycle = next && next.dueDate <= nextStatementIso ? next.amount : 0;
+                  return { loanId: l.id, remaining: l.remainingAmount, dueThisCycle, createdAt: l.createdAt };
+                });
+                const alloc = allocateBillPayment({ payment: pool, revolvingPurchases, advances });
+                for (const line of alloc.perLoan) {
+                  const l = fundedLoans.find((f) => f.id === line.loanId);
+                  if (l) plan.push({ loan: l, applied: line.principalApplied });
+                }
+              } else {
+                // Legacy greedy fallback (oldest-first, whole remaining).
+                let left = pool;
+                for (const l of fundedLoans) {
+                  if (left <= 0.005) break;
+                  const applied = Math.round(Math.min(l.remainingAmount, left) * 100) / 100;
+                  if (applied <= 0.005) continue;
+                  plan.push({ loan: l, applied });
+                  left = Math.round((left - applied) * 100) / 100;
+                }
+              }
+
               let settledCount = 0;
-              for (const fundedLoan of fundedLoans) {
-                if (pool <= 0.005) break;
-                if (fundedLoan.currency !== dest.currency) continue;
-                const applied = Math.round(Math.min(fundedLoan.remainingAmount, pool) * 100) / 100;
+              for (const { loan: fundedLoan, applied } of plan) {
                 if (applied <= 0.005) continue;
                 await trackedApplyRepayment(scope, fundedLoan.id, applied);
                 await trackedMarkCoveredEmisPaid(scope, fundedLoan.id);
@@ -880,7 +932,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 };
                 record.updatedAt = record.createdAt;
                 await trackedAddTransaction(scope, record);
-                pool = Math.round((pool - applied) * 100) / 100;
                 settledCount += 1;
               }
               if (settledCount > 0) {

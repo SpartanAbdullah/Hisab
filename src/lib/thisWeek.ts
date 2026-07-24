@@ -5,6 +5,7 @@
 // value; Hisaab computes it from first-class objects instead of guesses.
 // Pure + tested; rendering stays in HomePage.
 import { cardPaymentThisCycle, daysUntilDayOfMonth } from './inboxInfo';
+import { buildCardStatement } from './cardStatement';
 import { daysUntil } from './subscriptionMetrics';
 import { roundDate } from './committeeMath';
 import type {
@@ -218,12 +219,37 @@ export function buildThisWeek(inp: ThisWeekInputs): ThisWeekRow[] {
       }
       continue;
     }
+    // Owed > 0: show THIS cycle's statement (purchases + this cycle's
+    // instalment), not the entire revolving balance — a card financing a
+    // cash advance over months isn't "9,978 going out this week". Falls back
+    // to full owed when transaction data isn't available.
+    let dueAmount = owed;
+    if (inp.transactions) {
+      const advanceLoans = inp.loans.filter(
+        (l) => l.status === 'active' && inp.cardFundedLoanIds?.get(l.id) === a.id,
+      );
+      const statement = buildCardStatement({
+        card: a,
+        advanceLoans,
+        schedules: inp.schedules,
+        today: inp.today,
+      });
+      // Only a limited card has a computable statement. A no-limit card's
+      // statement is 0 because the amount is UNKNOWABLE — keep its date-only
+      // row (amount stays null) rather than dropping it.
+      if (statement && statement.hasLimit) {
+        dueAmount = statement.statementDue;
+        // This cycle's statement already covered (but a balance carries) —
+        // nothing to flag as due this week.
+        if (dueAmount <= 0.005) continue;
+      }
+    }
     rows.push({
       id: `card-${a.id}`,
       kind: 'card',
       label: a.name,
       sub: { kind: 'none' },
-      amount: owed,
+      amount: dueAmount,
       currency: a.currency,
       daysUntil: d,
       href: `/account/${a.id}`,

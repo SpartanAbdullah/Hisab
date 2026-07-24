@@ -606,6 +606,13 @@ export const emiSchedulesDb = {
     const { error } = await supabase.from('emi_schedules').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
+  // Re-date an instalment (the statement-day re-anchor migration). Kept
+  // separate from update() — which is deliberately status-only — because
+  // due_date is otherwise immutable after creation.
+  async setDueDate(id: string, dueDate: string) {
+    const { error } = await supabase.from('emi_schedules').update({ due_date: dueDate }).eq('id', id).eq('user_id', getUserId());
+    if (error) throw error;
+  },
   async deleteByLoan(loanId: string) {
     const { error } = await supabase.from('emi_schedules').delete().eq('loan_id', loanId).eq('user_id', getUserId());
     if (error) throw error;

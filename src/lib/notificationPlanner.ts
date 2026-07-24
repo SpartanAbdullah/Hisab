@@ -16,6 +16,7 @@ import { daysUntilDayOfMonth } from './inboxInfo';
 import { daysUntil } from './subscriptionMetrics';
 import { paymentsForRound, roundDate } from './committeeMath';
 import { localIso } from './thisWeek';
+import { buildCardStatement } from './cardStatement';
 import { formatMoney } from './constants';
 import { tStatic } from './i18n';
 import type {
@@ -96,7 +97,22 @@ export function planNotifications(inp: PlanInputs): PlannedNotification[] {
     const limit = parseFloat(a.metadata.creditLimit || '0');
     const owed = limit > 0 ? Math.round((limit - a.balance) * 100) / 100 : null;
     if (owed !== null && owed <= 0.005) continue; // paid → silence, by construction
-    const amount = owed !== null ? formatMoney(owed, a.currency) : '';
+    // Remind about THIS cycle's statement (purchases + this cycle's instalment),
+    // not the whole revolving balance. If the statement is already covered this
+    // cycle (balance carries), stay quiet. Falls back to full owed when the
+    // statement can't be computed (no statement day).
+    const advanceLoans = inp.loans.filter(
+      (l) => l.status === 'active' && inp.cardFundedLoanIds?.get(l.id) === a.id,
+    );
+    const statement = buildCardStatement({
+      card: a, advanceLoans, schedules: inp.schedules, today: inp.now,
+    });
+    // Only a card WITH a limit can have a computable statement of 0 = "paid".
+    // A no-limit card's statementDue is 0 because the amount is UNKNOWABLE, not
+    // because nothing is owed — it must keep its (amount-less) reminder.
+    if (statement && statement.hasLimit && statement.statementDue <= 0.005) continue;
+    const dueAmount = statement && statement.hasLimit ? statement.statementDue : owed;
+    const amount = dueAmount !== null ? formatMoney(dueAmount, a.currency) : '';
     const steps: Array<[number, string, number]> = [
       [3, tStatic('notif_bill_in').replace('{d}', '3'), 50],
       [1, tStatic('notif_bill_tomorrow'), 80],

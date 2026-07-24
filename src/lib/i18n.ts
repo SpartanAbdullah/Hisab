@@ -2875,6 +2875,26 @@ const S = {
   info_cc_cleared_early: { ur: "{name} ka bill saaf — {d} din pehle ✓", en: "{name} bill cleared — {d}d early ✓" },
   info_cc_cleared_ontime: { ur: "{name} ka bill saaf — ain waqt par ✓", en: "{name} bill cleared right on time ✓" },
   info_cc_cleared_body: { ur: "Is cycle kuch due nahi — zabardast.", en: "Nothing due this cycle — nicely done." },
+  // Statement-native cash-advance instalments.
+  emi_statement_anchored: {
+    ur: "Har mahine card ki statement ({day}) par installment aayegi.",
+    en: "Each instalment lands on the card's statement — the {day} of the month.",
+  },
+  // Per-card re-anchor migration.
+  reanchor_title: { ur: "Instalment plan update", en: "Instalment plan update" },
+  reanchor_body: {
+    ur: "Is card ki cash-advance installments statement day ({day}) par shift ho sakti hain — taake aik hi bill sab cover kare. Sirf dates badlengi, koi raqam nahi.",
+    en: "This card's cash-advance instalments can move onto its statement day (the {day}) so one bill covers them. Only the dates change — nothing owed changes.",
+  },
+  reanchor_cta: { ur: "Align karo", en: "Align" },
+  reanchor_working: { ur: "Ho raha hai…", en: "Aligning…" },
+  reanchor_done: { ur: "{n} plan align ho gaye", en: "Aligned {n} instalment plan(s)" },
+  reanchor_none: { ur: "Sab pehle se aligned hain", en: "Already aligned" },
+  // Card statement breakdown.
+  cc_statement_title: { ur: "Statement — is mahine", en: "Statement — this month" },
+  cc_statement_purchases: { ur: "Kharchay + baaki", en: "Purchases + carried" },
+  cc_statement_instalment: { ur: "Is cycle ki installment", en: "This cycle's instalment" },
+  cc_statement_total_balance: { ur: "Total balance", en: "Total balance" },
 } as const;
 
 type Key = keyof typeof S;

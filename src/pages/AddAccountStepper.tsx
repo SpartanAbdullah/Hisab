@@ -96,7 +96,10 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
 
   const canProceedStep1 = () => {
     if (accountType === 'credit_card') {
-      return ccIssuer.trim() && ccLast4.length === 4 && parseFloat(ccLimit) > 0 && parseInt(ccDueDay) > 0;
+      const dd = parseInt(ccDueDay, 10);
+      // Statement day must be a real day of the month (1..31) — it anchors the
+      // whole statement/instalment cycle downstream.
+      return Boolean(ccIssuer.trim()) && ccLast4.length === 4 && parseFloat(ccLimit) > 0 && dd >= 1 && dd <= 31;
     }
     return name.trim().length > 0;
   };

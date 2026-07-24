@@ -138,8 +138,20 @@ export function LoansPage() {
       )
     : [];
 
-  const activeLoans = loans.filter((l) => l.status === 'active');
-  const settledLoans = loans.filter((l) => l.status === 'settled');
+  // Cash advances are the card's debt, billed on the card's statement — they
+  // live INSIDE the card now, not as separate "people" here. Exclude them from
+  // every Loans-page surface (lists, stance totals, counts) so the card debt
+  // is shown in exactly one place and "N people to pay" stops counting plastic.
+  const cardFundedLoanIds = useMemo(() => {
+    const map = new Set<string>();
+    for (const txn of transactions) {
+      if (txn.type === 'loan_taken' && txn.relatedLoanId && txn.sourceAccountId) map.add(txn.relatedLoanId);
+    }
+    return map;
+  }, [transactions]);
+  const peopleLoans = loans.filter((l) => !cardFundedLoanIds.has(l.id));
+  const activeLoans = peopleLoans.filter((l) => l.status === 'active');
+  const settledLoans = peopleLoans.filter((l) => l.status === 'settled');
 
   const sumRemaining = (items: Loan[]) =>
     items.reduce(

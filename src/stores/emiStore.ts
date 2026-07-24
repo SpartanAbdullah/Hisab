@@ -11,6 +11,12 @@ interface GenerateEmiInput {
   totalAmount: number;
   installments: number;
   startDate: string;
+  // Statement-native cash advances pass explicit instalment due-dates anchored
+  // to the funding card's statement day (statementInstalmentDates). When
+  // present these win over startDate — a card instalment is billed on the
+  // card's statement day, never a free-typed date. Human loans omit it and
+  // keep the monthly-from-startDate behaviour.
+  dueDates?: string[];
 }
 
 interface EmiState {
@@ -24,6 +30,9 @@ interface EmiState {
   // moves). Returns how many it marked. Used to fix a schedule that desynced
   // from the loan's paid-down balance.
   reconcileCovered: (loanId: string, paidAmount: number) => Promise<number>;
+  // Per-card migration: re-date a cash advance's unpaid instalments onto the
+  // funding card's statement day (date-only, no money moves).
+  reanchorToStatementDay: (loanId: string, dueDates: string[]) => Promise<number>;
   deleteByLoan: (loanId: string) => Promise<void>;
   getByLoan: (loanId: string) => EmiSchedule[];
   reset: () => void;
@@ -53,13 +62,19 @@ export const useEmiStore = create<EmiState>((set, get) => ({
     const emiAmount = Math.round((input.totalAmount / input.installments) * 100) / 100;
     const entries: EmiSchedule[] = [];
     const startDate = new Date(input.startDate);
+    // Explicit statement-anchored dates take precedence; otherwise monthly
+    // from the typed start date (human loans).
+    const dueDateFor = (i: number): string =>
+      input.dueDates && input.dueDates[i]
+        ? input.dueDates[i]
+        : format(addMonths(startDate, i), 'yyyy-MM-dd');
 
     for (let i = 0; i < input.installments; i++) {
       entries.push({
         id: uuid(),
         loanId: input.loanId,
         installmentNumber: i + 1,
-        dueDate: format(addMonths(startDate, i), 'yyyy-MM-dd'),
+        dueDate: dueDateFor(i),
         amount: i === input.installments - 1
           ? Math.round((input.totalAmount - emiAmount * (input.installments - 1)) * 100) / 100
           : emiAmount,
@@ -68,6 +83,28 @@ export const useEmiStore = create<EmiState>((set, get) => ({
     }
     await emiSchedulesDb.bulkAdd(entries);
     set((s) => ({ schedules: [...s.schedules, ...entries] }));
+  },
+
+  // Re-anchor a cash advance's UNPAID instalments onto a card's statement day
+  // (the per-card migration). Paid instalments and amounts are untouched — only
+  // the future due-dates move. Date-only: no money changes. Returns how many
+  // instalments were re-dated (0 = nothing to do / already aligned).
+  reanchorToStatementDay: async (loanId, dueDates) => {
+    const unpaid = get().schedules
+      .filter((e) => e.loanId === loanId && e.status !== 'paid')
+      .sort((a, b) => a.installmentNumber - b.installmentNumber);
+    if (unpaid.length === 0) return 0;
+    // Map each unpaid instalment (in order) onto the next statement dates.
+    const updates = unpaid
+      .map((e, i) => ({ id: e.id, oldDue: e.dueDate, newDue: dueDates[i] }))
+      .filter((u) => u.newDue && u.newDue !== u.oldDue);
+    if (updates.length === 0) return 0;
+    await Promise.all(updates.map((u) => emiSchedulesDb.setDueDate(u.id, u.newDue)));
+    const byId = new Map(updates.map((u) => [u.id, u.newDue]));
+    set((s) => ({
+      schedules: s.schedules.map((e) => (byId.has(e.id) ? { ...e, dueDate: byId.get(e.id)! } : e)),
+    }));
+    return updates.length;
   },
 
   markPaid: async (emiId) => {

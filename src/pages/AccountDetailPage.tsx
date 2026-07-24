@@ -1,9 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAccountStore } from '../stores/accountStore';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { PageErrorState } from '../components/PageErrorState';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useLoanStore } from '../stores/loanStore';
+import { useEmiStore } from '../stores/emiStore';
+import { buildCardStatement, statementInstalmentDates } from '../lib/cardStatement';
+import { localIso } from '../lib/thisWeek';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { MoneyDisplay } from '../components/MoneyDisplay';
@@ -38,6 +42,7 @@ import {
   CalendarClock,
   Banknote,
   SlidersHorizontal,
+  Settings2,
 } from 'lucide-react';
 import type { Account } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
@@ -109,7 +114,11 @@ export function AccountDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { accounts, loadAccounts, renameAccount, deleteAccount, updateMetadata } = useAccountStore();
   const { loadTransactions, getByAccount } = useTransactionStore();
+  const transactions = useTransactionStore((s) => s.transactions);
+  const loans = useLoanStore((s) => s.loans);
+  const emiSchedules = useEmiStore((s) => s.schedules);
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
+  const [reanchoring, setReanchoring] = useState(false);
   const t = useT();
   const toast = useToast();
   const navigate = useNavigate();
@@ -175,6 +184,59 @@ export function AccountDetailPage() {
   const isCreditCard = account.type === 'credit_card';
   const creditLimit = isCreditCard ? parseFloat(account.metadata.creditLimit || '0') : 0;
   const used = isCreditCard ? creditLimit - account.balance : 0;
+
+  // Statement-native view: a card financing a cash advance bills purchases +
+  // this cycle's instalment (not the whole balance), and its instalment plans
+  // live INSIDE the card. Also detect advances still on their old (non-
+  // statement) dates so we can offer the per-card re-anchor.
+  const isOnStatementDay = (iso: string, dd: number): boolean => {
+    const d = new Date(`${iso}T00:00:00`);
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return d.getDate() === Math.min(dd, lastDay);
+  };
+  const cardAdvances = useMemo(() => {
+    if (!isCreditCard) return { statement: null, advanceLoans: [], misaligned: [] as typeof loans };
+    const map = new Map<string, string>();
+    for (const txn of transactions) {
+      if (txn.type === 'loan_taken' && txn.relatedLoanId && txn.sourceAccountId) map.set(txn.relatedLoanId, txn.sourceAccountId);
+    }
+    const advanceLoans = loans.filter((l) => l.status === 'active' && map.get(l.id) === account.id);
+    const statement = buildCardStatement({ card: account, advanceLoans, schedules: emiSchedules, today: new Date() });
+    const dd = parseInt(account.metadata.dueDay ?? '', 10);
+    const validDueDay = Number.isFinite(dd) && dd >= 1 && dd <= 31;
+    const misaligned = validDueDay
+      ? advanceLoans.filter((l) =>
+          emiSchedules.some((s) => s.loanId === l.id && s.status !== 'paid' && !isOnStatementDay(s.dueDate, dd)),
+        )
+      : [];
+    return { statement, advanceLoans, misaligned };
+  }, [isCreditCard, account, loans, emiSchedules, transactions]);
+
+  const handleReanchor = async () => {
+    const dd = parseInt(account.metadata.dueDay ?? '', 10);
+    if (!Number.isFinite(dd) || dd < 1 || dd > 31) return;
+    setReanchoring(true);
+    try {
+      // Count PLANS actually re-anchored (a plan counts if any of its
+      // instalments moved), so the toast never claims a no-op succeeded.
+      let plansMoved = 0;
+      for (const l of cardAdvances.misaligned) {
+        const unpaidCount = emiSchedules.filter((s) => s.loanId === l.id && s.status !== 'paid').length;
+        const dates = statementInstalmentDates(dd, unpaidCount, localIso(new Date()));
+        const moved = await useEmiStore.getState().reanchorToStatementDay(l.id, dates);
+        if (moved > 0) plansMoved += 1;
+      }
+      if (plansMoved > 0) {
+        toast.show({ type: 'success', title: t('reanchor_done').replace('{n}', String(plansMoved)) });
+      } else {
+        toast.show({ type: 'info', title: t('reanchor_none') });
+      }
+    } catch {
+      toast.show({ type: 'error', title: t('error') });
+    } finally {
+      setReanchoring(false);
+    }
+  };
 
   const accountUpcoming = expenses.filter(
     (e) => e.accountId === account.id && e.status === 'upcoming',
@@ -422,6 +484,66 @@ export function AccountDetailPage() {
       </NavyHero>
 
       <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
+        {/* Per-card re-anchor migration (user-approved, date-only): shift this
+            card's cash-advance instalments onto its statement day. */}
+        {isCreditCard && cardAdvances.misaligned.length > 0 && account.metadata.dueDay && (
+          <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Settings2 size={15} className="text-accent-600" />
+              <p className="text-[13px] font-bold text-ink-900">{t('reanchor_title')}</p>
+            </div>
+            <p className="text-[12px] text-ink-600 leading-relaxed">
+              {t('reanchor_body').replace('{day}', `${account.metadata.dueDay}${getOrdinal(parseInt(account.metadata.dueDay))}`)}
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={handleReanchor}
+                disabled={reanchoring}
+                className="cta-primary flex-1 disabled:opacity-50"
+              >
+                {reanchoring ? t('reanchor_working') : t('reanchor_cta')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Statement breakdown — only when the card finances an instalment
+            plan (otherwise the hero's "used" already IS the statement). The
+            honest monthly bill: purchases/carried + this cycle's instalment. */}
+        {isCreditCard && cardAdvances.statement && cardAdvances.advanceLoans.length > 0 && cardAdvances.statement.statementDue > 0.005 && (
+          <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">{t('cc_statement_title')}</p>
+              {cardAdvances.statement.daysUntilDue !== null && (
+                <span className="text-[10.5px] font-semibold text-ink-500 tabular-nums">
+                  {cardAdvances.statement.daysUntilDue === 0 ? t('cc_due_today') : t('cc_due_in').replace('{n}', String(cardAdvances.statement.daysUntilDue))}
+                </span>
+              )}
+            </div>
+            <p className="text-[24px] font-bold text-ink-900 tabular-nums tracking-tight">
+              {formatMoney(cardAdvances.statement.statementDue, account.currency)}
+            </p>
+            <div className="mt-2 space-y-1 text-[11.5px] text-ink-600 tabular-nums">
+              {cardAdvances.statement.revolving > 0.005 && (
+                <div className="flex justify-between">
+                  <span>{t('cc_statement_purchases')}</span>
+                  <span>{formatMoney(cardAdvances.statement.revolving, account.currency)}</span>
+                </div>
+              )}
+              {cardAdvances.statement.instalmentDue > 0.005 && (
+                <div className="flex justify-between">
+                  <span>{t('cc_statement_instalment')}</span>
+                  <span>{formatMoney(cardAdvances.statement.instalmentDue, account.currency)}</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-1 border-t border-cream-hairline text-ink-400">
+                <span>{t('cc_statement_total_balance')}</span>
+                <span>{formatMoney(cardAdvances.statement.totalOwed, account.currency)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Account-scoped quick-action tiles, PERSONALIZED per account type.
             A credit card is not a wallet: you can't "receive" into it, and
             moving/splitting from it makes no sense — its real verbs are

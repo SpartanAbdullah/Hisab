@@ -32,6 +32,8 @@ import { SpendingWarningModal } from '../components/SpendingWarningModal';
 import { useToast } from '../components/Toast';
 import { buildPayeeProfiles, matchPayee, mismatchedTxnIds, normalizePayee } from '../lib/payeeMemory';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
+import { statementInstalmentDates } from '../lib/cardStatement';
+import { localIso } from '../lib/thisWeek';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
@@ -939,13 +941,23 @@ export function QuickEntry({
       // has already moved and a retry would duplicate the transaction. Surface
       // a distinct "partial success" toast instead and still confirm the txn.
       let emiFailed = false;
-      if (hasEmi && resultTx.relatedLoanId && emiInstallments && emiStartDate) {
+      // A cash advance's instalments are statement-native: they anchor to the
+      // funding card's statement day (dueDay), not a typed start date. Human
+      // loans keep the typed start date.
+      const emiCard = cashAdvance ? selectedCashAdvanceCard : null;
+      const emiCardDueDay = emiCard ? parseInt(emiCard.metadata?.dueDay ?? '', 10) : NaN;
+      const emiStatementDates = emiCard && Number.isFinite(emiCardDueDay) && emiCardDueDay >= 1 && emiInstallments
+        ? statementInstalmentDates(emiCardDueDay, parseInt(emiInstallments), localIso(new Date()))
+        : null;
+      const emiReady = emiStatementDates ? true : !!emiStartDate;
+      if (hasEmi && resultTx.relatedLoanId && emiInstallments && emiReady) {
         try {
           await generateSchedule({
             loanId: resultTx.relatedLoanId,
             totalAmount: amt,
             installments: parseInt(emiInstallments),
-            startDate: emiStartDate,
+            startDate: emiStartDate || localIso(new Date()),
+            ...(emiStatementDates ? { dueDates: emiStatementDates } : {}),
           });
         } catch (err) {
           emiFailed = true;
@@ -1566,18 +1578,36 @@ export function QuickEntry({
                   <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-cream-border text-accent-600 accent-accent-600" />
                   <span className="text-[13px] text-ink-800 font-medium">{t('loan_set_emi')}</span>
                 </label>
-                {hasEmi && (
-                  <div className="grid grid-cols-2 gap-3 animate-fade-in">
-                    <div>
-                      <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('loan_installments')}</label>
-                      <input type="number" value={emiInstallments} onChange={e => setEmiInstallments(e.target.value)} placeholder="12" className={inputClass} />
+                {hasEmi && (() => {
+                  // Cash advances anchor to the card's statement day — no
+                  // start-date field; instalments land on the statement, as
+                  // they do on a real card statement.
+                  const caCard = cashAdvance ? selectedCashAdvanceCard : null;
+                  const caDueDay = caCard ? parseInt(caCard.metadata?.dueDay ?? '', 10) : NaN;
+                  const statementAnchored = !!caCard && Number.isFinite(caDueDay) && caDueDay >= 1;
+                  const ordSuffix = (() => {
+                    const s = ['th', 'st', 'nd', 'rd']; const v = caDueDay % 100;
+                    return s[(v - 20) % 10] ?? s[v] ?? s[0];
+                  })();
+                  return (
+                    <div className={`grid gap-3 animate-fade-in ${statementAnchored ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                      <div>
+                        <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('loan_installments')}</label>
+                        <input type="number" value={emiInstallments} onChange={e => setEmiInstallments(e.target.value)} placeholder="12" className={inputClass} />
+                      </div>
+                      {statementAnchored ? (
+                        <p className="text-[11px] text-ink-500 leading-relaxed self-end pb-1">
+                          {t('emi_statement_anchored').replace('{day}', `${caDueDay}${ordSuffix}`)}
+                        </p>
+                      ) : (
+                        <div>
+                          <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('kameti_start_date')}</label>
+                          <input type="date" value={emiStartDate} onChange={e => setEmiStartDate(e.target.value)} className={inputClass} />
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('kameti_start_date')}</label>
-                      <input type="date" value={emiStartDate} onChange={e => setEmiStartDate(e.target.value)} className={inputClass} />
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 
