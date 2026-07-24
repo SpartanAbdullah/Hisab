@@ -1162,12 +1162,17 @@ export function HomePage() {
               onClick={() => setShowCheck(true)}
               className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left active:bg-cream-soft transition-colors"
             >
-              <div className="w-8 h-8 rounded-lg bg-accent-50 border border-cream-hairline flex items-center justify-center shrink-0">
-                <ClipboardCheck size={15} className="text-accent-600" />
+              {/* Done-today wears a live green tick + praise; otherwise the
+                  neutral clipboard nudge. A ritual should feel rewarding the
+                  day you keep it, not like a dead status line. */}
+              <div className={`w-8 h-8 rounded-lg border border-cream-hairline flex items-center justify-center shrink-0 ${checkDays === 0 ? "bg-receive-50" : "bg-accent-50"}`}>
+                {checkDays === 0
+                  ? <CheckCircle2 size={16} className="text-receive-text" strokeWidth={2.4} />
+                  : <ClipboardCheck size={15} className="text-accent-600" />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-semibold text-ink-900 tracking-tight">{t("check_entry_title")}</p>
-                <p className="text-[10.5px] text-ink-500 leading-tight">
+                <p className={`text-[10.5px] leading-tight ${checkDays === 0 ? "text-receive-text font-semibold" : "text-ink-500"}`}>
                   {checkDays === null
                     ? t("check_entry_never")
                     : checkDays === 0

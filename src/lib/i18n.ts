@@ -437,7 +437,7 @@ const S = {
   tw_cad_yearly: { ur: "Salana", en: "Yearly" },
 
   // Mera Hisaab net-position card + payee memory
-  home_mera_hisaab: { ur: "Mera Hisaab", en: "Mera Hisaab" },
+  home_mera_hisaab: { ur: "Mera Hisaab", en: "Where I Stand" },
   mh_receivable: { ur: "Log denge", en: "Owed to you" },
   mh_payable: { ur: "Aap ne dene", en: "You owe" },
   mh_vs_last: { ur: "pichle mahine se", en: "vs last month" },
@@ -2725,7 +2725,7 @@ const S = {
   // ── Weekly "Hisaab check" ritual ──
   check_entry_title: { ur: "Hisaab check", en: "Hisaab check" },
   check_entry_never: { ur: "5 minute — pehla check karo", en: "5 minutes — do your first check" },
-  check_entry_today: { ur: "Aaj ho gaya ✓", en: "Done today ✓" },
+  check_entry_today: { ur: "Aaj ho gaya — zabardast!", en: "Done today — nicely done!" },
   check_entry_days: { ur: "{d} din pehle kiya tha", en: "Last done {d} days ago" },
   check_step_flow: { ur: "Lena-dena", en: "Flow" },
   check_step_people: { ur: "Log", en: "People" },
