@@ -2900,6 +2900,14 @@ const S = {
   cc_cycle_due: { ur: "Payment due", en: "Payment due" },
   cc_cycle_gap: { ur: "~{n} din", en: "~{n} days to pay" },
   cc_cycle_gap_one: { ur: "~1 din", en: "~1 day to pay" },
+  // Cash-advance plan summary (on the card page).
+  ca_plans_title: { ur: "Instalment plans", en: "Instalment plans" },
+  ca_taken_on: { ur: "Liya: {date}", en: "Taken {date}" },
+  ca_plan_count: { ur: "{n} qistein", en: "{n} instalments" },
+  ca_paid_progress: { ur: "{p}/{n} ada — {amount}", en: "{p} of {n} paid — {amount}" },
+  ca_paid_plain: { ur: "{amount} ada ho chuka", en: "{amount} paid" },
+  ca_remaining: { ur: "{amount} baaki", en: "{amount} left" },
+  ca_next_instalment: { ur: "Agli qist: {amount} · {date}", en: "Next instalment: {amount} · {date}" },
   cc_cycle_closes_on: { ur: "Band: {d}", en: "Closes {d}" },
   cc_cycle_due_on: { ur: "Due: {d}", en: "Due {d}" },
   cc_cycle_reassure: {

@@ -144,7 +144,16 @@ export function AccountDetailPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   const load = useCallback(async () => {
-    await Promise.all([loadAccounts(), loadTransactions(), loadExpenses()]);
+    await Promise.all([
+      loadAccounts(),
+      loadTransactions(),
+      loadExpenses(),
+      // Statement breakdown + instalment plans read loans/schedules — a web
+      // deep-link/refresh lands here with both stores cold (Home warms them
+      // otherwise). Cheap cache-first no-ops when already warm.
+      useLoanStore.getState().loadLoans(),
+      useEmiStore.getState().loadSchedules(),
+    ]);
   }, [loadAccounts, loadTransactions, loadExpenses]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
@@ -550,6 +559,78 @@ export function AccountDetailPage() {
                 <span>{t('cc_statement_total_balance')}</span>
                 <span>{formatMoney(cardAdvances.statement.totalOwed, account.currency)}</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Instalment plans — the cash-advance summary the user asked for:
+            how much taken, when, how many instalments, paid, remaining. One
+            card per active advance; tap opens the loan's full history. */}
+        {isCreditCard && cardAdvances.advanceLoans.length > 0 && (
+          <div>
+            <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5 px-1">
+              {t('ca_plans_title')}
+            </h2>
+            <div className="space-y-2.5">
+              {cardAdvances.advanceLoans.map((adv) => {
+                const plan = emiSchedules
+                  .filter((s) => s.loanId === adv.id)
+                  .sort((a, b) => a.installmentNumber - b.installmentNumber);
+                const paidAmount = Math.max(0, Math.round((adv.totalAmount - adv.remainingAmount) * 100) / 100);
+                // Count + next from COVERAGE, not schedule statuses: money is
+                // the source of truth, so "{p} of {n} — {amount}" can never
+                // contradict itself even if a status drifted (e.g. an edited-
+                // down targeted payment that still flipped its instalment).
+                let cumulative = 0;
+                let paidCount = 0;
+                let nextUnpaid: (typeof plan)[number] | undefined;
+                for (const s of plan) {
+                  cumulative = Math.round((cumulative + s.amount) * 100) / 100;
+                  if (cumulative <= paidAmount + 0.00001) paidCount += 1;
+                  else if (!nextUnpaid) nextUnpaid = s;
+                }
+                const pct = adv.totalAmount > 0 ? Math.min(100, (paidAmount / adv.totalAmount) * 100) : 0;
+                return (
+                  <button
+                    key={adv.id}
+                    onClick={() => navigate(`/loan/${adv.id}`)}
+                    className="w-full text-left rounded-2xl bg-cream-card border border-cream-border p-4 active:scale-[0.99] transition-transform"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-[15px] font-bold text-ink-900 tabular-nums tracking-tight">
+                        {formatMoney(adv.totalAmount, adv.currency)}
+                      </p>
+                      <span className="shrink-0 text-[9.5px] font-semibold uppercase tracking-[0.08em] rounded-full bg-warn-50 border border-warn-100 text-warn-600 px-2 py-0.5">
+                        {t('ca_pill')}
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] text-ink-500 mt-0.5 tabular-nums">
+                      {t('ca_taken_on').replace('{date}', new Date(adv.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }))}
+                      {plan.length > 0 && <> · {t('ca_plan_count').replace('{n}', String(plan.length))}</>}
+                    </p>
+                    <div className="relative mt-2.5 h-2 rounded-full bg-cream-soft overflow-hidden">
+                      <div className="h-full bg-receive-600 transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="flex items-baseline justify-between mt-2 text-[11px] tabular-nums">
+                      <span className="text-receive-text font-semibold">
+                        {plan.length > 0
+                          ? t('ca_paid_progress').replace('{p}', String(paidCount)).replace('{n}', String(plan.length)).replace('{amount}', formatMoney(paidAmount, adv.currency))
+                          : t('ca_paid_plain').replace('{amount}', formatMoney(paidAmount, adv.currency))}
+                      </span>
+                      <span className="text-ink-600 font-semibold">
+                        {t('ca_remaining').replace('{amount}', formatMoney(adv.remainingAmount, adv.currency))}
+                      </span>
+                    </div>
+                    {nextUnpaid && (
+                      <p className="text-[10.5px] text-ink-500 mt-1.5 tabular-nums">
+                        {t('ca_next_instalment')
+                          .replace('{amount}', formatMoney(nextUnpaid.amount, adv.currency))
+                          .replace('{date}', new Date(`${nextUnpaid.dueDate}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))}
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

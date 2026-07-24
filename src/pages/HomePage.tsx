@@ -33,6 +33,7 @@ import { useBudgetStore, computeBudgetUsages } from "../stores/budgetStore";
 import { useRecurringStore } from "../stores/recurringStore";
 import { useEmiStore } from "../stores/emiStore";
 import { useCommitteeStore } from "../stores/committeeStore";
+import { useInvestmentStore, portfolioTotals } from "../stores/investmentStore";
 import { buildThisWeek, thisWeekTotals } from "../lib/thisWeek";
 import {
   computeMeraHisaab,
@@ -94,6 +95,9 @@ export function HomePage() {
   const emiSchedules = useEmiStore((s) => s.schedules);
   const committees = useCommitteeStore((s) => s.committees);
   const committeePayments = useCommitteeStore((s) => s.payments);
+  const invMarkets = useInvestmentStore((s) => s.markets);
+  const invTrades = useInvestmentStore((s) => s.trades);
+  const invPrices = useInvestmentStore((s) => s.prices);
   const mode = useAppModeStore((s) => s.mode);
   const {
     groups,
@@ -146,6 +150,13 @@ export function HomePage() {
       // cheap reads and usually warm (kameti boot-loads in App.tsx).
       useEmiStore.getState().loadSchedules(),
       useCommitteeStore.getState().loadAll(),
+      // Portfolio card: three cheap selects (empty tables for non-investors).
+      // NON-FATAL — an optional widget must never brick the dashboard (e.g.
+      // if the investments migration isn't applied); the card just stays
+      // hidden when this fails.
+      useInvestmentStore.getState().loadInvestments().catch((err) => {
+        console.error("loadInvestments failed (non-fatal)", err);
+      }),
     ]);
   }, [
     loadAccounts,
@@ -280,6 +291,17 @@ export function HomePage() {
     [loans, emiSchedules, transactions, recurringTemplates, committees, committeePayments, accounts, cardFundedLoanIds, renderNowMs],
   );
   const checkDays = daysSince(checkStampIso, new Date(renderNowMs));
+
+  // Portfolio totals per currency — shown as its OWN card, not folded into
+  // "Where I Stand": holdings are volatile and price-dependent, liquid money
+  // is settled fact. Blurring them would make both numbers less trustworthy.
+  const invTotals = useMemo(() => {
+    const totals = portfolioTotals(invMarkets, invTrades, invPrices)
+      .filter((b) => b.currentValue > 0.005 || b.invested > 0.005);
+    return totals.sort((a, b) =>
+      a.currency === primaryCurrency ? -1 : b.currency === primaryCurrency ? 1 : b.currentValue - a.currentValue,
+    );
+  }, [invMarkets, invTrades, invPrices, primaryCurrency]);
 
   // "Mera Hisaab" — the net position INCLUDING people: accounts (cards as
   // −owed) + receivables − payables, with cash advances never counted twice.
@@ -1149,6 +1171,65 @@ export function HomePage() {
               </p>
             )}
           </div>
+        )}
+
+        {/* Portfolio — the record-keeping investments, surfaced instead of
+            invisible. Value + unrealized P&L per currency; tap for the full
+            book. Only renders when something is actually held. */}
+        {dataReady && invTotals.length > 0 && (
+          <button
+            onClick={() => navigate("/investments")}
+            className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 active:scale-[0.99] transition-transform"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              {/* span, not h2 — heading content inside a <button> is invalid
+                  and vanishes from the screen-reader outline anyway. */}
+              <span className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] flex items-center gap-1.5">
+                <TrendingUp size={11} /> {t("inv_title")}
+              </span>
+              <ChevronRight size={14} className="text-ink-300" />
+            </div>
+            {invTotals.map((b, i) => {
+              // Unpriced holdings sit at COST inside currentValue — disclose
+              // it (like the Investments page does) and never dress an
+              // entirely-unpriced bucket in a P&L line it doesn't have.
+              const allUnpriced = b.unpricedCount > 0 && Math.abs(b.unrealized) < 0.005;
+              const pct = b.invested > 0 ? (b.unrealized / b.invested) * 100 : 0;
+              // Sign from the ROUNDED value: -0.004% must read 0.0, not -0.0.
+              const pctStr = Math.abs(pct) < 0.05 ? "0.0" : pct.toFixed(1);
+              const up = b.unrealized >= 0;
+              return i === 0 ? (
+                <div key={b.currency}>
+                  <p className="text-[24px] font-semibold tabular-nums tracking-tight text-ink-900">
+                    {formatMoney(b.currentValue, b.currency)}
+                  </p>
+                  {allUnpriced ? (
+                    <p className="text-[11px] text-ink-400 mt-0.5 tabular-nums">
+                      {t("inv_unpriced_chip").replace("{n}", String(b.unpricedCount))}
+                    </p>
+                  ) : (
+                    <p className={`text-[11px] font-medium mt-0.5 tabular-nums ${up ? "text-receive-text" : "text-pay-text"}`}>
+                      {up ? "▲" : "▼"} {formatMoney(Math.abs(b.unrealized), b.currency)} · {pctStr.startsWith("-") ? "" : "+"}{pctStr}%
+                      {b.unpricedCount > 0 && (
+                        <span className="text-ink-400 font-normal"> · {t("inv_unpriced_chip").replace("{n}", String(b.unpricedCount))}</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p key={b.currency} className="text-[10.5px] text-ink-400 mt-1 tabular-nums">
+                  {formatMoney(b.currentValue, b.currency)}
+                  {allUnpriced ? (
+                    <span> · {t("inv_unpriced_chip").replace("{n}", String(b.unpricedCount))}</span>
+                  ) : (
+                    <span className={up ? "text-receive-text" : "text-pay-text"}>
+                      {" "}({formatSignedMoney(b.unrealized, b.currency)})
+                    </span>
+                  )}
+                </p>
+              );
+            })}
+          </button>
         )}
 
         {/* Weekly ritual + needs-action queue — the review-ceremony entry.
