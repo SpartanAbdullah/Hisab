@@ -79,6 +79,13 @@ export const useRecurringStore = create<RecurringState>((set, get) => ({
     set((s) => ({
       templates: s.templates.map((t) => (t.id === id ? { ...t, ...changes } : t)),
     }));
+    // Due date / active flag may have changed → a scheduled "due today"
+    // reminder could now be stale (or a restored one missing). Forced so
+    // the debounce can't swallow it; no-op on web; dynamic import avoids
+    // a store↔scheduler cycle.
+    void import('../lib/notificationScheduler')
+      .then((m) => m.rescheduleNotifications({ force: true }))
+      .catch(() => {});
   },
 
   deleteTemplate: async (id) => {
@@ -101,6 +108,11 @@ export const useRecurringStore = create<RecurringState>((set, get) => ({
     set((s) => ({
       templates: s.templates.map((t) => (t.id === id ? { ...t, nextDueDate: next } : t)),
     }));
+    // Skip/confirm advanced the due date — today's pending reminder for
+    // this template is now stale.
+    void import('../lib/notificationScheduler')
+      .then((m) => m.rescheduleNotifications({ force: true }))
+      .catch(() => {});
   },
 }));
 

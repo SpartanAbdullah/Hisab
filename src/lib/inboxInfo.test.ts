@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildInboxActionItems, buildInboxInfoItems, daysUntilDayOfMonth, type ActionInputs } from './inboxInfo';
+import { buildInboxActionItems, buildInboxInfoItems, cardPaymentThisCycle, daysUntilDayOfMonth, lastDayOfMonthOccurrence, type ActionInputs } from './inboxInfo';
 import type { Account, Budget, Committee, EmiSchedule, Loan, RecurringTransaction, Transaction, UpcomingExpense } from '../db';
 
 const today = new Date(2026, 5, 22, 12, 0, 0); // 22 Jun 2026, noon local
@@ -91,6 +91,40 @@ const bill: UpcomingExpense = {
   createdAt: today.toISOString(),
 };
 
+describe('lastDayOfMonthOccurrence + cardPaymentThisCycle', () => {
+  it('finds the most recent due-day occurrence, rolling back a month when needed', () => {
+    // today = 22 Jun; due day 25 last occurred 25 May.
+    expect(lastDayOfMonthOccurrence(25, today)?.getTime()).toBe(new Date(2026, 4, 25).getTime());
+    expect(lastDayOfMonthOccurrence(20, today)?.getTime()).toBe(new Date(2026, 5, 20).getTime());
+    expect(lastDayOfMonthOccurrence(22, today)?.getTime()).toBe(new Date(2026, 5, 22).getTime());
+    expect(lastDayOfMonthOccurrence(31, new Date(2026, 6, 5))?.getTime()).toBe(new Date(2026, 5, 30).getTime()); // clamped to 30 Jun
+    expect(lastDayOfMonthOccurrence(0, today)).toBeNull();
+  });
+
+  it('sums only real credits inside the 14 days before the UPCOMING due day', () => {
+    // today 22 Jun, due day 25 → window opens 11 Jun.
+    const cardAcct: Account = { ...card, metadata: { dueDay: '25', creditLimit: '10000' } };
+    const paid = cardPaymentThisCycle(cardAcct, [
+      { ...tx(500), id: 'p1', type: 'transfer', sourceAccountId: 'a0', destinationAccountId: 'a1', createdAt: plusDays(-1).toISOString() },
+      { ...tx(200), id: 'p2', type: 'repayment', sourceAccountId: null, destinationAccountId: 'a1', createdAt: plusDays(-2).toISOString() },
+      { ...tx(999), id: 'p3', type: 'transfer', destinationAccountId: 'a1', createdAt: plusDays(-30).toISOString() }, // last cycle's (late) payment
+      { ...tx(999), id: 'p4', type: 'transfer', destinationAccountId: 'a1', createdAt: plusDays(-1).toISOString(), deletedAt: today.toISOString() },
+      { ...tx(999), id: 'p5', type: 'expense', destinationAccountId: null, createdAt: plusDays(-1).toISOString() },
+      // "Correct balance" is bookkeeping, not a payment — never praised.
+      { ...tx(999), id: 'p6', type: 'adjustment', destinationAccountId: 'a1', createdAt: plusDays(-1).toISOString() },
+    ], today);
+    expect(paid).toBe(700);
+  });
+
+  it('still counts an early payment ON the due day itself (window anchors to the upcoming due day)', () => {
+    const cardAcct: Account = { ...card, metadata: { dueDay: '22', creditLimit: '10000' } };
+    const paid = cardPaymentThisCycle(cardAcct, [
+      { ...tx(400), id: 'p1', type: 'transfer', destinationAccountId: 'a1', createdAt: plusDays(-3).toISOString() },
+    ], today); // today IS the due day (22 Jun)
+    expect(paid).toBe(400);
+  });
+});
+
 describe('buildInboxInfoItems', () => {
   it('surfaces over-budget, renewal, credit-card and bill signals', () => {
     const items = buildInboxInfoItems({
@@ -109,6 +143,29 @@ describe('buildInboxInfoItems', () => {
     const budgetItem = items.find((i) => i.id === 'budget-b1');
     expect(budgetItem?.tone).toBe('pay'); // over the limit, not just warn
     expect(budgetItem?.icon).toBe('budget');
+  });
+
+  it('a PAID card stops nagging — and praises when the payment is visible this cycle', () => {
+    // owed = limit - balance = 0 → the due reminder must NOT fire.
+    const paidCard: Account = { ...card, balance: 8000, metadata: { dueDay: '25', creditLimit: '8000' } };
+    const base = { budgets: [], transactions: [] as Transaction[], templates: [], accounts: [paidCard], upcoming: [], today };
+
+    const silent = buildInboxInfoItems(base);
+    expect(silent.find((i) => i.id.startsWith('cc'))).toBeUndefined();
+
+    const praised = buildInboxInfoItems({
+      ...base,
+      transactions: [
+        { ...tx(3000), id: 'pay1', type: 'transfer', sourceAccountId: 'a0', destinationAccountId: 'a1', createdAt: plusDays(-2).toISOString() },
+      ],
+    });
+    const praise = praised.find((i) => i.id === 'cc-cleared-a1');
+    expect(praise?.tone).toBe('receive');
+    expect(praise?.title).toContain('cleared');
+
+    // Still owing → the plain due reminder stays.
+    const owing = buildInboxInfoItems({ ...base, accounts: [{ ...paidCard, balance: 5000 }] });
+    expect(owing.find((i) => i.id === 'cc-a1')).toBeDefined();
   });
 
   it('stays empty when nothing needs attention', () => {
@@ -250,5 +307,22 @@ describe('buildInboxActionItems', () => {
     expect(items.map((i) => i.id)).toEqual(['uncategorized-u1', 'uncategorized-u2', 'uncategorized-u3', 'uncategorized-u4', 'uncategorized-u5']);
     expect(items[0].content).toMatchObject({ kind: 'uncategorized', amount: 25, currency: 'AED' });
     expect(items[0].resolve).toEqual({ kind: 'editTxn', txnId: 'u1' });
+  });
+
+  it('suggests a category from the payee history when the note matches', () => {
+    const filed = (id: string, daysAgo: number): Transaction => ({
+      ...tx(30), id, category: 'Transport', notes: 'Careem to office', createdAt: plusDays(-daysAgo).toISOString(),
+    });
+    const items = buildInboxActionItems(actionInputs({
+      transactions: [
+        filed('h1', 20), filed('h2', 10), // >= 2 uses builds the profile
+        { ...tx(28), id: 'new1', category: '', notes: 'Careem to office', createdAt: plusDays(-1).toISOString() },
+        { ...tx(50), id: 'new2', category: '', notes: 'One-off thing', createdAt: plusDays(-1).toISOString() },
+      ],
+    }));
+    const suggested = items.find((i) => i.id === 'uncategorized-new1');
+    const bare = items.find((i) => i.id === 'uncategorized-new2');
+    expect(suggested?.content).toMatchObject({ kind: 'uncategorized', suggestedCategory: 'Transport' });
+    expect(bare?.content.kind === 'uncategorized' && bare.content.suggestedCategory).toBeUndefined();
   });
 });

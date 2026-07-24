@@ -1,16 +1,18 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText, Merge } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
 import { resolveProfileByCode } from '../lib/collaboration';
 import { buildWhatsAppUrl, hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { formatMoney } from '../lib/constants';
 import { computeTrustScore, trustLevelStyle } from '../lib/trustScore';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { markMirrorStale } from '../lib/mirrorCache';
 import { VerifiedBadge } from '../components/VerifiedBadge';
 import type { Person } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
@@ -53,6 +55,8 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [showMergePicker, setShowMergePicker] = useState(false);
+  const [merging, setMerging] = useState(false);
   const [showMoneyEntry, setShowMoneyEntry] = useState(false);
   const [moneyPreset, setMoneyPreset] = useState<QuickEntryPreset | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -298,6 +302,60 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       setError('Could not remove this contact. Try again.');
     } finally {
       setArchiving(false);
+    }
+  };
+
+  // Fold this LOCAL duplicate into another contact: one atomic server-side
+  // RPC reassigns every loan/transaction (id-keyed AND name-fallback rows),
+  // then archives this row. Loans/transactions are mirrored stores — mark
+  // them stale and refetch so the reassignment is visible immediately.
+  const handleMerge = async (target: Person) => {
+    const confirmed = await confirmDestructive({
+      title: t('merge_confirm_title').replace('{target}', target.name),
+      description: t('merge_confirm_body')
+        .replace('{source}', person.name)
+        .replace('{target}', target.name),
+      confirmLabel: t('merge_cta'),
+      tone: 'warning',
+    });
+    if (!confirmed) return;
+    setMerging(true);
+    setError('');
+    try {
+      const result = await usePersonStore.getState().mergePerson(person.id, target.id);
+      if (!result.success) {
+        setShowMergePicker(false);
+        // The RPC returns structured reason codes precisely so the client
+        // owns the words — never surface the server's English strings.
+        setError(
+          result.reasonCode === 'LINKED_CONTACT' ? t('merge_err_linked')
+          : result.reasonCode === 'SAME_CONTACT' ? t('merge_err_same')
+          : t('merge_err_not_found'),
+        );
+        return;
+      }
+      markMirrorStale('loans');
+      markMirrorStale('transactions');
+      void useLoanStore.getState().loadLoans().catch(() => {});
+      void useTransactionStore.getState().loadTransactions().catch(() => {});
+      toast.show({
+        type: 'success',
+        title: t('merge_done').replace('{target}', target.name),
+        subtitle: t('merge_done_sub')
+          .replace('{n}', String(result.movedLoans))
+          .replace('{m}', String(result.movedTransactions)),
+      });
+      setShowMergePicker(false);
+      onClose();
+    } catch (err) {
+      setShowMergePicker(false);
+      // PGRST202 = the merge RPC doesn't exist yet (SQL migration not
+      // applied). Everything else gets the generic bilingual message —
+      // raw PostgREST/network text never reaches the user.
+      const code = (err as { code?: string } | null)?.code;
+      setError(code === 'PGRST202' ? t('merge_err_migration') : t('merge_err_generic'));
+    } finally {
+      setMerging(false);
     }
   };
 
@@ -692,11 +750,22 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
 
         {!isLinked && (
           <div className="pt-1 border-t border-cream-hairline">
+            {/* Merge: a local duplicate is the only legal merge SOURCE —
+                linked contacts can only ever absorb, never be merged away. */}
+            <button
+              type="button"
+              onClick={() => setShowMergePicker(true)}
+              disabled={merging || archiving || saving}
+              className="w-full mt-3 py-3 rounded-2xl bg-cream-soft border border-cream-hairline text-ink-700 text-[12.5px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <Merge size={13} strokeWidth={2.2} />
+              {t('merge_button')}
+            </button>
             <button
               type="button"
               onClick={handleArchive}
               disabled={archiving || saving}
-              className="w-full mt-3 py-3 rounded-2xl bg-pay-50 text-pay-text text-[12.5px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="w-full mt-2 py-3 rounded-2xl bg-pay-50 text-pay-text text-[12.5px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               <Trash2 size={13} strokeWidth={2.2} />
               {archiving ? 'Removing…' : 'Remove local contact'}
@@ -730,6 +799,44 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       scope="contact"
       phone={person.phone}
     />
+    {/* Merge target picker — sibling of the sheet (fixed overlays must not
+        nest inside a transformed modal). */}
+    <Modal open={showMergePicker} onClose={() => setShowMergePicker(false)} title={t('merge_pick_title')}>
+      <div className="space-y-2">
+        <p className="text-[12px] text-ink-500 leading-relaxed">
+          {t('merge_pick_desc').replace('{source}', person.name)}
+        </p>
+        {(() => {
+          // Cards are not people: legacy card-named person rows (pre-rebuild
+          // cash advances) must never absorb a human's history. Exclude any
+          // contact whose name matches an account.
+          const accountNames = new Set(
+            useAccountStore.getState().accounts.map((a) => a.name.trim().toLowerCase()),
+          );
+          const targets = persons.filter(
+            (p) => p.id !== person.id && !accountNames.has(p.name.trim().toLowerCase()),
+          );
+          if (targets.length === 0) {
+            return <p className="text-[12px] text-ink-400 px-1 py-3">{t('merge_pick_empty')}</p>;
+          }
+          return targets.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              disabled={merging}
+              onClick={() => void handleMerge(p)}
+              className="w-full text-left rounded-2xl bg-cream-soft border border-cream-hairline px-4 py-3 flex items-center gap-2.5 active:bg-cream-hairline transition-colors disabled:opacity-50"
+            >
+              <span className="w-8 h-8 rounded-xl bg-accent-100 text-accent-600 flex items-center justify-center text-[12px] font-bold shrink-0">
+                {(p.name[0] ?? '?').toUpperCase()}
+              </span>
+              <span className="flex-1 min-w-0 truncate text-[13px] font-semibold text-ink-900">{p.name}</span>
+              {p.linkedProfileId && <VerifiedBadge size={14} title={t('contact_linked_pill')} />}
+            </button>
+          ));
+        })()}
+      </div>
+    </Modal>
     </>
   );
 }

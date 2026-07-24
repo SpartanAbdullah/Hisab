@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { personsDb } from '../lib/supabaseDb';
-import type { ArchiveContactResult } from '../lib/supabaseDb';
+import type { ArchiveContactResult, MergePersonResult } from '../lib/supabaseDb';
 import type { Person } from '../db';
 
 interface PersonState {
@@ -15,6 +15,10 @@ interface PersonState {
   unlinkFromProfile: (personId: string) => Promise<void>;
   updatePhone: (personId: string, phone: string | null) => Promise<void>;
   archiveIfSettled: (personId: string) => Promise<ArchiveContactResult>;
+  // Server-side atomic merge of a LOCAL duplicate into another contact.
+  // Loans/transactions reloads are the CALLER's job (cross-store).
+  mergePerson: (sourceId: string, targetId: string) => Promise<MergePersonResult>;
+  unarchive: (personId: string) => Promise<boolean>;
   reset: () => void;
 }
 
@@ -126,6 +130,26 @@ export const usePersonStore = create<PersonState>((set, get) => ({
       set((s) => ({ persons: s.persons.filter((p) => p.id !== personId) }));
     }
     return result;
+  },
+
+  mergePerson: async (sourceId, targetId) => {
+    const result = await personsDb.merge(sourceId, targetId);
+    if (result.success) {
+      // The source is archived server-side; a phone may have been copied to
+      // the target — refetch rather than patch.
+      const persons = await personsDb.getAll();
+      set({ persons });
+    }
+    return result;
+  },
+
+  unarchive: async (personId) => {
+    const ok = await personsDb.unarchive(personId);
+    if (ok) {
+      const persons = await personsDb.getAll();
+      set({ persons });
+    }
+    return ok;
   },
 
   findOrCreateByName: async (name) => {

@@ -9,8 +9,10 @@ import { computeBudgetUsages } from '../stores/budgetStore';
 import { upcomingRenewals, daysUntil } from './subscriptionMetrics';
 import { currentRound, paymentsForRound, roundDate } from './committeeMath';
 import { parseInternalNote } from './internalNotes';
+import { buildPayeeProfiles, matchPayee } from './payeeMemory';
 import { localIso } from './thisWeek';
 import { formatMoney } from './constants';
+import { tStatic } from './i18n';
 
 // Persisted notifications that belong in the Inbox "Info" tab + bell badge:
 // unread, non-group, non-request informational pings (e.g. "someone added you
@@ -20,7 +22,7 @@ export function isInboxInfoNotification(n: AppNotification): boolean {
   return !n.readAt && (n.type === 'contact_linked' || n.type === 'system' || n.type === 'invite');
 }
 
-export type InfoTone = 'pay' | 'warn' | 'info' | 'accent';
+export type InfoTone = 'pay' | 'warn' | 'info' | 'accent' | 'receive';
 export type InfoIcon = 'budget' | 'renewal' | 'card' | 'bill';
 
 export interface InfoItem {
@@ -71,6 +73,55 @@ function ordinal(n: number): string {
   return s[(v - 20) % 10] ?? s[v] ?? s[0];
 }
 
+// Backward sibling of daysUntilDayOfMonth: the most recent occurrence of
+// `dayOfMonth` on-or-before `today` (local calendar, clamped to month
+// length). This is the statement-cycle start for a card that only has a
+// due day configured. null for an invalid day.
+export function lastDayOfMonthOccurrence(dayOfMonth: number, today: Date): Date | null {
+  if (!Number.isFinite(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) return null;
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  const todayMid = new Date(y, m, today.getDate()).getTime();
+  let target = new Date(y, m, Math.min(dayOfMonth, daysInMonth(y, m)));
+  if (target.getTime() > todayMid) {
+    target = new Date(y, m - 1, Math.min(dayOfMonth, daysInMonth(y, m - 1)));
+  }
+  return target;
+}
+
+/** Real money that LANDED on this card in the run-up to its UPCOMING due
+ *  day (last 14 days before it): bill-payment transfers and cash-advance
+ *  repayment credits. Window is anchored to the NEXT due day, not the last
+ *  one, so (a) a payment made 3 days late for LAST cycle never earns
+ *  "cleared early" praise weeks later, and (b) on the due day itself an
+ *  early payment still counts (a last-occurrence anchor collapses to
+ *  today-midnight on d=0 and drops it). Balance ADJUSTMENTS deliberately
+ *  don't count — "Correct balance" is bookkeeping repair, not a payment,
+ *  and praising it would congratulate drift-fixing as bill-paying.
+ *  Ledger-only settlement rows carry no account legs → naturally excluded. */
+export function cardPaymentThisCycle(
+  card: Account,
+  transactions: Transaction[],
+  today: Date,
+): number {
+  const dueDay = parseInt(card.metadata?.dueDay ?? '', 10);
+  const d = daysUntilDayOfMonth(dueDay, today);
+  if (d === null) return 0;
+  const startMs = new Date(
+    today.getFullYear(), today.getMonth(), today.getDate() + d - 14,
+  ).getTime();
+  let paid = 0;
+  for (const t of transactions) {
+    if (t.deletedAt) continue;
+    if (t.destinationAccountId !== card.id) continue;
+    if (t.type !== 'transfer' && t.type !== 'repayment') continue;
+    const at = new Date(t.createdAt).getTime();
+    if (!Number.isFinite(at) || at < startMs) continue;
+    paid = Math.round((paid + t.amount) * 100) / 100;
+  }
+  return paid;
+}
+
 export function buildInboxInfoItems(inp: InfoInputs): InfoItem[] {
   const items: InfoItem[] = [];
   // Local calendar, not toISOString (UTC): between midnight and dawn in this
@@ -104,12 +155,36 @@ export function buildInboxInfoItems(inp: InfoInputs): InfoItem[] {
     });
   }
 
-  // 3. Credit-card payment date coming up.
+  // 3. Credit-card payment date coming up — STATE-AWARE. A reminder that
+  // keeps firing after the bill is paid is noise that teaches users to
+  // ignore the inbox; a cleared bill flips to quiet praise instead.
   for (const a of inp.accounts) {
     if (a.type !== 'credit_card') continue;
     const dueDay = parseInt(a.metadata?.dueDay ?? '', 10);
     const d = daysUntilDayOfMonth(dueDay, inp.today);
     if (d === null || d > CC_DUE_WINDOW_DAYS) continue;
+    const limit = parseFloat(a.metadata.creditLimit || '0');
+    const owed = limit > 0 ? Math.round((limit - a.balance) * 100) / 100 : null;
+    if (owed !== null && owed <= 0.005) {
+      // Nothing owed. Praise only when a payment actually landed this
+      // cycle — a card that was never used stays silent.
+      if (cardPaymentThisCycle(a, inp.transactions, inp.today) > 0.005) {
+        items.push({
+          id: `cc-cleared-${a.id}`,
+          icon: 'card',
+          tone: 'receive',
+          // tStatic: this is a NEW surface — bilingual like its This-week
+          // sibling (tw_cleared), unlike the legacy English Info items.
+          title: (d === 0
+            ? tStatic('info_cc_cleared_ontime')
+            : tStatic('info_cc_cleared_early').replace('{d}', String(d))
+          ).replace('{name}', a.name),
+          body: tStatic('info_cc_cleared_body'),
+          href: `/account/${a.id}`,
+        });
+      }
+      continue;
+    }
     items.push({
       id: `cc-${a.id}`,
       icon: 'card',
@@ -154,7 +229,7 @@ export type ActionContent =
   | { kind: 'emi'; person: string; count: number; total: number; currency: string; daysLate: number; direction: 'pay' | 'collect' }
   | { kind: 'recurring'; label: string; amount: number; currency: string; dueDate: string }
   | { kind: 'kameti'; name: string; round: number; incompleteRounds: number; paid: number; members: number; amount: number; currency: string }
-  | { kind: 'uncategorized'; amount: number; currency: string; dateIso: string; note: string };
+  | { kind: 'uncategorized'; amount: number; currency: string; dateIso: string; note: string; suggestedCategory?: string };
 
 export interface ActionItem {
   id: string;
@@ -172,6 +247,10 @@ export interface ActionInputs {
   accounts: Account[];
   // Cash-advance loans keyed to their funding card (loan_taken txn origin).
   cardFundedLoanIds?: Map<string, string>;
+  /** Live expense-category names (built-ins + customs). When provided, a
+   *  payee-history suggestion pointing at a DELETED category is dropped —
+   *  one tap must never file a new row under a name no picker offers. */
+  expenseCategories?: string[];
   today: Date;
 }
 
@@ -286,8 +365,19 @@ export function buildInboxActionItems(inp: ActionInputs): ActionItem[] {
       return Number.isFinite(at) && at >= cutoff;
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // The user's own history knows where this payee usually files — offer it
+  // as a one-tap suggestion instead of making every card a full edit trip.
+  const payeeProfiles = unfiled.length > 0 ? buildPayeeProfiles(inp.transactions) : null;
+  const liveCategories = inp.expenseCategories
+    ? new Set(inp.expenseCategories.map((c) => c.trim().toLowerCase()))
+    : null;
   for (const txn of unfiled.slice(0, UNCATEGORIZED_MAX)) {
     const note = parseInternalNote(txn.notes).visibleNote.trim();
+    // Match on the FULL note (the display copy below is truncated).
+    let profile = payeeProfiles ? matchPayee(payeeProfiles, note) : null;
+    if (profile && liveCategories && !liveCategories.has(profile.category.trim().toLowerCase())) {
+      profile = null; // history points at a deleted category
+    }
     items.push({
       id: `uncategorized-${txn.id}`,
       content: {
@@ -296,6 +386,7 @@ export function buildInboxActionItems(inp: ActionInputs): ActionItem[] {
         currency: txn.currency,
         dateIso: txn.createdAt,
         note: note.slice(0, 40),
+        ...(profile?.category ? { suggestedCategory: profile.category } : {}),
       },
       resolve: { kind: 'editTxn', txnId: txn.id },
     });

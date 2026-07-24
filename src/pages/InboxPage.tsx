@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus, BellRing, HandCoins, Tag, Users, ListChecks } from 'lucide-react';
+import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus, BellRing, HandCoins, Tag, Users, ListChecks, CheckCircle2 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -25,6 +25,7 @@ import { EditTransactionModal } from '../components/EditTransactionModal';
 import { formatMoney } from '../lib/constants';
 import { approxOther, plausibilityCheck } from '../lib/currencyValidation';
 import { friendlyLinkedError } from '../lib/linkedErrorMap';
+import { useCategoryOptions } from '../lib/mergedCategories';
 import { useT } from '../lib/i18n';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
@@ -169,6 +170,9 @@ export function InboxPage() {
     }
     return map;
   }, [transactions]);
+  // Live category names gate the one-tap suggestion: never offer to file
+  // under a category the user has deleted.
+  const expenseCategories = useCategoryOptions('expense');
   const actionItems = useMemo(
     () =>
       buildInboxActionItems({
@@ -180,11 +184,41 @@ export function InboxPage() {
         committeePayments,
         accounts,
         cardFundedLoanIds,
+        expenseCategories,
         today: new Date(),
       }),
-    [loans, emiSchedules, transactions, templates, committees, committeePayments, accounts, cardFundedLoanIds],
+    [loans, emiSchedules, transactions, templates, committees, committeePayments, accounts, cardFundedLoanIds, expenseCategories],
   );
   const actionCount = actionItems.length;
+
+  // One-tap file-under-suggestion: the user's own history proposed the
+  // category; accepting is a metadata-only patch with an Undo, and the
+  // card self-clears because the txn drops out of the unfiled filter.
+  const acceptSuggestion = async (item: ActionItem) => {
+    if (item.content.kind !== 'uncategorized' || !item.content.suggestedCategory) return;
+    if (item.resolve.kind !== 'editTxn') return;
+    const { txnId } = item.resolve;
+    const category = item.content.suggestedCategory;
+    try {
+      await useTransactionStore.getState().setCategory(txnId, category);
+      toast.show({
+        type: 'success',
+        title: t('todo_uncat_filed').replace('{category}', category),
+        action: {
+          label: t('undo'),
+          onPress: () => {
+            void useTransactionStore.getState().setCategory(txnId, '').catch(() => {});
+          },
+        },
+      });
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('error'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    }
+  };
 
   // One-tap resolve: navigate to the owning page, open the edit sheet, or
   // re-fire the globally-mounted recurring prompt (idempotent via its
@@ -499,7 +533,12 @@ export function InboxPage() {
           ) : (
             <div className="space-y-2.5">
               {actionItems.map((it) => (
-                <ActionCard key={it.id} item={it} onResolve={() => resolveAction(it)} />
+                <ActionCard
+                  key={it.id}
+                  item={it}
+                  onResolve={() => resolveAction(it)}
+                  onAccept={() => void acceptSuggestion(it)}
+                />
               ))}
             </div>
           )
@@ -719,6 +758,8 @@ const INFO_TONE: Record<InfoItem['tone'], { wrap: string; icon: string }> = {
   warn: { wrap: 'bg-warn-50', icon: 'text-warn-600' },
   info: { wrap: 'bg-info-50', icon: 'text-info-600' },
   accent: { wrap: 'bg-accent-50', icon: 'text-accent-600' },
+  // Praise items (e.g. a card bill cleared before its due day).
+  receive: { wrap: 'bg-receive-50', icon: 'text-receive-text' },
 };
 
 // Icon + tone derive from the structured content kind; the words come from
@@ -732,8 +773,10 @@ const ACTION_META: Record<ActionContent['kind'], { icon: typeof AlertTriangle; t
 
 // Same chrome as InfoCard, but ALWAYS tappable — every item's tap is the
 // one action that clears it (open the loan, file the expense, post the
-// charge, tick the round).
-function ActionCard({ item, onResolve }: { item: ActionItem; onResolve: () => void }) {
+// charge, tick the round). Uncategorised cards with a history-backed
+// suggestion grow a one-tap accept chip (sibling of the main button —
+// nested buttons are invalid HTML).
+function ActionCard({ item, onResolve, onAccept }: { item: ActionItem; onResolve: () => void; onAccept?: () => void }) {
   const t = useT();
   const c = item.content;
   const meta = ACTION_META[c.kind];
@@ -767,12 +810,10 @@ function ActionCard({ item, onResolve }: { item: ActionItem; onResolve: () => vo
     title = t('todo_uncat_title');
     body = `${formatMoney(c.amount, c.currency)} · ${format(new Date(c.dateIso), 'MMM d')}${c.note ? ` · ${c.note}` : ''}`;
   }
-  return (
-    <button
-      type="button"
-      onClick={onResolve}
-      className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
-    >
+  const suggestion = c.kind === 'uncategorized' ? c.suggestedCategory : undefined;
+
+  const mainRow = (
+    <>
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tone.wrap}`}>
         <Icon size={17} className={tone.icon} strokeWidth={2} />
       </div>
@@ -781,6 +822,40 @@ function ActionCard({ item, onResolve }: { item: ActionItem; onResolve: () => vo
         <p className="text-[11.5px] text-ink-500 mt-0.5 truncate">{body}</p>
       </div>
       <ChevronRight size={15} className="text-ink-300 shrink-0" />
+    </>
+  );
+
+  if (suggestion && onAccept) {
+    return (
+      <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden">
+        <button
+          type="button"
+          onClick={onResolve}
+          className="w-full text-left p-4 flex items-center gap-3 active:bg-cream-soft transition-colors"
+        >
+          {mainRow}
+        </button>
+        <div className="px-4 pb-3">
+          <button
+            type="button"
+            onClick={onAccept}
+            className="w-full min-h-[40px] rounded-xl bg-receive-50 text-receive-text text-[12px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+          >
+            <CheckCircle2 size={13} strokeWidth={2.2} />
+            {t('todo_uncat_suggest').replace('{category}', suggestion)}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onResolve}
+      className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
+    >
+      {mainRow}
     </button>
   );
 }

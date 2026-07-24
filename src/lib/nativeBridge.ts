@@ -12,6 +12,7 @@
 // hot-reload — every listener registration tracks its handle and re-uses it.
 
 import { isNativeRuntime } from './runtime';
+import { rescheduleNotifications } from './notificationScheduler';
 import { useUIStore } from '../stores/uiStore';
 
 type NavigateFn = (to: string, opts?: { replace?: boolean }) => void;
@@ -86,7 +87,22 @@ export async function initNativeBridge(opts: {
         .catch((err) => {
           console.error('[nativeBridge] session refresh on resume failed', err);
         });
+      // Re-derive the reminder schedule from live state on every resume —
+      // anything the user paid while the app was open (or on another
+      // device, once stores refresh) stops ringing here.
+      void rescheduleNotifications();
     });
+
+    // Notification taps route into the app (href stashed at schedule time).
+    try {
+      const { LocalNotifications } = await import('@capacitor/local-notifications');
+      void LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+        const href = (event.notification.extra as { href?: string } | undefined)?.href;
+        if (href) opts.navigate(href);
+      });
+    } catch {
+      // Plugin unavailable (older binary) — reminders simply stay off.
+    }
   } catch (err) {
     console.error('[nativeBridge] init failed', err);
   }

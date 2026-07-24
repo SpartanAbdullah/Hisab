@@ -4,7 +4,7 @@
 // 7 days. Monarch sells this anticipation as its recurring feature's core
 // value; Hisaab computes it from first-class objects instead of guesses.
 // Pure + tested; rendering stays in HomePage.
-import { daysUntilDayOfMonth } from './inboxInfo';
+import { cardPaymentThisCycle, daysUntilDayOfMonth } from './inboxInfo';
 import { daysUntil } from './subscriptionMetrics';
 import { roundDate } from './committeeMath';
 import type {
@@ -13,6 +13,7 @@ import type {
   EmiSchedule,
   Loan,
   RecurringTransaction,
+  Transaction,
   UpcomingExpense,
 } from '../db';
 
@@ -25,6 +26,9 @@ export type ThisWeekSub =
   | { kind: 'round'; r: number; total: number; count: number }
   | { kind: 'cadence'; cadence: string }
   | { kind: 'category'; text: string }
+  // A card bill already CLEARED before its due day — the row praises
+  // instead of nagging (daysEarly = days between now and the due day).
+  | { kind: 'cleared'; daysEarly: number }
   | { kind: 'none' };
 
 export interface ThisWeekRow {
@@ -56,6 +60,11 @@ export interface ThisWeekInputs {
    * suppressed in favour of the card row.
    */
   cardFundedLoanIds?: Map<string, string>;
+  /** When provided, a card due this week whose bill is ALREADY cleared
+   *  (owed ≈ 0 + a payment landed this cycle) emits a praise row instead
+   *  of silently vanishing. Optional so callers without transaction data
+   *  keep the old behavior. */
+  transactions?: Transaction[];
   today: Date;
 }
 
@@ -190,7 +199,25 @@ export function buildThisWeek(inp: ThisWeekInputs): ThisWeekRow[] {
     if (d === null || d > WINDOW_DAYS) continue;
     const limit = parseFloat(a.metadata.creditLimit || '0');
     const owed = limit > 0 ? Math.round((limit - a.balance) * 100) / 100 : null;
-    if (owed !== null && owed <= 0.005) continue;
+    if (owed !== null && owed <= 0.005) {
+      // Bill already cleared. If we can SEE the payment that cleared it
+      // this cycle, acknowledge the win instead of going silent — paying
+      // early should feel better than paying late, not invisible.
+      if (inp.transactions && cardPaymentThisCycle(a, inp.transactions, inp.today) > 0.005) {
+        rows.push({
+          id: `card-cleared-${a.id}`,
+          kind: 'card',
+          label: a.name,
+          sub: { kind: 'cleared', daysEarly: d },
+          amount: null,
+          currency: a.currency,
+          daysUntil: d,
+          href: `/account/${a.id}`,
+          direction: 'pay',
+        });
+      }
+      continue;
+    }
     rows.push({
       id: `card-${a.id}`,
       kind: 'card',

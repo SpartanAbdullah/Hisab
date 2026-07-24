@@ -29,6 +29,7 @@ import {
   Database,
   RefreshCw,
   FileText,
+  Bell,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
@@ -39,6 +40,8 @@ import { useAppModeStore } from "../stores/appModeStore";
 import { useAccountStore } from "../stores/accountStore";
 import { useAuthStore } from "../stores/authStore";
 import { useToast } from "../components/Toast";
+import { isNativeRuntime } from "../lib/runtime";
+import { enableRemindersFlow, remindersEnabled, rescheduleNotifications, REMINDERS_KEY } from "../lib/notificationScheduler";
 import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
 import { ManageCategoriesModal } from "../components/ManageCategoriesModal";
 import { useThemeStore, type ThemeMode } from "../stores/themeStore";
@@ -141,6 +144,10 @@ export function SettingsPage() {
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
   const [dailyQuoteOn, setDailyQuoteOn] = useState(() => localStorage.getItem("hisaab_daily_quote_enabled") !== "false");
+  // Payment reminders (Android local notifications). Native-only surface;
+  // the toggle drives REMINDERS_KEY and the permission flow.
+  const [remindersOn, setRemindersOn] = useState(() => remindersEnabled());
+  const [remindersBusy, setRemindersBusy] = useState(false);
   const [email] = useState(
     () => user?.email ?? localStorage.getItem("hisaab_email") ?? "",
   );
@@ -630,6 +637,57 @@ export function SettingsPage() {
             </button>
           </div>
         </div>
+
+        {/* Payment reminders — Android local notifications, derived from
+            live state (a paid bill never rings). Native-only surface. */}
+        {isNativeRuntime() && (
+          <div className={sectionClass}>
+            <div className={rowClass}>
+              <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+                <Bell size={16} className="text-accent-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold text-ink-900">{t("settings_reminders")}</p>
+                <p className="text-[11px] text-ink-500">{t("settings_reminders_desc")}</p>
+              </div>
+              <button
+                disabled={remindersBusy}
+                onClick={() => {
+                  void (async () => {
+                    setRemindersBusy(true);
+                    try {
+                      const next = !remindersOn;
+                      if (next) {
+                        // The flow OWNS the REMINDERS_KEY write (it must be
+                        // true before its internal reschedule runs, or that
+                        // run schedules nothing) — we only mirror the result.
+                        const enabled = await enableRemindersFlow();
+                        setRemindersOn(enabled);
+                        if (!enabled) {
+                          toast.show({ type: "error", title: t("settings_reminders_denied") });
+                        }
+                      } else {
+                        try {
+                          localStorage.setItem(REMINDERS_KEY, "false");
+                        } catch { /* storage off */ }
+                        setRemindersOn(false);
+                        // Cancels everything pending immediately.
+                        await rescheduleNotifications({ force: true });
+                      }
+                    } finally {
+                      setRemindersBusy(false);
+                    }
+                  })();
+                }}
+                aria-pressed={remindersOn}
+                aria-label={t("settings_reminders")}
+                className={`relative w-12 h-7 rounded-full transition-colors shrink-0 disabled:opacity-50 ${remindersOn ? "bg-receive-600" : "bg-cream-border"}`}
+              >
+                <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${remindersOn ? "left-6" : "left-1"}`} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* App Mode */}
         <div className={sectionClass}>

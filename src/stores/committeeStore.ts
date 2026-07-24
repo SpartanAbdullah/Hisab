@@ -158,6 +158,12 @@ export const useCommitteeStore = create<CommitteeState>((set, get) => ({
       await committeePaymentsDb.remove(memberId, round);
       set((s) => ({ payments: s.payments.filter((p) => !(p.memberId === memberId && p.round === round)) }));
     }
+    // Ticking the last member completes the round — its pending day-of
+    // reminder must die (and unticking must bring it back). Forced so the
+    // debounce can't swallow it; no-op on web.
+    void import('../lib/notificationScheduler')
+      .then((m) => m.rescheduleNotifications({ force: true }))
+      .catch(() => {});
   },
 
   confirmPayout: async (memberId, received) => {

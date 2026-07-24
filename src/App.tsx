@@ -281,6 +281,11 @@ function AppContent() {
       void runRecurringExpansion().catch((err) => {
         console.error('runRecurringExpansion failed (non-fatal)', err);
       });
+      // Native only (no-op on web): rebuild the local reminder schedule
+      // from the freshly loaded state.
+      void import('./lib/notificationScheduler')
+        .then((m) => m.rescheduleNotifications())
+        .catch(() => {});
     }).catch((err) => {
       console.error('loadRecurring failed (non-fatal)', err);
     });

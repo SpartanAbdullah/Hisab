@@ -218,11 +218,17 @@ export function HisaabCheckModal({ open, onClose, currency, receivable, payable,
             <div className="rounded-2xl bg-cream-soft border border-cream-hairline divide-y divide-cream-hairline">
               {thisWeekRows.slice(0, 5).map((row) => (
                 <div key={row.id} className="flex items-center gap-2.5 px-3.5 py-2.5">
-                  <CalendarClock size={14} className={row.daysUntil <= 1 ? 'text-warn-600 shrink-0' : 'text-ink-400 shrink-0'} />
+                  {row.sub.kind === 'cleared' ? (
+                    <CheckCircle2 size={14} className="text-receive-text shrink-0" />
+                  ) : (
+                    <CalendarClock size={14} className={row.daysUntil <= 1 ? 'text-warn-600 shrink-0' : 'text-ink-400 shrink-0'} />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-[12.5px] font-medium text-ink-900 truncate tracking-tight">{row.label}</p>
-                    <p className="text-[10px] text-ink-500">
-                      {row.daysUntil === 0 ? t('cc_due_today') : t('cc_due_in').replace('{n}', String(row.daysUntil))}
+                    <p className={`text-[10px] ${row.sub.kind === 'cleared' ? 'text-receive-text font-medium' : 'text-ink-500'}`}>
+                      {row.sub.kind === 'cleared'
+                        ? (row.sub.daysEarly === 0 ? t('tw_cleared_today') : t('tw_cleared').replace('{n}', String(row.sub.daysEarly)))
+                        : row.daysUntil === 0 ? t('cc_due_today') : t('cc_due_in').replace('{n}', String(row.daysUntil))}
                     </p>
                   </div>
                   {row.amount !== null && (

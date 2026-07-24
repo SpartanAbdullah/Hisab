@@ -8,6 +8,9 @@ import {
   Sparkles,
   Info,
   MessageCircle,
+  Archive,
+  RotateCcw,
+  ChevronDown,
 } from 'lucide-react';
 import { hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { usePersonStore } from '../stores/personStore';
@@ -17,12 +20,14 @@ import { UserAvatar } from '../components/UserAvatar';
 import { VerifiedBadge } from '../components/VerifiedBadge';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { useToast } from '../components/Toast';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { ContactDetailSheet } from './ContactDetailSheet';
 import { MyConnectCode } from '../components/MyConnectCode';
 import { useT } from '../lib/i18n';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
+import { personsDb } from '../lib/supabaseDb';
 import type { Person } from '../db';
 
 // Sukoon screen 10. Full-screen replacement for the old ContactsModal.
@@ -38,6 +43,11 @@ import type { Person } from '../db';
 // hosts the code-lookup → confirm flow.
 export function ContactsPage() {
   const persons = usePersonStore((s) => s.persons);
+  // Archived contacts load ON DEMAND (they're excluded from the normal
+  // fetch) and live page-local — the store only ever holds active rows.
+  const [archived, setArchived] = useState<Person[] | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedBusyId, setArchivedBusyId] = useState<string | null>(null);
   const loadPersons = usePersonStore((s) => s.loadPersons);
   const createPerson = usePersonStore((s) => s.createPerson);
   const loans = useLoanStore((s) => s.loans);
@@ -518,6 +528,102 @@ export function ContactsPage() {
               </div>
             </div>
           ))
+        )}
+
+        {/* Archived contacts — merged-away duplicates and removed locals.
+            Hidden by default (and while a search is active — its rows don't
+            follow the query); refetched on EVERY open so a merge or archive
+            from the detail sheet shows up without a remount. */}
+        {!(showSearch && query.trim()) && (
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              const next = !showArchived;
+              setShowArchived(next);
+              if (next) {
+                void personsDb.getArchived()
+                  .then(setArchived)
+                  .catch(() => {
+                    // Keep null so the next open refetches — an error must
+                    // never masquerade as "no archived contacts".
+                    setArchived(null);
+                    setShowArchived(false);
+                    toast.show({ type: 'error', title: t('contacts_archived_error') });
+                  });
+              }
+            }}
+            className="w-full min-h-[44px] rounded-2xl bg-cream-soft border border-cream-hairline px-4 flex items-center gap-2.5 text-left active:bg-cream-hairline transition-colors"
+          >
+            <Archive size={14} className="text-ink-400 shrink-0" />
+            <span className="text-[12px] font-semibold text-ink-600 flex-1">{t('contacts_archived_toggle')}</span>
+            <ChevronDown size={15} className={`text-ink-400 shrink-0 transition-transform ${showArchived ? 'rotate-180' : ''}`} />
+          </button>
+          {showArchived && (
+            <div className="mt-2 space-y-1.5">
+              {archived === null ? (
+                <ListSkeleton rows={2} withAvatar={false} />
+              ) : archived.length === 0 ? (
+                <p className="text-[11.5px] text-ink-400 px-2 py-2">{t('contacts_archived_empty')}</p>
+              ) : (
+                archived.map((p) => (
+                  <div
+                    key={p.id}
+                    className="rounded-2xl bg-cream-card border border-cream-border px-4 py-3 flex items-center gap-2.5"
+                  >
+                    <span className="w-8 h-8 rounded-xl bg-cream-soft text-ink-400 flex items-center justify-center text-[12px] font-bold shrink-0">
+                      {(p.name[0] ?? '?').toUpperCase()}
+                    </span>
+                    <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-ink-600">{p.name}</span>
+                    <button
+                      type="button"
+                      disabled={archivedBusyId === p.id}
+                      onClick={() => {
+                        void (async () => {
+                          // Restoring a name that now exists again creates two
+                          // active same-named contacts — allowed, but never
+                          // silently (name-fallback rows would show on both).
+                          const collision = persons.some(
+                            (x) => x.name.trim().toLowerCase() === p.name.trim().toLowerCase(),
+                          );
+                          if (collision) {
+                            const ok = await confirmDestructive({
+                              title: t('contacts_unarchive_dup_title').replace('{name}', p.name),
+                              description: t('contact_dup_warning'),
+                              confirmLabel: t('contacts_unarchive'),
+                              tone: 'warning',
+                            });
+                            if (!ok) return;
+                          }
+                          setArchivedBusyId(p.id);
+                          try {
+                            const ok = await usePersonStore.getState().unarchive(p.id);
+                            if (ok) {
+                              setArchived((list) => (list ?? []).filter((x) => x.id !== p.id));
+                              toast.show({ type: 'success', title: t('contacts_unarchive_done').replace('{name}', p.name) });
+                            } else {
+                              // Already restored elsewhere (row no longer archived).
+                              setArchived((list) => (list ?? []).filter((x) => x.id !== p.id));
+                              toast.show({ type: 'info', title: t('contacts_unarchive_gone') });
+                            }
+                          } catch {
+                            toast.show({ type: 'error', title: t('error') });
+                          } finally {
+                            setArchivedBusyId(null);
+                          }
+                        })();
+                      }}
+                      className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-accent-600 bg-accent-50 rounded-full px-2.5 py-1.5 active:scale-95 transition-transform disabled:opacity-50"
+                    >
+                      <RotateCcw size={11} strokeWidth={2.2} />
+                      {t('contacts_unarchive')}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
         )}
       </div>
 

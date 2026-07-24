@@ -2790,6 +2790,91 @@ const S = {
   todo_kameti_title_many: { ur: "{name} · {k} rounds adhoore", en: "{name} · {k} rounds incomplete" },
   todo_kameti_body: { ur: "{paid}/{n} ne diya · {amount} fi member", en: "{paid}/{n} paid · {amount} each" },
   todo_uncat_title: { ur: "Bina category kharcha", en: "Uncategorised expense" },
+  // Paid-state praise: a card bill cleared before its due day.
+  tw_cleared: { ur: "Bill saaf — {n} din pehle ✓", en: "Bill cleared — {n}d early ✓" },
+  tw_cleared_today: { ur: "Bill saaf — ain waqt par ✓", en: "Bill cleared — right on time ✓" },
+  // One-tap category suggestion on the To-do queue.
+  todo_uncat_suggest: { ur: "{category} mein daal dein?", en: "File under {category}?" },
+  todo_uncat_filed: { ur: "{category} mein file ho gaya", en: "Filed under {category}" },
+  // Android payment reminders (notification bodies via tStatic).
+  settings_reminders: { ur: "Payment yaad-dahani", en: "Payment reminders" },
+  settings_reminders_desc: {
+    ur: "Card bill, EMI aur recurring — sirf jab kuch sach mein due ho.",
+    en: "Card bills, EMIs and recurring — only when something is actually due.",
+  },
+  settings_reminders_denied: {
+    ur: "Notification ki ijazat nahi mili — phone ki settings se allow karein.",
+    en: "Notification permission was denied — allow it in your phone settings.",
+  },
+  notif_bill_in: { ur: "Bill {d} din mein due — {amount}", en: "Bill due in {d} days — {amount}" },
+  notif_bill_tomorrow: { ur: "Bill kal due hai — {amount}", en: "Bill due tomorrow — {amount}" },
+  notif_bill_today: { ur: "Bill aaj due hai — {amount}", en: "Bill due today — {amount}" },
+  notif_emi_tomorrow: { ur: "EMI #{n} kal due — {amount}", en: "EMI #{n} due tomorrow — {amount}" },
+  notif_emi_today: { ur: "EMI #{n} aaj due — {amount}", en: "EMI #{n} due today — {amount}" },
+  notif_recurring_today: {
+    ur: "Aaj due — {amount}. Hisaab mein confirm karein.",
+    en: "Due today — {amount}. Confirm it in Hisaab.",
+  },
+  notif_kameti_round: { ur: "Round {r} aaj — {amount} fi member", en: "Round {r} today — {amount} each" },
+  // Contacts merge + archive.
+  merge_button: { ur: "Kisi aur contact mein merge karo", en: "Merge into another contact" },
+  merge_pick_title: { ur: "Kis mein merge karein?", en: "Merge into which contact?" },
+  merge_pick_desc: {
+    ur: "“{source}” ke saare loans aur entries chune gaye contact mein chale jayenge, phir yeh contact archive ho jayega.",
+    en: "Every loan and entry of “{source}” will move to the contact you pick, then this contact is archived.",
+  },
+  merge_confirm_title: { ur: "{target} mein merge karein?", en: "Merge into {target}?" },
+  merge_confirm_body: {
+    ur: "“{source}” ki poori history “{target}” mein chali jayegi. Yeh wapas nahi hota — sirf source contact archive se wapas aa sakta hai.",
+    en: "The full history of “{source}” moves to “{target}”. This can't be un-merged — only the source contact can be restored from the archive.",
+  },
+  merge_cta: { ur: "Merge karo", en: "Merge" },
+  merge_done: { ur: "{target} mein merge ho gaya", en: "Merged into {target}" },
+  merge_done_sub: { ur: "{n} loans aur {m} entries move hui", en: "{n} loans and {m} entries moved" },
+  contacts_archived_toggle: { ur: "Archived contacts", en: "Archived contacts" },
+  contacts_archived_empty: { ur: "Koi archived contact nahi.", en: "No archived contacts." },
+  contacts_archived_error: {
+    ur: "Archived contacts load nahi ho sake — dobara koshish karein.",
+    en: "Couldn't load archived contacts — try again.",
+  },
+  contacts_unarchive: { ur: "Wapas lao", en: "Restore" },
+  contacts_unarchive_done: { ur: "{name} wapas aa gaya", en: "{name} restored" },
+  contacts_unarchive_gone: {
+    ur: "Yeh contact pehle hi wapas aa chuka hai.",
+    en: "This contact was already restored elsewhere.",
+  },
+  contacts_unarchive_dup_title: {
+    ur: "{name} wapas laayein?",
+    en: "Restore {name}?",
+  },
+  merge_pick_empty: {
+    ur: "Merge ke liye koi aur contact nahi.",
+    en: "No other contact to merge into.",
+  },
+  merge_err_not_found: {
+    ur: "Yeh contact merge ke liye available nahi.",
+    en: "That contact isn't available to merge.",
+  },
+  merge_err_linked: {
+    ur: "Linked contact merge nahi ho sakta — duplicates ko US MEIN merge karein.",
+    en: "A linked contact can't be merged away — merge duplicates INTO it instead.",
+  },
+  merge_err_same: {
+    ur: "Do alag contacts chunein.",
+    en: "Pick two different contacts.",
+  },
+  merge_err_generic: {
+    ur: "Merge nahi ho saka — dobara koshish karein.",
+    en: "Couldn't merge these contacts — try again.",
+  },
+  merge_err_migration: {
+    ur: "Merge ke liye database update chahiye — SQL migration apply karein.",
+    en: "Merge needs a database update — apply the SQL migration first.",
+  },
+  // Cleared-card praise (Inbox Info tab — bilingual like its This-week sibling).
+  info_cc_cleared_early: { ur: "{name} ka bill saaf — {d} din pehle ✓", en: "{name} bill cleared — {d}d early ✓" },
+  info_cc_cleared_ontime: { ur: "{name} ka bill saaf — ain waqt par ✓", en: "{name} bill cleared right on time ✓" },
+  info_cc_cleared_body: { ur: "Is cycle kuch due nahi — zabardast.", en: "Nothing due this cycle — nicely done." },
 } as const;
 
 type Key = keyof typeof S;
@@ -2806,6 +2891,12 @@ export const useI18nStore = create<I18nState>((set) => ({
   setLang: (lang) => {
     localStorage.setItem("hisaab_lang", lang);
     set({ lang });
+    // Scheduled Android reminders freeze their text at plan time — rebuild
+    // so they arrive in the newly chosen language. Dynamic import: the
+    // scheduler's planner statically imports THIS module. No-op on web.
+    void import("./notificationScheduler")
+      .then((m) => m.rescheduleNotifications({ force: true }))
+      .catch(() => {});
   },
 }));
 

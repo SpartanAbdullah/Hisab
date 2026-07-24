@@ -638,6 +638,17 @@ async function refetchMoneyStores(): Promise<void> {
   }
 }
 
+// Money moved (or un-moved) → the Android reminder schedule may be stale:
+// a bill payment must silence tonight's "due today", and undoing one must
+// bring the reminder back. Forced (the 30s debounce must never swallow a
+// resolution right before the 10:00 fire time); dynamic import avoids a
+// static store↔scheduler cycle; no-op on web.
+function nudgeReminderSchedule(): void {
+  void import('../lib/notificationScheduler')
+    .then((m) => m.rescheduleNotifications({ force: true }))
+    .catch(() => {});
+}
+
 async function findCashAdvanceCardForLoan(loanId: string): Promise<string | null> {
   let transactions = useTransactionStore.getState().transactions;
   if (transactions.length === 0) {
@@ -1325,6 +1336,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       'transaction',
     );
 
+    nudgeReminderSchedule();
+
     return transaction;
   },
 
@@ -1673,6 +1686,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
     await logActivitySafe('transaction_modified', description, updated.id, 'transaction');
 
+    nudgeReminderSchedule();
+
     return updated;
   },
 
@@ -1995,6 +2010,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       existing.id,
       'transaction',
     );
+
+    nudgeReminderSchedule();
   },
 
   deleteLoanCascade: async (loanId, options = {}) => {
@@ -2076,6 +2093,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       loanId,
       'loan',
     );
+
+    nudgeReminderSchedule();
   },
 
   getTransaction: (id) => get().transactions.find((transaction) => transaction.id === id),
@@ -2120,5 +2139,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     } catch (err) {
       console.error('[restoreTransaction] balance re-apply failed; row restored but balance may need refetch', err);
     }
+
+    nudgeReminderSchedule();
   },
 }));

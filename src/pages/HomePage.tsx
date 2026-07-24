@@ -249,9 +249,11 @@ export function HomePage() {
         upcoming: expenses,
         accounts,
         cardFundedLoanIds,
+        // Lets a cleared card bill show as praise instead of vanishing.
+        transactions,
         today: new Date(renderNowMs),
       }),
-    [loans, emiSchedules, committees, recurringTemplates, expenses, accounts, cardFundedLoanIds, renderNowMs],
+    [loans, emiSchedules, committees, recurringTemplates, expenses, accounts, cardFundedLoanIds, transactions, renderNowMs],
   );
   // Header total: the largest outgoing currency bucket (usually the only one).
   const thisWeekOut = useMemo(() => {
@@ -1223,14 +1225,23 @@ export function HomePage() {
                   className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left active:bg-cream-soft transition-colors"
                 >
                   <div className="w-8 h-8 rounded-lg bg-cream-soft border border-cream-hairline flex items-center justify-center shrink-0">
-                    <CalendarClock size={14} className={row.daysUntil <= 1 ? "text-warn-600" : "text-ink-500"} />
+                    {row.sub.kind === "cleared" ? (
+                      <CheckCircle2 size={14} className="text-receive-text" />
+                    ) : (
+                      <CalendarClock size={14} className={row.daysUntil <= 1 ? "text-warn-600" : "text-ink-500"} />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium text-ink-900 truncate tracking-tight">{row.label}</p>
-                    <p className="text-[10.5px] text-ink-500 leading-tight">
+                    <p className={`text-[10.5px] leading-tight ${row.sub.kind === "cleared" ? "text-receive-text font-medium" : "text-ink-500"}`}>
                       {(() => {
                         // Structured sub → translated line (the lib stays
                         // i18n-free). 'none' rows show only the due phrase.
+                        if (row.sub.kind === "cleared") {
+                          return row.sub.daysEarly === 0
+                            ? t("tw_cleared_today")
+                            : t("tw_cleared").replace("{n}", String(row.sub.daysEarly));
+                        }
                         const sub =
                           row.sub.kind === "emi" ? `EMI #${row.sub.n}`
                           : row.sub.kind === "round" ? (

@@ -353,7 +353,51 @@ export const personsDb = {
     const { error } = await supabase.rpc('notify_contact_linked', { target_profile_id: profileId });
     if (error) throw error;
   },
+  // Archived contacts are hidden from getAll; this is the explicit window
+  // into them (the "Archived" section on ContactsPage).
+  async getArchived(): Promise<Person[]> {
+    const { data, error } = await supabase
+      .from('persons').select('*')
+      .eq('user_id', getUserId())
+      .not('archived_at', 'is', null)
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map(mapPerson);
+  },
+  // SECURITY DEFINER RPC (supabase-migration-contacts-merge-unarchive.sql):
+  // reassigns every reference from the LOCAL source contact to the target
+  // atomically server-side, then archives the source.
+  async merge(sourceId: string, targetId: string): Promise<MergePersonResult> {
+    const { data, error } = await supabase.rpc('merge_person', {
+      p_source_id: sourceId,
+      p_target_id: targetId,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      success: Boolean(row?.success),
+      reasonCode: (row?.reason_code as MergePersonResult['reasonCode']) ?? 'CONTACT_NOT_FOUND',
+      userMessage: (row?.user_message as string) ?? 'These contacts could not be merged.',
+      movedLoans: Number(row?.moved_loans ?? 0),
+      movedTransactions: Number(row?.moved_transactions ?? 0),
+    };
+  },
+  // SECURITY DEFINER RPC — the protect-archive trigger blocks direct client
+  // writes to archived_at, so restoring goes through the same door.
+  async unarchive(id: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc('unarchive_contact', { p_contact_id: id });
+    if (error) throw error;
+    return Boolean(data);
+  },
 };
+
+export interface MergePersonResult {
+  success: boolean;
+  reasonCode: 'MERGED' | 'CONTACT_NOT_FOUND' | 'LINKED_CONTACT' | 'SAME_CONTACT';
+  userMessage: string;
+  movedLoans: number;
+  movedTransactions: number;
+}
 
 // ══════════════════════════════════════
 // LINKED TRANSACTION REQUESTS (Phase 2B)

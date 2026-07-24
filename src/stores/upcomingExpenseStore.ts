@@ -32,6 +32,15 @@ const INITIAL_UPCOMING_EXPENSE_STATE = {
   loading: false,
 };
 
+// Bill state changed → the Android reminder schedule may hold a stale
+// "due today". Forced (the debounce must not swallow a pre-fire-time
+// resolution); dynamic import avoids a store↔scheduler cycle; no-op on web.
+function nudgeReminderSchedule(): void {
+  void import('../lib/notificationScheduler')
+    .then((m) => m.rescheduleNotifications({ force: true }))
+    .catch(() => {});
+}
+
 export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) => ({
   ...INITIAL_UPCOMING_EXPENSE_STATE,
 
@@ -72,6 +81,7 @@ export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) =
     set((s) => ({
       expenses: s.expenses.map((e) => (e.id === id ? { ...e, isPaid: true, status: 'done' as UpcomingExpenseStatus } : e)),
     }));
+    nudgeReminderSchedule();
   },
 
   updateStatus: async (id, status) => {
@@ -80,11 +90,13 @@ export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) =
     set((s) => ({
       expenses: s.expenses.map((e) => (e.id === id ? { ...e, status, isPaid } : e)),
     }));
+    nudgeReminderSchedule();
   },
 
   deleteExpense: async (id) => {
     await upcomingExpensesDb.delete(id);
     set((s) => ({ expenses: s.expenses.filter((e) => e.id !== id) }));
+    nudgeReminderSchedule();
   },
 
   getByAccount: (accountId) =>

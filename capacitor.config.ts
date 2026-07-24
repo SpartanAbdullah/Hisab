@@ -42,6 +42,12 @@ const config: CapacitorConfig = {
       resize: 'native',
       resizeOnFullScreen: true,
     },
+    LocalNotifications: {
+      // White-on-transparent status-bar glyph (res/drawable/ic_stat_hisaab)
+      // — without it Android falls back to a grey launcher-icon square.
+      smallIcon: 'ic_stat_hisaab',
+      iconColor: '#0B0E2A',
+    },
   },
 };
 
