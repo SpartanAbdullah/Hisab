@@ -2890,6 +2890,22 @@ const S = {
   reanchor_working: { ur: "Ho raha hai…", en: "Aligning…" },
   reanchor_done: { ur: "{n} plan align ho gaye", en: "Aligned {n} instalment plan(s)" },
   reanchor_none: { ur: "Sab pehle se aligned hain", en: "Already aligned" },
+  // Credit-card billing cycle (statement-close day + payment-due day).
+  cc_cycle_title: { ur: "Billing cycle", en: "Billing cycle" },
+  cc_cycle_sub: {
+    ur: "Statement kab band hoti hai aur payment kab due hai — taake reminder sahi waqt par aaye.",
+    en: "When your statement closes and when payment's due — so reminders land at the right time.",
+  },
+  cc_cycle_close: { ur: "Statement band", en: "Statement closes" },
+  cc_cycle_due: { ur: "Payment due", en: "Payment due" },
+  cc_cycle_gap: { ur: "~{n} din", en: "~{n} days to pay" },
+  cc_cycle_gap_one: { ur: "~1 din", en: "~1 day to pay" },
+  cc_cycle_closes_on: { ur: "Band: {d}", en: "Closes {d}" },
+  cc_cycle_due_on: { ur: "Due: {d}", en: "Due {d}" },
+  cc_cycle_reassure: {
+    ur: "Hum {d} se thora pehle yaad dila denge — kabhi baad mein nahi.",
+    en: "We'll nudge you a few days before the {d} — never after.",
+  },
   // Card statement breakdown.
   cc_statement_title: { ur: "Statement — is mahine", en: "Statement — this month" },
   cc_statement_purchases: { ur: "Kharchay + baaki", en: "Purchases + carried" },

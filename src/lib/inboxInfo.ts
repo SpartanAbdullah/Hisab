@@ -107,9 +107,18 @@ export function cardPaymentThisCycle(
   const dueDay = parseInt(card.metadata?.dueDay ?? '', 10);
   const d = daysUntilDayOfMonth(dueDay, today);
   if (d === null) return 0;
-  const startMs = new Date(
+  // When a distinct statement-close day is known, the honest window is
+  // "since the statement closed" (payments toward THIS bill). Otherwise a
+  // single-date card uses the tested 14-days-before-the-upcoming-due window
+  // (which also dodges the due-day collapse).
+  const rawStmt = parseInt(card.metadata?.statementDay ?? '', 10);
+  const hasDistinctStatement =
+    Number.isFinite(rawStmt) && rawStmt >= 1 && rawStmt <= 31 && rawStmt !== dueDay;
+  const fourteenBeforeDue = new Date(
     today.getFullYear(), today.getMonth(), today.getDate() + d - 14,
   ).getTime();
+  const closeDate = hasDistinctStatement ? lastDayOfMonthOccurrence(rawStmt, today) : null;
+  const startMs = closeDate ? closeDate.getTime() : fourteenBeforeDue;
   let paid = 0;
   for (const t of transactions) {
     if (t.deletedAt) continue;

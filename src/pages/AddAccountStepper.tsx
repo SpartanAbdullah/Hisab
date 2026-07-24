@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import { StepIndicator } from '../components/StepIndicator';
 import { SUPPORTED_CURRENCIES, type AccountType, type Currency } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
+import { StatementCycleField } from '../components/StatementCycleField';
 import { useT } from '../lib/i18n';
 
 interface Props { open: boolean; onClose: () => void; onComplete?: () => void; inline?: boolean; }
@@ -64,6 +65,10 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const [ccLast4, setCcLast4] = useState('');
   const [ccLimit, setCcLimit] = useState('');
   const [ccDueDay, setCcDueDay] = useState('');
+  // Statement CLOSING day — optional (falls back to the due day). Real cards
+  // close the cycle then give ~3 weeks to pay; capturing both makes reminders
+  // land at the right time.
+  const [ccStatementDay, setCcStatementDay] = useState('');
   // How much is already owed on the card today (optional). Without it we'd
   // assume a brand-new card with nothing spent and show wrong net worth.
   const [ccOwed, setCcOwed] = useState('');
@@ -72,7 +77,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const reset = () => {
     setStep(0); setAccountType('cash'); setName(''); setCurrency(primaryCurrency);
     setBalance(''); setBankName(''); setWalletType('');
-    setCcIssuer(''); setCcLast4(''); setCcLimit(''); setCcDueDay(''); setCcOwed('');
+    setCcIssuer(''); setCcLast4(''); setCcLimit(''); setCcDueDay(''); setCcStatementDay(''); setCcOwed('');
   };
   const handleClose = () => { reset(); onClose(); };
 
@@ -124,6 +129,10 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
         metadata.last4 = ccLast4;
         metadata.creditLimit = ccLimit;
         metadata.dueDay = ccDueDay;
+        // Only store a distinct statement day (blank → the model falls back
+        // to the due day, i.e. single-date behaviour).
+        const sd = parseInt(ccStatementDay, 10);
+        if (Number.isFinite(sd) && sd >= 1 && sd <= 31) metadata.statementDay = ccStatementDay;
         if (ccOwed.trim()) metadata.outstanding = ccOwed;
       }
 
@@ -253,11 +262,12 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                     placeholder="e.g. 10000" className="input-field text-center text-lg font-bold tabular-nums" />
                 </div>
 
-                <div>
-                  <label className="form-label">{t('cc_due_day')}</label>
-                  <input type="number" min="1" max="31" value={ccDueDay} onChange={e => setCcDueDay(e.target.value)}
-                    placeholder="e.g. 15" className="input-field text-center" />
-                </div>
+                <StatementCycleField
+                  statementDay={ccStatementDay}
+                  dueDay={ccDueDay}
+                  onStatementDay={setCcStatementDay}
+                  onDueDay={setCcDueDay}
+                />
 
                 <div>
                   <label className="form-label">{t('cc_owed')}</label>

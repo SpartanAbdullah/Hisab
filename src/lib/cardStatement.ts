@@ -36,6 +36,23 @@ function localIso(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function dayOfMonthOrNull(raw: string | undefined): number | null {
+  const d = parseInt(raw ?? '', 10);
+  return Number.isFinite(d) && d >= 1 && d <= 31 ? d : null;
+}
+
+/** The day the payment is DUE (metadata.dueDay). */
+export function cardDueDay(card: Account): number | null {
+  return dayOfMonthOrNull(card.metadata?.dueDay);
+}
+
+/** The day the statement CLOSES (metadata.statementDay). Real cards close the
+ *  cycle, then give ~3 weeks to pay — so this is usually well before dueDay.
+ *  Falls back to dueDay for cards saved before the two-date model existed. */
+export function cardStatementDay(card: Account): number | null {
+  return dayOfMonthOrNull(card.metadata?.statementDay) ?? cardDueDay(card);
+}
+
 /** Instalment due-dates for a statement-native plan: `count` dates, each on
  *  the card's statement day, one month apart, the first being the next
  *  statement day STRICTLY AFTER `fromIso` — an advance taken today is billed
@@ -63,10 +80,14 @@ export function statementInstalmentDates(dueDay: number, count: number, fromIso:
 }
 
 export interface CardStatement {
+  /** Payment-due day (metadata.dueDay) — when the bill must be paid. */
   dueDay: number;
-  /** Local YYYY-MM-DD start of the current statement cycle (last due-day occurrence). */
+  /** Statement-close day (metadata.statementDay, falls back to dueDay) — when
+   *  the cycle closes and the bill is issued. */
+  statementDay: number;
+  /** Local YYYY-MM-DD start of the current statement cycle (last statement-close occurrence). */
   cycleStartIso: string;
-  /** Days until the upcoming statement/payment day (0 = today), or null. */
+  /** Days until the upcoming PAYMENT-due day (0 = today), or null. */
   daysUntilDue: number | null;
   /** Non-instalment balance = used − Σ(advance remaining): purchases + any
    *  carried balance. All of it is due (no financing behind it). */
@@ -100,14 +121,17 @@ export function buildCardStatement(inp: {
 }): CardStatement | null {
   const { card } = inp;
   if (card.type !== 'credit_card') return null;
-  const dueDay = parseInt(card.metadata?.dueDay ?? '', 10);
-  if (!Number.isFinite(dueDay) || dueDay < 1) return null;
+  const dueDay = cardDueDay(card);
+  if (dueDay === null) return null;
+  // Statement CLOSES on statementDay (falls back to dueDay); payment is DUE on
+  // dueDay. The cycle boundary follows the close; the countdown follows the due.
+  const statementDay = cardStatementDay(card) ?? dueDay;
 
   const limit = parseFloat(card.metadata?.creditLimit || '0');
   const hasLimit = limit > 0;
   const totalOwed = hasLimit ? Math.max(0, round2(limit - card.balance)) : 0;
 
-  const cycleStart = lastDayOfMonthOccurrence(dueDay, inp.today);
+  const cycleStart = lastDayOfMonthOccurrence(statementDay, inp.today);
   const cycleStartIso = cycleStart ? localIso(cycleStart) : localIso(inp.today);
   const daysUntilDue = daysUntilDayOfMonth(dueDay, inp.today);
   // Upcoming statement day's ISO — instalments due on/before it belong to this bill.
@@ -145,7 +169,7 @@ export function buildCardStatement(inp: {
     ? Math.min(totalOwed, round2(revolving + instalmentDue))
     : round2(instalmentDue);
 
-  return { dueDay, cycleStartIso, daysUntilDue, revolving, instalmentDue, statementDue, totalOwed, hasLimit };
+  return { dueDay, statementDay, cycleStartIso, daysUntilDue, revolving, instalmentDue, statementDue, totalOwed, hasLimit };
 }
 
 export interface AdvanceForAllocation {

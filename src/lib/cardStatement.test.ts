@@ -97,6 +97,57 @@ describe('buildCardStatement', () => {
   it('returns null without a statement day', () => {
     expect(buildCardStatement({ card: card({ metadata: { creditLimit: '20000' } }), advanceLoans: [], schedules: [], today: TODAY })).toBeNull();
   });
+
+  it("REAL RAK card (user's live numbers): statement due = 2,394.69, not the 9,978.04 balance", () => {
+    // Total limit 17,600; available 7,621.96 → outstanding 9,978.04. Cash
+    // advance 13,000, 4,333.32 paid → 8,666.68 remaining at 1,083.33/mo.
+    // Statement CLOSES the 2nd, payment DUE the 27th. Today 25 Jul.
+    const rak = card({
+      balance: 7621.96,
+      metadata: { creditLimit: '17600', statementDay: '2', dueDay: '27' },
+    });
+    const advance: Loan = {
+      id: 'rak-ca', personName: 'RAK Cash Advance', personId: null, type: 'taken',
+      totalAmount: 13000, remainingAmount: 8666.68, currency: 'AED', status: 'active',
+      notes: '', createdAt: '2026-05-21T00:00:00Z',
+    };
+    const st = buildCardStatement({
+      card: rak,
+      advanceLoans: [advance],
+      schedules: [{ id: 'i5', loanId: 'rak-ca', installmentNumber: 5, dueDate: '2026-07-27', amount: 1083.33, status: 'upcoming' }],
+      today: new Date(2026, 6, 25, 12, 0, 0),
+    });
+    expect(st).not.toBeNull();
+    expect(st!.totalOwed).toBe(9978.04);        // the full balance
+    expect(st!.revolving).toBe(1311.36);        // 9,978.04 − 8,666.68 (purchases + carried)
+    expect(st!.instalmentDue).toBe(1083.33);    // this cycle's instalment
+    expect(st!.statementDue).toBe(2394.69);     // what to actually pay — NOT 9,978.04
+    expect(st!.statementDay).toBe(2);           // closes the 2nd
+    expect(st!.dueDay).toBe(27);                // due the 27th
+    expect(st!.daysUntilDue).toBe(2);           // 25 Jul → 27 Jul
+    // Paying the statement steps ONE instalment; paying the full balance clears all.
+    const payStatement = allocateBillPayment({ payment: 2394.69, revolvingPurchases: 1311.36, advances: [{ loanId: 'rak-ca', remaining: 8666.68, dueThisCycle: 1083.33, createdAt: '2026-05-21' }] });
+    expect(payStatement.perLoan).toEqual([{ loanId: 'rak-ca', principalApplied: 1083.33 }]);
+    const payFull = allocateBillPayment({ payment: 9978.04, revolvingPurchases: 1311.36, advances: [{ loanId: 'rak-ca', remaining: 8666.68, dueThisCycle: 1083.33, createdAt: '2026-05-21' }] });
+    expect(payFull.perLoan).toEqual([{ loanId: 'rak-ca', principalApplied: 8666.68 }]);
+  });
+
+  it('two dates: cycle boundary follows the statement close, countdown follows the payment due', () => {
+    // Statement closes 2nd, due 27th, today 25 Jul → cycle started 2 Jul, due in 2 days.
+    const st = buildCardStatement({
+      card: card({ metadata: { creditLimit: '20000', statementDay: '2', dueDay: '27' } }),
+      advanceLoans: [], schedules: [], today: new Date(2026, 6, 25, 12, 0, 0),
+    });
+    expect(st!.cycleStartIso).toBe('2026-07-02');
+    expect(st!.daysUntilDue).toBe(2);
+    // No statementDay → both collapse to the due day (backward compatible).
+    const single = buildCardStatement({
+      card: card({ metadata: { creditLimit: '20000', dueDay: '27' } }),
+      advanceLoans: [], schedules: [], today: new Date(2026, 6, 25, 12, 0, 0),
+    });
+    expect(single!.statementDay).toBe(27);
+    expect(single!.cycleStartIso).toBe('2026-06-27');
+  });
 });
 
 describe('allocateBillPayment', () => {

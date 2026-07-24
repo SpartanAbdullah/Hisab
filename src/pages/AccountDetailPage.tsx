@@ -7,6 +7,7 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { buildCardStatement, statementInstalmentDates } from '../lib/cardStatement';
+import { StatementCycleField } from '../components/StatementCycleField';
 import { localIso } from '../lib/thisWeek';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
@@ -134,6 +135,7 @@ export function AccountDetailPage() {
   const [showCardSettings, setShowCardSettings] = useState(false);
   const [limitInput, setLimitInput] = useState('');
   const [dueDayInput, setDueDayInput] = useState('');
+  const [statementDayInput, setStatementDayInput] = useState('');
   const [showRename, setShowRename] = useState(false);
   const [newName, setNewName] = useState('');
   const [showCorrect, setShowCorrect] = useState(false);
@@ -523,6 +525,14 @@ export function AccountDetailPage() {
             <p className="text-[24px] font-bold text-ink-900 tabular-nums tracking-tight">
               {formatMoney(cardAdvances.statement.statementDue, account.currency)}
             </p>
+            {/* Two-date cycle, when a distinct statement day is set. */}
+            {cardAdvances.statement.statementDay !== cardAdvances.statement.dueDay && (
+              <p className="text-[10.5px] text-ink-400 mt-0.5 tabular-nums">
+                {t('cc_cycle_closes_on').replace('{d}', `${cardAdvances.statement.statementDay}${getOrdinal(cardAdvances.statement.statementDay)}`)}
+                {' · '}
+                {t('cc_cycle_due_on').replace('{d}', `${cardAdvances.statement.dueDay}${getOrdinal(cardAdvances.statement.dueDay)}`)}
+              </p>
+            )}
             <div className="mt-2 space-y-1 text-[11.5px] text-ink-600 tabular-nums">
               {cardAdvances.statement.revolving > 0.005 && (
                 <div className="flex justify-between">
@@ -590,6 +600,7 @@ export function AccountDetailPage() {
               onClick={() => {
                 setLimitInput(account.metadata.creditLimit ?? '');
                 setDueDayInput(account.metadata.dueDay ?? '');
+                setStatementDayInput(account.metadata.statementDay ?? '');
                 setShowCardSettings(true);
               }}
               className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
@@ -716,19 +727,14 @@ export function AccountDetailPage() {
                 autoFocus
                 className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all mb-3 bg-cream-bg"
               />
-              <label className="block text-[11px] font-semibold text-ink-500 uppercase tracking-[0.1em] mb-1.5">
-                {t('cc_settings_due')}
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="31"
-                step="1"
-                value={dueDayInput}
-                onChange={(e) => setDueDayInput(e.target.value)}
-                placeholder="—"
-                className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all mb-3 bg-cream-bg"
-              />
+              <div className="mb-3">
+                <StatementCycleField
+                  statementDay={statementDayInput}
+                  dueDay={dueDayInput}
+                  onStatementDay={setStatementDayInput}
+                  onDueDay={setDueDayInput}
+                />
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowCardSettings(false)}
@@ -748,9 +754,12 @@ export function AccountDetailPage() {
                   })()}
                   onClick={async () => {
                     try {
+                      const sdRaw = parseInt(statementDayInput, 10);
                       await updateMetadata(account.id, {
                         creditLimit: String(parseFloat(limitInput)),
                         dueDay: dueDayInput.trim() === '' ? '' : String(parseInt(dueDayInput, 10)),
+                        // Blank clears it → the model falls back to the due day.
+                        statementDay: Number.isFinite(sdRaw) && sdRaw >= 1 && sdRaw <= 31 ? String(sdRaw) : '',
                       });
                       toast.show({ type: 'success', title: t('cc_settings_saved') });
                       setShowCardSettings(false);
