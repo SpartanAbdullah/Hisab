@@ -42,7 +42,10 @@ import {
   upsertSnapshot,
   type NetSnapshot,
 } from "../lib/meraHisaab";
-import { CalendarClock, Scale } from "lucide-react";
+import { CHECK_STAMP_KEY, daysSince, type CheckStamp } from "../lib/hisaabCheck";
+import { buildInboxActionItems } from "../lib/inboxInfo";
+import { HisaabCheckModal } from "../components/HisaabCheckModal";
+import { CalendarClock, ClipboardCheck, Scale } from "lucide-react";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
 import { SettlementNudgeBanner } from "../components/SettlementNudgeBanner";
 import { BudgetWarningBanner } from "../components/BudgetWarningBanner";
@@ -90,6 +93,7 @@ export function HomePage() {
   // Raw slices only — filtering happens inside useMemo (React #185).
   const emiSchedules = useEmiStore((s) => s.schedules);
   const committees = useCommitteeStore((s) => s.committees);
+  const committeePayments = useCommitteeStore((s) => s.payments);
   const mode = useAppModeStore((s) => s.mode);
   const {
     groups,
@@ -108,6 +112,17 @@ export function HomePage() {
   const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
   const [renderNowMs] = useState(() => Date.now());
+  // Weekly "Hisaab check" ritual — the stamp drives the "last done Nd ago"
+  // line; finishing the walk updates it via onStamped.
+  const [showCheck, setShowCheck] = useState(false);
+  const [checkStampIso, setCheckStampIso] = useState<string | null>(() => {
+    try {
+      const raw = localStorage.getItem(CHECK_STAMP_KEY);
+      return raw ? ((JSON.parse(raw) as CheckStamp).dateIso ?? null) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const userName = localStorage.getItem("hisaab_user_name") ?? "User";
   const primaryCurrency = localStorage.getItem("hisaab_primary_currency") ?? "AED";
@@ -243,6 +258,26 @@ export function HomePage() {
     const totals = thisWeekTotals(thisWeekRows).filter((entry) => entry.out > 0);
     return totals[0] ?? null;
   }, [thisWeekRows]);
+
+  // Needs-action queue count (overdue EMIs, missed recurring, kameti rounds,
+  // uncategorised expenses) — same pure builder the Inbox "To-do" tab uses,
+  // so the number on Home always matches what tapping through reveals.
+  const needsActionCount = useMemo(
+    () =>
+      buildInboxActionItems({
+        loans,
+        schedules: emiSchedules,
+        transactions,
+        templates: recurringTemplates,
+        committees,
+        committeePayments,
+        accounts,
+        cardFundedLoanIds,
+        today: new Date(renderNowMs),
+      }).length,
+    [loans, emiSchedules, transactions, recurringTemplates, committees, committeePayments, accounts, cardFundedLoanIds, renderNowMs],
+  );
+  const checkDays = daysSince(checkStampIso, new Date(renderNowMs));
 
   // "Mera Hisaab" — the net position INCLUDING people: accounts (cards as
   // −owed) + receivables − payables, with cash advances never counted twice.
@@ -1114,6 +1149,56 @@ export function HomePage() {
           </div>
         )}
 
+        {/* Weekly ritual + needs-action queue — the review-ceremony entry.
+            Top row opens the 5-minute Hisaab check (with its days-since
+            memory); the count row appears only when something actually
+            needs a hand (overdue EMIs, missed recurring, kameti rounds,
+            unfiled expenses) and lands on the Inbox "To-do" tab. */}
+        {dataReady && (
+          <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+            <button
+              onClick={() => setShowCheck(true)}
+              className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left active:bg-cream-soft transition-colors"
+            >
+              <div className="w-8 h-8 rounded-lg bg-accent-50 border border-cream-hairline flex items-center justify-center shrink-0">
+                <ClipboardCheck size={15} className="text-accent-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-ink-900 tracking-tight">{t("check_entry_title")}</p>
+                <p className="text-[10.5px] text-ink-500 leading-tight">
+                  {checkDays === null
+                    ? t("check_entry_never")
+                    : checkDays === 0
+                      ? t("check_entry_today")
+                      : checkDays === 1
+                        ? t("check_entry_days_one")
+                        : t("check_entry_days").replace("{d}", String(checkDays))}
+                </p>
+              </div>
+              <ChevronRight size={15} className="text-ink-300 shrink-0" />
+            </button>
+            {needsActionCount > 0 && (
+              <button
+                onClick={() => navigate("/inbox", { state: { tab: "action" } })}
+                className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left active:bg-cream-soft transition-colors"
+              >
+                <span className="w-8 h-8 rounded-lg bg-warn-50 border border-cream-hairline flex items-center justify-center shrink-0 text-warn-700 text-[12px] font-bold tabular-nums">
+                  {needsActionCount > 9 ? "9+" : needsActionCount}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
+                    {needsActionCount === 1
+                      ? t("home_action_one")
+                      : t("home_action_many").replace("{n}", String(needsActionCount))}
+                  </p>
+                  <p className="text-[10.5px] text-ink-500 leading-tight">{t("home_action_sub")}</p>
+                </div>
+                <ChevronRight size={15} className="text-ink-300 shrink-0" />
+              </button>
+            )}
+          </div>
+        )}
+
         {/* "This week" — every KNOWN obligation in the next 7 days, merged:
             EMIs, kameti rounds, recurring charges, bills, card due days.
             The forward view no bank-sync app can match, from data Hisaab
@@ -1382,6 +1467,15 @@ export function HomePage() {
         open={!!selectedTxn}
         transaction={selectedTxn}
         onClose={() => setSelectedTxn(null)}
+      />
+      <HisaabCheckModal
+        open={showCheck}
+        onClose={() => setShowCheck(false)}
+        currency={meraPrimary?.currency ?? primaryCurrency}
+        receivable={meraPrimary?.receivable ?? 0}
+        payable={meraPrimary?.payable ?? 0}
+        thisWeekRows={thisWeekRows}
+        onStamped={(iso) => setCheckStampIso(iso)}
       />
     </main>
   );

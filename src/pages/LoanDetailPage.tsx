@@ -31,6 +31,7 @@ import { SettleLinkedLoanModal } from './SettleLinkedLoanModal';
 import { resolvePersonName } from '../lib/resolvePersonName';
 import { getOldestIsoDate } from '../lib/paymentReminders';
 import { uncoveredToPaidIds } from '../lib/emiCoverage';
+import { buildInternalNote } from '../lib/internalNotes';
 import type { EmiSchedule, Transaction, SettlementRequest } from '../db';
 
 export function LoanDetailPage() {
@@ -178,7 +179,9 @@ export function LoanDetailPage() {
     if (!ok) return;
     setSettlingNoMoney(true);
     try {
-      await applyRepayment(loan.id, loan.remainingAmount, t('loan_settle_nomoney_note'));
+      // writeOff meta: this record is forgiveness, not cash — money views
+      // (flex budget's fixed, weekly flow) must not count it as spending.
+      await applyRepayment(loan.id, loan.remainingAmount, buildInternalNote(t('loan_settle_nomoney_note'), { writeOff: '1' }));
       toast.show({ type: 'success', title: t('loan_settle_nomoney_done') });
       refreshLoanDetail();
     } catch (err) {

@@ -2699,6 +2699,97 @@ const S = {
   // Add loan modal
   amount_label: { ur: "Raqam", en: "Amount" },
   cash_advance_none: { ur: "Koi credit card nahi", en: "No credit card" },
+
+  // ── Flex budget ("Bacha kya hai?") ──
+  flex_title: { ur: "Bacha kya hai?", en: "What's left?" },
+  flex_setup_desc: {
+    ur: "Mahana income batao — EMI, kameti aur recurring nikaal kar hum dikhayenge ke asal mein kitna free hai.",
+    en: "Enter your monthly income — we subtract EMIs, kameti and recurring bills to show what's truly free to spend.",
+  },
+  flex_set_income: { ur: "Income set karo", en: "Set income" },
+  flex_income_label: { ur: "Mahana income", en: "Monthly income" },
+  flex_income_hint: {
+    ur: "Sirf aap ke phone par save hota hai — kabhi bhi badal do.",
+    en: "Saved only on this phone — change it anytime.",
+  },
+  flex_left_of: { ur: "{total} flex mein se", en: "of {total} flex" },
+  flex_income_word: { ur: "Income", en: "Income" },
+  flex_spent_word: { ur: "Kharch", en: "Spent" },
+  flex_part_recurring: { ur: "Recurring", en: "Recurring" },
+  flex_low_hint: { ur: "Thora bacha hai — aaram se.", en: "Running low — go easy." },
+  flex_out_hint: { ur: "Is mahine ka flex khatam.", en: "Flex is used up for this month." },
+  flex_save_income: { ur: "Save karo", en: "Save" },
+  flex_remove: { ur: "Income hatao", en: "Remove income" },
+  flex_edit_income: { ur: "Income badlo", en: "Edit income" },
+
+  // ── Weekly "Hisaab check" ritual ──
+  check_entry_title: { ur: "Hisaab check", en: "Hisaab check" },
+  check_entry_never: { ur: "5 minute — pehla check karo", en: "5 minutes — do your first check" },
+  check_entry_today: { ur: "Aaj ho gaya ✓", en: "Done today ✓" },
+  check_entry_days: { ur: "{d} din pehle kiya tha", en: "Last done {d} days ago" },
+  check_step_flow: { ur: "Lena-dena", en: "Flow" },
+  check_step_people: { ur: "Log", en: "People" },
+  check_step_week: { ur: "Hafta", en: "Week" },
+  check_step_action: { ur: "Kaam", en: "Action" },
+  check_flow_title: { ur: "Pichle 7 din", en: "The last 7 days" },
+  check_flow_sub: {
+    ur: "Sirf asal aana-jaana — transfer aur shuffling nahi ginte.",
+    en: "Real money in and out — transfers and shuffling don't count.",
+  },
+  check_in_label: { ur: "Aaya", en: "Came in" },
+  check_out_label: { ur: "Gaya", en: "Went out" },
+  check_people_title: { ur: "Log aur udhaar", en: "People & udhaar" },
+  check_receivable: { ur: "Lena hai", en: "To receive" },
+  check_payable: { ur: "Dena hai", en: "To pay" },
+  check_since_last: { ur: "pichle check se", en: "since last check" },
+  check_first_time: {
+    ur: "Pehla check — agli baar farq bhi nazar aayega.",
+    en: "First check — next time you'll see what changed.",
+  },
+  check_no_change: { ur: "Pichle check se koi tabdeeli nahi.", en: "No change since your last check." },
+  check_week_title: { ur: "Aane wala hafta", en: "The week ahead" },
+  check_week_clear: { ur: "Is hafte kuch due nahi — sukoon.", en: "Nothing due this week — sukoon." },
+  check_action_title: { ur: "Aik kaam", en: "One action" },
+  check_action_body: {
+    ur: "{name} ne {amount} dena hai — {days} din se chal raha hai.",
+    en: "{name} owes you {amount} — open for {days} days.",
+  },
+  check_action_remind: { ur: "WhatsApp par yaad dilao", en: "Remind on WhatsApp" },
+  check_action_none: {
+    ur: "Koi purana udhaar nahi latak raha — sab fresh hai.",
+    en: "No long-standing udhaar — everything's fresh.",
+  },
+  check_done_title: { ur: "Hisaab saaf hai ✓", en: "All squared up ✓" },
+  check_done_body: { ur: "Check ho gaya. Agle hafte milte hain.", en: "Check done. See you next week." },
+  check_next: { ur: "Aage", en: "Next" },
+  check_back: { ur: "Wapas", en: "Back" },
+  check_finish: { ur: "Ho gaya", en: "Done" },
+
+  // ── Needs-action queue (Home row + Inbox "To-do" tab) ──
+  home_action_one: { ur: "1 kaam pending", en: "1 thing needs action" },
+  home_action_many: { ur: "{n} kaam pending", en: "{n} things need action" },
+  home_action_sub: { ur: "EMI, recurring, kameti — sab aik jagah", en: "EMIs, recurring, kameti — one queue" },
+  ltr_tab_action: { ur: "Kaam", en: "To-do" },
+  ltr_action_hint: {
+    ur: "Jo cheezein aap ke haath ka intezaar kar rahi hain — kar do, list saaf.",
+    en: "Things waiting on you — do them and the list clears.",
+  },
+  inbox_empty_action_title: { ur: "Sab clear hai ✓", en: "All clear ✓" },
+  inbox_empty_action_desc: { ur: "Koi kaam pending nahi. Hisaab saaf.", en: "Nothing needs your action. Hisaab saaf." },
+  check_entry_days_one: { ur: "1 din pehle kiya tha", en: "Last done 1 day ago" },
+  // Broad on purpose: the bucket also holds schedule-less udhaar repayments.
+  flex_part_emi: { ur: "Qarz/EMI", en: "Loans/EMI" },
+  // To-do card text (structured content from inboxInfo.ts, worded here).
+  todo_emi_title_one: { ur: "EMI reh gayi · {name}", en: "EMI overdue · {name}" },
+  todo_emi_title_many: { ur: "{n} EMIs reh gayin · {name}", en: "{n} EMIs overdue · {name}" },
+  todo_emi_body_pay: { ur: "{amount} dena hai · {d} din late", en: "{amount} to pay · {d}d late" },
+  todo_emi_body_collect: { ur: "{amount} lena hai · {d} din late", en: "{amount} to collect · {d}d late" },
+  todo_recurring_title: { ur: "{label} ki date nikal gayi", en: "{label} missed its date" },
+  todo_recurring_body: { ur: "{amount} · due tha {date}", en: "{amount} · was due {date}" },
+  todo_kameti_title_one: { ur: "{name} · round {r} ki collection", en: "{name} · round {r} collection" },
+  todo_kameti_title_many: { ur: "{name} · {k} rounds adhoore", en: "{name} · {k} rounds incomplete" },
+  todo_kameti_body: { ur: "{paid}/{n} ne diya · {amount} fi member", en: "{paid}/{n} paid · {amount} each" },
+  todo_uncat_title: { ur: "Bina category kharcha", en: "Uncategorised expense" },
 } as const;
 
 type Key = keyof typeof S;

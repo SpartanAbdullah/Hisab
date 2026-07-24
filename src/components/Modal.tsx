@@ -47,13 +47,21 @@ export function Modal({ open, onClose, title, children, footer, confirmClose }: 
       // the enter/exit transition, which is the whole point.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setShow(false);
-      document.body.style.overflow = '';
       closeModal(closeHandler);
+      // Release the body scroll lock only when NO modal remains open — a
+      // nested sheet closing (e.g. the WhatsApp reminder over the Hisaab
+      // check) must not unlock the page behind its still-open parent. The
+      // count check also guards this branch's run on closed-sibling mounts.
+      if (useUIStore.getState().modalCount === 0) {
+        document.body.style.overflow = '';
+      }
     }
     return () => {
       if (open) {
-        document.body.style.overflow = '';
         closeModal(closeHandler);
+        if (useUIStore.getState().modalCount === 0) {
+          document.body.style.overflow = '';
+        }
       }
     };
   }, [open, openModal, closeModal]);

@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus, BellRing } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus, BellRing, HandCoins, Tag, Users, ListChecks } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
@@ -13,10 +13,15 @@ import { useRecurringStore } from '../stores/recurringStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { useNotificationStore } from '../stores/notificationStore';
-import { buildInboxInfoItems, isInboxInfoNotification, type InfoItem, type InfoIcon as InfoIconKind } from '../lib/inboxInfo';
+import { useLoanStore } from '../stores/loanStore';
+import { useEmiStore } from '../stores/emiStore';
+import { useCommitteeStore } from '../stores/committeeStore';
+import { buildInboxActionItems, buildInboxInfoItems, isInboxInfoNotification, type ActionContent, type ActionItem, type InfoItem, type InfoIcon as InfoIconKind } from '../lib/inboxInfo';
+import type { RecurringDueDetail } from '../lib/recurringRunner';
 import { buildWhatsAppUrl } from '../lib/whatsappReminder';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
+import { EditTransactionModal } from '../components/EditTransactionModal';
 import { formatMoney } from '../lib/constants';
 import { approxOther, plausibilityCheck } from '../lib/currencyValidation';
 import { friendlyLinkedError } from '../lib/linkedErrorMap';
@@ -25,9 +30,9 @@ import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { EmptyState } from '../components/EmptyState';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
-import type { LinkedRequest, SettlementRequest } from '../db';
+import type { LinkedRequest, SettlementRequest, Transaction } from '../db';
 
-type Tab = 'incoming' | 'outgoing' | 'info';
+type Tab = 'incoming' | 'outgoing' | 'info' | 'action';
 
 type InboxItem =
   | { kind: 'linked'; item: LinkedRequest }
@@ -58,18 +63,34 @@ export function InboxPage() {
   const notifications = useNotificationStore((s) => s.notifications);
   const loadNotifications = useNotificationStore((s) => s.loadNotifications);
   const markNotificationRead = useNotificationStore((s) => s.markRead);
+  // "To-do" tab sources — raw slices only, filtering in useMemo (React #185).
+  const loans = useLoanStore((s) => s.loans);
+  const emiSchedules = useEmiStore((s) => s.schedules);
+  const committees = useCommitteeStore((s) => s.committees);
+  const committeePayments = useCommitteeStore((s) => s.payments);
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const t = useT();
 
-  const [tab, setTab] = useState<Tab>('incoming');
+  // An explicit destination (Home's "N kaam pending" row navigates with
+  // state.tab) beats the smart-landing heuristic — the user was promised a
+  // specific queue and must land on it.
+  const tabHint = (location.state as { tab?: Tab } | null)?.tab;
+  const [tab, setTab] = useState<Tab>(tabHint ?? 'incoming');
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Uncategorised-expense actions resolve in place via the edit sheet.
+  const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
 
   const load = useCallback(async () => {
     await Promise.all([
       loadRequests(), loadSettlements(), loadPersons(),
       // Info-tab sources (cheap; most are already warm from app boot).
       loadBudgets(), loadTransactions(), loadTemplates(), loadAccounts(), loadExpenses(), loadNotifications(),
+      // "To-do" tab sources (same story — warm from boot / Home).
+      useLoanStore.getState().loadLoans(),
+      useEmiStore.getState().loadSchedules(),
+      useCommitteeStore.getState().loadAll(),
     ]);
   }, [loadRequests, loadSettlements, loadPersons, loadBudgets, loadTransactions, loadTemplates, loadAccounts, loadExpenses, loadNotifications]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
@@ -137,25 +158,77 @@ export function InboxPage() {
   // never clear (that was the "stays at 1 after reading" bug).
   const infoCount = infoNotifs.length;
 
+  // "To-do" tab: every item clears itself when the user does the thing, so
+  // (unlike Info) a derived count IS legitimate here — it can reach zero.
+  const cardFundedLoanIds = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const txn of transactions) {
+      if (txn.type === 'loan_taken' && txn.relatedLoanId && txn.sourceAccountId) {
+        map.set(txn.relatedLoanId, txn.sourceAccountId);
+      }
+    }
+    return map;
+  }, [transactions]);
+  const actionItems = useMemo(
+    () =>
+      buildInboxActionItems({
+        loans,
+        schedules: emiSchedules,
+        transactions,
+        templates,
+        committees,
+        committeePayments,
+        accounts,
+        cardFundedLoanIds,
+        today: new Date(),
+      }),
+    [loans, emiSchedules, transactions, templates, committees, committeePayments, accounts, cardFundedLoanIds],
+  );
+  const actionCount = actionItems.length;
+
+  // One-tap resolve: navigate to the owning page, open the edit sheet, or
+  // re-fire the globally-mounted recurring prompt (idempotent via its
+  // expansionKey stamp), depending on what the item needs.
+  const resolveAction = (item: ActionItem) => {
+    const r = item.resolve;
+    if (r.kind === 'navigate') {
+      navigate(r.href);
+    } else if (r.kind === 'editTxn') {
+      const txn = transactions.find((x) => x.id === r.txnId);
+      if (txn) setSelectedTxn(txn);
+    } else {
+      const tpl = templates.find((x) => x.id === r.templateId);
+      if (tpl) {
+        window.dispatchEvent(
+          new CustomEvent<RecurringDueDetail>('hisaab:recurring-due', {
+            detail: { templates: [tpl], todayIso: new Date().toISOString().slice(0, 10) },
+          }),
+        );
+      }
+    }
+  };
+
   // Smart landing: once data is loaded, jump to whichever tab has the most
-  // active items. Tie-break order Incoming > Info > Outgoing (action items
-  // first). Runs once via a ref so a later store refresh — or the user's own
-  // tab tap — is never overridden.
-  const didAutoSelect = useRef(false);
+  // active items. Tie-break order Incoming > To-do > Info > Outgoing (cross-
+  // user approvals first, then things waiting on the user). Runs once via a
+  // ref so a later store refresh — or the user's own tab tap — is never
+  // overridden. An explicit tab hint from the caller disables it entirely.
+  const didAutoSelect = useRef(!!tabHint);
   useEffect(() => {
     if (didAutoSelect.current || loadStatus !== 'ready') return;
     didAutoSelect.current = true;
     const counts: Record<Tab, number> = {
       incoming: incomingPendingCount,
+      action: actionCount,
       info: infoCount,
       outgoing: outgoingPendingCount,
     };
     let best: Tab = 'incoming';
-    for (const candidate of ['incoming', 'info', 'outgoing'] as Tab[]) {
+    for (const candidate of ['incoming', 'action', 'info', 'outgoing'] as Tab[]) {
       if (counts[candidate] > counts[best]) best = candidate;
     }
     if (counts[best] > 0) setTab(best);
-  }, [loadStatus, incomingPendingCount, infoCount, outgoingPendingCount]);
+  }, [loadStatus, incomingPendingCount, actionCount, infoCount, outgoingPendingCount]);
 
   // Phase H4: surface the actual error in each catch instead of swallowing
   // it. Previously every failure showed the same generic toast title, which
@@ -386,15 +459,17 @@ export function InboxPage() {
               incomingCount={incomingPendingCount}
               outgoingCount={outgoingPendingCount}
               infoCount={infoCount}
+              actionCount={actionCount}
               incomingLabel={t('ltr_tab_incoming')}
               outgoingLabel={t('ltr_tab_outgoing')}
               infoLabel={t('ltr_tab_info')}
+              actionLabel={t('ltr_tab_action')}
             />
           }
         />
         <div className="px-5 pb-7">
           <p className="text-white text-[16px] font-medium leading-snug max-w-[300px]">
-            {tab === 'incoming' ? t('ltr_incoming_hint') : tab === 'outgoing' ? t('ltr_outgoing_hint') : t('ltr_info_hint')}
+            {tab === 'incoming' ? t('ltr_incoming_hint') : tab === 'outgoing' ? t('ltr_outgoing_hint') : tab === 'action' ? t('ltr_action_hint') : t('ltr_info_hint')}
           </p>
         </div>
       </NavyHero>
@@ -409,7 +484,26 @@ export function InboxPage() {
           />
         )}
 
-        {tab === 'info' ? (
+        {tab === 'action' ? (
+          loadStatus === 'loading' && actionItems.length === 0 ? (
+            <ListSkeleton rows={3} withAvatar={false} />
+          ) : actionItems.length === 0 ? (
+            loadStatus === 'ready' ? (
+              <EmptyState
+                icon={ListChecks}
+                tone="receive"
+                title={t('inbox_empty_action_title')}
+                description={t('inbox_empty_action_desc')}
+              />
+            ) : null
+          ) : (
+            <div className="space-y-2.5">
+              {actionItems.map((it) => (
+                <ActionCard key={it.id} item={it} onResolve={() => resolveAction(it)} />
+              ))}
+            </div>
+          )
+        ) : tab === 'info' ? (
           loadStatus === 'loading' && infoItems.length === 0 && infoNotifs.length === 0 ? (
             <ListSkeleton rows={3} withAvatar={false} />
           ) : infoItems.length === 0 && infoNotifs.length === 0 ? (
@@ -522,6 +616,12 @@ export function InboxPage() {
           </div>
         )}
       </div>
+
+      <EditTransactionModal
+        open={!!selectedTxn}
+        transaction={selectedTxn}
+        onClose={() => setSelectedTxn(null)}
+      />
     </main>
   );
 }
@@ -545,7 +645,8 @@ function Pill({
   return (
     <button
       onClick={() => onSelect(value)}
-      className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors flex items-center gap-1 ${
+      data-pill={value}
+      className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors flex items-center gap-1 ${
         isActive ? 'bg-white text-ink-900' : 'text-white/70'
       }`}
     >
@@ -569,22 +670,37 @@ function PillToggle({
   incomingCount,
   outgoingCount,
   infoCount,
+  actionCount,
   incomingLabel,
   outgoingLabel,
   infoLabel,
+  actionLabel,
 }: {
   tab: Tab;
   setTab: (t: Tab) => void;
   incomingCount: number;
   outgoingCount: number;
   infoCount: number;
+  actionCount: number;
   incomingLabel: string;
   outgoingLabel: string;
   infoLabel: string;
+  actionLabel: string;
 }) {
+  // Keep the selected pill visible: with four pills the cluster can scroll,
+  // and smart-landing may select a tab whose pill sits behind the fold.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = wrapRef.current?.querySelector<HTMLElement>(`[data-pill="${tab}"]`);
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }, [tab]);
   return (
-    <div className="bg-white/10 rounded-full p-0.5 flex items-center">
+    // Four pills can outgrow a narrow phone next to the back button — the
+    // cluster caps its width and scrolls sideways (scrollbar hidden, house
+    // convention) instead of pushing the TopBar off-screen.
+    <div ref={wrapRef} className="bg-white/10 rounded-full p-0.5 flex items-center max-w-[calc(100vw-96px)] overflow-x-auto no-scrollbar">
       <Pill value="incoming" label={incomingLabel} count={incomingCount} activeTab={tab} onSelect={setTab} />
+      <Pill value="action" label={actionLabel} count={actionCount} activeTab={tab} onSelect={setTab} />
       <Pill value="info" label={infoLabel} count={infoCount} activeTab={tab} onSelect={setTab} />
       <Pill value="outgoing" label={outgoingLabel} count={outgoingCount} activeTab={tab} onSelect={setTab} />
     </div>
@@ -604,6 +720,70 @@ const INFO_TONE: Record<InfoItem['tone'], { wrap: string; icon: string }> = {
   info: { wrap: 'bg-info-50', icon: 'text-info-600' },
   accent: { wrap: 'bg-accent-50', icon: 'text-accent-600' },
 };
+
+// Icon + tone derive from the structured content kind; the words come from
+// t() keys here (the lib stays i18n-free — thisWeek.ts pattern).
+const ACTION_META: Record<ActionContent['kind'], { icon: typeof AlertTriangle; tone: InfoItem['tone'] }> = {
+  emi: { icon: HandCoins, tone: 'pay' },
+  recurring: { icon: Repeat, tone: 'warn' },
+  kameti: { icon: Users, tone: 'info' },
+  uncategorized: { icon: Tag, tone: 'accent' },
+};
+
+// Same chrome as InfoCard, but ALWAYS tappable — every item's tap is the
+// one action that clears it (open the loan, file the expense, post the
+// charge, tick the round).
+function ActionCard({ item, onResolve }: { item: ActionItem; onResolve: () => void }) {
+  const t = useT();
+  const c = item.content;
+  const meta = ACTION_META[c.kind];
+  const Icon = meta.icon;
+  const tone = INFO_TONE[meta.tone];
+  let title: string;
+  let body: string;
+  if (c.kind === 'emi') {
+    title = (c.count === 1
+      ? t('todo_emi_title_one')
+      : t('todo_emi_title_many').replace('{n}', String(c.count))
+    ).replace('{name}', c.person);
+    body = (c.direction === 'pay' ? t('todo_emi_body_pay') : t('todo_emi_body_collect'))
+      .replace('{amount}', formatMoney(c.total, c.currency))
+      .replace('{d}', String(c.daysLate));
+  } else if (c.kind === 'recurring') {
+    title = t('todo_recurring_title').replace('{label}', c.label);
+    body = t('todo_recurring_body')
+      .replace('{amount}', formatMoney(c.amount, c.currency))
+      .replace('{date}', format(new Date(`${c.dueDate}T12:00:00`), 'MMM d'));
+  } else if (c.kind === 'kameti') {
+    title = (c.incompleteRounds > 1
+      ? t('todo_kameti_title_many').replace('{k}', String(c.incompleteRounds))
+      : t('todo_kameti_title_one').replace('{r}', String(c.round))
+    ).replace('{name}', c.name);
+    body = t('todo_kameti_body')
+      .replace('{paid}', String(c.paid))
+      .replace('{n}', String(c.members))
+      .replace('{amount}', formatMoney(c.amount, c.currency));
+  } else {
+    title = t('todo_uncat_title');
+    body = `${formatMoney(c.amount, c.currency)} · ${format(new Date(c.dateIso), 'MMM d')}${c.note ? ` · ${c.note}` : ''}`;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onResolve}
+      className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
+    >
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tone.wrap}`}>
+        <Icon size={17} className={tone.icon} strokeWidth={2} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-ink-900 tracking-tight truncate">{title}</p>
+        <p className="text-[11.5px] text-ink-500 mt-0.5 truncate">{body}</p>
+      </div>
+      <ChevronRight size={15} className="text-ink-300 shrink-0" />
+    </button>
+  );
+}
 
 function InfoCard({ item, onOpen }: { item: InfoItem; onOpen: () => void }) {
   const Icon = INFO_ICON[item.icon];

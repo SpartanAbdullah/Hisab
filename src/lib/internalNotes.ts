@@ -18,6 +18,10 @@ export interface InternalNoteMeta {
   // Recurring expansion idempotency key: `${templateId}@${dueDate}`. A due
   // charge posts at most once per (template, due date) across retries/devices.
   recurringExpansion?: string;
+  // "Settle — no money moved": this repayment row records a write-off /
+  // forgiveness, not cash. Money views (flex budget, week flow) must skip it,
+  // unlike other ledger-only repayment rows which DO stand in for real money.
+  writeOff?: string;
 }
 
 export interface ParsedInternalNote {

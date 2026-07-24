@@ -7,6 +7,11 @@ import { ListSkeleton } from '../components/ListSkeleton';
 import { Modal } from '../components/Modal';
 import { useBudgetStore, computeBudgetUsages } from '../stores/budgetStore';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useLoanStore } from '../stores/loanStore';
+import { useEmiStore } from '../stores/emiStore';
+import { useCommitteeStore } from '../stores/committeeStore';
+import { useRecurringStore } from '../stores/recurringStore';
+import { computeFlexBudget, FLEX_INCOME_KEY } from '../lib/flexBudget';
 import { EXPENSE_CATEGORIES, formatMoney } from '../lib/constants';
 import { useCategoryOptions } from '../lib/mergedCategories';
 import { SUPPORTED_CURRENCIES, type Currency, type Budget } from '../db';
@@ -21,6 +26,11 @@ export function BudgetsPage() {
   const loadBudgets = useBudgetStore((s) => s.loadBudgets);
   const transactions = useTransactionStore((s) => s.transactions);
   const loadTransactions = useTransactionStore((s) => s.loadTransactions);
+  // Flex-budget sources — raw slices only, filtering in useMemo (React #185).
+  const loans = useLoanStore((s) => s.loans);
+  const emiSchedules = useEmiStore((s) => s.schedules);
+  const committees = useCommitteeStore((s) => s.committees);
+  const templates = useRecurringStore((s) => s.templates);
 
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Budget | null>(null);
@@ -28,6 +38,13 @@ export function BudgetsPage() {
   const load = useCallback(async () => {
     const tasks: Promise<unknown>[] = [loadBudgets()];
     if (transactions.length === 0) tasks.push(loadTransactions());
+    // Flex-budget sources: cheap reads, usually warm from app boot / Home.
+    tasks.push(
+      useLoanStore.getState().loadLoans(),
+      useEmiStore.getState().loadSchedules(),
+      useCommitteeStore.getState().loadAll(),
+      useRecurringStore.getState().loadTemplates(),
+    );
     await Promise.all(tasks);
   }, [loadBudgets, loadTransactions, transactions.length]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
@@ -56,6 +73,49 @@ export function BudgetsPage() {
       .map(([currency, v]) => ({ currency, budget: v.budget, spent: v.spent, left: v.budget - v.spent }))
       .sort((a, b) => (a.currency === primaryCurrency ? -1 : b.currency === primaryCurrency ? 1 : b.budget - a.budget));
   }, [usages, primaryCurrency]);
+
+  // "Bacha kya hai?" — the one-number flex budget. Income is ENTERED (variable
+  // income is the market norm); fixed commitments come from first-class objects:
+  // EMIs, kameti rounds, recurring templates. Primary-currency scoped.
+  const [flexIncome, setFlexIncome] = useState<number | null>(() => readFlexIncome(primaryCurrency));
+  const [showIncomeModal, setShowIncomeModal] = useState(false);
+  const [flexNow] = useState(() => new Date());
+  const flex = useMemo(() => {
+    if (flexIncome === null) return null;
+    return computeFlexBudget({
+      income: flexIncome,
+      currency: primaryCurrency,
+      loans,
+      schedules: emiSchedules,
+      committees,
+      templates,
+      transactions,
+      today: flexNow,
+    });
+  }, [flexIncome, primaryCurrency, loans, emiSchedules, committees, templates, transactions, flexNow]);
+  // Breakdown line without repeating the currency four times.
+  const fmtN = (n: number) => Math.round(n).toLocaleString();
+  const flexBreakdown = flex
+    ? [
+        `${t('flex_income_word')} ${fmtN(flex.income)}`,
+        // Broad label: this bucket holds schedule-less udhaar repayments too,
+        // so a bare "EMI" would claim something the user knows is false.
+        ...(flex.fixedParts.emi > 0.005 ? [`${t('flex_part_emi')} −${fmtN(flex.fixedParts.emi)}`] : []),
+        ...(flex.fixedParts.kameti > 0.005 ? [`Kameti −${fmtN(flex.fixedParts.kameti)}`] : []),
+        ...(flex.fixedParts.recurring > 0.005 ? [`${t('flex_part_recurring')} −${fmtN(flex.fixedParts.recurring)}`] : []),
+        `${t('flex_spent_word')} −${fmtN(flex.flexSpent)}`,
+      ].join(' · ')
+    : '';
+  const flexBarColor = flex?.state === 'red' ? 'bg-pay-600' : flex?.state === 'yellow' ? 'bg-warn-600' : 'bg-receive-600';
+  const flexBarPct = flex && flex.flexTotal > 0
+    ? Math.min(100, Math.max(0, (flex.flexSpent / flex.flexTotal) * 100))
+    : 100;
+
+  const saveFlexIncome = (value: number | null) => {
+    writeFlexIncome(primaryCurrency, value);
+    setFlexIncome(value);
+    setShowIncomeModal(false);
+  };
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -107,6 +167,61 @@ export function BudgetsPage() {
               </span>
             )}
           </div>
+        )}
+
+        {/* "Bacha kya hai?" — income − fixed commitments − free spending,
+            one honest number with a traffic light. Setup state asks for
+            income once; the pencil re-opens the editor. */}
+        {loadStatus === 'ready' && (
+          flex ? (
+            <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                  {t('flex_title')}
+                </p>
+                <button
+                  onClick={() => setShowIncomeModal(true)}
+                  aria-label={t('flex_edit_income')}
+                  className="p-2 -m-2 rounded-full active:scale-95 transition-transform"
+                >
+                  <Pencil size={13} className="text-ink-400" />
+                </button>
+              </div>
+              <div className="mt-1.5 flex items-baseline justify-between gap-2">
+                <span className={`text-[24px] font-bold tabular-nums tracking-tight ${
+                  flex.state === 'red' ? 'text-pay-text' : flex.state === 'yellow' ? 'text-warn-700' : 'text-ink-900'
+                }`}>
+                  {flex.remaining < 0 ? '−' : ''}{formatMoney(Math.abs(flex.remaining), primaryCurrency)}
+                </span>
+                <span className="text-[11px] text-ink-500 tabular-nums">
+                  {t('flex_left_of').replace('{total}', formatMoney(Math.max(flex.flexTotal, 0), primaryCurrency))}
+                </span>
+              </div>
+              <div className="relative mt-2.5 h-2 rounded-full bg-cream-soft overflow-hidden">
+                <div className={`h-full ${flexBarColor} transition-all`} style={{ width: `${flexBarPct}%` }} />
+              </div>
+              <p className="mt-2 text-[10.5px] text-ink-500 tabular-nums leading-relaxed">
+                {flexBreakdown}
+              </p>
+              {flex.state !== 'green' && (
+                <p className={`mt-1.5 text-[11px] font-semibold ${flex.state === 'red' ? 'text-pay-text' : 'text-warn-700'}`}>
+                  {flex.state === 'red' ? t('flex_out_hint') : t('flex_low_hint')}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+              <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                {t('flex_title')}
+              </p>
+              <p className="mt-1.5 text-[12px] text-ink-600 leading-relaxed">
+                {t('flex_setup_desc')}
+              </p>
+              <button onClick={() => setShowIncomeModal(true)} className="mt-3 cta-secondary w-full">
+                {t('flex_set_income')}
+              </button>
+            </div>
+          )
         )}
 
         {loadStatus === 'ready' && leftSummary.length > 0 && (
@@ -168,7 +283,90 @@ export function BudgetsPage() {
         budget={editing}
         onClose={() => setEditing(null)}
       />
+
+      <FlexIncomeModal
+        open={showIncomeModal}
+        currency={primaryCurrency}
+        current={flexIncome}
+        onSave={saveFlexIncome}
+        onClose={() => setShowIncomeModal(false)}
+      />
     </main>
+  );
+}
+
+// Income lives ONLY in localStorage, keyed per currency so switching the
+// primary currency never shows another wallet's figure. Storage-off devices
+// simply re-ask each session.
+function readFlexIncome(currency: string): number | null {
+  try {
+    const raw = localStorage.getItem(FLEX_INCOME_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const val = parsed?.[currency];
+    return typeof val === 'number' && Number.isFinite(val) && val > 0 ? val : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeFlexIncome(currency: string, value: number | null): void {
+  try {
+    const raw = localStorage.getItem(FLEX_INCOME_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    if (value === null) delete parsed[currency];
+    else parsed[currency] = value;
+    localStorage.setItem(FLEX_INCOME_KEY, JSON.stringify(parsed));
+  } catch {
+    // Storage unavailable — the card just won't persist across sessions.
+  }
+}
+
+function FlexIncomeModal({ open, currency, current, onSave, onClose }: {
+  open: boolean;
+  currency: Currency | string;
+  current: number | null;
+  onSave: (value: number | null) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    if (open) setDraft(current !== null ? String(current) : '');
+  }, [open, current]);
+
+  const numeric = Number(draft);
+  const valid = Number.isFinite(numeric) && numeric > 0;
+
+  return (
+    <Modal open={open} onClose={onClose} title={t('flex_title')}>
+      <div className="space-y-4">
+        <p className="text-[12px] text-ink-500 leading-relaxed">{t('flex_income_hint')}</p>
+        <div>
+          <label className="form-label">{t('flex_income_label')} ({currency})</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="0"
+            className="input-field tabular-nums"
+          />
+        </div>
+        <button onClick={() => onSave(numeric)} disabled={!valid} className="cta-primary disabled:opacity-50">
+          {t('flex_save_income')}
+        </button>
+        {current !== null && (
+          <button
+            onClick={() => onSave(null)}
+            className="w-full text-center text-[12px] text-ink-500 min-h-[44px] font-medium"
+          >
+            {t('flex_remove')}
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }
 
