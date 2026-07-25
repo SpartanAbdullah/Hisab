@@ -20,7 +20,9 @@ import { useAccountStore } from './stores/accountStore';
 import { runRecurringExpansion } from './lib/recurringRunner';
 import { runPersonBackfillIfNeeded } from './lib/migrations/backfillPersons';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
-import { startGlobalRealtime, stopGlobalRealtime } from './lib/realtime';
+import { useContactLinkStore } from './stores/contactLinkStore';
+import { startGlobalRealtime, stopGlobalRealtime, resumeGlobalRealtime } from './lib/realtime';
+import { startPushRegistration, stopPushRegistration } from './lib/pushRegistration';
 import { supabase } from './lib/supabase';
 import { initNativeBridge } from './lib/nativeBridge';
 import { useT, useI18nStore } from './lib/i18n';
@@ -54,6 +56,7 @@ const KametiWitnessPage = lazy(() => import('./pages/KametiWitnessPage').then(m 
 const HisaabAIPage = lazy(() => import('./pages/HisaabAIPage').then(m => ({ default: m.HisaabAIPage })));
 const InsightDetailPage = lazy(() => import('./pages/InsightDetailPage').then(m => ({ default: m.InsightDetailPage })));
 const PublicInfoPage = lazy(() => import('./pages/PublicInfoPages').then(m => ({ default: m.PublicInfoPage })));
+const ConnectByCodePage = lazy(() => import('./pages/ConnectByCodePage').then(m => ({ default: m.ConnectByCodePage })));
 
 // Quick Entry is the only modal launched globally (from the BottomNav FAB).
 // The Add Goal / Add Loan / Add Upcoming Expense modals are owned by their
@@ -216,6 +219,37 @@ function AppContent() {
     return () => stopGlobalRealtime();
   }, [user?.id]);
 
+  // Resume: a backgrounded tab/app loses its realtime socket without any
+  // error surfacing, so coming back has to re-establish it AND refetch —
+  // a missed event leaves nothing behind to detect. Capacitor's own
+  // appStateChange hook does the same on native (see nativeBridge.ts);
+  // these listeners cover web, PWA, and the WebView's own visibility
+  // transitions.
+  useEffect(() => {
+    if (!user?.id) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') resumeGlobalRealtime();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', resumeGlobalRealtime);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', resumeGlobalRealtime);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [user?.id]);
+
+  // FCM registration. No-op on web and on a native build without Firebase
+  // config — see docs/push-notifications-setup.md.
+  useEffect(() => {
+    if (!user?.id) {
+      void stopPushRegistration();
+      return;
+    }
+    void startPushRegistration((to) => navigate(to));
+  }, [user?.id, navigate]);
+
   // Phase 3 offline scaffold: start the outbox runner once the user is
   // signed in. The runner is currently inert (dispatch handlers throw —
   // see src/lib/outboxRunner.ts) but the loop, backoff, and lifecycle
@@ -239,6 +273,11 @@ function AppContent() {
     });
     void useSettlementRequestStore.getState().loadRequests().catch((err) => {
       console.error('loadSettlements failed (non-fatal)', err);
+    });
+    // Connection asks ("X added you — add them back?"). Boot-loaded so the
+    // bell badge counts them before the user opens the Inbox.
+    void useContactLinkStore.getState().loadRequests().catch((err) => {
+      console.error('loadContactLinks failed (non-fatal)', err);
     });
     // Boot-load notifications so the bell badge + Inbox "Info" tab reflect
     // unread informational pings (e.g. "someone added you via your code")
@@ -411,6 +450,9 @@ function AppContent() {
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
+          {/* Scanned-QR landing (https://usehisaab.com/u/HSB-XXXXXX). Also
+              reachable from the phone's own camera app via App Links. */}
+          <Route path="/u/:code" element={<ConnectByCodePage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/accounts" element={mode === 'full_tracker' ? <AccountsPage /> : <Navigate to="/" replace />} />

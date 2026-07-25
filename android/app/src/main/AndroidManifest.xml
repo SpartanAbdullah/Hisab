@@ -47,6 +47,14 @@
                 <data android:scheme="https" />
                 <data android:host="usehisaab.com" />
                 <data android:pathPrefix="/join/" />
+                <!--
+                  Connect QR codes (https://usehisaab.com/u/HSB-XXXXXX). A QR
+                  scanned with the phone's own camera app hands the URL to the
+                  system; with this filter (once assetlinks.json verifies) it
+                  opens straight into Hisaab's connect screen instead of the
+                  browser. Same graceful fallback as /join/ until then.
+                -->
+                <data android:pathPrefix="/u/" />
             </intent-filter>
 
         </activity>
@@ -65,4 +73,21 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      In-app QR scanning for connecting two users face-to-face. Capacitor's
+      WebChromeClient turns the WebView's getUserMedia request into this
+      runtime permission prompt, so no scanner plugin is needed. Declared as
+      NOT required so the app still installs on camera-less devices — the
+      scanner degrades to "type the code instead".
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!--
+      POST_NOTIFICATIONS is merged in from @capacitor/local-notifications; it
+      covers FCM pushes too (one Android 13+ notification permission for the
+      whole app).
+    -->
 </manifest>

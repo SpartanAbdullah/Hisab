@@ -7,6 +7,7 @@ import { useLoanStore } from '../stores/loanStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { usePersonStore } from '../stores/personStore';
+import { useContactLinkStore } from '../stores/contactLinkStore';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Single long-lived channel per session. Re-initialised when the user changes.
@@ -133,6 +134,23 @@ export function startGlobalRealtime(userId: string) {
         scheduleReload('linkedSettlements', () => useSettlementRequestStore.getState().loadRequests());
       },
     )
+    // Connection consent — "someone added you, add them back?" on the
+    // receiving side, and the "waiting for them" status on the sending side.
+    // Both directions so an accept flips the sender's copy live.
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'contact_link_requests', filter: `to_user_id=eq.${userId}` },
+      () => {
+        scheduleReload('contactLinks', () => useContactLinkStore.getState().loadRequests());
+      },
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'contact_link_requests', filter: `from_user_id=eq.${userId}` },
+      () => {
+        scheduleReload('contactLinks', () => useContactLinkStore.getState().loadRequests());
+      },
+    )
     .subscribe();
 }
 
@@ -143,6 +161,49 @@ export function stopGlobalRealtime() {
     globalChannel = null;
     globalUserId = null;
   }
+}
+
+// ── Resume ────────────────────────────────────────────────────────────────
+// Android suspends the WebView when the app backgrounds, and the realtime
+// websocket dies with it — silently. Nothing used to notice, so a user who
+// came back to the app saw stale data until something else happened to
+// refetch, which is exactly the "close it and open it again before the
+// notification shows up" symptom. On every resume we now (a) re-establish
+// the socket if it isn't healthy, and (b) refetch the cross-user surfaces
+// unconditionally, because a missed event leaves no trace to detect.
+
+function channelIsHealthy(): boolean {
+  if (!globalChannel) return false;
+  // supabase-js exposes the phoenix channel state; 'joined' is the only
+  // state that actually delivers rows.
+  return globalChannel.state === 'joined';
+}
+
+/** Refetch everything a missed realtime event could have changed. Each
+ *  failure is isolated — a single cold store must not block the rest. */
+export async function refreshLiveData(): Promise<void> {
+  await Promise.all([
+    useNotificationStore.getState().loadNotifications().catch(() => {}),
+    useLinkedRequestStore.getState().loadRequests().catch(() => {}),
+    useSettlementRequestStore.getState().loadRequests().catch(() => {}),
+    useContactLinkStore.getState().loadRequests().catch(() => {}),
+    usePersonStore.getState().loadPersons().catch(() => {}),
+    useSplitStore.getState().loadGroups().catch(() => {}),
+  ]);
+}
+
+/** Call when the app returns to the foreground (or regains connectivity).
+ *  Cheap when the socket survived — one state check plus a refetch. */
+export function resumeGlobalRealtime(): void {
+  const userId = globalUserId;
+  if (!userId) return;
+  if (!channelIsHealthy()) {
+    // removeChannel + resubscribe under the same name. startGlobalRealtime
+    // early-returns when the ids match, so clear the marker first.
+    stopGlobalRealtime();
+    startGlobalRealtime(userId);
+  }
+  void refreshLiveData();
 }
 
 // Per-group subscription for GroupDetailPage — picks up other members joining

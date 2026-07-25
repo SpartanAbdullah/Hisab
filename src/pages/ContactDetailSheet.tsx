@@ -1,7 +1,12 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText, Merge } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText, Merge, QrCode, Clock } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { QRScanner } from '../components/QRScanner';
+import { formatConnectCode } from '../lib/connectQr';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
+import { useContactLinkStore } from '../stores/contactLinkStore';
+import { usePhoneDiscoveryStore, findPhoneMatch } from '../stores/phoneDiscoveryStore';
+import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -64,6 +69,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [phoneDraft, setPhoneDraft] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+
+  // Whether THEY have added this user back. A link is one-sided until the
+  // other person accepts, and the sheet used to claim otherwise.
+  const myId = useSupabaseAuthStore((s) => s.user?.id ?? '');
+  const contactLinks = useContactLinkStore((s) => s.requests);
+  const discover = usePhoneDiscoveryStore((s) => s.discover);
+  const discoveryResults = usePhoneDiscoveryStore((s) => s.results);
 
   const savePhone = async () => {
     if (!person) return;
@@ -92,8 +105,17 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       setArchiving(false);
       setEditingPhone(false);
       setShowStatement(false);
+      setShowScanner(false);
     }
   }, [open]);
+
+  // Check this contact's saved number against opted-in Hisaab accounts, so
+  // an unlinked contact who is already a user can be linked in one tap
+  // instead of a code exchange. Store-level dedupe makes a re-open free.
+  useEffect(() => {
+    if (!open || !person?.phone || person.linkedProfileId) return;
+    void discover([person.phone]);
+  }, [open, person?.phone, person?.linkedProfileId, discover]);
 
   // Compute the syncable / skipped split here so the card can show an
   // honest per-currency preview and surface the count of loans that
@@ -139,6 +161,17 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   if (!person) return null;
 
   const isLinked = !!person.linkedProfileId;
+  // Pending = I linked them, they haven't accepted. Everything still works
+  // from my side (I can record and send records); what's missing is that I
+  // don't appear in THEIR contacts yet.
+  const awaitingThem =
+    isLinked &&
+    contactLinks.some(
+      (r) => r.fromUserId === myId && r.toUserId === person.linkedProfileId && r.status === 'pending',
+    );
+  // Derived from the subscribed snapshot (not a store read) so the badge
+  // repaints on the render where the lookup landed.
+  const discoveryHit = isLinked ? null : findPhoneMatch(discoveryResults, person.phone);
   const trustStyle = trustScore ? trustLevelStyle(trustScore.level) : null;
   const relationshipBalances = (() => {
     const byCurrency = new Map<string, number>();
@@ -655,10 +688,27 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
               </div>
             )}
 
-            <p className="text-[11px] text-ink-500 leading-relaxed">
-              You're connected both ways &mdash; {person.name} was notified and you
-              appear in each other's contacts. Loans and splits you record can be shared.
-            </p>
+            {awaitingThem ? (
+              // Honest intermediate state. Claiming a mutual connection that
+              // the other side hasn't agreed to is exactly the confusion that
+              // made people ask "why can't they see me?".
+              <div className="rounded-2xl bg-warn-50 border border-cream-border p-3.5 flex items-start gap-2.5">
+                <Clock size={15} className="text-warn-600 shrink-0 mt-0.5" strokeWidth={2.2} />
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-ink-900">
+                    {t('clink_waiting').replace('{name}', person.name)}
+                  </p>
+                  <p className="text-[11px] text-ink-500 mt-0.5 leading-relaxed">
+                    {t('clink_waiting_desc')}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-ink-500 leading-relaxed">
+                {t('clink_mutual')} &mdash; {person.name} appears in your contacts and you
+                appear in theirs. Loans and splits you record can be shared.
+              </p>
+            )}
             <button
               onClick={handleUnlink}
               disabled={saving}
@@ -668,12 +718,43 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             </button>
           </div>
         ) : mode === 'idle' ? (
-          <button
-            onClick={() => setMode('entering')}
-            className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold shadow-md shadow-indigo-500/20"
-          >
-            Link to Hisaab user
-          </button>
+          <div className="space-y-2">
+            {/* One-tap link when this contact's saved number already resolved
+                to a Hisaab account — no code exchange needed at all. */}
+            {discoveryHit && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  setResolved({ profileId: discoveryHit.profileId, displayName: discoveryHit.displayName });
+                  setMode('resolved');
+                }}
+                className="w-full rounded-2xl bg-receive-50 border border-receive-100 px-3.5 py-3 flex items-center gap-2.5 text-left active:scale-[0.99] transition-transform disabled:opacity-50"
+              >
+                <VerifiedBadge size={16} title={t('disc_badge')} />
+                <span className="flex-1 min-w-0 text-[12px] text-ink-700 leading-snug">
+                  {t('disc_found').replace('{name}', discoveryHit.displayName)}
+                </span>
+                <span className="shrink-0 text-[11.5px] font-bold text-receive-text">
+                  {t('disc_link_cta')}
+                </span>
+              </button>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowScanner(true)}
+                className="flex-1 py-3 rounded-2xl bg-ink-900 text-white text-[12.5px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+              >
+                <QrCode size={14} strokeWidth={2.2} /> {t('qr_scan_cta')}
+              </button>
+              <button
+                onClick={() => setMode('entering')}
+                className="flex-1 py-3 rounded-2xl bg-cream-soft border border-cream-border text-ink-700 text-[12.5px] font-bold active:scale-[0.98] transition-transform"
+              >
+                {t('addc_link_code')}
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="space-y-3">
             <div>
@@ -697,8 +778,16 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 className="input-field"
               />
               <p className="text-[11px] text-ink-500 mt-1.5">
-                Ask them to copy their code from Settings &rarr; My Account.
+                Ask them to open their code in Contacts &rarr; Your connect code
+                &mdash; or scan the QR they show you.
               </p>
+              <button
+                type="button"
+                onClick={() => setShowScanner(true)}
+                className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] font-bold text-accent-600"
+              >
+                <QrCode size={13} strokeWidth={2.2} /> {t('qr_scan_cta')}
+              </button>
             </div>
 
             {mode === 'resolved' && resolved ? (
@@ -706,8 +795,11 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 <p className="text-[11px] font-bold text-receive-text uppercase tracking-widest">Found</p>
                 <p className="text-[14px] font-semibold text-ink-900 mt-0.5">{resolved.displayName}</p>
                 <p className="text-[11px] text-ink-500 mt-1">
-                  Confirming connects you both &mdash; {resolved.displayName} gets a notification
-                  and you'll appear in each other's contacts.
+                  {/* Precise about what confirming does and doesn't do: the
+                      link is yours immediately; appearing in THEIR contacts
+                      is their call, not something this button decides. */}
+                  Confirming links them on your side straight away, and asks{' '}
+                  {resolved.displayName} to add you back so records can flow both ways.
                 </p>
               </div>
             ) : (
@@ -798,6 +890,40 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       transactions={transactions}
       scope="contact"
       phone={person.phone}
+    />
+    {/* Scanner overlays the whole screen, so it lives outside the Modal's
+        transformed container (a fixed child of a transformed ancestor is
+        positioned against that ancestor, not the viewport). */}
+    <QRScanner
+      open={showScanner}
+      onClose={() => setShowScanner(false)}
+      onCode={(scanned) => {
+        setShowScanner(false);
+        setCode(formatConnectCode(scanned));
+        setMode('entering');
+        // Resolve straight away: the user pointed a camera at a specific
+        // person's code — making them then press "Resolve" is a step with
+        // no decision in it.
+        void (async () => {
+          setError('');
+          setResolved(null);
+          setResolving(true);
+          try {
+            const found = await resolveProfileByCode(scanned);
+            if (!found) {
+              setError('No user with this code.');
+              return;
+            }
+            setResolved(found);
+            setMode('resolved');
+          } catch {
+            setError('Could not look up this code. Try again.');
+          } finally {
+            setResolving(false);
+          }
+        })();
+      }}
+      onManualEntry={() => setMode('entering')}
     />
     {/* Merge target picker — sibling of the sheet (fixed overlays must not
         nest inside a transformed modal). */}

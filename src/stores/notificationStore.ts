@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { notificationsDb } from '../lib/supabaseDb';
+import { resetInstantNotify, surfaceNewNotifications } from '../lib/instantNotify';
 import type { AppNotification } from '../db';
 
 interface NotificationState {
@@ -37,6 +38,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 
   reset: () => {
     locallyRead.clear();
+    resetInstantNotify();
     set(INITIAL_NOTIFICATION_STATE);
   },
 
@@ -49,6 +51,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
         notifications,
         unreadCount: notifications.filter(notification => !notification.readAt).length,
       });
+      // Anything that arrived while the app was backgrounded becomes a real
+      // tray notification here. Deliberately not awaited: the in-app list is
+      // already updated above and must never wait on the OS bridge.
+      void surfaceNewNotifications(notifications);
     } finally {
       set({ loading: false });
     }

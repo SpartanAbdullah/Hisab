@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Link2,
   Search,
@@ -11,9 +11,18 @@ import {
   Archive,
   RotateCcw,
   ChevronDown,
+  QrCode,
+  Keyboard,
+  Clock,
 } from 'lucide-react';
 import { hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { usePersonStore } from '../stores/personStore';
+import { useContactLinkStore } from '../stores/contactLinkStore';
+import { usePhoneDiscoveryStore } from '../stores/phoneDiscoveryStore';
+import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
+import { QRScanner } from '../components/QRScanner';
+import { resolveProfileByCode } from '../lib/collaboration';
+import { formatConnectCode } from '../lib/connectQr';
 import { useLoanStore } from '../stores/loanStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { UserAvatar } from '../components/UserAvatar';
@@ -50,6 +59,7 @@ export function ContactsPage() {
   const [archivedBusyId, setArchivedBusyId] = useState<string | null>(null);
   const loadPersons = usePersonStore((s) => s.loadPersons);
   const createPerson = usePersonStore((s) => s.createPerson);
+  const linkToProfile = usePersonStore((s) => s.linkToProfile);
   const loans = useLoanStore((s) => s.loans);
   const loadLoans = useLoanStore((s) => s.loadLoans);
   const t = useT();
@@ -70,11 +80,72 @@ export function ContactsPage() {
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null);
   const [showLinkHelp, setShowLinkHelp] = useState(false);
 
+  // ── Link-at-add ──────────────────────────────────────────────────────
+  // The old flow saved a local contact and left the user to discover
+  // linking later, so most contacts stayed unlinked forever. Now the add
+  // form asks the question directly — and answering it is one tap, because
+  // scanning their QR is right there.
+  const [linkMode, setLinkMode] = useState<'ask' | 'code'>('ask');
+  const [linkCode, setLinkCode] = useState('');
+  const [resolvingCode, setResolvingCode] = useState(false);
+  const [linkTarget, setLinkTarget] = useState<{ profileId: string; displayName: string } | null>(null);
+  const [linkError, setLinkError] = useState('');
+  const [showScanner, setShowScanner] = useState(false);
+
+  const myId = useSupabaseAuthStore((s) => s.user?.id ?? '');
+  const contactLinks = useContactLinkStore((s) => s.requests);
+  const loadContactLinks = useContactLinkStore((s) => s.loadRequests);
+  const discover = usePhoneDiscoveryStore((s) => s.discover);
+  const discoveryResults = usePhoneDiscoveryStore((s) => s.results);
+  const matchFor = usePhoneDiscoveryStore((s) => s.matchFor);
+
   const load = useCallback(async () => {
     // Loans drive the Settled / Unsettled status chip per contact.
-    await Promise.all([loadPersons(), loadLoans()]);
-  }, [loadPersons, loadLoans]);
+    // Contact links drive the "waiting for them to add you back" row hint.
+    await Promise.all([loadPersons(), loadLoans(), loadContactLinks().catch(() => {})]);
+  }, [loadPersons, loadLoans, loadContactLinks]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
+
+  // One batched lookup for every saved number, so unlinked contacts who are
+  // already on Hisaab surface themselves. Runs on the contact list changing,
+  // and the store dedupes against what it already resolved — a re-render or
+  // a second visit costs nothing.
+  useEffect(() => {
+    const phones = persons.filter((p) => !p.linkedProfileId).map((p) => p.phone);
+    if (phones.length === 0) return;
+    void discover(phones);
+  }, [persons, discover]);
+
+  // Live check on the number being typed into the add form. Debounced hard:
+  // the lookup RPC is rate-limited, and a per-keystroke call would burn the
+  // hourly budget on one contact.
+  useEffect(() => {
+    if (!showAdd) return;
+    const phone = newPhone.trim();
+    if (!phone) return;
+    const timer = window.setTimeout(() => { void discover([phone]); }, 700);
+    return () => window.clearTimeout(timer);
+  }, [newPhone, showAdd, discover]);
+
+  // Discovery hit on the number in the add form. `discoveryResults` is in the
+  // dep list (not just read through matchFor) so the chip appears the moment
+  // the lookup lands.
+  const phoneMatch = useMemo(
+    () => (showAdd && newPhone.trim() ? matchFor(newPhone) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [newPhone, showAdd, discoveryResults, matchFor],
+  );
+
+  // Contacts I linked who haven't added me back yet. Rendered as a quiet
+  // "waiting" hint rather than a full "Linked" seal, because until they
+  // accept, the connection genuinely only exists on my side.
+  const awaitingProfileIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of contactLinks) {
+      if (r.fromUserId === myId && r.status === 'pending') set.add(r.toUserId);
+    }
+    return set;
+  }, [contactLinks, myId]);
 
   // Filter then alphabetise. Search is case-insensitive on name only — link
   // status / external handles aren't part of the visible name so they don't
@@ -146,6 +217,37 @@ export function ContactsPage() {
     setShowAdd(false);
     setNewName('');
     setNewPhone('');
+    setLinkMode('ask');
+    setLinkCode('');
+    setLinkTarget(null);
+    setLinkError('');
+    setResolvingCode(false);
+  };
+
+  // Resolve a code (typed or scanned) into the account it belongs to. We
+  // only ever RESOLVE here — the link itself happens on submit, so the user
+  // sees who they're about to connect to before anything is written.
+  const resolveForAdd = async (rawCode: string) => {
+    setLinkError('');
+    setLinkTarget(null);
+    const trimmed = rawCode.trim();
+    if (!trimmed) return;
+    setResolvingCode(true);
+    try {
+      const found = await resolveProfileByCode(trimmed);
+      if (!found) {
+        setLinkError(t('addc_link_err_notfound'));
+        return;
+      }
+      setLinkTarget(found);
+      // Adopt their Hisaab display name when the user hasn't typed one —
+      // saves a step, and a name they'd have typed anyway.
+      if (!newName.trim()) setNewName(found.displayName);
+    } catch {
+      setLinkError(t('addc_link_err_lookup'));
+    } finally {
+      setResolvingCode(false);
+    }
   };
 
   // Soft warning (not a block — two real people can share a name): a duplicate
@@ -160,11 +262,32 @@ export function ContactsPage() {
     setCreating(true);
     try {
       const created = await createPerson(trimmed, newPhone.trim() || null);
-      toast.show({
-        type: 'success',
-        title: 'Contact added',
-        subtitle: 'Saved as a local contact. Link to Hisaab from the row to enable two-way confirmation.',
-      });
+      if (linkTarget) {
+        // The contact row already exists at this point. If linking fails we
+        // must NOT report a failed add — the contact is real and saved; only
+        // the link didn't happen. Saying otherwise would send the user
+        // looking for a contact that's sitting right there.
+        try {
+          await linkToProfile(created.id, linkTarget.profileId);
+          toast.show({
+            type: 'success',
+            title: `${trimmed} added & connected`,
+            subtitle: `${linkTarget.displayName} was asked to add you back. You can start sharing records now.`,
+          });
+        } catch {
+          toast.show({
+            type: 'info',
+            title: 'Contact added',
+            subtitle: t('addc_link_partial'),
+          });
+        }
+      } else {
+        toast.show({
+          type: 'success',
+          title: 'Contact added',
+          subtitle: 'Saved as a local contact. Link to Hisaab from the row to enable two-way confirmation.',
+        });
+      }
       setLastCreatedId(created.id);
       resetAddForm();
     } catch (err) {
@@ -301,6 +424,117 @@ export function ContactsPage() {
                 inputMode="tel"
                 className="w-full bg-cream-bg border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
               />
+              {/* Discovery hit. The number the user just typed belongs to a
+                  Hisaab account that opted in to being findable — offering
+                  the link here saves them hunting for a code that already
+                  resolved itself. */}
+              {phoneMatch && !linkTarget && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLinkTarget({ profileId: phoneMatch.profileId, displayName: phoneMatch.displayName });
+                    setLinkError('');
+                    if (!newName.trim()) setNewName(phoneMatch.displayName);
+                  }}
+                  className="mt-2 w-full rounded-xl bg-receive-50 border border-receive-100 px-3 py-2.5 flex items-center gap-2.5 text-left active:scale-[0.99] transition-transform"
+                >
+                  <VerifiedBadge size={15} title={t('disc_badge')} />
+                  <span className="flex-1 min-w-0 text-[11.5px] text-ink-700 leading-snug">
+                    {t('disc_found').replace('{name}', phoneMatch.displayName)}
+                  </span>
+                  <span className="shrink-0 text-[11px] font-bold text-receive-text">
+                    {t('disc_link_cta')}
+                  </span>
+                </button>
+              )}
+            </div>
+
+            {/* THE question the app never used to ask. Kept above the submit
+                button so it's answered before the contact exists, not
+                discovered afterwards — but every branch is skippable, because
+                most contacts genuinely aren't on Hisaab. */}
+            <div className="rounded-xl bg-cream-soft border border-cream-hairline p-3 space-y-2.5">
+              {linkTarget ? (
+                <div className="flex items-center gap-2.5">
+                  <VerifiedBadge size={16} title={t('contact_linked_pill')} />
+                  <span className="flex-1 min-w-0 text-[12px] font-semibold text-ink-900 truncate">
+                    {t('addc_link_found').replace('{name}', linkTarget.displayName)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLinkTarget(null);
+                      setLinkMode('ask');
+                      setLinkCode('');
+                    }}
+                    className="shrink-0 text-[11px] font-semibold text-accent-600"
+                  >
+                    {t('addc_link_change')}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-[12px] font-semibold text-ink-900">{t('addc_link_q')}</p>
+                    <p className="text-[10.5px] text-ink-500 leading-relaxed mt-0.5">
+                      {t('addc_link_q_desc')}
+                    </p>
+                  </div>
+                  {linkMode === 'ask' ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowScanner(true)}
+                        className="flex-1 rounded-lg bg-ink-900 text-white py-2.5 text-[11.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                      >
+                        <QrCode size={13} strokeWidth={2.2} /> {t('addc_link_scan')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLinkMode('code')}
+                        className="flex-1 rounded-lg bg-cream-card border border-cream-border text-ink-700 py-2.5 text-[11.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                      >
+                        <Keyboard size={13} strokeWidth={2.2} /> {t('addc_link_code')}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          value={linkCode}
+                          onChange={(e) => {
+                            setLinkCode(e.target.value);
+                            if (linkError) setLinkError('');
+                          }}
+                          placeholder="HSB-XXXXXX"
+                          autoCapitalize="characters"
+                          autoCorrect="off"
+                          autoComplete="off"
+                          className="flex-1 min-w-0 bg-cream-bg border border-cream-border rounded-lg px-3 py-2.5 text-[12.5px] focus:outline-none focus:border-accent-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void resolveForAdd(linkCode)}
+                          disabled={resolvingCode || !linkCode.trim()}
+                          className="shrink-0 px-3.5 rounded-lg bg-accent-100 text-accent-600 text-[11.5px] font-bold disabled:opacity-40"
+                        >
+                          {resolvingCode ? '…' : 'Find'}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setLinkMode('ask'); setLinkCode(''); setLinkError(''); }}
+                        className="text-[11px] font-semibold text-ink-500"
+                      >
+                        {t('addc_link_skip')}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+              {linkError && (
+                <p className="text-[11px] text-pay-text font-semibold">{linkError}</p>
+              )}
             </div>
 
             <button
@@ -308,7 +542,7 @@ export function ContactsPage() {
               disabled={creating || !newName.trim()}
               className="w-full rounded-xl bg-ink-900 text-white py-3 text-[13px] font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
             >
-              {creating ? 'Adding…' : 'Add contact'}
+              {creating ? 'Adding…' : linkTarget ? t('addc_cta_linked') : t('addc_cta_plain')}
             </button>
 
             {/* Inline guidance — the heart of "users shall be guided about
@@ -497,16 +731,35 @@ export function ContactsPage() {
                           <MessageCircle size={13} strokeWidth={2.2} className="shrink-0" style={{ color: '#1FA855' }} aria-label="WhatsApp added" />
                         )}
                         {!person.linkedProfileId && (
-                          <span className="text-[10px] font-medium uppercase tracking-[0.08em] rounded-full bg-cream-soft border border-cream-hairline text-ink-500 px-1.5 py-0.5 shrink-0">
-                            local
-                          </span>
+                          // A saved number that resolved to a Hisaab account
+                          // replaces the flat "local" chip: this contact is
+                          // linkable RIGHT NOW, which is worth surfacing on
+                          // the row rather than only inside the sheet.
+                          matchFor(person.phone) ? (
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] rounded-full bg-receive-50 text-receive-text px-1.5 py-0.5 shrink-0 inline-flex items-center gap-1">
+                              <VerifiedBadge size={10} title={t('disc_badge')} />
+                              {t('disc_badge')}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium uppercase tracking-[0.08em] rounded-full bg-cream-soft border border-cream-hairline text-ink-500 px-1.5 py-0.5 shrink-0">
+                              local
+                            </span>
+                          )
                         )}
                       </div>
-                      {person.phone && (
+                      {/* Linked, but they haven't accepted yet — say so
+                          instead of implying a two-way connection that
+                          doesn't exist on their side. */}
+                      {person.linkedProfileId && awaitingProfileIds.has(person.linkedProfileId) ? (
+                        <p className="text-[10.5px] text-ink-500 mt-0.5 truncate flex items-center gap-1">
+                          <Clock size={10} className="shrink-0" />
+                          {t('clink_waiting').replace('{name}', person.name)}
+                        </p>
+                      ) : person.phone ? (
                         <p className="text-[10.5px] text-ink-500 mt-0.5 truncate">
                           {person.phone}
                         </p>
-                      )}
+                      ) : null}
                     </div>
                     {/* Settled / Unsettled — at-a-glance: amber = an open
                         balance needs action, green = all clear / calm. */}
@@ -631,6 +884,24 @@ export function ContactsPage() {
         open={!!selected}
         person={selected}
         onClose={() => setSelectedId(null)}
+      />
+
+      {/* Scanner is a sibling of the page, not a child of the add card —
+          it's a full-screen fixed overlay and must not inherit the card's
+          stacking context. */}
+      <QRScanner
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        onCode={(code) => {
+          setShowScanner(false);
+          // The scanner hands back a NORMALISED code; render it in the
+          // familiar HSB- form so the input matches what the other person
+          // sees on their screen.
+          setLinkCode(formatConnectCode(code));
+          setLinkMode('code');
+          void resolveForAdd(code);
+        }}
+        onManualEntry={() => setLinkMode('code')}
       />
     </main>
   );

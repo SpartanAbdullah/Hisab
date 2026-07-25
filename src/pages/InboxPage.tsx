@@ -14,6 +14,7 @@ import { useRecurringStore } from '../stores/recurringStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { useNotificationStore } from '../stores/notificationStore';
+import { useContactLinkStore } from '../stores/contactLinkStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useCommitteeStore } from '../stores/committeeStore';
@@ -66,6 +67,9 @@ export function InboxPage() {
   const notifications = useNotificationStore((s) => s.notifications);
   const loadNotifications = useNotificationStore((s) => s.loadNotifications);
   const markNotificationRead = useNotificationStore((s) => s.markRead);
+  const contactLinks = useContactLinkStore((s) => s.requests);
+  const loadContactLinks = useContactLinkStore((s) => s.loadRequests);
+  const respondContactLink = useContactLinkStore((s) => s.respond);
   // "To-do" tab sources — raw slices only, filtering in useMemo (React #185).
   const loans = useLoanStore((s) => s.loans);
   const emiSchedules = useEmiStore((s) => s.schedules);
@@ -99,12 +103,13 @@ export function InboxPage() {
       loadRequests(), loadSettlements(), loadPersons(),
       // Info-tab sources (cheap; most are already warm from app boot).
       loadBudgets(), loadTransactions(), loadTemplates(), loadAccounts(), loadExpenses(), loadNotifications(),
+      loadContactLinks().catch(() => {}),
       // "To-do" tab sources (same story — warm from boot / Home).
       useLoanStore.getState().loadLoans(),
       useEmiStore.getState().loadSchedules(),
       useCommitteeStore.getState().loadAll(),
     ]);
-  }, [loadRequests, loadSettlements, loadPersons, loadBudgets, loadTransactions, loadTemplates, loadAccounts, loadExpenses, loadNotifications]);
+  }, [loadRequests, loadSettlements, loadPersons, loadBudgets, loadTransactions, loadTemplates, loadAccounts, loadExpenses, loadNotifications, loadContactLinks]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   useEffect(() => {
@@ -141,11 +146,23 @@ export function InboxPage() {
     [visible],
   );
 
+  // "X added you — add them back?" asks. These live on Incoming because they
+  // are a DECISION, not an FYI: nothing is written into this user's contacts
+  // until they answer, and leaving it unanswered is a valid outcome.
+  const contactAsks = useMemo(
+    () =>
+      contactLinks
+        .filter((r) => r.toUserId === myId && r.status === 'pending')
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [contactLinks, myId],
+  );
+
   const incomingPendingCount = useMemo(
     () =>
       requests.filter((r) => r.status === 'pending' && r.toUserId === myId).length +
-      settlements.filter((r) => r.status === 'pending' && r.toUserId === myId).length,
-    [requests, settlements, myId],
+      settlements.filter((r) => r.status === 'pending' && r.toUserId === myId).length +
+      contactAsks.length,
+    [requests, settlements, myId, contactAsks],
   );
   const outgoingPendingCount = useMemo(
     () =>
@@ -250,6 +267,29 @@ export function InboxPage() {
           }),
         );
       }
+    }
+  };
+
+  // Answer a connection ask. Accepting writes the reciprocal contact
+  // server-side (and refetches persons); declining writes nothing at all.
+  const handleContactAsk = async (id: string, accept: boolean, name: string) => {
+    setBusyId(id);
+    try {
+      const ok = await respondContactLink(id, accept);
+      if (!ok) {
+        toast.show({ type: 'error', title: t('clink_err') });
+        return;
+      }
+      toast.show(
+        accept
+          ? { type: 'success', title: t('clink_added_toast').replace('{name}', name) }
+          : { type: 'info', title: t('clink_declined_toast') },
+      );
+    } catch (err) {
+      console.error('respondContactLink failed', err);
+      toast.show({ type: 'error', title: t('clink_err'), subtitle: errorSubtitle(err) });
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -620,6 +660,20 @@ export function InboxPage() {
           />
         )}
 
+        {/* Connection asks pin above the request list. Someone used this
+            user's code; nothing has been written to their contacts and
+            nothing will be until they answer. */}
+        {tab === 'incoming' &&
+          contactAsks.map((ask) => (
+            <ContactAskCard
+              key={ask.id}
+              name={ask.fromName}
+              busy={busyId === ask.id}
+              onAdd={() => void handleContactAsk(ask.id, true, ask.fromName)}
+              onSkip={() => void handleContactAsk(ask.id, false, ask.fromName)}
+            />
+          ))}
+
         {tab === 'action' ? (
           loadStatus === 'loading' && actionItems.length === 0 ? (
             <ListSkeleton rows={3} withAvatar={false} />
@@ -686,7 +740,10 @@ export function InboxPage() {
           )
         ) : loadStatus === 'loading' && visible.length === 0 ? (
           <ListSkeleton rows={3} withAvatar={false} />
-        ) : visible.length === 0 ? (
+        ) : visible.length === 0 &&
+          // An ask sitting right above is something to do — don't contradict
+          // it with "nothing needs your attention".
+          !(tab === 'incoming' && contactAsks.length > 0) ? (
           loadStatus === 'ready' ? (
             tab === 'incoming' ? (
               <EmptyState
@@ -1005,6 +1062,58 @@ function InfoCard({ item, onOpen }: { item: InfoItem; onOpen: () => void }) {
       </div>
       {tappable && <ChevronRight size={15} className="text-ink-300 shrink-0" />}
     </button>
+  );
+}
+
+// "Asif added you on Hisaab — add Asif back?"
+//
+// Deliberately two equal-weight choices rather than a dismissible banner:
+// the whole point of the consent model is that NOT adding someone back is a
+// legitimate, first-class answer, not a thing you achieve by ignoring a card.
+function ContactAskCard({
+  name, busy, onAdd, onSkip,
+}: {
+  name: string;
+  busy: boolean;
+  onAdd: () => void;
+  onSkip: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="rounded-[18px] bg-accent-50 border border-accent-100 p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-accent-100 flex items-center justify-center shrink-0">
+          <UserPlus size={17} className="text-accent-600" strokeWidth={2} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
+            {t('clink_card_title').replace('{name}', name)}
+          </p>
+          <p className="text-[11.5px] text-ink-500 mt-1 leading-relaxed">
+            {t('clink_card_body')}
+          </p>
+        </div>
+      </div>
+      <div className="flex gap-2 mt-3">
+        <button
+          type="button"
+          onClick={onSkip}
+          disabled={busy}
+          className="px-4 py-2.5 rounded-xl bg-cream-card border border-cream-border text-ink-600 text-[12px] font-semibold disabled:opacity-50 active:scale-95 transition-transform"
+        >
+          {t('clink_skip_cta')}
+        </button>
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={busy}
+          className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-[0.98] transition-transform"
+        >
+          <UserPlus size={13} strokeWidth={2.4} />
+          {t('clink_add_cta').replace('{name}', name)}
+        </button>
+      </div>
+    </div>
   );
 }
 

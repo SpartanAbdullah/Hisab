@@ -400,6 +400,126 @@ export interface MergePersonResult {
 }
 
 // ══════════════════════════════════════
+// CONTACT LINK REQUESTS
+// The "someone added you — add them back?" ask. Reads go through RLS
+// (participants only); every write is a SECURITY DEFINER RPC, because
+// accepting writes a persons row into the ACCEPTER's ledger and declining
+// must be unforgeable by the adder.
+// See supabase-migration-connections-push-discovery.sql.
+// ══════════════════════════════════════
+export interface ContactLinkRequest {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  /** Display-name snapshot of the adder — the receiver can't read profiles. */
+  fromName: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  respondedAt: string | null;
+}
+
+function mapContactLinkRequest(row: Record<string, unknown>): ContactLinkRequest {
+  return {
+    id: String(row.id ?? ''),
+    fromUserId: String(row.from_user_id ?? ''),
+    toUserId: String(row.to_user_id ?? ''),
+    fromName: String(row.from_name ?? '') || 'A Hisaab user',
+    status: (row.status as ContactLinkRequest['status']) ?? 'pending',
+    createdAt: String(row.created_at ?? ''),
+    respondedAt: row.responded_at ? String(row.responded_at) : null,
+  };
+}
+
+export interface RespondContactLinkResult {
+  success: boolean;
+  reasonCode: 'ACCEPTED' | 'DECLINED' | 'ALREADY_ACCEPTED' | 'ALREADY_DECLINED' | 'NOT_FOUND' | 'NOT_YOURS';
+  personId: string | null;
+}
+
+export const contactLinksDb = {
+  async getAll(): Promise<ContactLinkRequest[]> {
+    const me = getUserId();
+    const { data, error } = await supabase
+      .from('contact_link_requests')
+      .select('*')
+      .or(`from_user_id.eq.${me},to_user_id.eq.${me}`)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map((row) => mapContactLinkRequest(row as Record<string, unknown>));
+  },
+  async respond(requestId: string, accept: boolean): Promise<RespondContactLinkResult> {
+    const { data, error } = await supabase.rpc('respond_contact_link', {
+      p_request_id: requestId,
+      p_accept: accept,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      success: Boolean(row?.success),
+      reasonCode: (row?.reason_code as RespondContactLinkResult['reasonCode']) ?? 'NOT_FOUND',
+      personId: row?.person_id ? String(row.person_id) : null,
+    };
+  },
+};
+
+// ══════════════════════════════════════
+// PHONE DISCOVERY  (opt-in, both directions)
+// The RPC compares E.164 numbers server-side and returns only the ones that
+// matched — it never discloses a number the caller didn't already have.
+// ══════════════════════════════════════
+export interface PhoneMatch {
+  phoneE164: string;
+  profileId: string;
+  displayName: string;
+}
+
+export const phoneDiscoveryDb = {
+  /** Look up which of `numbers` (E.164) belong to discoverable Hisaab users.
+   *  Max 60 per call, rate-limited server-side to 20 calls/hour. */
+  async lookup(numbers: string[]): Promise<PhoneMatch[]> {
+    if (numbers.length === 0) return [];
+    const { data, error } = await supabase.rpc('lookup_hisaab_users_by_phone', {
+      p_numbers: numbers,
+    });
+    if (error) throw error;
+    return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+      phoneE164: String(row.phone_e164 ?? ''),
+      profileId: String(row.profile_id ?? ''),
+      displayName: String(row.display_name ?? '') || 'Hisaab user',
+    }));
+  },
+  /** Set (or clear, with null) the current user's own discoverable number. */
+  async setMyPhone(e164: string | null, discoverable: boolean): Promise<void> {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ phone_e164: e164, phone_discoverable: e164 ? discoverable : false })
+      .eq('id', getUserId());
+    if (error) throw error;
+  },
+};
+
+// ══════════════════════════════════════
+// PUSH TOKENS (FCM)
+// ══════════════════════════════════════
+export const pushTokensDb = {
+  async register(token: string, platform: 'android' | 'ios' | 'web' = 'android'): Promise<void> {
+    const { error } = await supabase.rpc('register_push_token', {
+      p_token: token,
+      p_platform: platform,
+    });
+    if (error) throw error;
+  },
+  async unregister(token: string): Promise<void> {
+    const { error } = await supabase
+      .from('device_push_tokens')
+      .delete()
+      .eq('token', token)
+      .eq('user_id', getUserId());
+    if (error) throw error;
+  },
+};
+
+// ══════════════════════════════════════
 // LINKED TRANSACTION REQUESTS (Phase 2B)
 // Cloud-only. Writes go through RLS (insert) or SECURITY DEFINER RPCs
 // (accept / reject / cancel). No Dexie mirror.

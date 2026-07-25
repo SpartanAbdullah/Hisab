@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Copy, Share2, Link2 } from 'lucide-react';
+import { Copy, Share2, Link2, QrCode } from 'lucide-react';
 import { useToast } from './Toast';
 import { useT } from '../lib/i18n';
 import { profilesDb } from '../lib/supabaseDb';
 import { buildAppShareUrl, generatePublicCodeCandidate, normalizePublicCode } from '../lib/collaboration';
+import { MyQrSheet } from './MyQrSheet';
 
 async function copyText(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -22,6 +23,7 @@ export function MyConnectCode() {
   const t = useT();
   const toast = useToast();
   const [code, setCode] = useState('');
+  const [showQr, setShowQr] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,20 +75,33 @@ export function MyConnectCode() {
         <button
           onClick={copy}
           disabled={!code}
-          className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-cream-card border border-cream-border py-2.5 active:scale-[0.98] transition-transform disabled:opacity-50"
+          className="flex-1 min-w-0 flex items-center justify-center gap-2 rounded-xl bg-cream-card border border-cream-border py-2.5 active:scale-[0.98] transition-transform disabled:opacity-50"
         >
           <span className="text-[9px] font-semibold text-ink-400 uppercase tracking-[0.12em]">HSB</span>
           <span className="text-[14px] font-bold text-ink-900 tabular-nums">{code ? `@${code}` : '…'}</span>
           {code && <Copy size={13} className="text-ink-400" />}
         </button>
+        {/* Show-my-QR sits next to the code, not behind a menu: in person,
+            holding up a QR is the fastest possible handoff and it should be
+            one tap from where the code already lives. */}
+        <button
+          onClick={() => setShowQr(true)}
+          disabled={!code}
+          className="w-11 shrink-0 rounded-xl bg-cream-card border border-cream-border flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50"
+          aria-label={t('qr_my_title')}
+        >
+          <QrCode size={17} className="text-accent-600" strokeWidth={2} />
+        </button>
         <button
           onClick={share}
           disabled={!code}
-          className="px-4 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center gap-1.5 active:scale-95 transition-transform disabled:opacity-50"
+          className="px-3.5 shrink-0 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center gap-1.5 active:scale-95 transition-transform disabled:opacity-50"
         >
           <Share2 size={14} /> {t('connect_share')}
         </button>
       </div>
+
+      <MyQrSheet open={showQr} onClose={() => setShowQr(false)} code={code} />
     </div>
   );
 }

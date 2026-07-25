@@ -42,6 +42,8 @@ import { useAuthStore } from "../stores/authStore";
 import { useToast } from "../components/Toast";
 import { isNativeRuntime } from "../lib/runtime";
 import { enableRemindersFlow, remindersEnabled, rescheduleNotifications, REMINDERS_KEY } from "../lib/notificationScheduler";
+import { requestPushPermissionAndRegister } from "../lib/pushRegistration";
+import { PhoneDiscoverySection } from "../components/PhoneDiscoverySection";
 import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
 import { ManageCategoriesModal } from "../components/ManageCategoriesModal";
 import { useThemeStore, type ThemeMode } from "../stores/themeStore";
@@ -665,6 +667,12 @@ export function SettingsPage() {
                         setRemindersOn(enabled);
                         if (!enabled) {
                           toast.show({ type: "error", title: t("settings_reminders_denied") });
+                        } else {
+                          // Android 13+ has ONE notification permission for
+                          // the whole app, so the moment the user grants it
+                          // here we also register for push. Asking twice for
+                          // the same grant is how apps train people to deny.
+                          void requestPushPermissionAndRegister((to) => navigate(to));
                         }
                       } else {
                         try {
@@ -688,6 +696,10 @@ export function SettingsPage() {
             </div>
           </div>
         )}
+
+        {/* Phone discovery — opt-in, and the ONLY contact-matching Hisaab
+            does. No address-book access anywhere in the app. */}
+        <PhoneDiscoverySection sectionClass={sectionClass} rowClass={rowClass} />
 
         {/* App Mode */}
         <div className={sectionClass}>

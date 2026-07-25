@@ -13,6 +13,7 @@
 
 import { isNativeRuntime } from './runtime';
 import { rescheduleNotifications } from './notificationScheduler';
+import { resumeGlobalRealtime } from './realtime';
 import { useUIStore } from '../stores/uiStore';
 
 type NavigateFn = (to: string, opts?: { replace?: boolean }) => void;
@@ -91,6 +92,11 @@ export async function initNativeBridge(opts: {
       // anything the user paid while the app was open (or on another
       // device, once stores refresh) stops ringing here.
       void rescheduleNotifications();
+      // The realtime websocket does NOT survive the WebView being suspended.
+      // Without this the app came back subscribed-in-name-only and showed
+      // stale data until the user force-closed it — the single biggest cause
+      // of "the notification took ages / only showed after a restart".
+      resumeGlobalRealtime();
     });
 
     // Notification taps route into the app (href stashed at schedule time).

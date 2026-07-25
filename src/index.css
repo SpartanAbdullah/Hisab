@@ -306,6 +306,56 @@ html.dark .auth-cta {
   .animate-sparkle { animation: none; }
 }
 
+/* ========== INBOX BELL — UNREAD ATTENTION ==========
+ * An unread count that only tints a 14px dot is easy to walk past. When
+ * something is genuinely waiting, the bell rings: a short swing, then a long
+ * quiet gap, on repeat. The gap is what keeps it from reading as decoration —
+ * motion arrives, resolves, and waits, so peripheral vision catches it
+ * without the icon ever becoming a permanently-moving distraction.
+ * The whole cycle is 4.2s of which ~0.9s moves. */
+@keyframes bell-ring {
+  0%      { transform: rotate(0deg); }
+  2%      { transform: rotate(14deg); }
+  5%      { transform: rotate(-12deg); }
+  8%      { transform: rotate(9deg); }
+  11%     { transform: rotate(-7deg); }
+  14%     { transform: rotate(4deg); }
+  17%     { transform: rotate(-2deg); }
+  20%,
+  100%    { transform: rotate(0deg); }
+}
+.animate-bell-ring {
+  animation: bell-ring 4.2s ease-in-out infinite;
+  /* Swing from the bell's crown, the way a real one hangs. */
+  transform-origin: 50% 12%;
+}
+
+/* Halo that breathes out from under the button on the same cadence, so the
+ * eye is drawn to the *button*, not just the glyph inside it. */
+@keyframes bell-halo {
+  0%, 100% { transform: scale(0.85); opacity: 0; }
+  6%       { transform: scale(0.9);  opacity: 0.45; }
+  22%      { transform: scale(1.5);  opacity: 0; }
+}
+.animate-bell-halo { animation: bell-halo 4.2s ease-in-out infinite; }
+
+/* Badge heartbeat — subtle, and the only cue that survives reduced motion. */
+@keyframes bell-badge-pop {
+  0%, 100% { transform: scale(1); }
+  6%       { transform: scale(1.28); }
+  16%      { transform: scale(1); }
+}
+.animate-bell-badge { animation: bell-badge-pop 4.2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* No rotation, no scaling, no expanding halo — vestibular-safe. The badge
+   * keeps a slow opacity breath so "unread" is still an active signal. */
+  .animate-bell-ring { animation: none; }
+  .animate-bell-halo { animation: none; opacity: 0; }
+  .animate-bell-badge { animation: bell-badge-fade 2.4s ease-in-out infinite; }
+}
+@keyframes bell-badge-fade { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
 /* Rolling die for the Kameti ballot draw — tumbles and bounces. */
 @keyframes dice-roll {
   0%   { transform: rotate(0deg) scale(1) translateY(0); }

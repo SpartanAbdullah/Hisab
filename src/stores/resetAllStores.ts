@@ -27,6 +27,8 @@ import { useSettlementRequestStore } from './settlementRequestStore';
 import { useCustomCategoryStore } from './customCategoryStore';
 import { useCommitteeStore } from './committeeStore';
 import { useInvestmentStore } from './investmentStore';
+import { useContactLinkStore } from './contactLinkStore';
+import { usePhoneDiscoveryStore } from './phoneDiscoveryStore';
 import { clearLegacyDatabase, clearUserDatabase, getCurrentDatabaseUserId } from '../db/database';
 
 // hisaab_supabase_uid is NOT listed here — it's owned by supabaseAuthStore's
@@ -65,6 +67,10 @@ export async function resetAllUserStores(userId = getCurrentDatabaseUserId()): P
   useCustomCategoryStore.getState().reset();
   useCommitteeStore.getState().reset();
   useInvestmentStore.getState().reset();
+  useContactLinkStore.getState().reset();
+  // Discovery results name real people ("this number belongs to Asif Ali") —
+  // they must not survive into the next account's session on a shared phone.
+  usePhoneDiscoveryStore.getState().reset();
 
   for (const key of USER_SCOPED_LOCALSTORAGE_KEYS) {
     localStorage.removeItem(key);

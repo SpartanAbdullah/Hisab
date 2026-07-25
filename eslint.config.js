@@ -6,7 +6,15 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'android/**/build', 'android/app/src/main/assets/public']),
+  globalIgnores([
+    'dist',
+    'android/**/build',
+    'android/app/src/main/assets/public',
+    // Supabase Edge Functions run on Deno, not in the browser: `Deno` is a
+    // global here and imports resolve against Deno's module graph. Linting
+    // them with the app's browser config only produces false positives.
+    'supabase/functions',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
