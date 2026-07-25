@@ -1828,6 +1828,29 @@ const S = {
     en: "Invalid amount. It cannot exceed the remaining balance.",
   },
 
+  // Which account the settlement money left from (sender-side Phase 2C-B
+  // opt-in) — plus honest "record only" notes when no account was involved,
+  // so nobody assumes a balance moved. Full-tracker only; simple mode hides
+  // account plumbing entirely.
+  stl_from_account: { ur: "{account} se paid", en: "Paid from {account}" },
+  stl_into_account: { ur: "{account} mein aya", en: "Landed in {account}" },
+  stl_account_neutral: { ur: "Account: {account}", en: "Account: {account}" },
+  stl_outgoing_no_account: {
+    ur: "Sirf record — kisi account se nahi kata",
+    en: "Record only — didn't leave any account",
+  },
+  stl_incoming_no_account: {
+    ur: "Sirf record — aap ke kisi account mein nahi aaya. Agar cash mila hai to account khud update karein.",
+    en: "Record only — didn't land in any of your accounts. If you received cash, update the account yourself.",
+  },
+  // Linked LOAN cards wear the same which-account line, loan-flavoured.
+  req_from_account: { ur: "{account} se", en: "From {account}" },
+  req_into_account: { ur: "{account} mein", en: "Into {account}" },
+  req_no_account_note: {
+    ur: "Sirf record — koi account balance change nahi hua",
+    en: "Record only — no account balance changed",
+  },
+
   // Inbox card strings
   stl_card_incoming: {
     ur: "{name} ne settlement record ki hai",
@@ -2175,6 +2198,19 @@ const S = {
   confirm_accept_body: { ur: "{approx}Yeh dono taraf shared loan banayega. Iske baad sirf settle ho sakta hai, edit nahi.", en: "{approx}This adds a shared loan to both ledgers. After this it can only be settled, not edited." },
   confirm_settle_title: { ur: "{amount} ki settlement confirm karein?", en: "Confirm settlement of {amount}?" },
   confirm_settle_body: { ur: "Yeh dono taraf ka hisaab barabar kar dega. Wapas nahi ho sakta.", en: "This clears the matching balance on both sides. It can't be undone." },
+  // Full-tracker accept sheet: which account did the money actually touch?
+  // "Record only" stays the default — an account effect must be a conscious
+  // choice, mirroring the sender-side Phase 2C-B opt-in.
+  acpt_where_in: { ur: "Paisa kis account mein aya?", en: "Which account did the money land in?" },
+  acpt_where_out: { ur: "Paisa kis account se gaya?", en: "Which account did the money leave from?" },
+  acpt_where_neutral: { ur: "Kis account par lagana hai?", en: "Which account should this apply to?" },
+  acpt_record_only: { ur: "Sirf record — koi account nahi", en: "Record only — no account" },
+  acpt_record_only_hint: { ur: "Aap ke balances change nahi honge.", en: "Your balances stay untouched." },
+  acpt_no_eligible: {
+    ur: "Koi {currency} account nahi — sirf record hoga, balance nahi badlega.",
+    en: "No {currency} account yet — this will be recorded without touching balances.",
+  },
+  acpt_balance_effect: { ur: "{account} mein {delta} ka farq aayega.", en: "This will change {account} by {delta}." },
   // Destructive confirmations
   del_account_body: { ur: "Yeh account aur uski history hamesha ke liye delete kar dega. Wapas nahi hoga.", en: "This permanently deletes the account and its history. This can't be undone." },
   del_group_body: { ur: "Sab kharche, settlements aur members ke links sab ke liye hat jayenge. Wapas nahi hoga.", en: "All expenses, settlements and member links are removed for everyone. This can't be undone." },
@@ -2492,7 +2528,7 @@ const S = {
   acct_select_change: { ur: "Badlein", en: "Change" },
 
   // ── Investment tracker ──
-  inv_title: { ur: "Investments", en: "Investments" },
+  inv_title: { ur: "Investment Tracker", en: "Investment Tracker" },
   inv_record_only: { ur: "Aap ka apna record — investment advice nahi", en: "Your own record — not investment advice" },
   inv_invested: { ur: "Lagaya hua", en: "Invested" },
   inv_current_value: { ur: "Mojooda value", en: "Current value" },
@@ -2776,6 +2812,7 @@ const S = {
   },
   inbox_empty_action_title: { ur: "Sab clear hai ✓", en: "All clear ✓" },
   inbox_empty_action_desc: { ur: "Koi kaam pending nahi. Hisaab saaf.", en: "Nothing needs your action. Hisaab saaf." },
+  inbox_empty_action_cta: { ur: "Home par jao", en: "Go to Home" },
   check_entry_days_one: { ur: "1 din pehle kiya tha", en: "Last done 1 day ago" },
   // Broad on purpose: the bucket also holds schedule-less udhaar repayments.
   flex_part_emi: { ur: "Qarz/EMI", en: "Loans/EMI" },

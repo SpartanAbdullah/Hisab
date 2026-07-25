@@ -754,6 +754,12 @@ export function QuickEntry({
             amount: amt,
             currency: branch.currency,
             note: notes,
+            // Full tracker: the account the user picked in this form rides
+            // on the request, so their balance moves when the other side
+            // accepts — no more silent drift between accounts and reality.
+            // (Branch currency IS this account's currency, so the DB's
+            // currency-match check can't fire.)
+            requesterAccountId: accountForBranch?.id ?? null,
           });
           toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
           reset();

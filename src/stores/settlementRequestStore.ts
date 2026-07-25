@@ -23,7 +23,7 @@ interface SettlementRequestState {
   loading: boolean;
   loadRequests: () => Promise<void>;
   createRequest: (input: CreateInput) => Promise<SettlementRequest>;
-  accept: (requestId: string) => Promise<SettlementRequest>;
+  accept: (requestId: string, responderAccountId?: string | null) => Promise<SettlementRequest>;
   reject: (requestId: string, reason?: string) => Promise<SettlementRequest>;
   cancel: (requestId: string) => Promise<SettlementRequest>;
   byLoanPair: (loanPairId: string) => SettlementRequest[];
@@ -79,15 +79,15 @@ export const useSettlementRequestStore = create<SettlementRequestState>((set, ge
     return inserted;
   },
 
-  accept: async (requestId) => {
-    const updated = await settlementRequestsDb.accept(requestId);
+  accept: async (requestId, responderAccountId) => {
+    const updated = await settlementRequestsDb.accept(requestId, responderAccountId ?? null);
     set((s) => ({ requests: upsert(s.requests, updated) }));
     try {
       await useLoanStore.getState().loadLoans();
       await useTransactionStore.getState().loadTransactions();
-      // Phase 2C-B: unconditionally refresh accounts. A no-op for balances
-      // on ledger-only settlements; picks up the sender's debit when they
-      // had opted in (receiver balances remain unchanged).
+      // Unconditionally refresh accounts. A no-op for ledger-only
+      // settlements; picks up the sender's opted-in effect and the
+      // receiver's landing account chosen just now.
       await useAccountStore.getState().loadAccounts();
     } catch (err) {
       console.error('post-settlement-accept reload failed (non-fatal)', err);

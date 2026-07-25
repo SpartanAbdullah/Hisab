@@ -115,6 +115,11 @@ export interface LinkedRequest {
   // instead of creating a duplicate; the recipient still gets a fresh mirror.
   // Distinguishes "sync past record" cards from fresh-loan requests in Inbox.
   preExistingLoanId: string | null;
+  // Cross-user account effects: each side's optional account. Null on a side
+  // ⇒ that side stays ledger-only (simple mode / "record only"). Sender picks
+  // at send time, receiver at accept time. Forbidden on past-record syncs.
+  requesterAccountId?: string | null;
+  responderAccountId?: string | null;
   createdAt: string;
   respondedAt: string | null;
 }
@@ -137,8 +142,11 @@ export interface SettlementRequest {
   rejectionReason: string | null;
   requesterTxnId: string | null;
   responderTxnId: string | null;
-  // Phase 2C-B (sender-only opt-in). Null ⇒ ledger-only on both sides.
+  // Phase 2C-B (sender opt-in). Null ⇒ sender side ledger-only.
   requesterAccountId?: string | null;
+  // Receiver's landing account, picked at accept time. Null ⇒ receiver side
+  // ledger-only.
+  responderAccountId?: string | null;
   createdAt: string;
   respondedAt: string | null;
 }

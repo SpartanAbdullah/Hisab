@@ -428,6 +428,9 @@ export const linkedRequestsDb = {
     // sender-owns / status-active / person-id-matches invariants on the
     // referenced loan; we don't re-check them here.
     preExistingLoanId?: string | null;
+    // Sender's opted-in account: debited (lent) / credited (borrowed) on
+    // accept. Forbidden together with preExistingLoanId (DB-enforced).
+    requesterAccountId?: string | null;
   }) {
     const { error } = await supabase.from('linked_transaction_requests').insert({
       id: input.id,
@@ -439,11 +442,18 @@ export const linkedRequestsDb = {
       currency: input.currency,
       note: input.note,
       pre_existing_loan_id: input.preExistingLoanId ?? null,
+      requester_account_id: input.requesterAccountId ?? null,
     });
     if (error) throw error;
   },
-  async accept(requestId: string): Promise<LinkedRequest> {
-    const { data, error } = await supabase.rpc('accept_linked_request', { request_id: requestId });
+  async accept(requestId: string, responderAccountId?: string | null): Promise<LinkedRequest> {
+    // Only send the account param when actually set: the {request_id}-only
+    // shape also resolves against a pre-migration one-arg RPC, so ledger-only
+    // accepts keep working even before the SQL migration is applied.
+    const { data, error } = await supabase.rpc('accept_linked_request',
+      responderAccountId
+        ? { request_id: requestId, responder_account_id: responderAccountId }
+        : { request_id: requestId });
     if (error) throw error;
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error('ltr: accept returned no row');
@@ -486,6 +496,8 @@ function mapLinkedRequest(r: Record<string, unknown>): LinkedRequest {
     responderTxnId: (r.responder_txn_id as string) ?? null,
     loanPairId: (r.loan_pair_id as string) ?? null,
     preExistingLoanId: (r.pre_existing_loan_id as string) ?? null,
+    requesterAccountId: (r.requester_account_id as string) ?? null,
+    responderAccountId: (r.responder_account_id as string) ?? null,
     createdAt: r.created_at as string,
     respondedAt: (r.responded_at as string) ?? null,
   };
@@ -507,6 +519,7 @@ function mapSettlementRequest(r: Record<string, unknown>): SettlementRequest {
     requesterTxnId: (r.requester_txn_id as string) ?? null,
     responderTxnId: (r.responder_txn_id as string) ?? null,
     requesterAccountId: (r.requester_account_id as string) ?? null,
+    responderAccountId: (r.responder_account_id as string) ?? null,
     createdAt: r.created_at as string,
     respondedAt: (r.responded_at as string) ?? null,
   };
@@ -514,9 +527,10 @@ function mapSettlementRequest(r: Record<string, unknown>): SettlementRequest {
 
 // ══════════════════════════════════════
 // LINKED SETTLEMENT REQUESTS (Phase 2C-A)
-// Cloud-only. Ledger-only semantics: accept writes mirrored repayment
-// transactions with null account ids and decrements remaining_amount on
-// both loans. No account balance movement anywhere in 2C-A.
+// Cloud-only. Accept writes mirrored repayment transactions and decrements
+// remaining_amount on both loans. Account balances move only for the sides
+// that opted in (sender at create, receiver at accept) — null stays
+// ledger-only.
 // ══════════════════════════════════════
 export const settlementRequestsDb = {
   async getAll(): Promise<SettlementRequest[]> {
@@ -553,8 +567,12 @@ export const settlementRequestsDb = {
     });
     if (error) throw error;
   },
-  async accept(requestId: string): Promise<SettlementRequest> {
-    const { data, error } = await supabase.rpc('accept_settlement_request', { request_id: requestId });
+  async accept(requestId: string, responderAccountId?: string | null): Promise<SettlementRequest> {
+    // Same conditional-params shape as linkedRequestsDb.accept — see there.
+    const { data, error } = await supabase.rpc('accept_settlement_request',
+      responderAccountId
+        ? { request_id: requestId, responder_account_id: responderAccountId }
+        : { request_id: requestId });
     if (error) throw error;
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error('lsr: accept returned no row');

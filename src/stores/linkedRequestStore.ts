@@ -7,6 +7,7 @@ import { syncCandidateLoans } from '../lib/syncableLoans';
 import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
 import { usePersonStore } from './personStore';
+import { useAccountStore } from './accountStore';
 
 // Currencies the linked_transaction_requests SQL check constraint allows
 // (see supabase-migration-phase2b-linked-requests.sql). The wider
@@ -30,6 +31,10 @@ interface CreateInput {
   // Phase 2D: when set, the request references an existing sender-side
   // loan instead of creating a fresh one on acceptance.
   preExistingLoanId?: string | null;
+  // Sender's opted-in account — debited (lent) / credited (borrowed) when
+  // the other side accepts. Null ⇒ sender side ledger-only. Never combined
+  // with preExistingLoanId (past money must not double-count).
+  requesterAccountId?: string | null;
 }
 
 export interface SyncableLoansBreakdown {
@@ -54,7 +59,7 @@ interface LinkedRequestState {
   loading: boolean;
   loadRequests: () => Promise<void>;
   createRequest: (input: CreateInput) => Promise<LinkedRequest>;
-  accept: (requestId: string) => Promise<LinkedRequest>;
+  accept: (requestId: string, responderAccountId?: string | null) => Promise<LinkedRequest>;
   reject: (requestId: string, reason?: string) => Promise<LinkedRequest>;
   cancel: (requestId: string) => Promise<LinkedRequest>;
   incomingPending: (myUserId: string) => LinkedRequest[];
@@ -116,6 +121,7 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
       currency: input.currency,
       note: input.note ?? '',
       preExistingLoanId: input.preExistingLoanId ?? null,
+      requesterAccountId: input.requesterAccountId ?? null,
     });
     // Reload to get the canonical row (status, created_at, etc.).
     await get().loadRequests();
@@ -124,14 +130,16 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
     return inserted;
   },
 
-  accept: async (requestId) => {
-    const updated = await linkedRequestsDb.accept(requestId);
+  accept: async (requestId, responderAccountId) => {
+    const updated = await linkedRequestsDb.accept(requestId, responderAccountId ?? null);
     set((s) => ({ requests: upsert(s.requests, updated) }));
-    // Pull the newly-mirrored loan + transaction rows. Balances are NOT
-    // moved in Phase 2B, so accounts do not need a reload.
+    // Pull the newly-mirrored loan + transaction rows, plus accounts: either
+    // side may have opted into a balance effect (sender at create, receiver
+    // just now). A no-op reload for ledger-only accepts.
     try {
       await useLoanStore.getState().loadLoans();
       await useTransactionStore.getState().loadTransactions();
+      await useAccountStore.getState().loadAccounts();
     } catch (err) {
       console.error('post-accept reload failed (non-fatal)', err);
     }

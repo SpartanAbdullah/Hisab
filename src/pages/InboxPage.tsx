@@ -1,11 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus, BellRing, HandCoins, Tag, Users, ListChecks, CheckCircle2 } from 'lucide-react';
+import { Inbox, Send, AlertTriangle, Repeat, CreditCard, CalendarClock, ChevronRight, UserPlus, BellRing, HandCoins, Tag, Users, ListChecks, CheckCircle2, WalletMinimal } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
+import { useAppModeStore } from '../stores/appModeStore';
 import { usePersonStore } from '../stores/personStore';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -22,6 +23,7 @@ import { buildWhatsAppUrl } from '../lib/whatsappReminder';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { EditTransactionModal } from '../components/EditTransactionModal';
+import { AcceptIntoAccountSheet, type AcceptIntoAccountRequest } from '../components/AcceptIntoAccountSheet';
 import { formatMoney } from '../lib/constants';
 import { approxOther, plausibilityCheck } from '../lib/currencyValidation';
 import { friendlyLinkedError } from '../lib/linkedErrorMap';
@@ -73,6 +75,9 @@ export function InboxPage() {
   const location = useLocation();
   const toast = useToast();
   const t = useT();
+  // Account plumbing on settlement cards is a Full Money Tracker concern —
+  // simple mode has no account model the user thinks in.
+  const appMode = useAppModeStore((s) => s.mode);
 
   // An explicit destination (Home's "N kaam pending" row navigates with
   // state.tab) beats the smart-landing heuristic — the user was promised a
@@ -82,6 +87,12 @@ export function InboxPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   // Uncategorised-expense actions resolve in place via the edit sheet.
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
+  // Full-tracker accepts route through the account sheet (irreversibility
+  // confirm folded in). Simple mode and past-record syncs keep the plain
+  // confirmDestructive path — there is no account question to ask there.
+  const [acceptSheet, setAcceptSheet] = useState<
+    { kind: 'linked' | 'settlement'; id: string; req: AcceptIntoAccountRequest } | null
+  >(null);
 
   const load = useCallback(async () => {
     await Promise.all([
@@ -280,6 +291,29 @@ export function InboxPage() {
     }
   };
 
+  // The actual accept call, shared by the plain-confirm path (accountId
+  // null) and the account sheet. Returns success so the sheet knows whether
+  // to close or stay open for a retry.
+  const performAccept = async (id: string, accountId: string | null): Promise<boolean> => {
+    const req = requests.find((r) => r.id === id);
+    setBusyId(id);
+    try {
+      await accept(id, accountId);
+      toast.show({
+        type: 'success',
+        title: 'Accepted ✓',
+        subtitle: req ? `${formatMoney(req.amount, req.currency)} is now on your ledger.` : undefined,
+      });
+      return true;
+    } catch (err) {
+      console.error('[inbox] accept failed', err);
+      toast.show({ type: 'error', title: t('ltr_accept_error'), subtitle: errorSubtitle(err) });
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleAccept = async (id: string) => {
     // Tier-2: cross-user, irreversible, currency-locks on accept → deliberate confirm.
     const req = requests.find((r) => r.id === id);
@@ -289,6 +323,24 @@ export function InboxPage() {
       const plaus = plausibilityCheck(req.amount, req.currency);
       if (!plaus.passed && plaus.severity === 'block') {
         toast.show({ type: 'error', title: 'This amount looks off', subtitle: `${plaus.reason ?? ''} Ask them to resend it.` });
+        return;
+      }
+      // Full tracker: the account sheet carries the confirmation. Past-record
+      // syncs stay ledger-only by design (the money moved before linking), so
+      // they keep the plain confirm below.
+      if (appMode === 'full_tracker' && !req.preExistingLoanId) {
+        setAcceptSheet({
+          kind: 'linked',
+          id,
+          req: {
+            amount: req.amount,
+            currency: req.currency,
+            contactName: contactNameFor(req),
+            // They lent me money → it landed with me; they borrowed → it left me.
+            direction: req.kind === 'lent' ? 'in' : 'out',
+            flavor: 'loan',
+          },
+        });
         return;
       }
       const approx = approxOther(req.amount, req.currency);
@@ -303,20 +355,7 @@ export function InboxPage() {
       });
       if (!ok) return;
     }
-    setBusyId(id);
-    try {
-      await accept(id);
-      toast.show({
-        type: 'success',
-        title: 'Accepted ✓',
-        subtitle: req ? `${formatMoney(req.amount, req.currency)} is now on your ledger.` : undefined,
-      });
-    } catch (err) {
-      console.error('[inbox] accept failed', err);
-      toast.show({ type: 'error', title: t('ltr_accept_error'), subtitle: errorSubtitle(err) });
-    } finally {
-      setBusyId(null);
-    }
+    await performAccept(id, null);
   };
   const handleReject = async (id: string) => {
     const ok = await confirmDestructive({
@@ -357,8 +396,46 @@ export function InboxPage() {
     }
   };
 
+  const performAcceptSettlement = async (id: string, accountId: string | null): Promise<boolean> => {
+    const req = settlements.find((r) => r.id === id);
+    setBusyId(id);
+    try {
+      await acceptSettlement(id, accountId);
+      toast.show({
+        type: 'success',
+        title: 'Settled up 🎉',
+        subtitle: req ? `${formatMoney(req.amount, req.currency)} cleared.` : undefined,
+      });
+      return true;
+    } catch (err) {
+      console.error('[inbox] accept settlement failed', err);
+      toast.show({ type: 'error', title: t('stl_accept_error'), subtitle: errorSubtitle(err) });
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleAcceptSettlement = async (id: string) => {
     const req = settlements.find((r) => r.id === id);
+    if (req && appMode === 'full_tracker') {
+      // My side of the pair says which way the money moved for me: my loan
+      // 'given' → I'm the creditor being repaid (money in); 'taken' → I'm
+      // the debtor whose payment is being recorded (money out).
+      const myLoan = loans.find((l) => l.id === req.responderLoanId);
+      setAcceptSheet({
+        kind: 'settlement',
+        id,
+        req: {
+          amount: req.amount,
+          currency: req.currency,
+          contactName: contactNameForSettlement(req),
+          direction: myLoan ? (myLoan.type === 'given' ? 'in' : 'out') : 'unknown',
+          flavor: 'settlement',
+        },
+      });
+      return;
+    }
     if (req) {
       const ok = await confirmDestructive({
         title: t('confirm_settle_title').replace('{amount}', formatMoney(req.amount, req.currency)),
@@ -369,20 +446,7 @@ export function InboxPage() {
       });
       if (!ok) return;
     }
-    setBusyId(id);
-    try {
-      await acceptSettlement(id);
-      toast.show({
-        type: 'success',
-        title: 'Settled up 🎉',
-        subtitle: req ? `${formatMoney(req.amount, req.currency)} cleared.` : undefined,
-      });
-    } catch (err) {
-      console.error('[inbox] accept settlement failed', err);
-      toast.show({ type: 'error', title: t('stl_accept_error'), subtitle: errorSubtitle(err) });
-    } finally {
-      setBusyId(null);
-    }
+    await performAcceptSettlement(id, null);
   };
   const handleRejectSettlement = async (id: string) => {
     const ok = await confirmDestructive({
@@ -448,6 +512,44 @@ export function InboxPage() {
       if (p) return p.name;
     }
     return t('ltr_unknown_person');
+  }
+
+  // Which-account line for a settlement card, resolved for MY side only
+  // (the other user's account id can't be resolved here and is irrelevant).
+  // Full tracker only; direction comes from my loan in the pair.
+  function settlementAccountLine(r: SettlementRequest): string | null {
+    if (appMode !== 'full_tracker') return null;
+    const mine = r.fromUserId === myId;
+    const myAccountId = mine ? r.requesterAccountId : r.responderAccountId;
+    if (myAccountId) {
+      const name = accounts.find((a) => a.id === myAccountId)?.name;
+      if (!name) return null;
+      const myLoan = loans.find((l) => l.id === (mine ? r.requesterLoanId : r.responderLoanId));
+      if (!myLoan) return t('stl_account_neutral').replace('{account}', name);
+      // My loan 'taken' → I'm the debtor, money left me; 'given' → it landed.
+      return (myLoan.type === 'taken' ? t('stl_from_account') : t('stl_into_account')).replace('{account}', name);
+    }
+    // My side stayed ledger-only. Say so once the card matters (pending
+    // outgoing / any accepted) — rejected & cancelled history stays quiet.
+    if (mine) return r.status === 'pending' || r.status === 'accepted' ? t('stl_outgoing_no_account') : null;
+    return r.status === 'accepted' ? t('stl_incoming_no_account') : null;
+  }
+
+  // Same for linked LOAN cards. Direction from the request kind and which
+  // side of it I'm on: sender+lent / receiver+borrowed = money left me.
+  function linkedAccountLine(r: LinkedRequest): string | null {
+    if (appMode !== 'full_tracker') return null;
+    const mine = r.fromUserId === myId;
+    const myAccountId = mine ? r.requesterAccountId : r.responderAccountId;
+    if (myAccountId) {
+      const name = accounts.find((a) => a.id === myAccountId)?.name;
+      if (!name) return null;
+      const moneyOut = mine ? r.kind === 'lent' : r.kind === 'borrowed';
+      return (moneyOut ? t('req_from_account') : t('req_into_account')).replace('{account}', name);
+    }
+    // Accepted with no account on my side (incl. past-record syncs, where
+    // ledger-only is by design): state it, so nobody assumes a balance moved.
+    return r.status === 'accepted' ? t('req_no_account_note') : null;
   }
 
   // One-tap WhatsApp nudge for an outgoing request stuck on the other side.
@@ -528,6 +630,10 @@ export function InboxPage() {
                 tone="receive"
                 title={t('inbox_empty_action_title')}
                 description={t('inbox_empty_action_desc')}
+                // A cleared queue is a dead end — hand the user a way out
+                // instead of leaving them staring at an empty list.
+                actionLabel={t('inbox_empty_action_cta')}
+                onAction={() => navigate('/')}
               />
             ) : null
           ) : (
@@ -622,6 +728,7 @@ export function InboxPage() {
                     busy={busyId === entry.item.id}
                     contactName={contactNameFor(entry.item)}
                     remindUrl={remindUrlFor(entry)}
+                    accountLine={linkedAccountLine(entry.item)}
                     onAccept={() => handleAccept(entry.item.id)}
                     onReject={() => handleReject(entry.item.id)}
                     onCancel={() => handleCancel(entry.item.id)}
@@ -633,6 +740,8 @@ export function InboxPage() {
                     busy={busyId === entry.item.id}
                     contactName={contactNameForSettlement(entry.item)}
                     remindUrl={remindUrlFor(entry)}
+                    accountLine={settlementAccountLine(entry.item)}
+                    fullTracker={appMode === 'full_tracker'}
                     onAccept={() => handleAcceptSettlement(entry.item.id)}
                     onReject={() => handleRejectSettlement(entry.item.id)}
                     onCancel={() => handleCancelSettlement(entry.item.id)}
@@ -660,6 +769,22 @@ export function InboxPage() {
         open={!!selectedTxn}
         transaction={selectedTxn}
         onClose={() => setSelectedTxn(null)}
+      />
+
+      <AcceptIntoAccountSheet
+        open={!!acceptSheet}
+        request={acceptSheet?.req ?? null}
+        onClose={() => setAcceptSheet(null)}
+        onConfirm={async (accountId) => {
+          if (!acceptSheet) return;
+          const ok =
+            acceptSheet.kind === 'linked'
+              ? await performAccept(acceptSheet.id, accountId)
+              : await performAcceptSettlement(acceptSheet.id, accountId);
+          // Stay open on failure so the user can retry or fall back to
+          // record-only; the error toast already explains what went wrong.
+          if (ok) setAcceptSheet(null);
+        }}
       />
     </main>
   );
@@ -884,19 +1009,29 @@ function InfoCard({ item, onOpen }: { item: InfoItem; onOpen: () => void }) {
 }
 
 function SettlementCard({
-  request, tab, busy, contactName, remindUrl, onAccept, onReject, onCancel,
+  request, tab, busy, contactName, remindUrl, accountLine, fullTracker, onAccept, onReject, onCancel,
 }: {
   request: SettlementRequest;
   tab: Tab;
   busy: boolean;
   contactName: string;
   remindUrl: string;
+  // Pre-resolved which-account line for MY side (or a "record only" note),
+  // null when there's nothing to say. Built by settlementAccountLine.
+  accountLine: string | null;
+  fullTracker: boolean;
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
 }) {
   const t = useT();
   const isPending = request.status === 'pending';
+  // The "will NOT change your account balances" promise only holds where
+  // accounts can't be involved: the sender stayed ledger-only (outgoing),
+  // or the viewer is in simple mode (incoming). A full-tracker acceptor is
+  // about to be ASKED about an account — don't promise them otherwise.
+  const showLedgerHint =
+    tab === 'outgoing' ? !request.requesterAccountId : !fullTracker;
   const title = (tab === 'outgoing' ? t('stl_card_outgoing') : t('stl_card_incoming')).replace(
     '{name}', contactName,
   );
@@ -921,6 +1056,12 @@ function SettlementCard({
           <p className="text-[10.5px] text-ink-500 mt-1">
             {format(new Date(request.createdAt), 'MMM d, h:mm a')}
           </p>
+          {accountLine && (
+            <p className="text-[11px] text-ink-500 mt-1.5 flex items-start gap-1.5 leading-snug">
+              <WalletMinimal size={12} className="shrink-0 mt-[1px] text-ink-400" />
+              <span>{accountLine}</span>
+            </p>
+          )}
           {request.note ? (
             <p className="text-[11px] text-ink-500 italic mt-1.5 truncate">&ldquo;{request.note}&rdquo;</p>
           ) : null}
@@ -932,9 +1073,11 @@ function SettlementCard({
 
       {isPending ? (
         <>
-          <p className="text-[11px] text-accent-600 bg-accent-50 rounded-xl p-2.5 mt-3 leading-relaxed">
-            {t('stl_ledger_only_hint')}
-          </p>
+          {showLedgerHint && (
+            <p className="text-[11px] text-accent-600 bg-accent-50 rounded-xl p-2.5 mt-3 leading-relaxed">
+              {t('stl_ledger_only_hint')}
+            </p>
+          )}
           <div className="flex gap-2 mt-2">
             {tab === 'incoming' ? (
               <>
@@ -984,13 +1127,16 @@ function SettlementCard({
 }
 
 function RequestCard({
-  request, tab, busy, contactName, remindUrl, onAccept, onReject, onCancel,
+  request, tab, busy, contactName, remindUrl, accountLine, onAccept, onReject, onCancel,
 }: {
   request: LinkedRequest;
   tab: Tab;
   busy: boolean;
   contactName: string;
   remindUrl: string;
+  // Pre-resolved which-account line for MY side (or a "record only" note),
+  // null when there's nothing to say. Built by linkedAccountLine.
+  accountLine: string | null;
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
@@ -1069,6 +1215,12 @@ function RequestCard({
           <p className="text-[10.5px] text-ink-500 mt-1">
             {format(new Date(request.createdAt), 'MMM d, h:mm a')}
           </p>
+          {accountLine && (
+            <p className="text-[11px] text-ink-500 mt-1.5 flex items-start gap-1.5 leading-snug">
+              <WalletMinimal size={12} className="shrink-0 mt-[1px] text-ink-400" />
+              <span>{accountLine}</span>
+            </p>
+          )}
           {request.note ? (
             <p className="text-[11px] text-ink-500 italic mt-1.5 truncate">&ldquo;{request.note}&rdquo;</p>
           ) : null}

@@ -4,7 +4,7 @@
 // throughout — Hisaab never advises or holds investments.
 
 import { useCallback, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, TrendingUp, NotebookPen, ChevronDown, ChevronRight, Settings2 } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -41,7 +41,10 @@ export function InvestmentsPage() {
   const loadInvestments = useInvestmentStore((s) => s.loadInvestments);
   const loadAccounts = useAccountStore((s) => s.loadAccounts);
 
-  const [scopedMarketId, setScopedMarketId] = useState<string | null>(null);
+  // Home's per-market card rows deep-link here as /investments?market=<id> —
+  // land already scoped to that market instead of the mixed all-markets view.
+  const [searchParams] = useSearchParams();
+  const [scopedMarketId, setScopedMarketId] = useState<string | null>(() => searchParams.get('market'));
   const [showRecord, setShowRecord] = useState(false);
   const [recordPreset, setRecordPreset] = useState<RecordTradePreset | null>(null);
   const [showCreateMarket, setShowCreateMarket] = useState(false);
@@ -65,9 +68,11 @@ export function InvestmentsPage() {
   const headline = totals.find((b) => b.currency === primaryCurrency) ?? totals[0] ?? null;
   const pockets = totals.filter((b) => b !== headline);
 
+  // Scope by the RESOLVED market, not the raw id — a stale deep-link id
+  // (deleted market) must fall back to the all-markets view, not an empty one.
   const holdings = useMemo(
-    () => holdingsFor(scopedMarketId, trades, prices),
-    [scopedMarketId, trades, prices],
+    () => holdingsFor(scopedMarket?.id ?? null, trades, prices),
+    [scopedMarket, trades, prices],
   );
   const open = holdings.filter((h) => h.position.quantity > 0);
   const closed = holdings.filter((h) => h.position.quantity === 0);
