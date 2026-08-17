@@ -91,9 +91,15 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
   const personName = resolvePersonName({ personId: transaction.personId, fallback: transaction.relatedPerson });
   const linkedLoan = transaction.relatedLoanId ? loans.find((l) => l.id === transaction.relatedLoanId) ?? null : null;
   const actionLabel = getActionLabel(transaction, t, { personName, loan: linkedLoan });
+  // A split row's title is the event label ("Friday lunch"), which does NOT
+  // name the person — so the " · {name}" suffix has to stay, otherwise the row
+  // never says who owes it.
+  const usesSplitLabel = !meta.groupExpenseId && !!meta.splitEventId && !!meta.splitLabel;
   // Whether the friendly label already names the person — if so, drop the
   // " · {name}" suffix below to avoid "You gave to Ali · Ali".
-  const labelHasPerson = ['loan_given', 'loan_taken', 'repayment'].includes(transaction.type) && !!personName;
+  const labelHasPerson = !usesSplitLabel
+    && ['loan_given', 'loan_taken', 'repayment'].includes(transaction.type)
+    && !!personName;
 
   const contextIsDestination = Boolean(accountContextId && transaction.destinationAccountId === accountContextId);
   const contextIsSource = Boolean(accountContextId && transaction.sourceAccountId === accountContextId);
@@ -130,10 +136,15 @@ export function TransactionItem({ transaction, accountContextId, onClick }: Prop
   const categoryWins = ['expense', 'income'].includes(transaction.type) && !!transaction.category;
   const title = meta.groupExpenseId
     ? meta.expenseDescription || (categoryWins ? transaction.category : actionLabel)
-    : (categoryWins ? transaction.category : actionLabel);
+    // An ad-hoc split row is one slice of a shared bill; the event's own label
+    // ("Friday lunch") says far more than "Food" or "You gave to Ali".
+    : usesSplitLabel
+      ? meta.splitLabel!
+      : (categoryWins ? transaction.category : actionLabel);
 
   const detailParts = [format(new Date(transaction.createdAt), 'MMM d, h:mm a')];
   if (meta.groupName) detailParts.push(meta.groupName);
+  if (meta.splitPartyCount) detailParts.push(t('split_ways').replace('{n}', meta.splitPartyCount));
   if (visibleNote) detailParts.push(visibleNote);
 
   const handleReconcileClick = async (event: MouseEvent<HTMLButtonElement>) => {

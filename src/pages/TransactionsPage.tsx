@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Plus, ArrowLeftRight, Search, X } from 'lucide-react';
+import { Plus, ArrowLeftRight, Search, X, Users, ChevronDown } from 'lucide-react';
 import {
   startOfDay,
   subDays,
@@ -34,7 +34,66 @@ import { QuickEntry } from './QuickEntry';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { parseInternalNote } from '../lib/internalNotes';
+import { bundleSplitEvents, type LedgerEntry } from '../lib/splitLedger';
 import type { TransactionType, Transaction } from '../db';
+
+type SplitLedgerEntry = Extract<LedgerEntry, { kind: 'split' }>;
+
+// One ad-hoc split shown as the single event it was. Collapsed it reads like a
+// normal expense line carrying the FULL bill (that is what left the account);
+// expanded it shows the payer's own share and each person's receivable, which
+// are the rows that actually settle.
+function SplitEventRow({
+  entry,
+  expanded,
+  onToggle,
+  onSelect,
+}: {
+  entry: SplitLedgerEntry;
+  expanded: boolean;
+  onToggle: () => void;
+  onSelect: (txn: Transaction) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="py-1">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-2.5 py-2.5 text-left active:opacity-80 transition-opacity"
+      >
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-accent-100 text-accent-600 ml-[34px]">
+          <Users size={15} strokeWidth={1.8} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-medium text-ink-900 tracking-tight truncate">
+            {entry.label || t('tx_expense')}
+          </p>
+          <p className="text-[10.5px] text-ink-500 mt-0.5 truncate">
+            {format(new Date(entry.items[0].createdAt), 'MMM d, h:mm a')}
+            {' · '}
+            {t('split_ways').replace('{n}', String(entry.partyCount))}
+          </p>
+        </div>
+        <p className="text-[14px] font-semibold tabular-nums tracking-tight text-pay-text">
+          −{formatMoney(entry.total, entry.currency)}
+        </p>
+        <ChevronDown
+          size={14}
+          className={`text-ink-400 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {expanded && (
+        <div className="pl-[34px] border-l border-cream-hairline ml-[18px] divide-y divide-cream-hairline">
+          {entry.items.map((txn) => (
+            <TransactionItem key={txn.id} transaction={txn} onClick={() => onSelect(txn)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type TimeFilter =
   | 'all'
@@ -133,6 +192,15 @@ export function TransactionsPage() {
   const [search, setSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set());
+  const toggleSplit = useCallback((splitEventId: string) => {
+    setExpandedSplits((prev) => {
+      const next = new Set(prev);
+      if (next.has(splitEventId)) next.delete(splitEventId);
+      else next.add(splitEventId);
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     await Promise.all([loadTransactions(), loadAccounts(), loadLoans(), loadGoals()]);
@@ -230,7 +298,10 @@ export function TransactionsPage() {
         else if (kind === 'out') entry.signedSum -= tx.amount;
       }
     }
-    return [...groups.values()];
+    // Day totals are computed from the raw rows above, THEN the rows are
+    // bundled for display — so collapsing a split never changes the day's
+    // arithmetic, only how many lines it takes to show it.
+    return [...groups.values()].map((g) => ({ ...g, entries: bundleSplitEvents(g.items) }));
   }, [filtered, primaryCurrency]);
 
   const today = new Date();
@@ -318,7 +389,7 @@ export function TransactionsPage() {
               {search && (
                 <button
                   onClick={() => setSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 active:scale-90 w-9 h-9 flex items-center justify-center"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 w-9 h-9 flex items-center justify-center press-xs"
                   aria-label="Clear search"
                 >
                   <X size={14} />
@@ -433,7 +504,14 @@ export function TransactionsPage() {
             />
           ) : null
         ) : (
-          <div className="space-y-4">
+          // Stagger by DAY GROUP, not by individual transaction. Grouped
+          // rows already read as one block, and delaying 40 rows would
+          // outlast the user's patience — a long history should feel fast.
+          // Re-keying on the filters means switching filter re-plays the
+          // reveal, which is the correct signal that the list changed.
+          // Deliberately NOT keyed on `search` — re-animating on every
+          // keystroke would make typing feel like the page was thrashing.
+          <div className="space-y-4 stagger-in" key={`${filter}-${timeFilter}`}>
             {dayGroups.map((group) => (
               <div key={group.date.toISOString()}>
                 <div className="flex items-baseline justify-between px-1 mb-1.5">
@@ -452,13 +530,23 @@ export function TransactionsPage() {
                   )}
                 </div>
                 <div className="rounded-[18px] bg-cream-card border border-cream-border px-4 divide-y divide-cream-hairline">
-                  {group.items.map((txn) => (
-                    <TransactionItem
-                      key={txn.id}
-                      transaction={txn}
-                      onClick={() => setSelectedTransaction(txn)}
-                    />
-                  ))}
+                  {group.entries.map((entry) =>
+                    entry.kind === 'txn' ? (
+                      <TransactionItem
+                        key={entry.key}
+                        transaction={entry.txn}
+                        onClick={() => setSelectedTransaction(entry.txn)}
+                      />
+                    ) : (
+                      <SplitEventRow
+                        key={entry.key}
+                        entry={entry}
+                        expanded={expandedSplits.has(entry.splitEventId)}
+                        onToggle={() => toggleSplit(entry.splitEventId)}
+                        onSelect={setSelectedTransaction}
+                      />
+                    ),
+                  )}
                 </div>
               </div>
             ))}

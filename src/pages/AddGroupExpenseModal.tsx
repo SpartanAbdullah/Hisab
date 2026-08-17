@@ -15,6 +15,8 @@ import {
   getInactiveGroupMembers,
   NEED_TWO_ACTIVE_MEMBERS_MESSAGE,
 } from '../lib/groupActiveMembers';
+import { computeShares } from '../lib/splitMath';
+import { SHARE_ERROR_KEYS } from '../lib/shareErrors';
 import { findRecentDuplicate } from '../lib/duplicateExpense';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { AccountSelect } from '../components/AccountSelect';
@@ -123,49 +125,23 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
     setSelectedMembers(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  // Share math lives in splitMath so this form and the ad-hoc split sheet can
+  // never drift apart. Only the error TRANSLATION belongs here — the helper
+  // returns language-agnostic codes.
   const computeSplits = (): { valid: boolean; splits: SplitDetail[]; error?: string } => {
-    if (selectedMembers.length === 0) return { valid: false, splits: [], error: t('val_pick_member') };
-
-    if (splitType === 'equal') {
-      const base = Math.floor((amt * 100) / selectedMembers.length) / 100;
-      const remainder = Math.round((amt - base * selectedMembers.length) * 100) / 100;
-      return {
-        valid: true,
-        splits: selectedMembers.map((id, index) => ({
-          memberId: id,
-          amount: index === selectedMembers.length - 1 ? base + remainder : base,
-        })),
-      };
-    }
-
-    if (splitType === 'exact') {
-      const splits = selectedMembers.map(id => ({ memberId: id, amount: parseFloat(exactAmounts[id] || '0') }));
-      const total = splits.reduce((sum, split) => sum + split.amount, 0);
-      if (Math.abs(total - amt) > 0.01) return { valid: false, splits, error: t('group_total_mismatch') };
-      return { valid: true, splits };
-    }
-
-    if (splitType === 'percentage') {
-      const splits = selectedMembers.map(id => {
-        const pct = parseFloat(percentages[id] || '0');
-        return { memberId: id, amount: Math.round((pct / 100) * amt * 100) / 100 };
-      });
-      const totalPct = selectedMembers.reduce((sum, id) => sum + parseFloat(percentages[id] || '0'), 0);
-      if (Math.abs(totalPct - 100) > 0.01) return { valid: false, splits, error: t('group_pct_mismatch') };
-      return { valid: true, splits };
-    }
-
-    if (splitType === 'shares') {
-      const totalShares = selectedMembers.reduce((sum, id) => sum + parseFloat(shares[id] || '1'), 0);
-      if (totalShares === 0) return { valid: false, splits: [], error: t('val_shares_zero') };
-      const splits = selectedMembers.map(id => {
-        const share = parseFloat(shares[id] || '1');
-        return { memberId: id, amount: Math.round((share / totalShares) * amt * 100) / 100 };
-      });
-      return { valid: true, splits };
-    }
-
-    return { valid: false, splits: [] };
+    const result = computeShares({
+      amount: amt,
+      participantIds: selectedMembers,
+      method: splitType,
+      exact: exactAmounts,
+      percentages,
+      shares,
+    });
+    return {
+      valid: result.valid,
+      splits: result.splits,
+      error: result.error ? t(SHARE_ERROR_KEYS[result.error]) : undefined,
+    };
   };
 
   const handleSubmit = async () => {

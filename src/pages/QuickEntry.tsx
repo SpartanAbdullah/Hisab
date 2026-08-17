@@ -24,6 +24,8 @@ import { linkedLoanIdSet } from '../lib/linkedLoanIdSet';
 import { buildRepaymentGroups } from '../lib/repaymentGroups';
 import { allocateRepayment, previewAllocations } from '../lib/repaymentAllocation';
 import { executeAllocatedRepayments } from '../lib/repaymentExecution';
+import { executeSplitEvent } from '../lib/splitEvent';
+import { SplitWithSheet, type SplitPlan } from '../components/SplitWithSheet';
 import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
 import { rateIsSane } from '../lib/conversionMath';
 import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
@@ -136,6 +138,11 @@ export function QuickEntry({
   const [confirmData, setConfirmData] = useState<{ title: string; description: string; changes: Array<{ accountName: string; currency: string; before: number; after: number }>; route?: string }>({ title: '', description: '', changes: [] });
   const [showInlineAccount, setShowInlineAccount] = useState(false);
   const [showSpendingWarning, setShowSpendingWarning] = useState(false);
+  // Ad-hoc split: a MODIFIER on an ordinary expense, not an entry type of its
+  // own. Null = plain expense. Set = the bill is shared, and submit fans the
+  // one entry out into the payer's share plus a receivable per person.
+  const [splitPlan, setSplitPlan] = useState<SplitPlan | null>(null);
+  const [showSplitSheet, setShowSplitSheet] = useState(false);
   const amountRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -205,6 +212,7 @@ export function QuickEntry({
     setNotes(''); setContact({ id: null, name: '' }); setRepayTarget(null); setExpandedGroupKey(''); setLoanSearch('');
     setGoalId(''); setConversionRate('');
     setHasEmi(false); setEmiInstallments(''); setEmiStartDate('');
+    setSplitPlan(null); setShowSplitSheet(false);
   };
   const handleClose = () => { reset(); onClose(); };
 
@@ -246,6 +254,7 @@ export function QuickEntry({
     setCategory('');
     setNotes('');
     setConversionRate('');
+    setSplitPlan(null);
   }, [open, preset]);
 
   useEffect(() => {
@@ -278,6 +287,17 @@ export function QuickEntry({
   const needsGoal = type === 'goal_contribution';
   const showCategory = ['income', 'expense'].includes(type);
   const isGroupExpense = type === 'group_expense';
+  // Splitting is offered on a plain expense only. A group expense already has
+  // its own split UI, and every other type is either not shared (income,
+  // transfer) or already person-to-person (loans, repayments).
+  const canSplit = type === 'expense' && !isGroupExpense;
+
+  // Switching away from Spend must drop a configured split — otherwise a plan
+  // built for an expense would silently ride along onto an Income or Move
+  // entry, whose submit path has no idea what to do with it.
+  useEffect(() => {
+    if (!canSplit && splitPlan) setSplitPlan(null);
+  }, [canSplit, splitPlan]);
   // A loan is "linked" when an accepted linked_transaction_request mirrors it
   // to another Hisaab user. Such a loan must settle through the dedicated
   // settlement-request flow (so the counterparty confirms) — repaying it
@@ -835,6 +855,92 @@ export function QuickEntry({
         return;
       }
 
+      // Ad-hoc split. One user action, several rows: the payer's own share as a
+      // real expense (so only THAT counts as spending) plus a receivable per
+      // person (so the account still moves by the full bill). No group is
+      // created — these settle against each contact's running balance, which
+      // ContactDetailSheet and the consolidated repayment flow already handle.
+      if (canSplit && splitPlan) {
+        const account = accounts.find((a) => a.id === sourceId)!;
+        const splitCurrency = account.currency;
+        // The sheet works with placeholder keys for names typed fresh; resolve
+        // every participant to a real Person row before writing anything.
+        const resolveParticipant = async (personId: string, personName: string) => {
+          const known = usePersonStore.getState().persons.find((p) => p.id === personId);
+          if (known) return known;
+          return usePersonStore.getState().findOrCreateByName(personName);
+        };
+
+        const others = await Promise.all(
+          splitPlan.others.map(async (o) => {
+            const person = await resolveParticipant(o.personId, o.personName);
+            return { personId: person.id, personName: person.name, amount: o.amount };
+          }),
+        );
+        const payer = splitPlan.payer
+          ? await resolveParticipant(splitPlan.payer.personId, splitPlan.payer.personName).then((p) => ({ personId: p.id, personName: p.name }))
+          : undefined;
+
+        const label = notes.trim() || category || t('tx_expense');
+        const result = await executeSplitEvent(
+          {
+            label,
+            category,
+            notes,
+            mode: appMode === 'splits_only' ? 'splits_only' : 'tracker',
+            direction: splitPlan.direction,
+            currency: splitCurrency,
+            myShare: splitPlan.myShare,
+            others,
+            payer,
+            accountId: sourceId,
+          },
+          {
+            processTransaction: (splitInput) => processTransaction(splitInput as TransactionInput),
+            createLoan: (loanInput) => createLoan(loanInput),
+          },
+        );
+
+        if (result.failed && result.done === 0) {
+          throw result.failed.error instanceof Error ? result.failed.error : new Error(t('toast_error_generic'));
+        }
+        if (result.failed) {
+          // Committed prefix stays — money that already moved is not un-moved.
+          // Say exactly how far it got so a retry only covers the remainder.
+          toast.show({
+            type: 'error',
+            title: t('split_partial_title').replace('{done}', String(result.done)).replace('{total}', String(result.total)),
+            subtitle: result.failed.error instanceof Error ? result.failed.error.message : t('toast_error_generic'),
+            duration: 6000,
+          });
+          reset();
+          onClose();
+          return;
+        }
+
+        const owed = Math.round(others.reduce((sum, o) => sum + o.amount, 0) * 100) / 100;
+        const accountMove = splitPlan.direction === 'i_paid' && appMode !== 'splits_only'
+          ? Math.round((splitPlan.myShare + owed) * 100) / 100
+          : 0;
+        setConfirmData({
+          title: t('split_saved_title'),
+          description: splitPlan.direction === 'i_paid'
+            ? t('split_saved_i_paid')
+                .replace('{total}', formatMoney(accountMove || owed, splitCurrency))
+                .replace('{n}', String(others.length))
+                .replace('{owed}', formatMoney(owed, splitCurrency))
+            : t('split_saved_they_paid')
+                .replace('{name}', payer?.personName ?? t('loan_they'))
+                .replace('{mine}', formatMoney(splitPlan.myShare, splitCurrency)),
+          changes: accountMove > 0
+            ? [{ accountName: account.name, currency: splitCurrency, before: account.balance, after: account.balance - accountMove }]
+            : [],
+        });
+        setShowConfirmation(true);
+        reset();
+        return;
+      }
+
       switch (type) {
         case 'income': { const d = accounts.find(a => a.id === destId)!; changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt }); input = { type: 'income', amount: amt, destinationAccountId: destId, category, notes }; break; }
         case 'expense': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'expense', amount: amt, sourceAccountId: sourceId, category, notes }; break; }
@@ -1085,7 +1191,7 @@ export function QuickEntry({
               setStep(2);
             }}
             disabled={!parseFloat(amount)}
-            className="flex-1 bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+            className="flex-1 bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 press"
           >{`${t('quick_next')} \u2192`}</button>
           </div>
         ) : step === 2 ? (
@@ -1104,7 +1210,7 @@ export function QuickEntry({
                 &#x2190;
               </button>
               <button onClick={preSubmit} disabled={saving || !canSubmit()}
-                className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+                className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-semibold disabled:opacity-30 press"
               >{saving ? t('quick_processing') : wouldBranchToLinked ? t('ltr_branch_cta') : `${t('quick_save')} \u2713`}</button>
             </div>
           )
@@ -1164,7 +1270,7 @@ export function QuickEntry({
                 not hidden behind a separate tab. */}
             <button
               onClick={() => { handleClose(); navigate('/hisaab-ai'); }}
-              className="w-full flex items-center justify-center gap-1.5 text-[12px] text-ink-500 active:scale-[0.98] transition-transform pt-1 min-h-[40px]"
+              className="w-full flex items-center justify-center gap-1.5 text-[12px] text-ink-500 pt-1 min-h-[40px] press"
             >
               <Sparkles size={13} className="text-accent-500 shrink-0" />
               {t('quick_type_instead')}
@@ -1289,7 +1395,7 @@ export function QuickEntry({
                   setDestId('');
                   setStep(0);
                 }}
-                className="w-full rounded-2xl border border-cream-border bg-cream-card p-3.5 flex items-center gap-3 text-left active:scale-[0.98] transition-transform"
+                className="w-full rounded-2xl border border-cream-border bg-cream-card p-3.5 flex items-center gap-3 text-left press"
               >
                 <div className="w-9 h-9 rounded-xl bg-accent-50 text-accent-600 flex items-center justify-center">
                   <choice.icon size={16} strokeWidth={1.8} />
@@ -1484,6 +1590,51 @@ export function QuickEntry({
                     </>
                   )}
                 />
+              </div>
+            )}
+
+            {/* Split-this chip. Deliberately a modifier on the Spend flow
+                rather than its own entry tile — making "split" a separate type
+                is exactly what forces people into groups they don't want. */}
+            {canSplit && sourceId && (
+              <div>
+                <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">
+                  {t('split_chip_label')}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowSplitSheet(true)}
+                  className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
+                    splitPlan ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <Users size={15} className={splitPlan ? 'text-accent-600 shrink-0' : 'text-ink-500 shrink-0'} />
+                    <span className="min-w-0">
+                      <span className={`block text-[13px] font-semibold ${splitPlan ? 'text-accent-600' : 'text-ink-700'}`}>
+                        {splitPlan
+                          ? t('split_chip_active').replace('{n}', String(splitPlan.partyCount))
+                          : t('split_chip_none')}
+                      </span>
+                      {splitPlan && (
+                        <span className="block text-[10.5px] text-ink-500 truncate mt-0.5">
+                          {splitPlan.direction === 'i_paid'
+                            ? t('split_summary_i_paid')
+                                .replace('{total}', formatMoney(parseFloat(amount) || 0, srcAccount?.currency ?? ledgerCurrency))
+                                .replace('{mine}', formatMoney(splitPlan.myShare, srcAccount?.currency ?? ledgerCurrency))
+                                .replace('{owed}', formatMoney(
+                                  Math.round(splitPlan.others.reduce((sum, o) => sum + o.amount, 0) * 100) / 100,
+                                  srcAccount?.currency ?? ledgerCurrency,
+                                ))
+                            : t('split_summary_they_paid')
+                                .replace('{name}', splitPlan.payer?.personName ?? t('loan_they'))
+                                .replace('{mine}', formatMoney(splitPlan.myShare, srcAccount?.currency ?? ledgerCurrency))}
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  <ChevronRight size={15} className="text-ink-400 shrink-0" />
+                </button>
               </div>
             )}
 
@@ -1794,7 +1945,7 @@ export function QuickEntry({
                 <button
                   type="button"
                   onClick={() => { if (selectedLoan) { reset(); onClose(); navigate(`/loan/${selectedLoan.id}`); } }}
-                  className="w-full rounded-xl bg-ink-900 text-white py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform"
+                  className="w-full rounded-xl bg-ink-900 text-white py-2.5 text-[12px] font-semibold press"
                 >{t('ltr_repay_linked_cta')}</button>
               </div>
             )}
@@ -1917,6 +2068,14 @@ export function QuickEntry({
       </Modal>
 
       <AddAccountStepper open={showInlineAccount} onClose={() => setShowInlineAccount(false)} onComplete={() => setShowInlineAccount(false)} inline />
+      <SplitWithSheet
+        open={showSplitSheet}
+        onClose={() => setShowSplitSheet(false)}
+        total={parseFloat(amount) || 0}
+        currency={srcAccount?.currency ?? ledgerCurrency}
+        initial={splitPlan}
+        onApply={setSplitPlan}
+      />
       <ConfirmationSheet open={showConfirmation} onClose={() => { setShowConfirmation(false); onClose(); }} title={confirmData.title} description={confirmData.description} balanceChanges={confirmData.changes} viewRoute={confirmData.route} />
       <SpendingWarningModal
         open={showSpendingWarning}

@@ -958,7 +958,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 type: 'given',
                 totalAmount: input.amount,
                 currency,
-                notes: input.notes,
+                // Only the human-visible part. Loan.notes is rendered RAW on
+                // LoansPage, LoanDetailPage, the repayment allocators and
+                // statements, so a caller that stamps internal meta into the
+                // transaction note (ad-hoc splits) must not leak
+                // `[[HISAAB_META:…]]` into all of them.
+                notes: parseInternalNote(input.notes).visibleNote,
               });
               relatedLoanId = loan.id;
             } else {
@@ -996,7 +1001,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 type: 'taken',
                 totalAmount: input.amount,
                 currency,
-                notes: input.notes,
+                // Human-visible part only — see the loan_given branch above.
+                notes: parseInternalNote(input.notes).visibleNote,
               });
               relatedLoanId = loan.id;
             } else {

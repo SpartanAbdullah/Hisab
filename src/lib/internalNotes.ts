@@ -22,6 +22,14 @@ export interface InternalNoteMeta {
   // forgiveness, not cash. Money views (flex budget, week flow) must skip it,
   // unlike other ledger-only repayment rows which DO stand in for real money.
   writeOff?: string;
+  // Ad-hoc split (no group): every row produced by one "I paid, split it with
+  // these people" action shares this id — the payer's own-share expense plus
+  // one loan_given per participant. Lets the ledger collapse them to a single
+  // line and delete them as one unit. Deliberately NOT written to Loan.notes,
+  // which is rendered raw in many places; see splitEvent.ts.
+  splitEventId?: string;
+  splitLabel?: string;
+  splitPartyCount?: string;
 }
 
 export interface ParsedInternalNote {

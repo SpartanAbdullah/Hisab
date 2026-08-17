@@ -29,6 +29,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const { accounts, loadAccounts } = useAccountStore();
   const { updateTransaction, deleteTransaction, restoreTransaction } = useTransactionStore();
   const persistReceiptPath = useTransactionStore((s) => s.setReceiptPath);
+  const allTransactions = useTransactionStore((s) => s.transactions);
   const loans = useLoanStore((s) => s.loans);
   const toast = useToast();
   const t = useT();
@@ -147,7 +148,22 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const isLoanGiven = transaction.type === 'loan_given';
   const isLoanTaken = transaction.type === 'loan_taken';
   const noteMeta = parseInternalNote(transaction.notes).meta;
-  const isDirectlyEditable = (isExpense || isIncome || isTransfer || isLoanGiven || isLoanTaken) && !noteMeta.groupExpenseId;
+  // A split row is one slice of a shared bill. Editing it alone would desync
+  // the slices from each other — raise your own share and the account no longer
+  // moves by the real total — so the whole event is edited or deleted together.
+  const isDirectlyEditable = (isExpense || isIncome || isTransfer || isLoanGiven || isLoanTaken)
+    && !noteMeta.groupExpenseId
+    && !noteMeta.splitEventId;
+
+  const splitRows = noteMeta.splitEventId
+    ? allTransactions.filter((row) => parseInternalNote(row.notes).meta.splitEventId === noteMeta.splitEventId)
+    : [];
+  // Pre-flight the blocker that deleteTransaction raises per row, so a
+  // part-settled split refuses BEFORE we start destroying its siblings rather
+  // than halfway through.
+  const splitSettledRow = splitRows.find((row) =>
+    row.relatedLoanId && allTransactions.some((x) => x.type === 'repayment' && x.relatedLoanId === row.relatedLoanId),
+  );
 
   const transferSource = isTransfer ? accounts.find((a) => a.id === accountId) : null;
   const transferDest = isTransfer ? accounts.find((a) => a.id === destAccountId) : null;
@@ -331,6 +347,51 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
     }
   };
 
+  // Delete every row of an ad-hoc split as one action: the payer's own share
+  // AND each receivable. Removing only some of them would leave the account
+  // debited for a bill that no longer exists in the ledger.
+  const handleDeleteSplit = async () => {
+    if (splitRows.length === 0) return;
+    if (splitSettledRow) {
+      toast.show({ type: 'error', title: t('split_delete_blocked') });
+      return;
+    }
+    const ok = await confirmDestructive({
+      title: t('split_delete_event'),
+      description: t('split_delete_confirm')
+        .replace('{n}', String(splitRows.length))
+        .replace('{label}', noteMeta.splitLabel || t('tx_expense')),
+      confirmLabel: t('tx_delete_entry'),
+      cancelLabel: t('not_now'),
+      tone: 'destructive',
+    });
+    if (!ok) return;
+
+    setSaving(true);
+    let done = 0;
+    try {
+      // Receivables first, own-share last — same reasoning as when writing the
+      // split: if this stops halfway, the recoverable row is the one left over.
+      const ordered = [...splitRows].sort((a, b) => Number(!!b.relatedLoanId) - Number(!!a.relatedLoanId));
+      for (const row of ordered) {
+        await deleteTransaction(row.id);
+        done += 1;
+      }
+      onClose();
+      toast.show({ type: 'success', title: t('tx_deleted'), subtitle: t('tx_delete_no_undo_note') });
+    } catch (error) {
+      toast.show({
+        type: 'error',
+        title: t('split_partial_title').replace('{done}', String(done)).replace('{total}', String(splitRows.length)),
+        subtitle: error instanceof Error ? error.message : 'Failed',
+        duration: 6000,
+      });
+      if (done > 0) onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!isDirectlyEditable) {
     const source = transaction.sourceAccountId ? accounts.find((account) => account.id === transaction.sourceAccountId) : null;
     const destination = transaction.destinationAccountId ? accounts.find((account) => account.id === transaction.destinationAccountId) : null;
@@ -343,13 +404,24 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           // Group mirrors: the on-open probe decides. LIVE group expense →
           // delete disabled (route via the group screen); orphan whose group
           // was deleted → freely deletable (previously locked forever).
-          <button
-            onClick={handleDelete}
-            disabled={saving || groupLive === true}
-            className="w-full rounded-2xl bg-pay-50 text-pay-text py-3.5 text-sm font-bold disabled:opacity-40"
-          >
-            {saving ? t('quick_processing') : t('tx_delete_entry')}
-          </button>
+          // Ad-hoc splits delete as a whole event, never row by row.
+          noteMeta.splitEventId ? (
+            <button
+              onClick={handleDeleteSplit}
+              disabled={saving || !!splitSettledRow}
+              className="w-full rounded-2xl bg-pay-50 text-pay-text py-3.5 text-sm font-bold disabled:opacity-40"
+            >
+              {saving ? t('quick_processing') : t('split_delete_event')}
+            </button>
+          ) : (
+            <button
+              onClick={handleDelete}
+              disabled={saving || groupLive === true}
+              className="w-full rounded-2xl bg-pay-50 text-pay-text py-3.5 text-sm font-bold disabled:opacity-40"
+            >
+              {saving ? t('quick_processing') : t('tx_delete_entry')}
+            </button>
+          )
         )}
       >
         <div className="space-y-4">
@@ -369,8 +441,30 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           {transaction.relatedPerson && <p className="text-[13px] text-ink-700">{t('label_person')} <span className="font-semibold">{transaction.relatedPerson}</span></p>}
           {transaction.notes && <p className="text-[12px] text-ink-500">{parseInternalNote(transaction.notes).visibleNote}</p>}
           <p className="text-[12px] text-ink-500 bg-cream-soft rounded-xl p-3 leading-relaxed">
-            {t('tx_readonly_note')}
+            {noteMeta.splitEventId ? t('split_locked_edit') : t('tx_readonly_note')}
           </p>
+          {noteMeta.splitEventId && (
+            <div className="rounded-2xl border border-cream-border bg-cream-card p-3.5 space-y-2">
+              <p className="text-[10.5px] font-bold text-ink-500 uppercase tracking-widest">
+                {t('split_ways').replace('{n}', noteMeta.splitPartyCount ?? String(splitRows.length))}
+              </p>
+              {splitRows.map((row) => (
+                <div key={row.id} className="flex items-center justify-between gap-3">
+                  <span className="text-[12px] text-ink-700 truncate">
+                    {row.type === 'expense' ? t('split_you') : row.relatedPerson ?? ''}
+                  </span>
+                  <span className={`text-[12px] font-semibold tabular-nums ${row.id === transaction.id ? 'text-accent-600' : 'text-ink-900'}`}>
+                    {formatMoney(row.amount, row.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {splitSettledRow && (
+            <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3 leading-relaxed">
+              {t('split_delete_blocked')}
+            </p>
+          )}
           {noteMeta.groupExpenseId && groupLive !== false && (
             <p className="text-[12px] text-warn-600 bg-warn-50 rounded-xl p-3 leading-relaxed">
               {t('tx_group_expense_warn')}
