@@ -48,31 +48,70 @@ export function DailyQuote() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-navy-900/50 backdrop-blur-sm animate-fade-in" onClick={dismiss} />
-      <div
-        className="relative w-full max-w-[480px] bg-cream-bg rounded-t-[26px] p-6 pb-[max(28px,env(safe-area-inset-bottom))] animate-slide-up"
-        style={{ boxShadow: '0 -20px 60px -20px rgba(11,14,42,0.4)' }}
-      >
-        <button onClick={dismiss} className="absolute right-4 top-4 w-8 h-8 rounded-xl flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors" aria-label={t('cancel')}>
-          <X size={16} />
-        </button>
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-100 to-accent-50 text-accent-600 flex items-center justify-center mb-4">
-          <Lightbulb size={22} strokeWidth={1.9} />
-        </div>
-        <p className="text-[10.5px] font-semibold text-accent-600 uppercase tracking-[0.14em]">{t('quote_daily_title')}</p>
-        <p className="text-[19px] font-semibold text-ink-900 leading-snug tracking-tight mt-2">&ldquo;{quote.text}&rdquo;</p>
-        <p className="text-[12.5px] text-ink-500 mt-3 font-medium">&mdash; {quote.author}</p>
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-5"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="daily-wisdom-title"
+    >
+      <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm animate-fade-in" onClick={dismiss} />
 
-        <div className="flex gap-2.5 mt-6">
-          <button onClick={dismiss} className="flex-1 py-3.5 rounded-2xl bg-ink-900 text-white text-[13px] font-bold press">
-            {t('quote_got_it')}
+      {/* Rainbow frame. The drifting spectrum lives in this box and the cream
+          card sits on top of it, so all that shows through is the 3px gutter
+          between their two border radii — a moving colour outline, with no
+          coloured pixel ever landing behind body text. */}
+      <div
+        className="relative w-full max-w-[380px] rounded-[30px] p-[3px] overflow-hidden animate-scale-in"
+        style={{ boxShadow: '0 26px 70px -26px rgba(11,14,42,0.6)' }}
+      >
+        <div className="wisdom-spectrum" aria-hidden="true" />
+
+        <div className="relative bg-cream-bg rounded-[27px] px-6 py-7 max-h-[85vh] overflow-y-auto">
+          <div className="wisdom-wash pointer-events-none absolute inset-x-0 top-0 h-36" aria-hidden="true" />
+
+          <button
+            onClick={dismiss}
+            className="absolute right-3.5 top-3.5 w-9 h-9 rounded-xl flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors"
+            aria-label={t('cancel')}
+          >
+            <X size={16} />
           </button>
-          <button onClick={share} className="px-5 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[13px] font-semibold flex items-center gap-2 active:bg-cream-soft transition-colors">
-            <Share2 size={15} /> {t('quote_share')}
-          </button>
+
+          <div className="relative text-center">
+            {/* Same spectrum, second instance. The navy scrim over it keeps the
+                white bulb legible across every band — white on the yellow
+                stretch would otherwise all but vanish. */}
+            <div className="relative w-14 h-14 rounded-2xl overflow-hidden mx-auto flex items-center justify-center">
+              <div className="wisdom-spectrum" aria-hidden="true" />
+              <div className="absolute inset-0 bg-navy-900/25" aria-hidden="true" />
+              <Lightbulb size={26} strokeWidth={2} className="relative text-white" />
+            </div>
+
+            <p
+              id="daily-wisdom-title"
+              className="wisdom-text text-[10.5px] font-bold uppercase tracking-[0.16em] mt-4"
+            >
+              {t('quote_daily_title')}
+            </p>
+            <p className="text-[20px] font-semibold text-ink-900 leading-snug tracking-tight mt-2.5 text-balance">
+              &ldquo;{quote.text}&rdquo;
+            </p>
+            <p className="text-[12.5px] text-ink-500 mt-3 font-medium">&mdash; {quote.author}</p>
+
+            {/* Got it stays ink-900 on purpose: with this much colour around
+                it, the one high-contrast block on screen is what reads as the
+                action. A rainbow CTA would compete with its own frame. */}
+            <div className="flex gap-2.5 mt-7">
+              <button onClick={dismiss} className="flex-1 py-3.5 rounded-2xl bg-ink-900 text-white text-[13px] font-bold press">
+                {t('quote_got_it')}
+              </button>
+              <button onClick={share} className="px-5 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[13px] font-semibold flex items-center gap-2 active:bg-cream-soft transition-colors">
+                <Share2 size={15} /> {t('quote_share')}
+              </button>
+            </div>
+            <button onClick={turnOff} className="w-full text-center text-[11px] text-ink-400 mt-2 min-h-[44px]">{t('quote_turn_off')}</button>
+          </div>
         </div>
-        <button onClick={turnOff} className="w-full text-center text-[11px] text-ink-400 mt-3 min-h-[44px]">{t('quote_turn_off')}</button>
       </div>
     </div>
   );

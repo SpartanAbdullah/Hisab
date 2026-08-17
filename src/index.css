@@ -757,6 +757,94 @@ html.dark .skeleton-sweep::after {
   .glow-attention { animation: none; box-shadow: 0 0 8px 2px rgba(124, 92, 255, 0.3); }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+ * DAILY WISDOM — the one surface allowed to shout
+ *
+ * Sukoon stays calm everywhere money is on screen. This popup isn't about
+ * the user's money: it's a once-a-day nudge that has to earn a glance
+ * before the thumb reflexively dismisses it. So it's the deliberate
+ * exception — a full-spectrum gradient that drifts.
+ *
+ * Still inside the performance contract. The drift is a translateX on an
+ * over-wide gradient layer behind an overflow-hidden mask, so it composites
+ * on the GPU instead of repainting a background-position every frame. The
+ * gradient states the colour cycle twice PLUS its first colour again (15
+ * stops over 200%), which puts an identical pixel exactly 100% apart — so
+ * translating -50% of the layer loops with no visible seam.
+ *
+ * Under reduced-motion the colour stays and only the drift stops: the
+ * rainbow is the personality, the movement is just decoration.
+ * ════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Saturated but not clip-art — the violet is the app's own accent, so the
+     cycle passes through Hisaab's identity on its way round. */
+  --wisdom-spectrum: #FF5A5F, #FF9F45, #FFD84D, #3ECF8E, #38BDF8, #6A4FE0, #E052C2;
+  --wisdom-loop: linear-gradient(90deg, var(--wisdom-spectrum), var(--wisdom-spectrum), #FF5A5F);
+}
+
+@keyframes wisdom-drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* The moving colour layer. Its parent must be position:relative and
+   overflow:hidden; whatever should sit on top needs its own stacking
+   context (position:relative is enough). */
+.wisdom-spectrum {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 200%;
+  background-image: var(--wisdom-loop);
+  animation: wisdom-drift 7s linear infinite;
+  will-change: transform;
+}
+
+/* Gradient TEXT can't use the translate trick — the gradient has to move
+   inside the glyph mask, not under it — so this one animates
+   background-position. That's a paint, but on a ~20-character label it's
+   nothing, and this is the only place in the app that does it.
+   Shifting -100% of the element is half the 200%-wide gradient, i.e.
+   exactly one colour cycle, so it loops seamlessly like the layer above.
+   The @supports guard keeps the label a solid accent colour on any engine
+   without background-clip, rather than rendering it invisible. */
+@keyframes wisdom-text-drift {
+  from { background-position: 0 50%; }
+  to   { background-position: -100% 50%; }
+}
+.wisdom-text {
+  color: var(--color-accent-600);
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .wisdom-text {
+    background-image: var(--wisdom-loop);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: wisdom-text-drift 7s linear infinite;
+  }
+}
+
+/* Static, very low-opacity spectrum wash — adds colour behind the header
+   without another animated layer. Free: no animation, no filter. */
+.wisdom-wash {
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 90, 95, 0.12),
+    rgba(255, 216, 77, 0.12) 30%,
+    rgba(62, 207, 142, 0.10) 55%,
+    rgba(56, 189, 248, 0.10) 75%,
+    rgba(224, 82, 194, 0.14)
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wisdom-spectrum,
+  .wisdom-text { animation: none; }
+}
+
 /* ========== BASE ========== */
 * {
   -webkit-tap-highlight-color: transparent;
