@@ -76,7 +76,7 @@ export function KametiPage() {
               <button
                 key={c.id}
                 onClick={() => navigate(`/kameti/${c.id}`)}
-                className="w-full text-left rounded-2xl bg-cream-card border border-cream-border p-4 active:scale-[0.99] transition-transform"
+                className="w-full text-left rounded-2xl bg-cream-card border border-cream-border p-4 press-lg"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-100 to-accent-50 text-accent-600 flex items-center justify-center shrink-0">

@@ -67,7 +67,7 @@ export function PageErrorState({
         {onRetry && (
           <button
             onClick={onRetry}
-            className="mt-5 w-full rounded-2xl py-3 text-sm font-semibold bg-ink-900 text-white active:scale-[0.98] transition-transform flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
+            className="mt-5 w-full rounded-2xl py-3 text-sm font-semibold bg-ink-900 text-white flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 press"
           >
             <RefreshCw size={14} /> {resolvedActionLabel}
           </button>
@@ -75,7 +75,7 @@ export function PageErrorState({
         {supportHref && (
           <a
             href={supportHref}
-            className="mt-3 inline-flex items-center justify-center gap-1.5 w-full rounded-2xl py-3 text-[13px] font-semibold text-accent-600 active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
+            className="mt-3 inline-flex items-center justify-center gap-1.5 w-full rounded-2xl py-3 text-[13px] font-semibold text-accent-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 press"
           >
             <Mail size={13} /> {t('err_contact_support')}
           </a>

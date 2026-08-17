@@ -253,7 +253,7 @@ function ActiveScanner({ onClose, onCode, onManualEntry }: Omit<Props, 'open'>) 
               <button
                 type="button"
                 onClick={typeInstead}
-                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white text-navy-900 px-4 py-2.5 text-[12.5px] font-semibold active:scale-95 transition-transform"
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white text-navy-900 px-4 py-2.5 text-[12.5px] font-semibold press-sm"
               >
                 <Keyboard size={14} /> {t('qr_scan_type_instead')}
               </button>

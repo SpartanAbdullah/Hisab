@@ -691,7 +691,9 @@ export function InboxPage() {
               />
             ) : null
           ) : (
-            <div className="space-y-2.5">
+            // Reveals in reading order so a queue of five to-dos lands as a
+            // list being handed to you, not five things appearing at once.
+            <div className="space-y-2.5 stagger-in">
               {actionItems.map((it) => (
                 <ActionCard
                   key={it.id}
@@ -715,13 +717,13 @@ export function InboxPage() {
               />
             ) : null
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-2.5 stagger-in">
               {infoNotifs.map((n) => (
                 <button
                   key={n.id}
                   type="button"
                   onClick={() => void markNotificationRead(n.id)}
-                  className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
+                  className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 press-lg"
                 >
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-accent-50">
                     <UserPlus size={17} className="text-accent-600" strokeWidth={2} />
@@ -769,7 +771,10 @@ export function InboxPage() {
             )
           ) : null
         ) : (
-          <div className="space-y-2.5">
+          // Keyed on `tab`: switching Incoming <-> Outgoing swaps the whole
+          // list, so replaying the reveal is the honest signal that the
+          // content changed rather than merely re-sorted.
+          <div className="space-y-2.5 stagger-in" key={tab}>
             {visible.map((entry, idx) => {
               // Divider sits at the boundary between the pinned pending block
               // and the resolved history — shown only when both groups exist.
@@ -1021,7 +1026,7 @@ function ActionCard({ item, onResolve, onAccept }: { item: ActionItem; onResolve
           <button
             type="button"
             onClick={onAccept}
-            className="w-full min-h-[40px] rounded-xl bg-receive-50 text-receive-text text-[12px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+            className="w-full min-h-[40px] rounded-xl bg-receive-50 text-receive-text text-[12px] font-semibold flex items-center justify-center gap-1.5 press"
           >
             <CheckCircle2 size={13} strokeWidth={2.2} />
             {t('todo_uncat_suggest').replace('{category}', suggestion)}
@@ -1035,7 +1040,7 @@ function ActionCard({ item, onResolve, onAccept }: { item: ActionItem; onResolve
     <button
       type="button"
       onClick={onResolve}
-      className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
+      className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 press-lg"
     >
       {mainRow}
     </button>
@@ -1099,7 +1104,7 @@ function ContactAskCard({
           type="button"
           onClick={onSkip}
           disabled={busy}
-          className="px-4 py-2.5 rounded-xl bg-cream-card border border-cream-border text-ink-600 text-[12px] font-semibold disabled:opacity-50 active:scale-95 transition-transform"
+          className="px-4 py-2.5 rounded-xl bg-cream-card border border-cream-border text-ink-600 text-[12px] font-semibold disabled:opacity-50 press-sm"
         >
           {t('clink_skip_cta')}
         </button>
@@ -1107,7 +1112,7 @@ function ContactAskCard({
           type="button"
           onClick={onAdd}
           disabled={busy}
-          className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-[0.98] transition-transform"
+          className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 press"
         >
           <UserPlus size={13} strokeWidth={2.4} />
           {t('clink_add_cta').replace('{name}', name)}
@@ -1200,7 +1205,7 @@ function SettlementCard({
                 <button
                   onClick={onAccept}
                   disabled={busy}
-                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-50 press"
                 >
                   {busy ? t('ltr_accepting') : t('ltr_accept')}
                 </button>
@@ -1214,7 +1219,7 @@ function SettlementCard({
                   href={remindUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                  className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5 press"
                 >
                   <BellRing size={13} strokeWidth={2.2} />
                   {t('req_remind_cta')}
@@ -1356,7 +1361,7 @@ function RequestCard({
               <button
                 onClick={onAccept}
                 disabled={busy}
-                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
+                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-50 press"
               >
                 {busy ? t('ltr_accepting') : t('ltr_accept')}
               </button>
@@ -1369,7 +1374,7 @@ function RequestCard({
                 href={remindUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5 press"
               >
                 <BellRing size={13} strokeWidth={2.2} />
                 {t('req_remind_cta')}

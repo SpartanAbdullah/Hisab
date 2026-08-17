@@ -173,7 +173,7 @@ export function GlobalSearch({ open, onClose }: Props) {
             <button
               type="button"
               onClick={onClose}
-              className="min-w-[44px] min-h-[44px] rounded-xl bg-cream-soft border border-cream-border flex items-center justify-center text-ink-500 active:scale-95 transition-transform"
+              className="min-w-[44px] min-h-[44px] rounded-xl bg-cream-soft border border-cream-border flex items-center justify-center text-ink-500 press-sm"
               aria-label="Close search"
             >
               <X size={17} />

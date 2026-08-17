@@ -613,7 +613,7 @@ export function LoansPage() {
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 active:scale-90"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 press-xs"
                 aria-label="Clear search"
               >
                 <X size={14} />
@@ -628,7 +628,7 @@ export function LoansPage() {
         {pendingTotal > 0 && (
           <Link
             to="/inbox"
-            className="flex items-center gap-2.5 rounded-2xl bg-accent-50 border border-accent-100 px-3.5 py-2.5 active:scale-[0.99] transition-transform"
+            className="flex items-center gap-2.5 rounded-2xl bg-accent-50 border border-accent-100 px-3.5 py-2.5 press-lg"
           >
             <Bell size={14} className="text-accent-600 shrink-0" strokeWidth={2.2} />
             <p className="flex-1 text-[12px] font-semibold text-accent-600 leading-snug">
@@ -780,7 +780,7 @@ export function LoansPage() {
             {selectedGroup.status === 'active' && allocatableLoans.length >= 2 && (
               <button
                 onClick={() => setShowAllocate(true)}
-                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform"
+                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold press"
               >
                 {t('alloc_title')}
               </button>
@@ -790,7 +790,7 @@ export function LoansPage() {
             {selectedGroup.status === 'active' && linkedSettleableLoans.length >= 2 && (
               <button
                 onClick={() => setShowSettleAll(true)}
-                className="w-full bg-accent-600 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+                className="w-full bg-accent-600 text-white rounded-xl py-3 text-[13px] font-semibold flex items-center justify-center gap-2 press"
               >
                 <Link2 size={14} strokeWidth={2.2} /> {t('stl_bulk_title')}
               </button>
@@ -801,7 +801,7 @@ export function LoansPage() {
 
             <button
               onClick={() => openStatementForGroup(selectedGroup)}
-              className="w-full bg-accent-100 text-accent-600 rounded-xl py-3 text-[13px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              className="w-full bg-accent-100 text-accent-600 rounded-xl py-3 text-[13px] font-semibold flex items-center justify-center gap-2 press"
             >
               <FileText size={14} strokeWidth={2.2} /> {t('soa_cta')}
             </button>

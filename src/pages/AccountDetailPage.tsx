@@ -594,7 +594,7 @@ export function AccountDetailPage() {
                   <button
                     key={adv.id}
                     onClick={() => navigate(`/loan/${adv.id}`)}
-                    className="w-full text-left rounded-2xl bg-cream-card border border-cream-border p-4 active:scale-[0.99] transition-transform"
+                    className="w-full text-left rounded-2xl bg-cream-card border border-cream-border p-4 press-lg"
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       <p className="text-[15px] font-bold text-ink-900 tabular-nums tracking-tight">
@@ -649,7 +649,7 @@ export function AccountDetailPage() {
                 setQuickPreset({ type: 'expense', accountId: account.id, lockAccount: true });
                 setShowAdd(true);
               }}
-              className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex items-center justify-center gap-2 press"
             >
               <ArrowUpRight size={15} className="text-accent-600" />
               {t('acct_action_card_spend')}
@@ -660,7 +660,7 @@ export function AccountDetailPage() {
                 setQuickPreset({ type: 'transfer', destinationAccountId: account.id });
                 setShowAdd(true);
               }}
-              className="rounded-2xl bg-accent-50 border border-accent-100 px-2 py-3 text-[12px] font-semibold text-accent-600 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              className="rounded-2xl bg-accent-50 border border-accent-100 px-2 py-3 text-[12px] font-semibold text-accent-600 flex items-center justify-center gap-2 press"
             >
               <CreditCard size={15} className="text-accent-600" />
               {t('acct_action_pay_card')}
@@ -671,7 +671,7 @@ export function AccountDetailPage() {
                 setQuickPreset({ type: 'loan_taken', cashAdvanceCardId: account.id });
                 setShowAdd(true);
               }}
-              className="rounded-2xl bg-warn-50 border border-warn-100 px-2 py-3 text-[12px] font-semibold text-warn-600 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              className="rounded-2xl bg-warn-50 border border-warn-100 px-2 py-3 text-[12px] font-semibold text-warn-600 flex items-center justify-center gap-2 press"
             >
               <Banknote size={15} className="text-warn-600" />
               {t('acct_action_cash_advance')}
@@ -684,7 +684,7 @@ export function AccountDetailPage() {
                 setStatementDayInput(account.metadata.statementDay ?? '');
                 setShowCardSettings(true);
               }}
-              className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex items-center justify-center gap-2 press"
             >
               <SlidersHorizontal size={15} className="text-accent-600" />
               {t('acct_action_card_settings')}
@@ -705,7 +705,7 @@ export function AccountDetailPage() {
                     setQuickPreset({ type: action.type, accountId: account.id, lockAccount: true });
                     setShowAdd(true);
                   }}
-                  className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+                  className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 press"
                 >
                   <action.icon size={15} className="text-accent-600" />
                   {action.label}
@@ -719,7 +719,7 @@ export function AccountDetailPage() {
                   setQuickPreset({ intent: 'person_money', accountId: account.id, lockAccount: true });
                   setShowAdd(true);
                 }}
-                className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+                className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 press"
               >
                 <HandCoins size={15} className="text-accent-600" />
                 {t('acct_action_person')}
@@ -732,7 +732,7 @@ export function AccountDetailPage() {
                   setQuickPreset({ intent: 'group_expense' });
                   setShowAdd(true);
                 }}
-                className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 active:scale-[0.98] transition-transform"
+                className="rounded-2xl bg-cream-card border border-cream-border px-2 py-3 text-[12px] font-semibold text-ink-800 flex flex-col items-center gap-1.5 press"
               >
                 <Users size={15} className="text-accent-600" />
                 {t('acct_action_group')}
@@ -946,7 +946,7 @@ export function AccountDetailPage() {
             </p>
             <button
               onClick={() => setShowOpeningBalance(true)}
-              className="bg-ink-900 text-white rounded-xl px-5 py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform"
+              className="bg-ink-900 text-white rounded-xl px-5 py-2.5 text-[12px] font-semibold press"
             >
               {t('acct_add_opening_bal')}
             </button>
@@ -1087,7 +1087,7 @@ export function AccountDetailPage() {
           <button
             onClick={saveOpeningBalance}
             disabled={savingOpeningBalance || !parseFloat(openingAmount) || !openingDate}
-            className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+            className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-semibold disabled:opacity-30 press"
           >
             {savingOpeningBalance ? t('quick_processing') : t('acct_opening_save')}
           </button>

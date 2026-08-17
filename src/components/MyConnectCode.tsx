@@ -75,7 +75,7 @@ export function MyConnectCode() {
         <button
           onClick={copy}
           disabled={!code}
-          className="flex-1 min-w-0 flex items-center justify-center gap-2 rounded-xl bg-cream-card border border-cream-border py-2.5 active:scale-[0.98] transition-transform disabled:opacity-50"
+          className="flex-1 min-w-0 flex items-center justify-center gap-2 rounded-xl bg-cream-card border border-cream-border py-2.5 disabled:opacity-50 press"
         >
           <span className="text-[9px] font-semibold text-ink-400 uppercase tracking-[0.12em]">HSB</span>
           <span className="text-[14px] font-bold text-ink-900 tabular-nums">{code ? `@${code}` : '…'}</span>
@@ -87,7 +87,7 @@ export function MyConnectCode() {
         <button
           onClick={() => setShowQr(true)}
           disabled={!code}
-          className="w-11 shrink-0 rounded-xl bg-cream-card border border-cream-border flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50"
+          className="w-11 shrink-0 rounded-xl bg-cream-card border border-cream-border flex items-center justify-center disabled:opacity-50 press-sm"
           aria-label={t('qr_my_title')}
         >
           <QrCode size={17} className="text-accent-600" strokeWidth={2} />
@@ -95,7 +95,7 @@ export function MyConnectCode() {
         <button
           onClick={share}
           disabled={!code}
-          className="px-3.5 shrink-0 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center gap-1.5 active:scale-95 transition-transform disabled:opacity-50"
+          className="px-3.5 shrink-0 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center gap-1.5 disabled:opacity-50 press-sm"
         >
           <Share2 size={14} /> {t('connect_share')}
         </button>

@@ -182,7 +182,7 @@ export function BudgetsPage() {
                 <button
                   onClick={() => setShowIncomeModal(true)}
                   aria-label={t('flex_edit_income')}
-                  className="p-2 -m-2 rounded-full active:scale-95 transition-transform"
+                  className="p-2 -m-2 rounded-full press-sm"
                 >
                   <Pencil size={13} className="text-ink-400" />
                 </button>
@@ -395,7 +395,7 @@ function BudgetCard({ usage, onEdit }: BudgetCardProps) {
   return (
     <button
       onClick={onEdit}
-      className="w-full text-left rounded-2xl bg-cream-card border border-cream-border p-4 active:scale-[0.99] transition-transform"
+      className="w-full text-left rounded-2xl bg-cream-card border border-cream-border p-4 press-lg"
     >
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">

@@ -330,7 +330,7 @@ export function RepaymentModal({
             <button
               type="button"
               onClick={() => setShowAllocateOverflow(true)}
-              className="w-full rounded-2xl border border-accent-100 bg-accent-50 py-3 px-4 flex items-center justify-between gap-2 active:scale-[0.98] transition-transform"
+              className="w-full rounded-2xl border border-accent-100 bg-accent-50 py-3 px-4 flex items-center justify-between gap-2 press"
             >
               <span className="text-[12px] font-semibold text-accent-600 text-left">
                 {t('repay_pay_all_cta').replace('{n}', String(siblingLoans.length + 1))}
@@ -354,14 +354,14 @@ export function RepaymentModal({
                 <button
                   type="button"
                   onClick={() => setAmount(String(loan.remainingAmount))}
-                  className="flex-1 min-h-[44px] rounded-xl bg-cream-soft border border-cream-border text-[12px] font-semibold text-ink-700 active:scale-[0.97] transition-transform"
+                  className="flex-1 min-h-[44px] rounded-xl bg-cream-soft border border-cream-border text-[12px] font-semibold text-ink-700 press"
                 >
                   {t('repay_full')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setAmount(String(Math.round((loan.remainingAmount / 2) * 100) / 100))}
-                  className="flex-1 min-h-[44px] rounded-xl bg-cream-soft border border-cream-border text-[12px] font-semibold text-ink-700 active:scale-[0.97] transition-transform"
+                  className="flex-1 min-h-[44px] rounded-xl bg-cream-soft border border-cream-border text-[12px] font-semibold text-ink-700 press"
                 >
                   {t('repay_half')}
                 </button>
@@ -369,7 +369,7 @@ export function RepaymentModal({
                   <button
                     type="button"
                     onClick={() => setAmount(String(installmentAmount))}
-                    className="flex-1 min-h-[44px] rounded-xl bg-accent-50 border border-accent-100 text-[12px] font-semibold text-accent-600 active:scale-[0.97] transition-transform"
+                    className="flex-1 min-h-[44px] rounded-xl bg-accent-50 border border-accent-100 text-[12px] font-semibold text-accent-600 press"
                   >
                     {t('repay_next')}
                   </button>
@@ -411,7 +411,7 @@ export function RepaymentModal({
                 <button
                   type="button"
                   onClick={() => setShowAllocateOverflow(true)}
-                  className="w-full rounded-xl bg-ink-900 text-white py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform"
+                  className="w-full rounded-xl bg-ink-900 text-white py-2.5 text-[12px] font-semibold press"
                 >
                   {t('repay_overflow_cta')}
                 </button>

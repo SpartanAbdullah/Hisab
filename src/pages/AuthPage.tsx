@@ -358,7 +358,7 @@ export function AuthPage() {
               typo'd domain; one tap fixes it before verify limbo. */}
           {emailSuggestion && (
             <button type="button" onClick={() => { setEmail(emailSuggestion); if (detour) setDetour(null); }}
-              className="-mt-2 ml-1 text-left text-white/70 text-[11.5px] underline underline-offset-2 active:scale-95 transition-transform">
+              className="-mt-2 ml-1 text-left text-white/70 text-[11.5px] underline underline-offset-2 press-sm">
               {t('auth_did_you_mean')} <span className="font-semibold text-receive-50">{emailSuggestion}</span>
             </button>
           )}

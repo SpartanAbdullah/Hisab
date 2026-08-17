@@ -263,20 +263,20 @@ export function SubscriptionsPage() {
                   <div className="flex items-center gap-2 mt-3">
                     <button
                       onClick={() => setEditing(t)}
-                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
                       <Pencil size={11} /> Edit
                     </button>
                     <button
                       onClick={() => togglePause(t)}
-                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
                       {t.active ? <Pause size={11} /> : <Play size={11} />}
                       {t.active ? 'Pause' : 'Resume'}
                     </button>
                     <button
                       onClick={() => handleDelete(t)}
-                      className="min-h-[40px] text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
                       <Trash2 size={11} /> Remove
                     </button>
@@ -323,20 +323,20 @@ export function SubscriptionsPage() {
                   <div className="flex items-center gap-2 mt-3">
                     <button
                       onClick={() => setEditing(t)}
-                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
                       <Pencil size={11} /> Edit
                     </button>
                     <button
                       onClick={() => togglePause(t)}
-                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
                       {t.active ? <Pause size={11} /> : <Play size={11} />}
                       {t.active ? 'Pause' : 'Resume'}
                     </button>
                     <button
                       onClick={() => handleDelete(t)}
-                      className="min-h-[40px] text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-3 py-1 flex items-center gap-1 active:scale-95 transition-transform"
+                      className="min-h-[40px] text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
                       <Trash2 size={11} /> Remove
                     </button>

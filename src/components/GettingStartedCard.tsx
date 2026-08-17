@@ -52,7 +52,7 @@ export function GettingStartedCard({ accountCount, transactionCount, onAddAccoun
               <button
                 onClick={s.onClick}
                 disabled={!s.enabled}
-                className="shrink-0 px-3 py-1.5 rounded-xl bg-ink-900 text-white text-[11px] font-bold active:scale-95 transition-transform disabled:opacity-30"
+                className="shrink-0 px-3 py-1.5 rounded-xl bg-ink-900 text-white text-[11px] font-bold disabled:opacity-30 press-sm"
               >
                 {s.cta}
               </button>

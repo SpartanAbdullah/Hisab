@@ -895,7 +895,7 @@ export function GroupDetailPage() {
           {shownDebts.length > 0 && (
             <button
               onClick={() => setShowSettleShare(true)}
-              className="w-full rounded-2xl bg-accent-100 text-accent-600 py-3 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              className="w-full rounded-2xl bg-accent-100 text-accent-600 py-3 text-[13px] font-bold flex items-center justify-center gap-2 press"
             >
               <Share2 size={14} strokeWidth={2.2} /> {t('gsu_cta')}
             </button>
@@ -1057,13 +1057,13 @@ export function GroupDetailPage() {
         <div className="flex gap-2 max-w-[480px] mx-auto pointer-events-auto">
           <button
             onClick={() => setShowAddExpense(true)}
-            className="flex-1 h-10 bg-ink-900 text-white rounded-xl text-[12.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform shadow-lg shadow-navy-900/20"
+            className="flex-1 h-10 bg-ink-900 text-white rounded-xl text-[12.5px] font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-navy-900/20 press"
           >
             <Plus size={13} strokeWidth={2.4} /> {t('group_expense_add')}
           </button>
           <button
             onClick={() => setShowSettle(true)}
-            className="h-10 px-3.5 rounded-xl text-[12.5px] font-semibold bg-receive-600 text-white flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform shadow-lg shadow-navy-900/20"
+            className="h-10 px-3.5 rounded-xl text-[12.5px] font-semibold bg-receive-600 text-white flex items-center justify-center gap-1.5 shadow-lg shadow-navy-900/20 press"
           >
             <Handshake size={13} strokeWidth={2.4} /> {t('group_settle')}
           </button>

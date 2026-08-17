@@ -62,7 +62,7 @@ export function CoachCards({ cards }: { cards: CoachCard[] }) {
             <button
               key={card.id}
               onClick={() => navigate(card.href)}
-              className="w-full flex items-center gap-3 rounded-2xl bg-cream-card border border-cream-border p-3.5 text-left active:scale-[0.99] transition-transform"
+              className="w-full flex items-center gap-3 rounded-2xl bg-cream-card border border-cream-border p-3.5 text-left press-lg"
             >
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${tone.bg} ${tone.text}`}>
                 <Icon size={16} strokeWidth={2} />

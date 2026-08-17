@@ -71,7 +71,7 @@ export function MyQrSheet({ open, onClose, code }: Props) {
         <button
           type="button"
           onClick={copy}
-          className="w-full rounded-2xl bg-cream-soft border border-cream-border py-3 flex items-center justify-center gap-2.5 active:scale-[0.98] transition-transform"
+          className="w-full rounded-2xl bg-cream-soft border border-cream-border py-3 flex items-center justify-center gap-2.5 press"
         >
           <span className="text-[9px] font-semibold text-ink-400 uppercase tracking-[0.14em]">HSB</span>
           <span className="text-[17px] font-bold text-ink-900 tabular-nums tracking-wide">
@@ -84,7 +84,7 @@ export function MyQrSheet({ open, onClose, code }: Props) {
           type="button"
           onClick={share}
           disabled={!code}
-          className="w-full rounded-2xl bg-ink-900 text-white py-3 text-[13px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40"
+          className="w-full rounded-2xl bg-ink-900 text-white py-3 text-[13px] font-semibold flex items-center justify-center gap-2 press disabled:opacity-40"
         >
           <Share2 size={15} /> {t('connect_share')}
         </button>

@@ -184,7 +184,7 @@ export function ConnectByCodePage() {
                   type="button"
                   onClick={() => void handleAdd()}
                   disabled={saving}
-                  className="w-full py-3.5 rounded-2xl bg-ink-900 text-white text-[13.5px] font-bold flex items-center justify-center gap-2 disabled:opacity-40 active:scale-[0.98] transition-transform"
+                  className="w-full py-3.5 rounded-2xl bg-ink-900 text-white text-[13.5px] font-bold flex items-center justify-center gap-2 disabled:opacity-40 press"
                 >
                   <UserPlus size={15} strokeWidth={2.3} />
                   {saving ? 'Connecting…' : t('addc_cta_linked')}

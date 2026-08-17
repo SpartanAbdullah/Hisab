@@ -207,7 +207,7 @@ export function KametiDetailPage() {
             <Dices size={26} className="text-accent-600 mx-auto" strokeWidth={1.8} />
             <p className="text-[13px] font-semibold text-ink-900 mt-2">{t('kameti_undrawn')}</p>
             <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">{t('kameti_method_ballot_desc')}</p>
-            <button onClick={handleDraw} disabled={drawing} className="mt-3 w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+            <button onClick={handleDraw} disabled={drawing} className="mt-3 w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-50 press">
               {drawing ? t('kameti_drawing') : t('kameti_run_ballot')}
             </button>
           </div>
@@ -352,7 +352,7 @@ export function KametiDetailPage() {
         )}
 
         {/* Footer actions */}
-        <button onClick={shareWitness} className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[12.5px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+        <button onClick={shareWitness} className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[12.5px] font-bold flex items-center justify-center gap-2 press">
           <Eye size={14} /> {t('kameti_share_witness')}
         </button>
         <div className="flex gap-2">
@@ -385,7 +385,7 @@ export function KametiDetailPage() {
           <button
             onClick={saveEditMember}
             disabled={!editName.trim()}
-            className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40 active:scale-[0.98] transition-transform"
+            className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40 press"
           >
             {t('cat_save')}
           </button>

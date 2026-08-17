@@ -900,7 +900,7 @@ export function HisaabAIPage() {
             type="submit"
             aria-label="Send"
             disabled={!input.trim()}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 disabled:opacity-40 active:scale-95 transition-transform"
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 disabled:opacity-40 press-sm"
             style={{ background: 'var(--color-accent-600)' }}
           >
             <Send size={15} />
@@ -915,7 +915,7 @@ function SuggestionChip({ q, onTap }: { q: string; onTap: () => void }) {
   return (
     <button
       onClick={onTap}
-      className="relative text-[11.5px] font-medium px-3 py-1.5 rounded-full bg-cream-soft border border-cream-border text-ink-700 active:scale-95 transition-transform before:absolute before:-inset-2 before:content-['']"
+      className="relative text-[11.5px] font-medium px-3 py-1.5 rounded-full bg-cream-soft border border-cream-border text-ink-700 before:absolute before:-inset-2 before:content-[''] press-sm"
     >
       {q}
     </button>
@@ -1023,7 +1023,7 @@ function GroupChipCard({
               <button
                 onClick={() => amountValid && onConfirm(amt, description.trim() || draft.description)}
                 disabled={busy || !amountValid}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12.5px] font-semibold text-white disabled:opacity-40 active:scale-[0.98] transition-transform"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12.5px] font-semibold text-white disabled:opacity-40 press"
                 style={{ background: 'var(--color-accent-600)' }}
               >
                 <Check size={14} /> {busy ? 'Adding…' : 'Confirm & split'}
@@ -1092,7 +1092,7 @@ function ChipCard({ draft, accounts, history, resolved, busy, onConfirm, onCance
         <p>I&rsquo;ve got the details, but you need an account to save it to first.</p>
         <button
           onClick={onAddAccount}
-          className="mt-2.5 text-[12px] font-semibold text-white rounded-lg px-3 py-2 active:scale-95 transition-transform"
+          className="mt-2.5 text-[12px] font-semibold text-white rounded-lg px-3 py-2 press-sm"
           style={{ background: 'var(--color-accent-600)' }}
         >
           Add an account
@@ -1215,7 +1215,7 @@ function ChipCard({ draft, accounts, history, resolved, busy, onConfirm, onCance
               <button
                 onClick={handleConfirm}
                 disabled={busy || !amountValid}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12.5px] font-semibold text-white disabled:opacity-40 active:scale-[0.98] transition-transform"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12.5px] font-semibold text-white disabled:opacity-40 press"
                 style={{ background: 'var(--color-accent-600)' }}
               >
                 <Check size={14} /> {busy ? 'Saving…' : 'Confirm & add'}

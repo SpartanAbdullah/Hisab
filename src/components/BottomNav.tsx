@@ -65,7 +65,7 @@ export function BottomNav({ onQuickEntry }: Props) {
           <button
             onClick={onQuickEntry}
             aria-label="Quick entry"
-            className="w-[54px] h-[54px] rounded-full flex items-center justify-center text-white active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
+            className="w-[54px] h-[54px] rounded-full flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 press-sm"
             style={{
               marginTop: -22,
               // Accent-violet at the top (carrying the bloom hue from the

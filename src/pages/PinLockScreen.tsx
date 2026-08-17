@@ -136,7 +136,7 @@ export function PinLockScreen() {
           <button
             onClick={handleForgotPin}
             disabled={recovering}
-            className="mt-3 w-full min-h-[44px] rounded-xl bg-white text-indigo-700 text-[13px] font-bold active:scale-[0.98] transition-transform disabled:opacity-50"
+            className="mt-3 w-full min-h-[44px] rounded-xl bg-white text-indigo-700 text-[13px] font-bold disabled:opacity-50 press"
           >
             {recovering ? t('pin_signing_out') : t('pin_signout_reset')}
           </button>

@@ -163,7 +163,7 @@ export function SendStatementModal({
             <button
               onClick={handleSendPdf}
               disabled={preparing || !hasContent}
-              className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40"
+              className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-40 press"
               style={{ background: '#0B0E2A' }}
             >
               <FileText size={16} strokeWidth={2.2} /> {preparing ? t('soa_preparing') : t('soa_send_pdf')}
@@ -177,7 +177,7 @@ export function SendStatementModal({
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => toast.show({ type: 'success', title: t('reminder_wa_opening') })}
-              className={`flex-1 rounded-2xl py-3 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform ${hasContent ? '' : 'pointer-events-none opacity-40'}`}
+              className={`flex-1 rounded-2xl py-3 text-[13px] font-bold flex items-center justify-center gap-2 ${hasContent ? '' : 'pointer-events-none opacity-40'} press`}
               style={{ background: '#1FA855', color: '#fff' }}
             >
               <MessageCircle size={14} /> {t('soa_whatsapp_text')}

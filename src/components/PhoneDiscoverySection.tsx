@@ -142,7 +142,7 @@ export function PhoneDiscoverySection({ sectionClass, rowClass }: Props) {
                 type="button"
                 disabled={busy || !previewed}
                 onClick={() => void save()}
-                className="w-9 h-9 rounded-xl bg-receive-50 text-receive-text flex items-center justify-center disabled:opacity-40 active:scale-90"
+                className="w-9 h-9 rounded-xl bg-receive-50 text-receive-text flex items-center justify-center disabled:opacity-40 press-xs"
                 aria-label={t('cat_save')}
               >
                 <Check size={16} strokeWidth={2.8} />
@@ -150,7 +150,7 @@ export function PhoneDiscoverySection({ sectionClass, rowClass }: Props) {
               <button
                 type="button"
                 onClick={() => setEditing(false)}
-                className="w-9 h-9 rounded-xl bg-cream-soft text-ink-400 flex items-center justify-center active:scale-90"
+                className="w-9 h-9 rounded-xl bg-cream-soft text-ink-400 flex items-center justify-center press-xs"
                 aria-label={t('cancel')}
               >
                 <X size={16} />

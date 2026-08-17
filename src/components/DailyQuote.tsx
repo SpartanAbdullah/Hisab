@@ -65,7 +65,7 @@ export function DailyQuote() {
         <p className="text-[12.5px] text-ink-500 mt-3 font-medium">&mdash; {quote.author}</p>
 
         <div className="flex gap-2.5 mt-6">
-          <button onClick={dismiss} className="flex-1 py-3.5 rounded-2xl bg-ink-900 text-white text-[13px] font-bold active:scale-[0.98] transition-transform">
+          <button onClick={dismiss} className="flex-1 py-3.5 rounded-2xl bg-ink-900 text-white text-[13px] font-bold press">
             {t('quote_got_it')}
           </button>
           <button onClick={share} className="px-5 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[13px] font-semibold flex items-center gap-2 active:bg-cream-soft transition-colors">

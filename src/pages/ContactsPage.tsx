@@ -357,7 +357,7 @@ export function ContactsPage() {
             {query && (
               <button
                 onClick={() => setQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 active:scale-90"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 press-xs"
                 aria-label="Clear search"
               >
                 <X size={14} />
@@ -436,7 +436,7 @@ export function ContactsPage() {
                     setLinkError('');
                     if (!newName.trim()) setNewName(phoneMatch.displayName);
                   }}
-                  className="mt-2 w-full rounded-xl bg-receive-50 border border-receive-100 px-3 py-2.5 flex items-center gap-2.5 text-left active:scale-[0.99] transition-transform"
+                  className="mt-2 w-full rounded-xl bg-receive-50 border border-receive-100 px-3 py-2.5 flex items-center gap-2.5 text-left press-lg"
                 >
                   <VerifiedBadge size={15} title={t('disc_badge')} />
                   <span className="flex-1 min-w-0 text-[11.5px] text-ink-700 leading-snug">
@@ -485,14 +485,14 @@ export function ContactsPage() {
                       <button
                         type="button"
                         onClick={() => setShowScanner(true)}
-                        className="flex-1 rounded-lg bg-ink-900 text-white py-2.5 text-[11.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                        className="flex-1 rounded-lg bg-ink-900 text-white py-2.5 text-[11.5px] font-semibold flex items-center justify-center gap-1.5 press-sm"
                       >
                         <QrCode size={13} strokeWidth={2.2} /> {t('addc_link_scan')}
                       </button>
                       <button
                         type="button"
                         onClick={() => setLinkMode('code')}
-                        className="flex-1 rounded-lg bg-cream-card border border-cream-border text-ink-700 py-2.5 text-[11.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                        className="flex-1 rounded-lg bg-cream-card border border-cream-border text-ink-700 py-2.5 text-[11.5px] font-semibold flex items-center justify-center gap-1.5 press-sm"
                       >
                         <Keyboard size={13} strokeWidth={2.2} /> {t('addc_link_code')}
                       </button>
@@ -540,7 +540,7 @@ export function ContactsPage() {
             <button
               onClick={handleCreate}
               disabled={creating || !newName.trim()}
-              className="w-full rounded-xl bg-ink-900 text-white py-3 text-[13px] font-semibold disabled:opacity-30 active:scale-[0.98] transition-transform"
+              className="w-full rounded-xl bg-ink-900 text-white py-3 text-[13px] font-semibold disabled:opacity-30 press"
             >
               {creating ? 'Adding…' : linkTarget ? t('addc_cta_linked') : t('addc_cta_plain')}
             </button>
@@ -626,7 +626,7 @@ export function ContactsPage() {
                 setSelectedId(lastCreated.id);
                 setLastCreatedId(null);
               }}
-              className="shrink-0 rounded-xl bg-ink-900 text-white px-3 py-1.5 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-transform"
+              className="shrink-0 rounded-xl bg-ink-900 text-white px-3 py-1.5 text-[11px] font-semibold flex items-center gap-1.5 press-sm"
             >
               <Link2 size={11} /> Link
             </button>
@@ -689,7 +689,7 @@ export function ContactsPage() {
               {!showAdd && (
                 <button
                   onClick={() => setShowAdd(true)}
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 text-white px-4 py-2.5 text-[12px] font-semibold active:scale-95 transition-transform"
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 text-white px-4 py-2.5 text-[12px] font-semibold press-sm"
                 >
                   <UserPlus size={12} /> Add your first contact
                 </button>
@@ -701,7 +701,18 @@ export function ContactsPage() {
             No matches for "{query}"
           </p>
         ) : (
-          groups.map(([letter, people]) => (
+          // Wrapped in its OWN stagger container rather than staggering the
+          // page body: the body also holds the connect-code card, the add
+          // form and the banners, and those must not fly in behind a list.
+          // `space-y-4` moves onto the wrapper so between-group spacing is
+          // unchanged (the wrapper is now a single child of the body).
+          //
+          // Staggered by LETTER GROUP, not by contact — a 60-contact list
+          // delayed per row would still be arriving after the user has
+          // started scrolling. Not keyed on `query`, so typing a search
+          // filters in place instead of re-animating on every keystroke.
+          <div className="space-y-4 stagger-in">
+          {groups.map(([letter, people]) => (
             <div key={letter}>
               <h2 className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.16em] mb-2 px-1">
                 {letter}
@@ -780,7 +791,8 @@ export function ContactsPage() {
                 ))}
               </div>
             </div>
-          ))
+          ))}
+          </div>
         )}
 
         {/* Archived contacts — merged-away duplicates and removed locals.
@@ -866,7 +878,7 @@ export function ContactsPage() {
                           }
                         })();
                       }}
-                      className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-accent-600 bg-accent-50 rounded-full px-2.5 py-1.5 active:scale-95 transition-transform disabled:opacity-50"
+                      className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-accent-600 bg-accent-50 rounded-full px-2.5 py-1.5 disabled:opacity-50 press-sm"
                     >
                       <RotateCcw size={11} strokeWidth={2.2} />
                       {t('contacts_unarchive')}

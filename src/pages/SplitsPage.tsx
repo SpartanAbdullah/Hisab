@@ -229,7 +229,7 @@ export function SplitsPage() {
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 active:scale-90"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 press-xs"
                 aria-label="Clear search"
               >
                 <X size={14} />
@@ -253,13 +253,13 @@ export function SplitsPage() {
           <div className="grid grid-cols-2 gap-2.5">
             <button
               onClick={() => setShowCreate(true)}
-              className="rounded-[14px] bg-ink-900 text-white px-4 py-3 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold active:scale-[0.98] transition-transform"
+              className="rounded-[14px] bg-ink-900 text-white px-4 py-3 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold press"
             >
               <Plus size={13} strokeWidth={2.4} /> {t('groups_action_create_title')}
             </button>
             <button
               onClick={() => setShowJoin(true)}
-              className="rounded-[14px] bg-cream-card border border-cream-border text-ink-800 px-4 py-3 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold active:scale-[0.98] transition-transform"
+              className="rounded-[14px] bg-cream-card border border-cream-border text-ink-800 px-4 py-3 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold press"
             >
               <LogIn size={13} strokeWidth={2.4} /> {t('groups_action_join_title')}
             </button>

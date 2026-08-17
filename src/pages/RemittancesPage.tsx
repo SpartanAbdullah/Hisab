@@ -174,7 +174,7 @@ export function RemittancesPage() {
                   {r.status === 'pending' && (
                     <button
                       onClick={() => handleMarkReceived(r.id)}
-                      className="mt-3 text-[11.5px] font-semibold text-receive-text bg-receive-50 rounded-lg px-2.5 py-1 inline-flex items-center gap-1 active:scale-95 transition-transform"
+                      className="mt-3 text-[11.5px] font-semibold text-receive-text bg-receive-50 rounded-lg px-2.5 py-1 inline-flex items-center gap-1 press-sm"
                     >
                       <CheckCircle2 size={11} /> Mark received
                     </button>

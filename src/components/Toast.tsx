@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { CheckCircle, AlertCircle, Info, X, Undo2 } from 'lucide-react';
 import { create } from 'zustand';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -63,12 +64,23 @@ function ToastItem({ toast }: { toast: ToastData }) {
   }, [handleDismiss, toast.duration, toast.action]);
 
   const Icon = icons[toast.type];
+  const reduced = useReducedMotion();
 
   return (
     <div
       className={`${bgColors[toast.type]} text-white rounded-2xl px-4 py-3 flex items-start gap-3 shadow-lg transition-all duration-300 ${
         visible && !exiting ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-3 opacity-0 scale-95'
       }`}
+      style={{
+        // A toast is a REPLY to something the user just did, so it should
+        // arrive with a small settle rather than glide in linearly. The
+        // overshoot is entry-only — a bouncy exit reads as indecision, and
+        // reduced motion drops straight to the calm curve.
+        transitionTimingFunction:
+          reduced || exiting
+            ? 'cubic-bezier(0.4, 0, 0.2, 1)'
+            : 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+      }}
     >
       <Icon size={18} className="shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">

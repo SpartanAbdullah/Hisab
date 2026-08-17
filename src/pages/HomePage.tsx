@@ -59,7 +59,7 @@ import { PageErrorState } from "../components/PageErrorState";
 import { UserAvatar } from "../components/UserAvatar";
 import { NavyHero } from "../components/NavyHero";
 import { InboxAction } from "../components/InboxAction";
-import { MoneyDisplay } from "../components/MoneyDisplay";
+import { AnimatedMoney } from "../components/AnimatedMoney";
 import { GlobalSearch } from "../components/GlobalSearch";
 import { NextStepHint } from "../components/NextStepHint";
 import { GettingStartedCard } from "../components/GettingStartedCard";
@@ -564,7 +564,7 @@ export function HomePage() {
                   </p>
                   <button
                     onClick={() => setShowQuickEntry(true)}
-                    className="mt-3 inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-2xl bg-accent-600 text-white text-[13px] font-semibold active:scale-[0.97] transition-transform"
+                    className="mt-3 inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-2xl bg-accent-600 text-white text-[13px] font-semibold press"
                   >
                     <Plus size={15} strokeWidth={2.4} />
                     {t('home_record_iou_cta')}
@@ -574,7 +574,7 @@ export function HomePage() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => navigate("/loans?tab=receivables")}
-                    className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+                    className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
                   >
                     <div className="flex items-center gap-2 mb-2.5">
                       <div className="w-7 h-7 rounded-lg bg-receive-100 flex items-center justify-center">
@@ -604,7 +604,7 @@ export function HomePage() {
                   </button>
                   <button
                     onClick={() => navigate("/loans?tab=payables")}
-                    className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+                    className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
                   >
                     <div className="flex items-center gap-2 mb-2.5">
                       <div className="w-7 h-7 rounded-lg bg-pay-100 flex items-center justify-center">
@@ -642,7 +642,7 @@ export function HomePage() {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => navigate("/contacts")}
-                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
                 >
                   <div className="w-9 h-9 rounded-xl bg-accent-50 flex items-center justify-center mb-2.5">
                     <Contact size={16} className="text-accent-600" />
@@ -656,7 +656,7 @@ export function HomePage() {
                 </button>
                 <button
                   onClick={() => navigate("/activity")}
-                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
                 >
                   <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center mb-2.5">
                     <History size={16} className="text-info-600" />
@@ -910,11 +910,18 @@ export function HomePage() {
           ) : (
             <>
               <div className="mt-1.5 flex items-center gap-1.5">
-                <MoneyDisplay
+                {/* The one number the whole app is about. It counts up on
+                    reveal and travels on change, so a balance that moved
+                    SHOWS that it moved instead of silently being different.
+                    AnimatedMoney is a leaf on purpose — see its header;
+                    putting the rAF loop here would re-render this page ~50
+                    times per run. */}
+                <AnimatedMoney
                   amount={primaryTotal}
                   currency={primaryCurrency}
                   size={42}
                   tone="on-navy"
+                  animate={!isInitialLoading}
                 />
                 {/* Non-colour liability cue: down-caret + word so a negative
                     net worth never relies on the minus sign alone. */}
@@ -992,7 +999,7 @@ export function HomePage() {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => navigate("/loans?tab=receivables")}
-              className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+              className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
             >
               <div className="flex items-center gap-2 mb-2.5">
                 <div className="w-7 h-7 rounded-lg bg-receive-100 flex items-center justify-center">
@@ -1030,7 +1037,7 @@ export function HomePage() {
             </button>
             <button
               onClick={() => navigate("/loans?tab=payables")}
-              className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.98] transition-transform"
+              className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
             >
               <div className="flex items-center gap-2 mb-2.5">
                 <div className="w-7 h-7 rounded-lg bg-pay-100 flex items-center justify-center">

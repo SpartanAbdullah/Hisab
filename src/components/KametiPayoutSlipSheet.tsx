@@ -117,7 +117,7 @@ export function KametiPayoutSlipSheet({ open, onClose, committee, recipient, rou
           <button
             onClick={handleSendPdf}
             disabled={preparing}
-            className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40"
+            className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-40 press"
             style={{ background: '#0B0E2A' }}
           >
             <FileText size={16} strokeWidth={2.2} /> {preparing ? t('soa_preparing') : t('kslip_pdf')}
@@ -128,7 +128,7 @@ export function KametiPayoutSlipSheet({ open, onClose, committee, recipient, rou
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => toast.show({ type: 'success', title: t('reminder_wa_opening') })}
-              className="flex-1 rounded-2xl py-3 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+              className="flex-1 rounded-2xl py-3 text-[13px] font-bold flex items-center justify-center gap-2 press"
               style={{ background: '#1FA855', color: '#fff' }}
             >
               <MessageCircle size={14} /> {t('soa_whatsapp_text')}
@@ -144,10 +144,21 @@ export function KametiPayoutSlipSheet({ open, onClose, committee, recipient, rou
         </div>
       }
     >
-      <div className="space-y-4">
+      {/* Receiving the pot is the moment a kameti exists for — months of
+          contributions landing at once. The three blocks reveal in reading
+          order so the sheet composes itself around that figure instead of
+          appearing all at once with the privacy toggle competing for
+          attention. */}
+      <div className="space-y-4 stagger-in">
         <div className="rounded-2xl p-4 border bg-receive-50/60 border-receive-100/70">
           <p className="text-[10px] font-bold uppercase tracking-widest text-receive-text">{t('kslip_received')} · {committee.currency}</p>
-          <p className="text-[22px] font-extrabold text-ink-900 mt-1 tabular-nums">{formatMoney(pool, committee.currency)}</p>
+          {/* A single 4% swell on the amount — enough to read as "here it is",
+              far short of anything that would look like celebration confetti
+              over someone else's money. This is the app's one use of
+              pulse-once, which is why the token still exists. */}
+          <p className="text-[22px] font-extrabold text-ink-900 mt-1 tabular-nums animate-pulse-once">
+            {formatMoney(pool, committee.currency)}
+          </p>
           <p className="text-[11px] text-ink-500 mt-1">
             {t('kslip_intro').replace('{name}', recipient.name).replace('{r}', String(round))}
           </p>

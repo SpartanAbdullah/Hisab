@@ -65,7 +65,7 @@ export function GroupCard({
   return (
     <button
       onClick={onClick}
-      className="w-full rounded-[18px] bg-cream-card border border-cream-border p-4 text-left active:scale-[0.99] transition-transform"
+      className="w-full rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press-lg"
     >
       <div className="flex items-center gap-3">
         <div className="relative w-11 h-11 rounded-2xl bg-cream-soft border border-cream-hairline flex items-center justify-center text-lg shrink-0">

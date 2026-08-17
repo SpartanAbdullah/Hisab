@@ -455,7 +455,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
           <button
             type="button"
             onClick={() => setShowStatement(true)}
-            className="w-full py-3 rounded-2xl bg-accent-100 text-accent-600 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            className="w-full py-3 rounded-2xl bg-accent-100 text-accent-600 text-[13px] font-bold flex items-center justify-center gap-2 press"
           >
             <FileText size={14} strokeWidth={2.2} /> {t('soa_cta')}
           </button>
@@ -479,8 +479,8 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   inputMode="tel"
                   className="flex-1 min-w-0 bg-cream-soft border border-cream-border rounded-lg px-3 py-2 text-[13px] text-ink-900 outline-none focus:border-accent-500"
                 />
-                <button type="button" disabled={savingPhone} onClick={() => void savePhone()} className="text-receive-600 active:scale-90 disabled:opacity-40" aria-label={t('cat_save')}><Check size={16} strokeWidth={2.8} /></button>
-                <button type="button" onClick={() => setEditingPhone(false)} className="text-ink-400 active:scale-90" aria-label={t('cancel')}><X size={16} /></button>
+                <button type="button" disabled={savingPhone} onClick={() => void savePhone()} className="text-receive-600 disabled:opacity-40 press-xs" aria-label={t('cat_save')}><Check size={16} strokeWidth={2.8} /></button>
+                <button type="button" onClick={() => setEditingPhone(false)} className="text-ink-400 press-xs" aria-label={t('cancel')}><X size={16} /></button>
               </div>
             ) : (
               <>
@@ -489,7 +489,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   <p className="text-[11px] text-ink-500 truncate">{person.phone || t('contact_whatsapp_none')}</p>
                 </div>
                 {hasWhatsAppNumber(person.phone) && (
-                  <a href={buildWhatsAppUrl(person.phone, '')} target="_blank" rel="noopener noreferrer" className="shrink-0 active:scale-90" style={{ color: '#1FA855' }} aria-label="WhatsApp">
+                  <a href={buildWhatsAppUrl(person.phone, '')} target="_blank" rel="noopener noreferrer" className="shrink-0 press-xs" style={{ color: '#1FA855' }} aria-label="WhatsApp">
                     <MessageCircle size={17} />
                   </a>
                 )}
@@ -514,7 +514,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 key={action.label}
                 type="button"
                 onClick={() => openMoneyEntry({ type: action.type, repaymentDirection: action.repaymentDirection })}
-                className="rounded-xl bg-cream-card border border-cream-border px-3 py-3 text-left active:scale-[0.98] transition-transform"
+                className="rounded-xl bg-cream-card border border-cream-border px-3 py-3 text-left press"
               >
                 <action.icon size={14} className="text-accent-600 mb-1.5" />
                 <span className="text-[12px] font-semibold text-ink-900">{action.label}</span>
@@ -655,7 +655,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 <button
                   onClick={handleSyncPastRecords}
                   disabled={syncing}
-                  className="mt-3 w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform disabled:opacity-50"
+                  className="mt-3 w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 press"
                 >
                   <RefreshCw size={12} strokeWidth={2.4} />
                   {syncing
@@ -729,7 +729,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   setResolved({ profileId: discoveryHit.profileId, displayName: discoveryHit.displayName });
                   setMode('resolved');
                 }}
-                className="w-full rounded-2xl bg-receive-50 border border-receive-100 px-3.5 py-3 flex items-center gap-2.5 text-left active:scale-[0.99] transition-transform disabled:opacity-50"
+                className="w-full rounded-2xl bg-receive-50 border border-receive-100 px-3.5 py-3 flex items-center gap-2.5 text-left disabled:opacity-50 press-lg"
               >
                 <VerifiedBadge size={16} title={t('disc_badge')} />
                 <span className="flex-1 min-w-0 text-[12px] text-ink-700 leading-snug">
@@ -743,13 +743,13 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowScanner(true)}
-                className="flex-1 py-3 rounded-2xl bg-ink-900 text-white text-[12.5px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                className="flex-1 py-3 rounded-2xl bg-ink-900 text-white text-[12.5px] font-bold flex items-center justify-center gap-1.5 press"
               >
                 <QrCode size={14} strokeWidth={2.2} /> {t('qr_scan_cta')}
               </button>
               <button
                 onClick={() => setMode('entering')}
-                className="flex-1 py-3 rounded-2xl bg-cream-soft border border-cream-border text-ink-700 text-[12.5px] font-bold active:scale-[0.98] transition-transform"
+                className="flex-1 py-3 rounded-2xl bg-cream-soft border border-cream-border text-ink-700 text-[12.5px] font-bold press"
               >
                 {t('addc_link_code')}
               </button>

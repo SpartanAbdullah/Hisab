@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface Props {
   size?: number;
@@ -12,6 +13,16 @@ interface Props {
 
 // Minimal SVG progress ring. Rotated -90° so progress grows clockwise from 12
 // o'clock. Animated via stroke-dashoffset transition.
+//
+// That transition used to be dead code. The ring rendered its final offset on
+// the very first paint, and a CSS transition only fires on a CHANGE — so
+// there was nothing to animate FROM and the arc simply appeared. Every ring a
+// user actually meets (opening Goals, opening a group) is a mount, so the
+// draw-on the 0.7s curve was written for never played once.
+//
+// Now the first paint is committed at zero and the real value lands on the
+// next frame. Two frames of empty ring is imperceptible; a goal visibly
+// filling is the entire reason to draw a progress ring instead of a number.
 export function ProgressRing({
   size = 48,
   strokeWidth = 4,
@@ -24,7 +35,32 @@ export function ProgressRing({
   const clamped = Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0));
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - clamped);
+  const reduced = useReducedMotion();
+
+  // Reduced motion starts AT the true value: no draw-on, and no empty first
+  // frame to explain away.
+  const [shown, setShown] = useState(() => (reduced ? clamped : 0));
+
+  useEffect(() => {
+    if (reduced) {
+      const id = requestAnimationFrame(() => setShown(clamped));
+      return () => cancelAnimationFrame(id);
+    }
+    // Double rAF: the first frame guarantees the zero state is committed,
+    // the second changes it. With a single frame the browser can coalesce
+    // both values into one style recalculation, which collapses the
+    // transition back into the instant jump this is fixing.
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setShown(clamped));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [clamped, reduced]);
+
+  const offset = circumference * (1 - shown);
 
   return (
     <div
@@ -50,7 +86,11 @@ export function ProgressRing({
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
-          style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.16,1,0.3,1)' }}
+          style={{
+            transition: reduced
+              ? 'none'
+              : 'stroke-dashoffset 0.9s cubic-bezier(0.16,1,0.3,1)',
+          }}
         />
       </svg>
       {children && (

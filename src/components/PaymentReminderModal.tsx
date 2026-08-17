@@ -161,7 +161,7 @@ export function PaymentReminderModal({ open, onClose, personName, amount, curren
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => toast.show({ type: 'success', title: t('reminder_wa_opening') })}
-            className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            className="w-full rounded-2xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 press"
             style={{ background: '#1FA855' }}
           >
             <MessageCircle size={16} strokeWidth={2.4} /> {t('reminder_whatsapp')}

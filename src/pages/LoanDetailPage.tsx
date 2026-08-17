@@ -498,7 +498,7 @@ export function LoanDetailPage() {
             <button
               onClick={handleReconcile}
               disabled={reconciling}
-              className="mt-3 w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
+              className="mt-3 w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold disabled:opacity-50 press"
             >
               {reconciling ? t('emi_reconcile_marking') : t('emi_reconcile_cta').replace('{n}', String(coveredUnpaidIds.size))}
             </button>
@@ -560,7 +560,7 @@ export function LoanDetailPage() {
               {canSettleLinked ? (
                 <button
                   onClick={() => setShowSettleLinked(true)}
-                  className="w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                  className="w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold flex items-center justify-center gap-1.5 press"
                 >
                   <Handshake size={12} /> {t('loan_record_payment')}
                 </button>
@@ -571,7 +571,7 @@ export function LoanDetailPage() {
               ) : (
                 <button
                   onClick={() => setSelectedEmi(nextInstalment)}
-                  className="w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                  className="w-full bg-ink-900 text-white rounded-xl py-2.5 text-[12px] font-semibold flex items-center justify-center gap-1.5 press"
                 >
                   <RotateCcw size={12} /> {t('loan_record_payment')}
                 </button>
@@ -594,14 +594,14 @@ export function LoanDetailPage() {
             {canSettleLinked ? (
               <button
                 onClick={() => setShowSettleLinked(true)}
-                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold flex items-center justify-center gap-1.5 press"
               >
                 <Handshake size={13} /> {t('loan_record_payment')}
               </button>
             ) : (
               <button
                 onClick={() => setShowRepayment(true)}
-                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold flex items-center justify-center gap-1.5 press"
               >
                 <RotateCcw size={13} /> {t('loan_record_payment')}
               </button>

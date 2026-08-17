@@ -96,12 +96,12 @@ export function CategoryPicker({ type, value, onChange, includeCurrent = false, 
             type="button"
             disabled={saving}
             onClick={() => void submit()}
-            className="text-receive-600 active:scale-90 disabled:opacity-40"
+            className="text-receive-600 disabled:opacity-40 press-xs"
             aria-label={t('cat_save')}
           >
             <Check size={14} strokeWidth={2.8} />
           </button>
-          <button type="button" onClick={cancelAdd} className="text-ink-400 active:scale-90" aria-label={t('cancel')}>
+          <button type="button" onClick={cancelAdd} className="text-ink-400 press-xs" aria-label={t('cancel')}>
             <X size={14} strokeWidth={2.6} />
           </button>
         </span>

@@ -56,7 +56,7 @@ export function SettlementNudgeBanner({ nudges }: Props) {
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <button
                   onClick={() => navigate('/inbox')}
-                  className="min-h-[44px] text-[11px] font-semibold text-white bg-ink-900 rounded-lg px-3 py-1.5 active:scale-95 transition-transform"
+                  className="min-h-[44px] text-[11px] font-semibold text-white bg-ink-900 rounded-lg px-3 py-1.5 press-sm"
                 >
                   Open in Inbox
                 </button>
@@ -65,7 +65,7 @@ export function SettlementNudgeBanner({ nudges }: Props) {
                     href={nudge.whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="min-h-[44px] text-[11px] font-semibold text-receive-text bg-receive-50 rounded-lg px-3 py-1.5 active:scale-95 transition-transform flex items-center gap-1"
+                    className="min-h-[44px] text-[11px] font-semibold text-receive-text bg-receive-50 rounded-lg px-3 py-1.5 flex items-center gap-1 press-sm"
                   >
                     <MessageCircle size={11} strokeWidth={2.4} />
                     WhatsApp

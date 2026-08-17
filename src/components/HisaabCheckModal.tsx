@@ -6,7 +6,8 @@
 // stepped sheet. Completing the walk stamps CHECK_STAMP_KEY so Home can show
 // "last done Nd ago" — the ritual's memory.
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, BellRing, CalendarClock, CheckCircle2, Sparkles } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BellRing, CalendarClock, CheckCircle2 } from 'lucide-react';
+import { CelebrationMark } from './CelebrationMark';
 import { Modal } from './Modal';
 import { StepIndicator } from './StepIndicator';
 import { PaymentReminderModal } from './PaymentReminderModal';
@@ -263,7 +264,7 @@ export function HisaabCheckModal({ open, onClose, currency, receivable, payable,
               </p>
               <button
                 onClick={() => setReminderOpen(true)}
-                className="w-full min-h-[44px] rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                className="w-full min-h-[44px] rounded-xl bg-ink-900 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 press"
               >
                 <BellRing size={13} strokeWidth={2.2} />
                 {t('check_action_remind')}
@@ -278,12 +279,13 @@ export function HisaabCheckModal({ open, onClose, currency, receivable, payable,
         </div>
       )}
 
-      {/* Done — the ritual's payoff phrase. */}
+      {/* Done — the ritual's payoff phrase. The mark DRAWS itself here
+          rather than appearing: this is the one screen in the app that
+          exists purely to say "you're clear", and a tick that completes in
+          front of the user is what makes a daily habit feel earned. */}
       {step === 4 && (
         <div className="animate-fade-in flex flex-col items-center text-center py-6">
-          <div className="w-14 h-14 rounded-full bg-receive-50 flex items-center justify-center mb-3">
-            <Sparkles size={24} className="text-receive-text" />
-          </div>
+          <CelebrationMark size={56} className="mb-3" />
           <p className="text-[17px] font-bold text-ink-900 tracking-tight">{t('check_done_title')}</p>
           <p className="text-[12px] text-ink-500 mt-1.5 leading-relaxed max-w-[240px]">{t('check_done_body')}</p>
         </div>

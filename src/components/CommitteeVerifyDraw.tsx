@@ -43,7 +43,7 @@ export function CommitteeVerifyDraw({ committee, members }: Props) {
         <p className="text-[10.5px] font-mono text-ink-600 break-all leading-snug">{committee.drawCommitment.slice(0, 32)}…</p>
       </div>
       {result === null ? (
-        <button onClick={verify} disabled={checking} className="mt-3 w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-bold active:scale-[0.98] transition-transform disabled:opacity-50">
+        <button onClick={verify} disabled={checking} className="mt-3 w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-bold disabled:opacity-50 press">
           {checking ? t('kameti_verifying') : t('kameti_verify')}
         </button>
       ) : result ? (

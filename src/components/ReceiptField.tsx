@@ -83,7 +83,7 @@ export function ReceiptField({ transactionId, receiptPath, onChange }: Props) {
           <button
             type="button"
             onClick={() => url && setViewing(true)}
-            className="w-14 h-14 rounded-xl overflow-hidden bg-cream-soft shrink-0 flex items-center justify-center active:scale-95 transition-transform"
+            className="w-14 h-14 rounded-xl overflow-hidden bg-cream-soft shrink-0 flex items-center justify-center press-sm"
           >
             {url ? (
               <img src={url} alt={t('receipt_label')} className="w-full h-full object-cover" />
@@ -112,7 +112,7 @@ export function ReceiptField({ transactionId, receiptPath, onChange }: Props) {
           type="button"
           onClick={pick}
           disabled={busy}
-          className="w-full flex items-center justify-center gap-2 rounded-2xl border border-dashed border-cream-border bg-cream-card py-3 text-[12.5px] font-semibold text-ink-600 active:scale-[0.99] transition-transform disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-2 rounded-2xl border border-dashed border-cream-border bg-cream-card py-3 text-[12.5px] font-semibold text-ink-600 disabled:opacity-50 press-lg"
         >
           {busy ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
           {busy ? t('receipt_uploading') : t('receipt_add')}
