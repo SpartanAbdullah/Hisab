@@ -1545,14 +1545,15 @@ export const profilesDb = {
     if (error) throw error;
   },
   async findByPublicCode(normalizedCode: string): Promise<{ id: string; name: string; publicCode: string } | null> {
-    // Uses SECURITY DEFINER RPC so we can resolve strangers by their public
-    // code without opening up a read policy on profiles.
-    const { data, error } = await supabase.rpc('lookup_profile_by_public_code', {
-      code_normalized: normalizedCode,
-    });
-    if (error || !data || data.length === 0) return null;
-    const row = data[0] as { id: string; name: string; public_code: string };
-    return { id: row.id, name: row.name ?? '', publicCode: row.public_code ?? '' };
+    // lookup_profile_by_public_code was dropped by prelaunch-hardening (it
+    // leaked the target's code); lookup_profile_by_code is the throttled
+    // replacement and returns only profile_id + display_name. The caller
+    // already holds the code it typed, so echo that back as publicCode.
+    const { data, error } = await supabase.rpc('lookup_profile_by_code', { code: normalizedCode });
+    if (error) return null;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.profile_id) return null;
+    return { id: row.profile_id as string, name: (row.display_name as string) ?? '', publicCode: normalizedCode };
   },
 };
 
