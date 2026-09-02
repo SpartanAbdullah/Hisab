@@ -3,6 +3,7 @@ import { Wallet2, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { BudgetUsage } from '../stores/budgetStore';
 import { formatMoney } from '../lib/constants';
+import { useT } from '../lib/i18n';
 
 interface Props {
   usages: BudgetUsage[];
@@ -15,6 +16,7 @@ const DISMISS_KEY = 'hisaab_budget_warning_dismissed_v1';
 // annoying mid-session but it will return tomorrow if the user is still
 // over-budget. (That's the point.)
 export function BudgetWarningBanner({ usages }: Props) {
+  const t = useT();
   const navigate = useNavigate();
   const [hidden, setHidden] = useState(() => {
     try {
@@ -59,18 +61,19 @@ export function BudgetWarningBanner({ usages }: Props) {
         className="flex-1 min-w-0 text-left"
       >
         <p className="text-[12.5px] font-semibold text-ink-900 tracking-tight">
-          {headline.overLimit ? 'Over budget' : 'Approaching cap'} ·{' '}
+          {headline.overLimit ? t('bwb_over_budget') : t('bwb_near_cap')} ·{' '}
           {headline.budget.category}
         </p>
         <p className="text-[11px] text-ink-600 mt-0.5 leading-snug">
-          {formatMoney(headline.spent, headline.budget.currency)} of{' '}
-          {formatMoney(headline.budget.monthlyAmount, headline.budget.currency)} this month
+          {t('bwb_spent_of')
+            .replace('{spent}', formatMoney(headline.spent, headline.budget.currency))
+            .replace('{total}', formatMoney(headline.budget.monthlyAmount, headline.budget.currency))}
           {flagged.length > 1 && ` · +${flagged.length - 1} more`}
         </p>
       </button>
       <button
         onClick={handleDismiss}
-        aria-label="Dismiss"
+        aria-label={t('a11y_dismiss')}
         className='relative w-7 h-7 rounded-lg flex items-center justify-center text-ink-500 active:bg-warn-50/60 transition-colors shrink-0 before:absolute before:-inset-2 before:content-[""]'
       >
         <X size={14} />

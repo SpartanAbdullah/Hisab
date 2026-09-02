@@ -10,8 +10,11 @@ export default defineConfig({
     // add component-level tests, switch a specific file to `// @vitest-environment happy-dom`.
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
-    // Time math runs in the user's local timezone in production. Pinning
-    // to UTC in CI keeps DST-boundary assertions deterministic.
+    // vitest.setup.ts pins process.env.TZ = 'UTC' on its first line and pins
+    // the UI language; CI additionally exports TZ=UTC at the job level. Time
+    // math runs in the user's real local timezone in production, so UTC here
+    // is about determinism, not fidelity — a DST-boundary regression that only
+    // reproduces in Asia/Karachi will NOT be caught by this suite.
     setupFiles: ['./vitest.setup.ts'],
   },
 });

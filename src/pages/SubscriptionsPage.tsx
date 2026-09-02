@@ -79,27 +79,27 @@ export function SubscriptionsPage() {
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not update subscription',
-        subtitle: err instanceof Error ? err.message : 'Try again.',
+        title: tr('subs_err_update'),
+        subtitle: err instanceof Error ? err.message : tr('subs_try_again'),
       });
     }
   };
 
   const handleDelete = async (t: RecurringTransaction) => {
     const ok = await confirmDestructive({
-      title: `Remove "${t.label || t.category}"?`,
-      description: 'This stops tracking it. Charges already recorded stay.',
-      confirmLabel: 'Remove',
+      title: tr('subs_remove_confirm').replace('{name}', t.label || t.category),
+      description: tr('subs_remove_body'),
+      confirmLabel: tr('subs_remove_cta'),
     });
     if (!ok) return;
     try {
       await deleteTemplate(t.id);
-      toast.show({ type: 'success', title: 'Removed' });
+      toast.show({ type: 'success', title: tr('subs_removed') });
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not remove',
-        subtitle: err instanceof Error ? err.message : 'Try again.',
+        title: tr('subs_err_remove'),
+        subtitle: err instanceof Error ? err.message : tr('subs_try_again'),
       });
     }
   };
@@ -107,12 +107,12 @@ export function SubscriptionsPage() {
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
       <PageHeader
-        title="Subscription Tracker"
+        title={tr('subs_title')}
         back
         action={
           <button
             onClick={() => setShowAdd(true)}
-            aria-label="Add subscription"
+            aria-label={tr('subs_a11y_add')}
             className="nav-icon-button"
           >
             <Plus size={16} className="text-ink-600" />
@@ -124,8 +124,8 @@ export function SubscriptionsPage() {
         {loadStatus === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load subscriptions"
-            message={loadError ?? 'Some data failed to load.'}
+            title={tr('subs_err_load')}
+            message={loadError ?? tr('err_some_data_failed')}
             onRetry={retryLoad}
           />
         )}
@@ -137,10 +137,10 @@ export function SubscriptionsPage() {
             <EmptyState
               icon={CreditCard}
               tone="accent"
-              title="No subscriptions tracked yet"
-              description={`Add a recurring expense and tag it "Subscriptions" — Netflix, Spotify, your gym. We'll total the monthly cost and nudge you before each renewal.`}
-              subhint="Bhooli hui subscriptions yahin pakdenge."
-              actionLabel="Add a subscription"
+              title={tr('subs_empty_title')}
+              description={tr('subs_empty_desc')}
+              subhint={tr('subs_empty_subhint')}
+              actionLabel={tr('subs_empty_cta')}
               onAction={() => setShowAdd(true)}
             />
           ) : null
@@ -162,7 +162,7 @@ export function SubscriptionsPage() {
                 <div key={c.currency} className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                     <p className="text-[11px] text-ink-500">
-                      Per month{totals.mixed ? ` · ${c.currency}` : ''}
+                      {tr('subs_per_month')}{totals.mixed ? ` · ${c.currency}` : ''}
                     </p>
                     <p className="text-[20px] font-bold text-ink-900 tabular-nums mt-1">
                       {formatMoney(c.monthly, c.currency)}
@@ -173,7 +173,7 @@ export function SubscriptionsPage() {
                   </div>
                   <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
                     <p className="text-[11px] text-ink-500">
-                      Per year{totals.mixed ? ` · ${c.currency}` : ''}
+                      {tr('subs_per_year')}{totals.mixed ? ` · ${c.currency}` : ''}
                     </p>
                     <p className="text-[20px] font-bold text-ink-900 tabular-nums mt-1">
                       {formatMoney(c.yearly, c.currency)}
@@ -191,8 +191,10 @@ export function SubscriptionsPage() {
               >
                 <CalendarClock size={16} className="text-info-600 shrink-0" />
                 <p className="text-[12px] text-info-600">
-                  <span className="font-semibold">{r.template.label || 'A subscription'}</span>{' '}
-                  renews {r.daysUntil === 0 ? 'today' : `in ${r.daysUntil}d`} ·{' '}
+                  <span className="font-semibold">{r.template.label || tr('subs_a_subscription')}</span>{' '}
+                  {r.daysUntil === 0
+                    ? tr('subs_renews_today')
+                    : tr('subs_renews_in').replace('{n}', String(r.daysUntil))}{' '}·{' '}
                   {formatMoney(r.template.amount, r.template.currency)}
                 </p>
               </div>
@@ -204,7 +206,9 @@ export function SubscriptionsPage() {
                 <div className="flex items-center gap-2">
                   <Ghost size={15} className="text-pay-text" />
                   <p className="text-[12.5px] font-semibold text-pay-text">
-                    {ghosts.length} subscription{ghosts.length > 1 ? 's' : ''} worth a look
+                    {ghosts.length === 1
+                      ? tr('subs_ghost_one')
+                      : tr('subs_ghost_many').replace('{n}', String(ghosts.length))}
                   </p>
                 </div>
                 <div className="mt-2.5 space-y-1.5">
@@ -265,20 +269,20 @@ export function SubscriptionsPage() {
                       onClick={() => setEditing(t)}
                       className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
-                      <Pencil size={11} /> Edit
+                      <Pencil size={11} /> {tr('subs_edit')}
                     </button>
                     <button
                       onClick={() => togglePause(t)}
                       className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
                       {t.active ? <Pause size={11} /> : <Play size={11} />}
-                      {t.active ? 'Pause' : 'Resume'}
+                      {t.active ? tr('subs_pause') : tr('subs_resume')}
                     </button>
                     <button
                       onClick={() => handleDelete(t)}
                       className="min-h-[40px] text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
-                      <Trash2 size={11} /> Remove
+                      <Trash2 size={11} /> {tr('subs_remove_cta')}
                     </button>
                   </div>
                 </div>
@@ -293,7 +297,7 @@ export function SubscriptionsPage() {
           <div>
             <div className="flex items-center gap-1.5 pt-1">
               <Repeat size={13} className="text-ink-400" />
-              <p className="text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-500">Other recurring</p>
+              <p className="text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-500">{tr('subs_other_recurring')}</p>
             </div>
             <div className="space-y-2.5 mt-2">
               {others.map((t) => (
@@ -325,7 +329,7 @@ export function SubscriptionsPage() {
                       onClick={() => setEditing(t)}
                       className="min-h-[40px] text-[11px] font-semibold text-ink-700 bg-cream-soft rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
-                      <Pencil size={11} /> Edit
+                      <Pencil size={11} /> {tr('subs_edit')}
                     </button>
                     <button
                       onClick={() => togglePause(t)}
@@ -338,7 +342,7 @@ export function SubscriptionsPage() {
                       onClick={() => handleDelete(t)}
                       className="min-h-[40px] text-[11px] font-semibold text-pay-text bg-pay-50 rounded-lg px-3 py-1 flex items-center gap-1 press-sm"
                     >
-                      <Trash2 size={11} /> Remove
+                      <Trash2 size={11} /> {tr('subs_remove_cta')}
                     </button>
                   </div>
                 </div>
@@ -352,7 +356,7 @@ export function SubscriptionsPage() {
         open={showAdd || !!editing}
         onClose={() => { setShowAdd(false); setEditing(null); }}
         defaultCategory="Subscriptions"
-        title="Add subscription"
+        title={tr('subs_add_title')}
         template={editing}
       />
     </main>

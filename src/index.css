@@ -1,17 +1,45 @@
 @import "tailwindcss";
 
+/* ========== SELF-HOSTED FONT (P2 M2a) ==========
+ * Geist, self-hosted instead of loaded from fonts.googleapis.com /
+ * fonts.gstatic.com — see docs/audit-2026-09/07-mobile-first.md MF-15
+ * (a render-blocking cross-origin stylesheet was stalling first paint,
+ * including inside the bundled Android app) and docs/performance.md for
+ * the full before/after.
+ *
+ * This is a single variable-font file (weight axis covers the 400/500/600/700
+ * weights this app actually uses — grep of index.css + JSX for
+ * font-normal/font-medium/font-semibold/font-bold, see docs/performance.md),
+ * Latin subset only (unicode-range below matches Google's own "latin" split
+ * for Geist — the app's UI strings are Roman-Urdu/English, both Latin
+ * script). One file covers every weight instead of one file per weight.
+ *
+ * The file itself was fetched from fonts.gstatic.com at build-authoring time
+ * (2026-09-02) and committed to public/fonts/ — see docs/performance.md for
+ * the exact source URL if it ever needs re-fetching (e.g. a future Geist
+ * version bump). font-display: swap avoids invisible text while it loads;
+ * the --font-sukoon token below already carries a full system fallback
+ * stack, so text is never blocked on this file being available. */
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/geist-latin-variable.woff2') format('woff2-variations'), url('/fonts/geist-latin-variable.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ========== DESIGN TOKENS AS CSS ========== */
 @theme {
-  /* Brand palette — legacy, kept aliased for one release while
-   * Sukoon (navy/cream/accent) lands. New surfaces use the
-   * Sukoon tokens below; brand-* stays so the existing 155+
-   * call sites of card-premium / btn-gradient / cta-primary
-   * keep rendering during the migration. */
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
+  /* NOTE: the legacy --color-brand-* alias ramp (indigo, kept for the
+   * pre-Sukoon "brand" palette) was removed here (audit
+   * docs/audit-2026-09/09-ui-quality.md §1.2, docs/design-system.md).
+   * A full census across src/**\/*.tsx found 0 call sites for brand-50
+   * /100/500/600/700 as Tailwind utilities, and no CSS rule in this file
+   * ever referenced var(--color-brand-*) either — card-premium,
+   * btn-gradient and cta-primary all hardcode their indigo hex directly,
+   * so the alias was dead on both sides. See docs/design-system.md for
+   * the surviving token set. */
 
   /* ========================================================
    * SUKOON PALETTE — Hisaab 2.0 redesign
@@ -59,11 +87,19 @@
   --color-pay-700:  #B4452C;
   --color-pay-text: #C45339; /* on cream */
 
-  /* Ink — true neutral scale. No slate-bluish cast. */
+  /* Ink — true neutral scale. No slate-bluish cast.
+   * ink-400/ink-500 were darkened from the original #A8AABD/#7E809A — see
+   * docs/accessibility-contrast.md for the WCAG math. Both are used as body
+   * text (labels, amounts, secondary copy, mostly 9-13px — well under the
+   * 18.66px-bold "large text" threshold, so the 4.5:1 normal-text minimum
+   * applies) and previously read 2.05:1 / 3.45:1 against cream-bg — a hard
+   * AA fail (audit 09-ui-quality.md §4). Hue (~235°) and saturation (~11-14%)
+   * are unchanged from the originals; only lightness moved, keeping the
+   * 300→900 ramp monotonic (ink-300 lightest → ink-900 darkest). */
   --color-ink-200: #E6E6EF;
   --color-ink-300: #C9CAD8;
-  --color-ink-400: #A8AABD;
-  --color-ink-500: #7E809A;
+  --color-ink-400: #696C8B; /* was #A8AABD — 2.05:1 → 4.55:1 on cream-bg */
+  --color-ink-500: #60627B; /* was #7E809A — 3.45:1 → 5.31:1 on cream-bg */
   --color-ink-600: #5A5C72;
   --color-ink-700: #3F4156;  /* Interpolated body text — covers callers that
                                 came in via the Phase 4 bulk swap (Tailwind
@@ -72,9 +108,16 @@
   --color-ink-800: #23253F;
   --color-ink-900: #0E102B;
 
-  /* Functional */
+  /* Functional
+   * warn-600 was darkened from #C28E1A — it reads as text-on-warn-50 at 68
+   * call sites (badges, inline warnings) and previously hit only 2.64:1,
+   * failing AA (audit 09-ui-quality.md §4). Hue/saturation preserved (~40°
+   * amber); see docs/accessibility-contrast.md for the math. warn-700
+   * (added earlier for exactly this pairing but never adopted at those call
+   * sites) is now very close in value to the fixed warn-600 — expected,
+   * since both now clear the same AA floor for the same background. */
   --color-warn-50:  #FBF3DD;
-  --color-warn-600: #C28E1A;
+  --color-warn-600: #8D6813; /* was #C28E1A — 2.64:1 → 4.60:1 on warn-50 */
   --color-warn-700: #8A6410;  /* darker amber for TEXT on warn-50 — passes WCAG AA (~5.5:1) */
   --color-info-50:  #E8EEFB;
   --color-info-600: #3F6BD9;
@@ -100,8 +143,8 @@
  * Light mode is the default and stays byte-identical: every rule here is
  * scoped to html.dark. The token VALUES are overridden so all token-based
  * utilities (bg-cream-*, text-ink-*, receive/pay/accent tints) flip
- * automatically. The hardcoded component-layer classes (.card-base,
- * .input-field, …) bake in white/slate hex, so they get explicit dark
+ * automatically. The hardcoded component-layer classes (.input-field,
+ * .selector-base, …) bake in white/slate hex, so they get explicit dark
  * overrides below. These overrides are NON-layered, so they win over the
  * @layer components defaults regardless of source order.
  *
@@ -113,8 +156,18 @@
  * it can flip in dark mode (a plain rgba white can't). */
 :root { --nav-surface: rgba(255, 255, 255, 0.92); }
 
+/* Sticky PageHeader surface — same translucent-cream-plus-blur treatment as
+ * .modal-header, but PageHeader sets it via an inline style (audit finding
+ * #3, docs/audit-2026-09/09-ui-quality.md §8): a plain inline rgba() can't
+ * be overridden by any stylesheet rule, including html.dark, because inline
+ * styles always beat CSS specificity — so it needs a custom property like
+ * --nav-surface instead. Render-unverified; still needs a device/dark-mode
+ * visual check (tracked in docs/accessibility-contrast.md). */
+:root { --header-surface: rgba(244, 242, 236, 0.9); }
+
 html.dark {
   --nav-surface: rgba(22, 23, 29, 0.92);
+  --header-surface: rgba(19, 20, 25, 0.9);
 
   /* Warm-neutral dark surfaces — mirrors the cream ramp (bg → card → soft). */
   --color-cream-bg:       #131419;
@@ -123,10 +176,21 @@ html.dark {
   --color-cream-hairline: #262731;
   --color-cream-soft:     #191A21;
 
-  /* Ink ramp inverts: low numbers = dark surfaces/borders, high = light text. */
+  /* Ink ramp inverts: low numbers = dark surfaces/borders, high = light text.
+   * ink-400 lightened from #6B6D82 (3.62:1 on dark cream-bg, 3.23:1 on dark
+   * cream-card — fails AA on both; it's used as text at hundreds of call
+   * sites, same as the light ramp — see docs/accessibility-contrast.md).
+   * The dark cream-CARD is the binding constraint here (unlike light mode,
+   * where cream-bg is worse): cream-card (#1E1F27) is a lighter surface
+   * than cream-bg (#131419) in dark mode, so a light ink color gets LESS
+   * contrast against it, not more. ink-200/300 stay as-is: audited usage is
+   * decorative-only in this ramp too (disclosure chevrons, "—" empty-state
+   * placeholders), never body text, so they're out of the body-text
+   * contrast requirement this pass targets. ink-500 and darker already
+   * clear AA against both surfaces (5.36:1+) and are unchanged. */
   --color-ink-200: #2C2D38;
   --color-ink-300: #3C3E4C;
-  --color-ink-400: #6B6D82;
+  --color-ink-400: #848699; /* was #6B6D82 — 3.23:1 → 4.57:1 on dark cream-card (binding), 5.12:1 on dark cream-bg */
   --color-ink-500: #9092A8;
   --color-ink-600: #B4B6C8;
   --color-ink-700: #CFD0DD;
@@ -146,14 +210,21 @@ html.dark {
   --color-receive-700:  #0E8E6E;
   --color-receive-text: #3FD7A6;
 
-  /* Pay — money out (coral, never red). */
+  /* Pay — money out (coral, never red). pay-700 lightened from #C2543C
+   * (3.79:1 on dark pay-50 — fails AA; it's used as text at
+   * BudgetsPage.tsx's over-budget pill). pay-600 (5.57:1) and pay-text
+   * (8.26:1) already clear AA and are unchanged. */
   --color-pay-50:   #2A1611;
   --color-pay-100:  #371C15;
   --color-pay-600:  #E5705A;
-  --color-pay-700:  #C2543C;
+  --color-pay-700:  #CA6752; /* was #C2543C — 3.79:1 → 4.56:1 on dark pay-50 */
   --color-pay-text: #F2967C;
 
-  /* Functional. */
+  /* Functional. warn-600/700 and receive-600/700 already clear AA against
+   * their dark -50 backgrounds (6.90:1+ / 6.21:1+) — computed, unchanged.
+   * receive-700 (3.83:1) is below AA but is only ever used decoratively in
+   * this codebase (gradient fills, avatar initials) — never as text on
+   * receive-50 — so it's left as-is; see docs/accessibility-contrast.md. */
   --color-warn-50:  #2A2410;
   --color-warn-600: #D9A52E;
   --color-warn-700: #E8C063;
@@ -166,31 +237,27 @@ html.dark body {
   color: var(--color-ink-900);
 }
 
-/* Component-layer classes bake in white/slate — re-point them at tokens. */
+/* Component-layer classes bake in white/slate — re-point them at tokens.
+ * NOTE: this selector list and the standalone rules below it were pruned
+ * to only the classes that still exist — .card-base, .card-premium,
+ * .chip-base, .row-card, .toggle-row, .state-hint-*, and .glass were
+ * removed elsewhere in this file (0 call sites; docs/design-system.md),
+ * so their dark-mode overrides here would have targeted nothing. Values
+ * for the surviving rules are unchanged. */
 html.dark .input-field,
-html.dark .card-base,
-html.dark .card-premium,
-html.dark .chip-base,
 html.dark .selector-base,
-html.dark .row-card,
 html.dark .sheet-transient {
   background: var(--color-cream-card);
   border-color: var(--color-cream-border);
 }
 html.dark .input-field { color: var(--color-ink-900); }
 html.dark .form-label { color: var(--color-ink-500); }
-html.dark .chip-base { color: var(--color-ink-500); }
 html.dark .selector-selected { background: var(--color-accent-50); border-color: var(--color-accent-500); }
-html.dark .toggle-row { background: var(--color-cream-soft); border-color: var(--color-cream-hairline); }
 html.dark .cta-secondary { background: var(--color-cream-soft); color: var(--color-ink-600); }
 html.dark .cta-secondary:active { background: var(--color-cream-border); }
 html.dark .cta-destructive { background: var(--color-pay-50); color: var(--color-pay-text); }
 html.dark .cta-destructive:active { background: var(--color-pay-100); }
 html.dark .modal-header { background: rgba(19, 20, 25, 0.9); }
-html.dark .state-hint-info { color: #C9CBFF; background: rgba(124, 92, 255, 0.12); }
-html.dark .state-hint-warn { color: var(--color-warn-700); background: rgba(217, 165, 46, 0.12); }
-html.dark .state-hint-error { color: var(--color-pay-text); background: var(--color-pay-50); }
-html.dark .glass { background: rgba(30, 31, 39, 0.72); }
 
 /* SYSTEMIC FIX for the "dark primary button" idiom (bg-ink-900/800 + text-white).
  * The ink ramp inverts in dark, so bg-ink-900 becomes LIGHT — but text-white
@@ -736,12 +803,10 @@ html.dark .skeleton-sweep::after {
 .pt-safe {
   padding-top: max(0.875rem, env(safe-area-inset-top));
 }
-.pb-safe {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
-}
-.bottom-safe {
-  bottom: max(1rem, env(safe-area-inset-bottom));
-}
+/* NOTE: .pb-safe and .bottom-safe were removed here — 0 call sites; the
+ * safe-area-inset-bottom need they anticipated is met directly by
+ * .modal-footer / .sheet-actions padding further down this file
+ * (docs/design-system.md). */
 
 /* A gentle pulsing glow that draws the eye to a primary call-to-action
    without shouting. Used on the Investments "Record trade" button; reusable
@@ -877,63 +942,11 @@ input, select, textarea {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* ========== GLASSMORPHISM UTILITIES ========== */
-.glass {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-}
-
-.glass-dark {
-  background: rgba(15, 23, 42, 0.72);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-}
-
-.glass-brand {
-  background: rgba(99, 102, 241, 0.08);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-/* ========== PREMIUM CARD ==========
- * @deprecated — prefer `.card-base` (passive) or `.card-base.card-interactive`
- * (tappable). `.card-premium` uses a 20px radius that callers frequently
- * override with `!rounded-2xl`; `.card-base` canonicalises at 16px so the
- * override hack goes away. Left in place for existing callers; do NOT adopt
- * for new surfaces. See @layer components tokens below.
- */
-.card-premium {
-  background: white;
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  border-radius: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.02);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.card-premium:active {
-  transform: scale(0.98);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-}
-
-/* ========== GRADIENT TEXT ========== */
-.text-gradient-brand {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.text-gradient-income {
-  background: linear-gradient(135deg, #10b981, #059669);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.text-gradient-expense {
-  background: linear-gradient(135deg, #f87171, #ef4444);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
+/* NOTE: .glass/.glass-dark/.glass-brand (glassmorphism utilities),
+ * .card-premium (deprecated card, superseded by .card-base — which itself
+ * turned out to have 0 adoption too, see below), and .text-gradient-brand
+ * /-income/-expense were removed here — 0 call sites across src/**\/*.tsx
+ * (docs/audit-2026-09/09-ui-quality.md §1.2, docs/design-system.md). */
 
 /* ========== MESH GRADIENT BG ========== */
 .bg-mesh {
@@ -971,11 +984,10 @@ input, select, textarea {
 /* ========== TABULAR NUMERALS ========== */
 .tabular-nums { font-variant-numeric: tabular-nums; }
 
-/* ========== SOFT GLOW EFFECT ========== */
-.glow-brand { box-shadow: 0 0 20px rgba(99,102,241,0.2); }
-.glow-income { box-shadow: 0 0 20px rgba(16,185,129,0.2); }
-.glow-expense { box-shadow: 0 0 20px rgba(239,68,68,0.15); }
-.glow-savings { box-shadow: 0 0 20px rgba(168,85,247,0.2); }
+/* NOTE: .glow-brand/-income/-expense/-savings were removed here — 0 call
+ * sites (docs/design-system.md). .glow-attention (used by
+ * InvestmentsPage's "Record trade" CTA) is unrelated and stays — see the
+ * DAILY WISDOM / attention-glow rules further down this file. */
 
 /* ========== GRADIENT BUTTON BASE ========== */
 .btn-gradient {
@@ -1117,82 +1129,28 @@ input, select, textarea {
   .cta-destructive:active { background: #fee2e2; } /* red-100 */
   .cta-destructive:disabled { opacity: 0.5; }
 
-  /* ========== STATE HINT TOKENS ==========
-   * Inline advisory banners. Info/warn follow the rounded-2xl + leading-
-   * relaxed pattern seen in linked-request/settlement UIs; error stays
-   * tighter (rounded-xl, no loosened leading) to match the inline form
-   * error pattern used across modals. */
-  .state-hint-info {
-    font-size: 12px;
-    color: #4338ca;                               /* indigo-700 */
-    background: rgba(238, 242, 255, 0.7);         /* indigo-50/70 */
-    border-radius: 16px;
-    padding: 12px;                                 /* p-3 */
-    line-height: 1.625;                            /* leading-relaxed */
-  }
-
-  .state-hint-warn {
-    font-size: 12px;
-    color: #b45309;                               /* amber-700 */
-    background: rgba(255, 251, 235, 0.7);         /* amber-50/70 */
-    border-radius: 16px;
-    padding: 12px;
-    line-height: 1.625;
-  }
-
-  .state-hint-error {
-    font-size: 12px;
-    font-weight: 600;                             /* semibold */
-    color: #ef4444;                               /* red-500 */
-    background: #fef2f2;                          /* red-50 */
-    border-radius: 12px;                          /* rounded-xl */
-    padding: 12px;
-  }
+  /* NOTE: .state-hint-info/-warn/-error (inline advisory-banner tokens)
+   * were removed here — 0 call sites (docs/design-system.md). */
 
   /* ========================================================
-   * PHASE D1 TOKENS — Cards / Rows / Selectors / Chips / Toggles
+   * CARDS / ROWS / SELECTORS / CHIPS
    *
-   * Introduced, NOT yet adopted. Every value extracted from an
-   * existing good implementation in the codebase; nothing invented.
    * Composition model: `*-base` is structural, `*-interactive` /
    * `*-selected` are modifier classes layered on top.
-   *   <div class="card-base">…</div>
-   *   <button class="card-base card-interactive">…</button>
    *   <button class="selector-base selector-selected">…</button>
-   *   <button class="chip-base chip-selected">…</button>
+   *
+   * `.card-base`/`.card-interactive`, `.row-card`, `.chip-base`/
+   * `.chip-selected` and `.toggle-row` were removed here — measured 0 call
+   * sites each (docs/design-system.md). `.row-base`, `.row-interactive`
+   * and the SELECTOR TOKENS below are real and stay.
    * ======================================================== */
 
-  /* ========== CARD TOKENS ==========
-   * `.card-base` canonicalises the passive card look at `rounded-2xl` (16px),
-   * which is what most consumers actually render (they override .card-premium
-   * with `!rounded-2xl`). Colour, border, and shadow are identical to the
-   * deprecated `.card-premium`. */
-  .card-base {
-    background: white;
-    border: 1px solid rgba(226, 232, 240, 0.6);   /* slate-200/60 */
-    border-radius: 16px;                          /* rounded-2xl */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04),
-                0 4px 12px rgba(0, 0, 0, 0.02);
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  /* Modifier: layered on top of `.card-base` for tappable cards. */
-  .card-interactive:active {
-    transform: scale(0.98);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  }
-
   /* ========== ROW TOKENS ==========
-   * Three composable tokens:
-   *   `.row-base`        — structure only (flex layout, gap, alignment).
-   *                        No chrome, no padding, no width.
-   *                        Use alone for inside-card rows (e.g. SettingsPage
-   *                        rows stacked inside a `card-premium divide-y`
-   *                        wrapper) + utility padding.
-   *   `.row-card`        — standalone card-row chrome (width, padding, border,
-   *                        radius, bg). Layer atop `.row-base` when the row
-   *                        is a self-contained visual unit (e.g. ContactsModal).
-   *   `.row-interactive` — tap-feedback slate-50 flash with matching
-   *                        transition timing. Composable with either.
+   * `.row-base`        — structure only (flex layout, gap, alignment).
+   *                       No chrome, no padding, no width. Used inside
+   *                       cards (e.g. SettingsPage rows) + utility padding.
+   * `.row-interactive` — tap-feedback cream-soft flash with matching
+   *                       transition timing. Composable with `.row-base`.
    *
    * Cursor is not set here; `<button>` gets `cursor: pointer` from Tailwind's
    * preflight, and non-interactive elements that still want `:active` flash
@@ -1203,13 +1161,6 @@ input, select, textarea {
     gap: 12px;                                    /* gap-3 */
     text-align: left;
     color: inherit;
-  }
-  .row-card {
-    width: 100%;                                  /* w-full */
-    padding: 12px;                                /* p-3 */
-    border: 1px solid rgba(226, 232, 240, 0.6);   /* slate-200/60 */
-    border-radius: 16px;                          /* rounded-2xl */
-    background: white;                            /* bg-white */
   }
   .row-interactive {
     /* Timing matches Tailwind's `transition-colors` default so swapping
@@ -1255,66 +1206,18 @@ input, select, textarea {
     box-shadow: 0 1px 2px 0 rgba(91, 71, 232, 0.06);
   }
 
-  /* ========== CHIP TOKENS ==========
-   * `.chip-base` matches the reminder-option / category-pill pattern used in
-   * QuickEntry and AddUpcomingExpenseModal. Slight variance exists in the
-   * codebase on selected-state shadow (some add shadow-indigo-500/20); the
-   * canonical here uses plain `shadow-sm`, which is the AddUpcomingExpense
-   * reminder pattern. The difference is imperceptible against the solid
-   * indigo-600 background. */
-  .chip-base {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 12px;                            /* py-1.5 px-3 */
-    border: 1px solid var(--color-cream-border);
-    border-radius: 12px;                          /* rounded-xl */
-    background: white;
-    color: var(--color-ink-500);
-    font-size: 11px;
-    font-weight: 600;                             /* semibold */
-    cursor: pointer;
-    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .chip-base:active {
-    transform: scale(0.95);
-  }
-  .chip-base:focus-visible {
-    outline: 2px solid var(--color-accent-500);
-    outline-offset: 2px;
-  }
-  .chip-selected {
-    background: var(--color-accent-600);
-    color: white;
-    border-color: var(--color-accent-600);
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);  /* shadow-sm */
-  }
-
-  /* ========== TOGGLE ROW TOKEN ==========
-   * `.toggle-row` matches the enabled-state EMI toggle / apply-to-balance
-   * toggle pattern. The disabled state (e.g. no eligible accounts for the
-   * apply-to-balance toggle) is handled at call sites today via composed
-   * `opacity-60 cursor-not-allowed` utilities; a modifier class may be
-   * added in a later phase if the disabled pattern recurs. */
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;                                    /* gap-2.5 */
-    padding: 12px;                                /* p-3 */
-    border: 1px solid rgba(241, 245, 249, 0.6);   /* slate-100/60 */
-    border-radius: 16px;                          /* rounded-2xl */
-    background: rgba(248, 250, 252, 0.8);         /* slate-50/80 */
-    cursor: pointer;
-    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
+  /* NOTE: .chip-base/.chip-selected and .toggle-row were removed here —
+   * 0 call sites (docs/design-system.md). */
 
   /* ========================================================
-   * PHASE E1 TOKENS — Modal structural anatomy
+   * MODAL STRUCTURAL ANATOMY
    *
-   * Introduced, NOT yet adopted. Every value extracted verbatim
-   * from `src/components/Modal.tsx`; nothing invented. The tokens
-   * define the five structural slots of a modal sheet so that the
-   * shared <Modal> component can compose them in Phase E2 without
-   * any visible change to consumers.
+   * Adopted: src/components/Modal.tsx composes all five slots
+   * (.modal-backdrop/.modal-sheet/.modal-header/.modal-body/.modal-footer),
+   * and src/components/ConfirmDestructiveSheet.tsx composes
+   * .sheet-actions/.sheet-transient for the lighter-weight bottom-sheet
+   * variant. Every value here was extracted verbatim from those
+   * components — nothing invented.
    *
    * Animation state (backdrop opacity, sheet transform) stays on
    * the JSX side — driven by the `show` state and composed as
@@ -1411,28 +1314,10 @@ input, select, textarea {
     transform: translateY(0);
   }
 
-  /* ========================================================
-   * PHASE F1 TOKENS — Navigation / Page Layout
-   *
-   * Introduced, NOT yet adopted. Every value extracted verbatim
-   * from the existing page-wrapper / nav-button patterns; nothing
-   * invented. Composed by call sites in Phase F2 / F3.
-   * ======================================================== */
-
-  /* Outermost page wrapper. Replicates the `pb-28 bg-mesh min-h-dvh`
-   * triplet that every authenticated route currently writes as its
-   * outermost <div>. The `bg-mesh` gradients are duplicated here
-   * rather than composed so consumers can switch to a single class.
-   * KEEP IN SYNC with the `.bg-mesh` rule above if the design ever
-   * evolves. */
-  .page-shell {
-    padding-bottom: 112px;                        /* pb-28 — clears the floating BottomNav */
-    min-height: 100dvh;                           /* min-h-dvh — fills the viewport */
-    background:
-      radial-gradient(at 30% 10%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
-      radial-gradient(at 80% 80%, rgba(168, 85, 247, 0.04) 0%, transparent 50%),
-      radial-gradient(at 10% 90%, rgba(16, 185, 129, 0.04) 0%, transparent 50%);
-  }
+  /* NOTE: .page-shell (a proposed single-class replacement for the
+   * pb-28/bg-mesh/min-h-dvh triplet every page wrapper writes) was removed
+   * here — 0 call sites, still unadopted (docs/design-system.md). .bg-mesh
+   * itself stays — it IS used directly (GroupDetailPage, JoinGroupPage). */
 
   /* Small rounded square icon button used in page headers (back
    * arrow) and modal headers (close X). Same pattern byte-for-byte
@@ -1469,19 +1354,6 @@ input, select, textarea {
     outline-offset: 2px;
   }
 
-  /* ========== STATUS CHIP TOKEN ==========
-   * Tiny pill used for status badges (overdue / due-soon / settled /
-   * pending). Structure only — colour pairing (bg + text) and any
-   * leading icon stay on the call site so status is never colour-only.
-   * The 10px floor keeps chip text legible per the Sukoon a11y bar. */
-  .chip-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border-radius: 9999px;
-    font-size: 10px;
-    font-weight: 600;
-    line-height: 1;
-  }
+  /* NOTE: .chip-status (a proposed status-badge pill token) was removed
+   * here — 0 call sites (docs/design-system.md). */
 }

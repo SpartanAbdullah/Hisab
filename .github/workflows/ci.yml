@@ -10,6 +10,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Pin the runner's clock zone. vitest.setup.ts also sets process.env.TZ,
+      # but that only covers the Vitest workers — this covers tsc, eslint, the
+      # Vite build and anything else that formats a date. Until 2026-09 nothing
+      # set TZ anywhere and the suite's determinism was accidental
+      # (audit 2026-09, 12-qa-review.md F-12).
+      TZ: UTC
     steps:
       - uses: actions/checkout@v4
 

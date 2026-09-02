@@ -1,7 +1,12 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { db } from '../db';
-import { transactionsDb, emiSchedulesDb, loansDb, goalsDb, groupExpensesDb } from '../lib/supabaseDb';
+import {
+  transactionsDb, emiSchedulesDb, loansDb, goalsDb, groupExpensesDb,
+  // L4 pilot — the atomic-transfer RPC gateway (flag-gated, see
+  // ATOMIC_TRANSFER_ENABLED below) and the account refetch its retry needs.
+  accountsDb, atomicMoneyDb, type AtomicTransferResult,
+} from '../lib/supabaseDb';
 import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
 import { addMonths, format } from 'date-fns';
 import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType, InvestmentTrade } from '../db';
@@ -24,6 +29,7 @@ import { simulateTimeline, validateTradeInput } from '../lib/investmentMath';
 import { rateIsSane } from '../lib/conversionMath';
 import { MAX_MONEY_MAGNITUDE, checkMoneyAmount, type MoneyAmountProblem } from '../lib/currencyValidation';
 import { MutationScope, runSafeMutation } from '../lib/mutationSafety';
+import { reportError } from '../lib/errorReporter';
 import { applyLoanRemainingDelta, round2 } from '../lib/loanRemainingDelta';
 
 interface BaseTransactionInput {
@@ -261,18 +267,19 @@ async function ensureSupportingStoresLoaded() {
   const goalStore = useGoalStore.getState();
   const emiStore = useEmiStore.getState();
 
-  if (accountStore.accounts.length === 0) {
-    await accountStore.loadAccounts();
-  }
-  if (loanStore.loans.length === 0) {
-    await loanStore.loadLoans();
-  }
-  if (goalStore.goals.length === 0) {
-    await goalStore.loadGoals();
-  }
-  if (emiStore.schedules.length === 0) {
-    await emiStore.loadSchedules();
-  }
+  // Audit 03-performance M11 / quick win #4: these four are independent
+  // reads of four different tables, and awaiting them one after the other put
+  // up to four serial round-trips (~1-2 s on 3G) in front of the FIRST save
+  // after a cold boot — the exact interaction the product optimises for.
+  // Running them together changes nothing else: no ordering existed between
+  // them, and each still only runs when its store is empty. Rejections
+  // propagate as before (Promise.all rejects with the first failure).
+  const jobs: Promise<unknown>[] = [];
+  if (accountStore.accounts.length === 0) jobs.push(accountStore.loadAccounts());
+  if (loanStore.loans.length === 0) jobs.push(loanStore.loadLoans());
+  if (goalStore.goals.length === 0) jobs.push(goalStore.loadGoals());
+  if (emiStore.schedules.length === 0) jobs.push(emiStore.loadSchedules());
+  if (jobs.length > 0) await Promise.all(jobs);
 }
 
 function isEditableTransactionType(type: Transaction['type']): type is 'expense' | 'income' | 'transfer' | 'loan_given' | 'loan_taken' {
@@ -293,7 +300,14 @@ function isEditableTransactionType(type: Transaction['type']): type is 'expense'
 async function groupExpenseStillExists(groupExpenseId: string): Promise<boolean> {
   try {
     return await groupExpensesDb.probeExists(groupExpenseId);
-  } catch {
+  } catch (err) {
+    // Fail-safe: an unconfirmed probe keeps the mirror locked. Silent before
+    // audit H1 — but a persistent probe failure is exactly why a member's
+    // mirror row would look permanently un-deletable.
+    reportError(err, {
+      feature: 'transactionStore.groupExpenseStillExists.probeFailed',
+      extra: { groupExpenseId },
+    });
     return true;
   }
 }
@@ -302,6 +316,128 @@ async function trackedBalanceDelta(scope: MutationScope, accountId: string, delt
   const accounts = useAccountStore.getState();
   await accounts.updateBalance(accountId, delta);
   scope.register(() => useAccountStore.getState().updateBalance(accountId, -delta));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVER-SIDE MONEY ENGINE — L4 pilot: the account→account transfer
+//
+// audit docs/audit-2026-09/07-mobile-first.md MF-01, 12-qa-review.md O-1/F-4,
+// 00-executive-summary.md M1/L4. The two-leg client sequence above can commit
+// leg 1, fail leg 2, and then fail its own compensation in the same outage —
+// mutationSafety.ts:10-13 says so in its own header. `transfer_between_accounts`
+// (supabase-migration-p3-atomic-transfer.sql) does both legs AND the row in one
+// Postgres transaction, which is the only place that guarantee can live.
+//
+// OFF BY DEFAULT. The RPC does not exist until the user applies the migration,
+// so the flag stays false and the legacy path below runs byte-for-byte
+// unchanged. Rollout: docs/server-side-money-engine.md.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ATOMIC_TRANSFER_ENABLED = import.meta.env.VITE_ATOMIC_TRANSFER === 'true';
+
+interface AtomicTransferLeg {
+  transactionId: string;
+  sourceAccountId: string;
+  destinationAccountId: string;
+  amount: number;
+  destinationAmount: number;
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  createdAt: string;
+  /** Signed, already 2dp — what the source loses. Used only by the inverse. */
+  sourceDelta: number;
+  /** Signed, already 2dp — what the destination gains. Inverse only. */
+  destinationDelta: number;
+}
+
+/** Adopt a balance the SERVER computed. Never recompute it locally. */
+async function setKnownBalance(accountId: string, balance: number): Promise<void> {
+  useAccountStore.setState((s) => ({
+    accounts: s.accounts.map((a) =>
+      a.id === accountId ? { ...a, balance, updatedAt: new Date().toISOString() } : a,
+    ),
+  }));
+  const updated = useAccountStore.getState().accounts.find((a) => a.id === accountId);
+  if (updated) await mirrorPut(db.accounts, updated);
+  markMirrorStale('accounts');
+}
+
+/**
+ * Call the atomic-transfer RPC and register the inverse for the rest of the
+ * scope (the card-bill auto-settle still runs client-side after it).
+ *
+ * BALANCE_CONFLICT → refetch the accounts once and retry, the same ladder
+ * accountStore.updateBalance already runs against the account CAS. Two
+ * consecutive conflicts surface to the caller, exactly as they do today.
+ *
+ * The inverse is still a best-effort client compensation — but it now has only
+ * ONE thing to undo instead of a half-applied pair, and the forward move can no
+ * longer be partially committed, which is the failure MF-01 describes.
+ */
+async function atomicTransfer(scope: MutationScope, leg: AtomicTransferLeg): Promise<AtomicTransferResult> {
+  const call = async (): Promise<AtomicTransferResult> => {
+    const accounts = useAccountStore.getState();
+    const src = accounts.getAccount(leg.sourceAccountId);
+    const dest = accounts.getAccount(leg.destinationAccountId);
+    if (!src || !dest) throw new Error('Account not found');
+    return atomicMoneyDb.transferAtomic({
+      transactionId: leg.transactionId,
+      sourceAccountId: leg.sourceAccountId,
+      destinationAccountId: leg.destinationAccountId,
+      amount: leg.amount,
+      destinationAmount: leg.destinationAmount,
+      conversionRate: leg.conversionRate,
+      note: leg.note,
+      category: leg.category,
+      createdAt: leg.createdAt,
+      expectedSourceBalance: src.balance,
+      expectedDestinationBalance: dest.balance,
+      // Creation never goes negative — identical to checkBalance above, which
+      // is applied to a credit-card source too (a card's balance is its
+      // available credit). The escape belongs to the reversal path only.
+      allowNegative: false,
+    });
+  };
+
+  let result: AtomicTransferResult;
+  try {
+    result = await call();
+  } catch (err) {
+    if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') {
+      reportError(err, {
+        feature: 'transactionStore.atomicTransfer.rpcFailed',
+        extra: { transactionId: leg.transactionId },
+      });
+      throw err;
+    }
+    // Another device/tab moved one of these accounts. Learn the truth, retry
+    // once. A conflict means NOTHING moved, so there is nothing to compensate.
+    const fresh = await accountsDb.getAll();
+    useAccountStore.setState({ accounts: fresh });
+    result = await call();
+  }
+
+  await setKnownBalance(leg.sourceAccountId, result.sourceBalance);
+  await setKnownBalance(leg.destinationAccountId, result.destinationBalance);
+
+  scope.register(async () => {
+    // Reverse both legs through the account CAS (delta-based, so a concurrent
+    // mutation commutes) and remove the row the server wrote. The tail's
+    // trackedAddTransaction registers its own delete which runs first under
+    // LIFO; deleting twice is a no-op.
+    const accounts = useAccountStore.getState();
+    await accounts.updateBalance(leg.sourceAccountId, -leg.sourceDelta);
+    await useAccountStore.getState().updateBalance(leg.destinationAccountId, -leg.destinationDelta);
+    await transactionsDb.delete(leg.transactionId);
+    await mirrorDelete(db.transactions, leg.transactionId);
+    markMirrorStale('transactions');
+    useTransactionStore.setState((s) => ({
+      transactions: s.transactions.filter((t) => t.id !== leg.transactionId),
+    }));
+  });
+
+  return result;
 }
 
 // NOTE: these helpers deliberately bypass the store-level create/update
@@ -342,7 +478,7 @@ async function trackedCreateLoan(scope: MutationScope, input: CreateLoanInput): 
       'loan',
     );
   } catch (err) {
-    console.error('logActivity failed in trackedCreateLoan (non-fatal)', err);
+    reportError(err, { feature: 'transactionStore.trackedCreateLoan.logActivity', extra: { loanId: loan.id } });
   }
   return loan;
 }
@@ -411,7 +547,7 @@ async function trackedApplyRepayment(scope: MutationScope, loanId: string, amoun
         'loan',
       );
     } catch (err) {
-      console.error('logActivity failed in trackedApplyRepayment (non-fatal)', err);
+      reportError(err, { feature: 'transactionStore.trackedApplyRepayment.settledActivity', extra: { loanId } });
     }
   }
 }
@@ -486,7 +622,7 @@ async function trackedMarkEmiPaid(scope: MutationScope, emiId: string): Promise<
       'loan',
     );
   } catch (err) {
-    console.error('logActivity failed in trackedMarkEmiPaid (non-fatal)', err);
+    reportError(err, { feature: 'transactionStore.trackedMarkEmiPaid.logActivity', extra: { loanId: before.loanId } });
   }
 }
 
@@ -534,7 +670,7 @@ async function trackedMarkCoveredEmisPaid(scope: MutationScope, loanId: string):
       'loan',
     );
   } catch (err) {
-    console.error('logActivity failed in trackedMarkCoveredEmisPaid (non-fatal)', err);
+    reportError(err, { feature: 'transactionStore.trackedMarkCoveredEmisPaid.logActivity', extra: { loanId } });
   }
 }
 
@@ -645,12 +781,16 @@ async function trackedRegenerateEmis(
 
 // After a mutation commits, we log to activity. Failures here must NOT surface
 // to the user — the money already moved and rolling it back now would be
-// worse. Swallow and console.error.
+// worse. Swallowed for the user, reported for the operator (audit H1) — a
+// spike here means the audit trail is drifting behind the money.
 async function logActivitySafe(type: ActivityType, description: string, entityId: string, entityType: string): Promise<void> {
   try {
     await useActivityStore.getState().logActivity(type, description, entityId, entityType);
   } catch (err) {
-    console.error('logActivity failed (non-fatal, mutation already committed)', err);
+    reportError(err, {
+      feature: 'transactionStore.logActivitySafe',
+      extra: { activityType: type, entityType, entityId },
+    });
   }
 }
 
@@ -669,7 +809,9 @@ async function refetchMoneyStores(): Promise<void> {
       useGoalStore.getState().loadGoals(),
     ]);
   } catch (err) {
-    console.error('Post-rollback refetch failed — local state may be stale until next navigation', err);
+    // The last line of defence after a failed rollback: local state is now
+    // known-stale against remote truth until the next navigation.
+    reportError(err, { feature: 'transactionStore.refetchMoneyStores.postRollback' });
   }
 }
 
@@ -681,7 +823,9 @@ async function refetchMoneyStores(): Promise<void> {
 function nudgeReminderSchedule(): void {
   void import('../lib/notificationScheduler')
     .then((m) => m.rescheduleNotifications({ force: true }))
-    .catch(() => {});
+    .catch((err) => {
+      reportError(err, { feature: 'transactionStore.nudgeReminderSchedule' });
+    });
 }
 
 async function findCashAdvanceCardForLoan(loanId: string): Promise<string | null> {
@@ -989,16 +1133,58 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               throw new Error('Conversion rate required for cross-currency move');
             }
 
-            await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+            if (ATOMIC_TRANSFER_ENABLED) {
+              // ── L4 PILOT (audit MF-01 / O-1 / F-4) ──────────────────────
+              // ONE server-side transaction moves both legs and writes the
+              // row, so a network drop between them can no longer leave the
+              // source debited and the destination uncredited. Everything
+              // below the switch — the Transaction object, the mirror, the
+              // activity entry, the reminder nudge, and the card-bill
+              // auto-settle immediately after this block — is unchanged: see
+              // the artifact contract table in
+              // supabase-migration-p3-atomic-transfer.sql.
+              const destAmount = src.currency !== dest.currency
+                ? Math.round(input.amount * input.conversionRate! * 100) / 100
+                : input.amount;
 
-            if (src.currency !== dest.currency) {
-              conversionRate = input.conversionRate!;
-              const destAmount = Math.round(input.amount * conversionRate * 100) / 100;
-              await trackedBalanceDelta(scope, input.destinationAccountId, destAmount);
-              description = `Moved ${src.currency} ${input.amount} → ${dest.currency} ${destAmount} (rate: ${conversionRate})`;
+              // Pin the timestamp BEFORE the server writes the row, so the
+              // tail's `input.createdAt ?? new Date().toISOString()` produces
+              // the identical value and its idempotent upsert rewrites the
+              // same row rather than a differently-stamped one.
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+
+              const applied = await atomicTransfer(scope, {
+                transactionId,
+                sourceAccountId: input.sourceAccountId,
+                destinationAccountId: input.destinationAccountId,
+                amount: input.amount,
+                destinationAmount: destAmount,
+                conversionRate: src.currency !== dest.currency ? input.conversionRate! : null,
+                note: input.notes ?? '',
+                category: input.category ?? '',
+                createdAt: input.createdAt,
+                sourceDelta: -Math.round(input.amount * 100) / 100,
+                destinationDelta: Math.round(destAmount * 100) / 100,
+              });
+
+              if (src.currency !== dest.currency) {
+                conversionRate = input.conversionRate!;
+                description = `Moved ${src.currency} ${input.amount} → ${dest.currency} ${applied.destinationAmount ?? destAmount} (rate: ${conversionRate})`;
+              } else {
+                description = `Moved ${currency} ${input.amount}: ${src.name} → ${dest.name}`;
+              }
             } else {
-              await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
-              description = `Moved ${currency} ${input.amount}: ${src.name} → ${dest.name}`;
+              await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+
+              if (src.currency !== dest.currency) {
+                conversionRate = input.conversionRate!;
+                const destAmount = Math.round(input.amount * conversionRate * 100) / 100;
+                await trackedBalanceDelta(scope, input.destinationAccountId, destAmount);
+                description = `Moved ${src.currency} ${input.amount} → ${dest.currency} ${destAmount} (rate: ${conversionRate})`;
+              } else {
+                await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+                description = `Moved ${currency} ${input.amount}: ${src.name} → ${dest.name}`;
+              }
             }
 
             // Paying a card bill IS paying back its cash advances — the same
@@ -1551,6 +1737,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         return { transaction, description };
       },
       refetchMoneyStores,
+      'transactionStore.processTransaction',
     );
 
     // Post-commit: activity log is a secondary audit trail. Its failure must
@@ -1908,6 +2095,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         return { updated, description };
       },
       refetchMoneyStores,
+      'transactionStore.updateTransaction',
     );
 
     await logActivitySafe('transaction_modified', description, updated.id, 'transaction');
@@ -2228,7 +2416,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       }
 
       await trackedDeleteTransaction(scope, existing);
-    }, refetchMoneyStores);
+    }, refetchMoneyStores, 'transactionStore.deleteTransaction');
 
     await logActivitySafe(
       'transaction_deleted',
@@ -2311,7 +2499,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       // 3) Schedule and loan row last, so LIFO rollback restores them first.
       await trackedDeleteEmisByLoan(scope, loanId);
       await trackedDeleteLoan(scope, loanId);
-    }, refetchMoneyStores);
+    }, refetchMoneyStores, 'transactionStore.deleteLoanCascade');
 
     await logActivitySafe(
       'transaction_deleted',
@@ -2363,7 +2551,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         await accountStore.updateBalance(snapshot.destinationAccountId, snapshot.amount);
       }
     } catch (err) {
-      console.error('[restoreTransaction] balance re-apply failed; row restored but balance may need refetch', err);
+      // Row restored but the balance leg did not re-apply — a real desync.
+      reportError(err, {
+        feature: 'transactionStore.restoreTransaction.balanceReapply',
+        extra: { transactionId: snapshot.id, transactionType: snapshot.type },
+      });
     }
 
     nudgeReminderSchedule();

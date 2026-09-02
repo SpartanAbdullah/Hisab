@@ -18,22 +18,16 @@
 // its share. So a payment reduces `used` and the matching share of the loans
 // in lockstep — the same debt is never counted twice, money never minted.
 import { daysUntilDayOfMonth, lastDayOfMonthOccurrence } from './inboxInfo';
+// Canonical local-calendar-date helper (src/lib/localDate.ts has no other
+// imports, so pulling it in here carries none of the thisWeek↔cardStatement
+// import-cycle risk the old inlined copy was dodging).
+import { localIso } from './localDate';
 import type { Account, EmiSchedule, Loan } from '../db';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function daysInMonth(year: number, monthIndex: number): number {
   return new Date(year, monthIndex + 1, 0).getDate();
-}
-
-// Local calendar date (matches thisWeek.localIso). Inlined to keep this
-// engine free of a thisWeek↔cardStatement import cycle — transactionStore
-// pulls in cardStatement, so its dependency graph stays shallow.
-function localIso(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }
 
 function dayOfMonthOrNull(raw: string | undefined): number | null {

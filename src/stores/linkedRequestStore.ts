@@ -10,6 +10,7 @@ import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
 import { usePersonStore } from './personStore';
 import { useAccountStore } from './accountStore';
+import { reportError } from '../lib/errorReporter';
 
 // Currencies the linked_transaction_requests SQL check constraint allows.
 // Was ['AED','PKR'] to match the original hard CHECK in
@@ -150,6 +151,8 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
         // the whole entry was lost with no explanation (audit F-MIG2 / H6).
         // Every caller surfaces `err.message`, so translating here covers the
         // AddLoanModal, QuickEntry (both modes) and sync-past-records paths.
+        // Report the RAW error before translation - see F-MIG2 above.
+        reportError(err, { feature: 'linkedRequestStore.createRequest', extra: { requestId: id, kind: input.kind } });
         throw translateLinkedWriteError(err, 'loan');
       }
     }
@@ -171,7 +174,7 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
       await useTransactionStore.getState().loadTransactions();
       await useAccountStore.getState().loadAccounts();
     } catch (err) {
-      console.error('post-accept reload failed (non-fatal)', err);
+      reportError(err, { feature: 'linkedRequestStore.accept.reload', extra: { requestId } });
     }
     return updated;
   },

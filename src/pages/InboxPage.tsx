@@ -358,8 +358,8 @@ export function InboxPage() {
       await accept(id, accountId);
       toast.show({
         type: 'success',
-        title: 'Accepted ✓',
-        subtitle: req ? `${formatMoney(req.amount, req.currency)} is now on your ledger.` : undefined,
+        title: t('inbox_accepted_title'),
+        subtitle: req ? t('inbox_accepted_sub').replace('{amount}', formatMoney(req.amount, req.currency)) : undefined,
       });
       return true;
     } catch (err) {
@@ -379,7 +379,7 @@ export function InboxPage() {
       // your ledger, even if it slipped past the sender's guard.
       const plaus = plausibilityCheck(req.amount, req.currency);
       if (!plaus.passed && plaus.severity === 'block') {
-        toast.show({ type: 'error', title: 'This amount looks off', subtitle: `${plaus.reason ?? ''} Ask them to resend it.` });
+        toast.show({ type: 'error', title: t('inbox_amount_off_title'), subtitle: t('inbox_amount_off_sub').replace('{reason}', plaus.reason ?? '') });
         return;
       }
       // Full tracker: the account sheet carries the confirmation. Past-record
@@ -470,8 +470,8 @@ export function InboxPage() {
       await acceptSettlement(id, accountId);
       toast.show({
         type: 'success',
-        title: 'Settled up 🎉',
-        subtitle: req ? `${formatMoney(req.amount, req.currency)} cleared.` : undefined,
+        title: t('inbox_settled_title'),
+        subtitle: req ? t('inbox_settled_sub').replace('{amount}', formatMoney(req.amount, req.currency)) : undefined,
       });
       return true;
     } catch (err) {
@@ -685,8 +685,8 @@ export function InboxPage() {
         {loadStatus === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load inbox"
-            message={loadError ?? 'Some data failed to load.'}
+            title={t('inbox_err_load')}
+            message={loadError ?? t('err_some_data_failed')}
             onRetry={retryLoad}
           />
         )}
@@ -1364,7 +1364,7 @@ function RequestCard({
                 accept/decline flow underneath. */}
             {request.preExistingLoanId && (
               <span className="text-[8.5px] font-semibold uppercase tracking-[0.1em] rounded-full bg-accent-100 text-accent-600 px-1.5 py-0.5 shrink-0">
-                past record
+                {t('inbox_past_record_tag')}
               </span>
             )}
           </div>

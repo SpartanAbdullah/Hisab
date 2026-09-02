@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { LockKeyhole } from 'lucide-react';
 import { BrandMark } from './BrandMark';
+import { useT } from '../lib/i18n';
 
 // The loading hero: one big word typed out, held, deleted, then the next.
 // Everything Hisaab handles, in the brand green of the logo tile. English +
@@ -51,17 +52,20 @@ function useTypewriter(words: string[]) {
 }
 
 export function AppLoadingScreen() {
+  const t = useT();
   const typed = useTypewriter(TYPE_WORDS);
 
   return (
-    <main className="app-loading-screen" role="status" aria-live="polite" aria-label="Hisaab is loading">
-      <span className="sr-only">Hisaab is loading. Your finances are being prepared securely.</span>
+    <main className="app-loading-screen" role="status" aria-live="polite" aria-label={t('als_a11y_loading')}>
+      <span className="sr-only">{t('als_sr_loading')}</span>
 
       <div className="app-loading-content">
         <div className="app-loading-brand">
           <div className="app-loading-mark" aria-hidden="true">
             <BrandMark size={46} />
           </div>
+          {/* Brand name — identical in both languages, not a copy string. */}
+          {/* eslint-disable-next-line no-restricted-syntax */}
           <h1>Hisaab</h1>
         </div>
 
@@ -71,7 +75,7 @@ export function AppLoadingScreen() {
           <span className="app-loading-caret" />
         </div>
 
-        <p className="app-loading-subline">Your money, always in sight.</p>
+        <p className="app-loading-subline">{t('als_subline')}</p>
 
         <div className="app-loading-progress" aria-hidden="true">
           <span />
@@ -79,7 +83,7 @@ export function AppLoadingScreen() {
 
         <p className="app-loading-trust">
           <LockKeyhole size={12} strokeWidth={2} aria-hidden="true" />
-          Your data stays private and secure.
+          {t('als_trust')}
         </p>
       </div>
     </main>

@@ -100,9 +100,9 @@ export function ActivityPage() {
                 <button
                   onClick={() => void markAllRead()}
                   className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[11.5px] font-semibold text-white transition-colors"
-                  aria-label="Mark all read"
+                  aria-label={t('a11y_mark_all_read')}
                 >
-                  Mark read
+                  {t('act_mark_read_short')}
                 </button>
               )}
               <LanguageToggle />
@@ -140,8 +140,8 @@ export function ActivityPage() {
         {loadStatus === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load activity"
-            message={loadError ?? 'Some data failed to load.'}
+            title={t('act_err_load')}
+            message={loadError ?? t('err_some_data_failed')}
             onRetry={retryLoad}
           />
         )}
@@ -198,7 +198,7 @@ export function ActivityPage() {
           )
         ) : activities.length === 0 ? (
           <div className="rounded-2xl bg-cream-card border border-cream-border p-4 text-[12px] text-ink-500 text-center">
-            No personal activity yet.
+            {t('act_no_personal_yet')}
           </div>
         ) : (
           <div className="space-y-6">
@@ -252,6 +252,7 @@ function TabPill({
   onClick: () => void;
   showDot?: boolean;
 }) {
+  const t = useT();
   return (
     <button
       onClick={onClick}
@@ -266,7 +267,7 @@ function TabPill({
         {showDot && (
           <span
             className="w-1.5 h-1.5 rounded-full bg-pay-600 shrink-0"
-            aria-label="Unread"
+            aria-label={t('a11y_unread')}
           />
         )}
       </span>

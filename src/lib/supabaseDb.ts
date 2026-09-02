@@ -1733,6 +1733,102 @@ export const notificationsDb = {
   },
 };
 
+// ══════════════════════════════════════
+// NOTIFICATION PREFERENCES (audit 08-notifications.md N-10)
+// ──────────────────────────────────────
+// Per-recipient fatigue controls, from
+// supabase-migration-p2-notification-maturity.sql §2. One row per
+// (user, group); `groupId === null` is the GLOBAL row and the only place
+// quiet hours and the timezone are read from — a per-group row carries only
+// `muted`.
+//
+// EVERY read here tolerates the table not existing: the migration is applied
+// by hand in Studio (CLAUDE.md), so a shipped client WILL run against a
+// database without it for some window. Failing soft means "no prefs" —
+// nothing muted, no quiet hours — which is exactly the pre-M5 behaviour.
+// ══════════════════════════════════════
+export interface NotificationPref {
+  groupId: string | null;
+  muted: boolean;
+  quietHoursStart: number | null;
+  quietHoursEnd: number | null;
+  tz: string;
+}
+
+function mapNotificationPref(r: Record<string, unknown>): NotificationPref {
+  return {
+    groupId: (r.group_id as string) ?? null,
+    muted: r.muted === true,
+    quietHoursStart: typeof r.quiet_hours_start === 'number' ? r.quiet_hours_start : null,
+    quietHoursEnd: typeof r.quiet_hours_end === 'number' ? r.quiet_hours_end : null,
+    tz: (r.tz as string) || 'Asia/Karachi',
+  };
+}
+
+export const notificationPrefsDb = {
+  async getAll(): Promise<NotificationPref[]> {
+    const { data, error } = await supabase
+      .from('notification_prefs').select('*')
+      .eq('user_id', getUserId());
+    // Table absent (migration pending) → behave as if the user has no
+    // preferences rather than breaking every notification load.
+    if (error) return [];
+    return (data ?? []).map(mapNotificationPref);
+  },
+
+  /** Mute/unmute one group, or — with groupId null — everything. Upserts on
+   *  the (user_id, COALESCE(group_id,'')) unique index. */
+  async setMuted(groupId: string | null, muted: boolean): Promise<void> {
+    const userId = getUserId();
+    const { data } = await supabase
+      .from('notification_prefs').select('id')
+      .eq('user_id', userId)
+      .filter('group_id', groupId === null ? 'is' : 'eq', groupId === null ? null : groupId)
+      .maybeSingle();
+    if (data?.id) {
+      const { error } = await supabase
+        .from('notification_prefs')
+        .update({ muted, updated_at: new Date().toISOString() })
+        .eq('id', data.id as string);
+      if (error) throw error;
+      return;
+    }
+    const { error } = await supabase
+      .from('notification_prefs')
+      .insert({ user_id: userId, group_id: groupId, muted });
+    if (error) throw error;
+  },
+
+  /** Set (or clear, with nulls) the global quiet-hours window. Always writes
+   *  the global row — quiet hours are never per-group. */
+  async setQuietHours(startHour: number | null, endHour: number | null, tz?: string): Promise<void> {
+    const userId = getUserId();
+    const zone = tz
+      || (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'Asia/Karachi'; } })();
+    const { data } = await supabase
+      .from('notification_prefs').select('id')
+      .eq('user_id', userId)
+      .is('group_id', null)
+      .maybeSingle();
+    const patch = {
+      quiet_hours_start: startHour,
+      quiet_hours_end: endHour,
+      tz: zone,
+      updated_at: new Date().toISOString(),
+    };
+    if (data?.id) {
+      const { error } = await supabase
+        .from('notification_prefs').update(patch).eq('id', data.id as string);
+      if (error) throw error;
+      return;
+    }
+    const { error } = await supabase
+      .from('notification_prefs')
+      .insert({ user_id: userId, group_id: null, muted: false, ...patch });
+    if (error) throw error;
+  },
+};
+
 export const profilesDb = {
   async getCurrent(): Promise<Record<string, unknown> | null> {
     const { data, error } = await supabase
@@ -2240,6 +2336,13 @@ function mapNotification(r: Record<string, unknown>): AppNotification {
       ? r.params
       : {}) as Record<string, unknown>,
     actorId: (r.actor_id as string) ?? null,
+    // Added by supabase-migration-p2-notification-maturity.sql. Same
+    // tolerance as template/params above: a pre-migration database simply
+    // returns nothing here and the client falls back to its own derivation
+    // (notificationHref / notificationChannel in notificationContent.ts).
+    collapseKey: (r.collapse_key as string) ?? null,
+    channelId: (r.channel_id as string) ?? null,
+    href: (r.href as string) ?? null,
     readAt: (r.read_at as string) ?? null,
     createdAt: r.created_at as string,
   };
@@ -2932,6 +3035,204 @@ export const appConfigDb = {
       messageEn: typeof r.message_en === 'string' ? r.message_en : null,
       messageUr: typeof r.message_ur === 'string' ? r.message_ur : null,
       updatedAt: typeof r.updated_at === 'string' ? r.updated_at : null,
+    };
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATOMIC MONEY ENGINE — L4 pilot (audit MF-01 / O-1 / F-4)
+// ─────────────────────────────────────────────────────────────────────────────
+// One server-side transaction per money move, so a flaky network can no longer
+// leave money half-moved. `src/lib/mutationSafety.ts:10-13` states the ceiling
+// this raises: "Compensations may themselves fail (the same network outage that
+// killed the forward write usually kills the inverse)."
+//
+// Contract, error tokens, artifact table and the Docker evidence live in
+// supabase-migration-p3-atomic-transfer.sql and docs/server-side-money-engine.md.
+//
+// Why this section sits at the END of the file rather than inside the
+// `transactionsDb` literal: several agents were editing this file concurrently
+// when it was written, and an append is conflict-free. It is a namespace object
+// in the same `xxxDb` shape as every other gateway above.
+
+/** Everything `transfer_between_accounts` needs. Amounts are raw JS numbers. */
+export interface AtomicTransferInput {
+  /** Client-generated uuid. Doubles as the idempotency key on retry. */
+  transactionId: string;
+  sourceAccountId: string;
+  destinationAccountId: string;
+  /** Source-currency amount, exactly as it is stored on the transaction row. */
+  amount: number;
+  /**
+   * What the caller expects to land in the destination. Cross-checked by the
+   * server (0.01 tolerance), never trusted. Null = "server decides", which is
+   * what a same-currency move sends.
+   */
+  destinationAmount: number | null;
+  /** Null for same-currency, else destination-per-source (the client's shape). */
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  /** ISO string. The row's created_at, so a backdated entry stays backdated. */
+  createdAt: string;
+  /** The compare-and-swap expectations — the locally-known balances. */
+  expectedSourceBalance: number;
+  expectedDestinationBalance: number;
+  /**
+   * Skip the insufficient-balance guard. The reversal/repair hatch only
+   * (mirrors REVERSAL_NEEDS_NEGATIVE). The create path always leaves this
+   * false, which is exactly what `checkBalance` does today — including for a
+   * credit-card source, whose `balance` IS its available credit.
+   */
+  allowNegative?: boolean;
+}
+
+export interface AtomicTransferResult {
+  /** True when the server recognised the id and did NOT move money again. */
+  replay: boolean;
+  transactionId: string;
+  /** Server truth after the move — apply these, do not recompute them. */
+  sourceBalance: number;
+  destinationBalance: number;
+  /** What actually landed. Null on a replay (the row is the record). */
+  destinationAmount: number | null;
+  conversionRate: number | null;
+}
+
+/**
+ * A stale compare-and-swap. Carries the same `code` the account CAS already
+ * throws, so `accountStore`-style refetch-and-retry-once ladders work
+ * unchanged; the fresh balances ride along so a retry needs no extra fetch.
+ */
+export interface AtomicTransferConflict extends Error {
+  code: 'BALANCE_CONFLICT';
+  sourceBalance: number | null;
+  destinationBalance: number | null;
+}
+
+/** The server half of `checkBalance`. `message` is the same bilingual string. */
+export interface AtomicTransferInsufficient extends Error {
+  code: 'INSUFFICIENT_BALANCE';
+  accountName: string;
+  available: number;
+  requested: number;
+}
+
+/** The RPC is missing — the migration has not been applied to this project. */
+export interface AtomicTransferUnavailable extends Error {
+  code: 'ATOMIC_TRANSFER_UNAVAILABLE';
+}
+
+function parseRpcDetail(error: unknown): Record<string, unknown> | null {
+  const detail = (error as { details?: unknown })?.details;
+  if (typeof detail !== 'string') return null;
+  try {
+    const parsed: unknown = JSON.parse(detail);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    // DETAIL is prose on the non-money errors (SAME_ACCOUNT, …). Not a failure.
+    return null;
+  }
+}
+
+function numberOrNull(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export const atomicMoneyDb = {
+  /**
+   * The whole account→account transfer — both balance legs AND the
+   * transactions row — in ONE Postgres transaction.
+   *
+   * Idempotent on `transactionId`: a retry after a dropped reply returns
+   * `{ replay: true }` with the current balances instead of moving money twice.
+   *
+   * Throws, with a `code` the caller can branch on:
+   *   BALANCE_CONFLICT             — refetch and retry once (accountStore ladder)
+   *   INSUFFICIENT_BALANCE         — message is already the user-facing string
+   *   ATOMIC_TRANSFER_UNAVAILABLE  — supabase-migration-p3-atomic-transfer.sql
+   *                                  is not applied; the caller must fall back
+   *                                  to the legacy two-leg path
+   * Anything else is rethrown untouched.
+   */
+  async transferAtomic(input: AtomicTransferInput): Promise<AtomicTransferResult> {
+    const { data, error } = await supabase.rpc('transfer_between_accounts', {
+      p_transaction_id: input.transactionId,
+      p_source_account_id: input.sourceAccountId,
+      p_destination_account_id: input.destinationAccountId,
+      p_amount: input.amount,
+      p_destination_amount: input.destinationAmount,
+      p_conversion_rate: input.conversionRate,
+      p_note: input.note,
+      p_category: input.category,
+      p_date: input.createdAt,
+      p_expected_source_balance: input.expectedSourceBalance,
+      p_expected_destination_balance: input.expectedDestinationBalance,
+      p_allow_negative: input.allowNegative === true,
+    });
+
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      const detail = parseRpcDetail(error);
+
+      if (message.includes('BALANCE_CONFLICT')) {
+        const conflict = new Error('BALANCE_CONFLICT') as AtomicTransferConflict;
+        conflict.code = 'BALANCE_CONFLICT';
+        conflict.sourceBalance = numberOrNull(detail?.source_balance);
+        conflict.destinationBalance = numberOrNull(detail?.destination_balance);
+        throw conflict;
+      }
+
+      if (message.includes('INSUFFICIENT_BALANCE')) {
+        // Rebuild the EXACT string checkBalance produces today
+        // (src/stores/transactionStore.ts:195-204) so the toast the user sees
+        // is byte-identical in both languages whichever path raised it.
+        const accountName = typeof detail?.account_name === 'string' ? detail.account_name : '';
+        const available = numberOrNull(detail?.available) ?? 0;
+        const requested = numberOrNull(detail?.requested) ?? 0;
+        const err = new Error(
+          tStatic('err_insufficient')
+            .replace('{account}', accountName)
+            .replace('{available}', available.toLocaleString())
+            .replace('{amount}', requested.toLocaleString()),
+        ) as AtomicTransferInsufficient;
+        err.code = 'INSUFFICIENT_BALANCE';
+        err.accountName = accountName;
+        err.available = available;
+        err.requested = requested;
+        throw err;
+      }
+
+      // PGRST202 = "function not found in the schema cache". The flag was
+      // switched on before the migration was applied — say so, loudly.
+      if ((error as { code?: string })?.code === 'PGRST202' || message.includes('transfer_between_accounts')) {
+        const err = new Error(
+          'transfer_between_accounts is not available — apply supabase-migration-p3-atomic-transfer.sql or unset VITE_ATOMIC_TRANSFER.',
+        ) as AtomicTransferUnavailable;
+        err.code = 'ATOMIC_TRANSFER_UNAVAILABLE';
+        throw err;
+      }
+
+      throw error;
+    }
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    const sourceBalance = numberOrNull(row.source_balance);
+    const destinationBalance = numberOrNull(row.destination_balance);
+    if (sourceBalance === null || destinationBalance === null) {
+      // A success reply we cannot read is not a success: the caller would
+      // write nonsense into the balance store.
+      throw new Error('transfer_between_accounts returned no balances');
+    }
+
+    return {
+      replay: row.replay === true,
+      transactionId: typeof row.transaction_id === 'string' ? row.transaction_id : input.transactionId,
+      sourceBalance,
+      destinationBalance,
+      destinationAmount: numberOrNull(row.destination_amount),
+      conversionRate: numberOrNull(row.conversion_rate),
     };
   },
 };

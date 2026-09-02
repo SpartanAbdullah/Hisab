@@ -179,7 +179,7 @@ export function GlobalSearch({ open, onClose }: Props) {
               type="button"
               onClick={onClose}
               className="min-w-[44px] min-h-[44px] rounded-xl bg-cream-soft border border-cream-border flex items-center justify-center text-ink-500 press-sm"
-              aria-label="Close search"
+              aria-label={t('a11y_close_search')}
             >
               <X size={17} />
             </button>
@@ -187,7 +187,7 @@ export function GlobalSearch({ open, onClose }: Props) {
 
           <div className="max-h-[72dvh] overflow-y-auto p-3">
             {loading && results.length === 0 ? (
-              <p className="text-center text-[12px] text-ink-500 py-8">Searching money activity...</p>
+              <p className="text-center text-[12px] text-ink-500 py-8">{t('gs_searching')}</p>
             ) : visibleResults.length === 0 ? (
               isEmptyQuery ? (
                 /* Empty query, nothing to recall yet — tell the user what

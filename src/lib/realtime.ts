@@ -9,6 +9,7 @@ import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { usePersonStore } from '../stores/personStore';
 import { useContactLinkStore } from '../stores/contactLinkStore';
 import { markMirrorStale } from './mirrorCache';
+import { reportError } from './errorReporter';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Single long-lived channel per session. Re-initialised when the user changes.
@@ -16,6 +17,11 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 // profile_id server-side to avoid getting events we'd have to ignore anyway.
 let globalChannel: RealtimeChannel | null = null;
 let globalUserId: string | null = null;
+// ── Broadcast channel (audit 03-performance H5 / 04-supabase F-SC1) ─────────
+// The three highest-churn tables move off postgres_changes onto Supabase
+// Broadcast-from-database when VITE_REALTIME_BROADCAST === 'true'. See
+// MONEY_BROADCAST_ENABLED below for the flag contract.
+let broadcastChannel: RealtimeChannel | null = null;
 // Timestamp of the last refreshLiveData() actually issued from a resume. See
 // resumeGlobalRealtime for why. Reset on teardown so a new user starts clean.
 let lastResumeAt = 0;
@@ -31,7 +37,7 @@ function scheduleReload(key: string, run: () => Promise<void>): void {
   reloadTimers[key] = window.setTimeout(() => {
     reloadTimers[key] = null;
     void run().catch((err) => {
-      console.error(`[realtime] ${key} reload failed`, err);
+      reportError(err, { feature: 'realtime.scheduleReload', extra: { channel: key } });
     });
   }, RELOAD_DEBOUNCE_MS);
 }
@@ -45,12 +51,95 @@ function clearReloadTimers(): void {
   }
 }
 
+// ── Money-table change signalling ──────────────────────────────────────────
+// The three money tables share one handler shape, whichever transport
+// delivered the event. Extracted so the postgres_changes path and the
+// Broadcast path are provably identical: markMirrorStale first (the event may
+// come from another device or from a cross-user SECURITY DEFINER RPC — audit
+// 04-supabase F-RT1), then the debounced store reload.
+type MoneyTable = 'accounts' | 'transactions' | 'loans';
+const MONEY_TABLES: readonly MoneyTable[] = ['accounts', 'transactions', 'loans'];
+
+function reloadMoneyTable(table: MoneyTable): Promise<void> {
+  switch (table) {
+    case 'accounts':
+      return useAccountStore.getState().loadAccounts();
+    case 'transactions':
+      return useTransactionStore.getState().loadTransactions();
+    case 'loans':
+      return useLoanStore.getState().loadLoans();
+  }
+}
+
+function onMoneyTableChanged(table: MoneyTable): void {
+  markMirrorStale(table);
+  scheduleReload(table, () => reloadMoneyTable(table));
+}
+
+// ── Broadcast-from-database (audit H5 / F-SC1) ─────────────────────────────
+// postgres_changes evaluates every WAL change against every subscription on a
+// single-threaded service, with an RLS check per subscriber per change —
+// Supabase's own docs point at Broadcast once that matters, and accounts /
+// transactions / loans are exactly the tables a single expense entry writes.
+//
+// Broadcast-from-database inverts it: an AFTER trigger calls `realtime.send`
+// with the target topic already computed, so the server does one insert per
+// change instead of a fan-out scan. Each user has ONE private topic,
+// `user:<uid>`, readable only by them (RLS policy on `realtime.messages` in
+// supabase-migration-p2-realtime-broadcast.sql).
+//
+// Default OFF. The migration is unapplied until the operator runs it, and
+// with no triggers installed a broadcast subscription would deliver nothing —
+// the app would go silently stale on the money tables. So the postgres_changes
+// bindings stay the default and the flag is the ONLY switch:
+//
+//   VITE_REALTIME_BROADCAST unset / anything but 'true'  → postgres_changes
+//   VITE_REALTIME_BROADCAST === 'true'                   → Broadcast
+//
+// The two are mutually exclusive by construction (same handler, same debounce
+// key), so flipping the flag can never double-reload.
+const MONEY_BROADCAST_ENABLED = import.meta.env.VITE_REALTIME_BROADCAST === 'true';
+
+/** The private per-user Broadcast topic. Must match `realtime.send`'s topic
+ *  argument in the migration EXACTLY — a mismatch is a silent no-delivery. */
+function moneyBroadcastTopic(userId: string): string {
+  return `user:${userId}`;
+}
+
+function startMoneyBroadcast(userId: string): void {
+  // A private channel is authorized per-subscriber against the RLS policy on
+  // `realtime.messages`, so the socket needs the current access token before
+  // the join. `setAuth()` with no argument reads it from the live session.
+  const channel = supabase.channel(moneyBroadcastTopic(userId), {
+    config: { private: true },
+  });
+  for (const table of MONEY_TABLES) {
+    // Event name = table name, set by the trigger. Ledger-only users simply
+    // never receive an `accounts` event (they own no accounts rows, so the
+    // trigger never fires for them) — nothing here needs a mode check.
+    channel.on('broadcast', { event: table }, () => onMoneyTableChanged(table));
+  }
+  broadcastChannel = channel;
+  void supabase.realtime
+    .setAuth()
+    .catch((err) => {
+      // Subscribe anyway: an expired token surfaces as a channel error we can
+      // see, whereas silently not subscribing looks like "realtime is fine".
+      reportError(err, { feature: 'realtime.startMoneyBroadcast.setAuth' });
+    })
+    .then(() => {
+      // The user may have signed out (or resubscribed) while setAuth was in
+      // flight; only join if this channel is still the current one.
+      if (broadcastChannel === channel) channel.subscribe();
+    });
+}
+
 export function startGlobalRealtime(userId: string) {
   if (globalUserId === userId && globalChannel) return;
   stopGlobalRealtime();
   globalUserId = userId;
 
-  globalChannel = supabase
+  const channel = supabase
     .channel(`hisaab-user-${userId}`)
     // New/changed notifications addressed to this user.
     .on(
@@ -67,40 +156,6 @@ export function startGlobalRealtime(userId: string) {
       { event: '*', schema: 'public', table: 'group_members', filter: `profile_id=eq.${userId}` },
       () => {
         void useSplitStore.getState().loadGroups();
-      },
-    )
-    // Money tables — sync across devices/tabs. Reloads are debounced because
-    // every local write also triggers a self-echo postgres_changes event; we
-    // don't want N transactions in 100ms to produce N reloads.
-    //
-    // markMirrorStale first: the event may come from ANOTHER device, or from a
-    // cross-user SECURITY DEFINER RPC moving this user's balance from the other
-    // side. Without the flag the reload hits the mirror's 2-minute freshness
-    // window and renders pre-change numbers (audit 04-supabase F-RT1). The flag
-    // now preserves the sync cursor, so this costs an incremental diff, not a
-    // full-table pull.
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'accounts', filter: `user_id=eq.${userId}` },
-      () => {
-        markMirrorStale('accounts');
-        scheduleReload('accounts', () => useAccountStore.getState().loadAccounts());
-      },
-    )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${userId}` },
-      () => {
-        markMirrorStale('transactions');
-        scheduleReload('transactions', () => useTransactionStore.getState().loadTransactions());
-      },
-    )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'loans', filter: `user_id=eq.${userId}` },
-      () => {
-        markMirrorStale('loans');
-        scheduleReload('loans', () => useLoanStore.getState().loadLoans());
       },
     )
     // Contacts — picks up a reciprocal linked contact created server-side when
@@ -164,13 +219,41 @@ export function startGlobalRealtime(userId: string) {
       () => {
         scheduleReload('contactLinks', () => useContactLinkStore.getState().loadRequests());
       },
-    )
-    .subscribe();
+    );
+
+  // Money tables — sync across devices/tabs. Reloads are debounced because
+  // every local write also triggers a self-echo event; we don't want N
+  // transactions in 100ms to produce N reloads.
+  //
+  // These three are the ONLY bindings the Broadcast flag moves. Everything
+  // above is cross-user (notifications, group membership, the three request
+  // tables) and low-churn, so it stays on postgres_changes: those tables are
+  // written by the OTHER user, and their per-change RLS check is the thing
+  // that makes delivery correct.
+  if (!MONEY_BROADCAST_ENABLED) {
+    for (const table of MONEY_TABLES) {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table, filter: `user_id=eq.${userId}` },
+        () => onMoneyTableChanged(table),
+      );
+    }
+  }
+
+  channel.subscribe();
+  globalChannel = channel;
+
+  if (MONEY_BROADCAST_ENABLED) startMoneyBroadcast(userId);
 }
 
 export function stopGlobalRealtime() {
   clearReloadTimers();
   lastResumeAt = 0;
+  // Cleared BEFORE the awaited removal so a setAuth() still in flight sees a
+  // different (null) current channel and does not join a dead session.
+  const broadcast = broadcastChannel;
+  broadcastChannel = null;
+  if (broadcast) void supabase.removeChannel(broadcast);
   if (globalChannel) {
     void supabase.removeChannel(globalChannel);
     globalChannel = null;
@@ -191,7 +274,16 @@ function channelIsHealthy(): boolean {
   if (!globalChannel) return false;
   // supabase-js exposes the phoenix channel state; 'joined' is the only
   // state that actually delivers rows.
-  return globalChannel.state === 'joined';
+  if (globalChannel.state !== 'joined') return false;
+  // With Broadcast on, the money tables ride the second channel — a dead one
+  // is exactly the "stale balances after a resume" failure this check exists
+  // to catch, so it counts as unhealthy too. It is assigned synchronously in
+  // startMoneyBroadcast (before the awaited setAuth), so a null here only
+  // means "not started", which the `globalChannel` check above already covers.
+  if (MONEY_BROADCAST_ENABLED && broadcastChannel && broadcastChannel.state !== 'joined') {
+    return false;
+  }
+  return true;
 }
 
 /** Refetch everything a missed realtime event could have changed. Each
@@ -205,16 +297,23 @@ export async function refreshLiveData(): Promise<void> {
   markMirrorStale('accounts');
   markMirrorStale('transactions');
   markMirrorStale('loans');
+  // Each leg stays independently swallowed (one dead read must not blank the
+  // other eight), but the failure is no longer invisible: a persistently
+  // failing refresh is exactly how a user ends up acting on stale balances.
+  const refresh = (source: string, work: Promise<unknown>): Promise<void> =>
+    work.then(() => undefined).catch((err) => {
+      reportError(err, { feature: 'realtime.refreshLiveData', extra: { source } });
+    });
   await Promise.all([
-    useNotificationStore.getState().loadNotifications().catch(() => {}),
-    useLinkedRequestStore.getState().loadRequests().catch(() => {}),
-    useSettlementRequestStore.getState().loadRequests().catch(() => {}),
-    useContactLinkStore.getState().loadRequests().catch(() => {}),
-    usePersonStore.getState().loadPersons().catch(() => {}),
-    useSplitStore.getState().loadGroups().catch(() => {}),
-    useAccountStore.getState().loadAccounts().catch(() => {}),
-    useTransactionStore.getState().loadTransactions().catch(() => {}),
-    useLoanStore.getState().loadLoans().catch(() => {}),
+    refresh('notifications', useNotificationStore.getState().loadNotifications()),
+    refresh('linkedRequests', useLinkedRequestStore.getState().loadRequests()),
+    refresh('settlementRequests', useSettlementRequestStore.getState().loadRequests()),
+    refresh('contactLinks', useContactLinkStore.getState().loadRequests()),
+    refresh('persons', usePersonStore.getState().loadPersons()),
+    refresh('groups', useSplitStore.getState().loadGroups()),
+    refresh('accounts', useAccountStore.getState().loadAccounts()),
+    refresh('transactions', useTransactionStore.getState().loadTransactions()),
+    refresh('loans', useLoanStore.getState().loadLoans()),
   ]);
 }
 

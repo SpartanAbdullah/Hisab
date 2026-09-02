@@ -1,0 +1,101 @@
+# Security gate for Hisaab: dependency vulnerability audit + git-history
+# secret scanning. Companion to .github/workflows/ci.yml (typecheck/lint/
+# test/build) — this workflow does not duplicate any of that.
+#
+# See docs/release-and-rollback.md ("Secret scanning") and docs/ops-checklist.md
+# ("Branch protection for main") for how this is meant to gate merges once
+# GitHub branch protection is turned on (that's a repo-settings change this
+# file cannot make itself — see the ops checklist).
+
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, independent of any push — catches a newly-disclosed CVE against
+    # an unchanged lockfile, and re-runs the secret scan against the full
+    # history on a cadence rather than only when someone touches a file.
+    - cron: "0 5 * * 1" # Monday 05:00 UTC (09:00 Asia/Dubai)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------
+  # npm audit — split by blast radius, not just by severity.
+  #
+  # Rationale (per the audit-2026-09 P2/M9 brief): a high/critical
+  # vulnerability in a PRODUCTION dependency ships to every user's browser
+  # and into the Android bundle — that must block the merge. The same
+  # severity in a devDependency (vitest, eslint, typescript, vite's own
+  # build-time deps, ...) never reaches a shipped artifact; it runs only on
+  # a developer's machine or inside this very CI job. Blocking every PR on a
+  # transitive dev-tooling advisory with zero runtime exposure trains people
+  # to click through the gate instead of reading it — so that half is
+  # report-only (visible in the job log and summary, does not fail the job).
+  # This mirrors how npm's own `--omit=dev` flag partitions the dependency
+  # graph, so no custom parsing is needed.
+  # ---------------------------------------------------------------------
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies (BLOCKING — high/critical fails the job)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit devDependencies (report-only — never fails the job)
+        if: always()
+        run: npm audit --include=dev --audit-level=high || true
+
+  # ---------------------------------------------------------------------
+  # gitleaks — secret scan over the FULL git history, not just the diff.
+  #
+  # fetch-depth: 0 is required — a shallow checkout only has HEAD, and the
+  # entire point of this job (per ARCH-RECON-hisaab.md §2) is to keep
+  # catching things that were committed and later deleted, not just new
+  # commits. See .gitleaks.toml for why a custom rule is layered on top of
+  # gitleaks' default ruleset, and .gitleaksignore for the known findings
+  # already triaged (both files live at the repo root).
+  #
+  # No GITLEAKS_LICENSE is set: gitleaks-action does not require one for
+  # repos under a personal GitHub account (only for organization-owned
+  # repos) — see https://github.com/gitleaks/gitleaks-action#do-i-need-a-free-license-key.
+  # This repo (SpartanAbdullah/Hisab, per ARCH-RECON-hisaab.md §2) is a
+  # personal account. If it is ever transferred to an org, add
+  # GITLEAKS_LICENSE as a repo secret before that transfer or this job
+  # starts failing on the license check, not on an actual finding.
+  # ---------------------------------------------------------------------
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write # gitleaks-action comments on the PR when it finds something
+      security-events: write # allows the SARIF upload gitleaks-action produces
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml

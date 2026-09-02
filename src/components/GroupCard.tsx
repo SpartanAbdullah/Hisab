@@ -81,7 +81,7 @@ export function GroupCard({
           {hasUnreadActivity && (
             <span
               className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white bg-pay-600"
-              aria-label="Unread group activity"
+              aria-label={t('a11y_unread_group')}
             />
           )}
         </div>
@@ -114,8 +114,8 @@ export function GroupCard({
           {hasUnreconciled && (
             <span
               className="shrink-0 w-3.5 h-3.5 rounded-full border border-warn-600 text-warn-700 flex items-center justify-center text-[8px] font-bold leading-none"
-              aria-label="You have unreconciled expenses in this group"
-              title="You have unreconciled expenses in this group"
+              aria-label={t('a11y_unreconciled')}
+              title={t('a11y_unreconciled')}
             >
               !
             </span>

@@ -7,6 +7,7 @@ import {
   planMirrorRefresh,
   type MirrorCursor,
 } from './mirrorSyncPolicy';
+import { reportError } from './errorReporter';
 
 export { DEFAULT_FRESH_MS, DEFAULT_FULL_REFRESH_MS };
 export const CORE_MIRROR_KEYS = ['accounts', 'transactions', 'loans', 'budgets'] as const;
@@ -155,8 +156,10 @@ function isStorageUnavailable(error: unknown): boolean {
 }
 
 function reportMirrorError(action: string, error: unknown) {
+  // Storage-unavailable (private mode, quota, no IndexedDB) is an expected
+  // environment outcome, not a bug - it stays silent, as before.
   if (isStorageUnavailable(error)) return;
-  console.error(`[mirrorCache] ${action} failed`, error);
+  reportError(error, { feature: `mirrorCache.${action.replace(/[^a-z]+/gi, '_')}`, extra: { action } });
 }
 
 async function readMirror<T>(table: Table<T, string>, sort?: (a: T, b: T) => number): Promise<T[]> {
@@ -278,7 +281,7 @@ export async function loadCacheFirst<T>(
       if (rows) return { rows, fromCache: false };
     } catch (error) {
       // Offline or a flaky hop must never blank the screen: fall back to cache.
-      console.error(`[mirrorCache] incremental refresh failed for ${key}`, error);
+      reportError(error, { feature: 'mirrorCache.incrementalRefreshBlocking', extra: { mirror: key } });
     }
     return { rows: cached, fromCache: true };
   }
@@ -289,7 +292,7 @@ export async function loadCacheFirst<T>(
         if (rows && onRefreshed) onRefreshed(rows);
       })
       .catch((err) => {
-        console.error(`[mirrorCache] background incremental refresh failed for ${key}`, err);
+        reportError(err, { feature: 'mirrorCache.incrementalRefreshBackground', extra: { mirror: key } });
       });
     return { rows: cached, fromCache: true };
   }
@@ -301,7 +304,7 @@ export async function loadCacheFirst<T>(
         if (onRefreshed) onRefreshed(rows);
       })
       .catch((err) => {
-        console.error(`[mirrorCache] background refresh failed for ${key}`, err);
+        reportError(err, { feature: 'mirrorCache.backgroundRefresh', extra: { mirror: key } });
       });
     return { rows: cached, fromCache: true };
   }

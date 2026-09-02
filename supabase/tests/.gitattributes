@@ -1,0 +1,8 @@
+# run.sh is executed by bash on an Ubuntu CI runner. A CRLF checkout breaks it
+# in ways that are hard to read (`$'\r': command not found`), so pin LF here
+# regardless of the developer's core.autocrlf setting. The .sql files are fed to
+# psql, which tolerates either, but keeping the whole directory consistent means
+# the diffs stay readable.
+*.sh  text eol=lf
+*.sql text eol=lf
+*.txt text eol=lf

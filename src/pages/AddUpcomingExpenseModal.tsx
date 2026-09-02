@@ -136,7 +136,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
               {t('upcoming_name')}
             </label>
             <input value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Beti ki Fees, Car Service, Rent..."
+              placeholder={t('auem_title_placeholder')}
               className="input-field" autoFocus />
           </div>
 
@@ -182,7 +182,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
               className="input-field text-center text-2xl font-bold tabular-nums" autoFocus />
           </div>
           <button onClick={() => setStep(0)}
-            className="w-full text-center text-[12px] text-ink-500 py-1 font-medium">&larr; Back</button>
+            className="w-full text-center text-[12px] text-ink-500 py-1 font-medium">{t('common_back_arrow')}</button>
         </div>
       )}
 
@@ -202,7 +202,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
               className="input-field" autoFocus />
           </div>
           <button onClick={() => setStep(1)}
-            className="w-full text-center text-[12px] text-ink-500 py-1 font-medium">&larr; Back</button>
+            className="w-full text-center text-[12px] text-ink-500 py-1 font-medium">{t('common_back_arrow')}</button>
         </div>
       )}
 
@@ -229,7 +229,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
           {/* Reminder timing */}
           <div>
             <label className="form-label">
-              Reminder
+              {t('auem_reminder_label')}
             </label>
             <div className="flex gap-2 flex-wrap">
               {REMINDER_OPTIONS.map(opt => (
@@ -247,7 +247,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
             <label className="form-label">
               {t('quick_note')}
             </label>
-            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional..."
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('auem_notes_placeholder')}
               className="input-field" />
           </div>
         </div>

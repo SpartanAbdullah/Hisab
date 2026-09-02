@@ -2,6 +2,33 @@ import { create } from "zustand";
 
 export type Language = "ur" | "en";
 
+/**
+ * Language used when the device has no stored preference yet (first paint,
+ * before onboarding's language step, or after a storage clear).
+ *
+ * Audit 2026-09 UX-04 / H5: the product, the Play listing and CLAUDE.md all
+ * describe Hisaab as roman-Urdu-first, but the code defaulted to "en", so the
+ * very first screen contradicted the differentiator. Flipped to "ur".
+ *
+ * This is the ONLY place the fallback lives — flipping this constant back to
+ * "en" fully reverts the decision. It deliberately does not touch any
+ * *explicit* choice: onboarding step 0 and the Settings / LanguageToggle path
+ * both call `setLang`, which writes `hisaab_lang`, and a stored value always
+ * wins over this default (including a stored "en").
+ */
+export const DEFAULT_LANGUAGE: Language = "ur";
+
+/** A stored preference only counts if it is one of the two real languages. */
+function readStoredLang(): Language {
+  try {
+    const raw = localStorage.getItem("hisaab_lang");
+    return raw === "ur" || raw === "en" ? raw : DEFAULT_LANGUAGE;
+  } catch {
+    // Private-mode / storage-disabled browsers throw on access.
+    return DEFAULT_LANGUAGE;
+  }
+}
+
 const S = {
   // Bottom Nav
   nav_home: { ur: "Home", en: "Home" },
@@ -3528,6 +3555,17 @@ const S = {
   gev_group_unarchived: { ur: "Group dobara khola gaya", en: "Group reopened" },
   gev_member_account_deleted: { ur: "Member ka account delete ho gaya", en: "Member deleted their account" },
   gev_ownership_transferred: { ur: "Group ki zimmedari badli", en: "Ownership transferred" },
+  // Older client-written event kinds — same subtitle slot, previously bare
+  // English literals (audit UX-31).
+  gev_settled_up: { ur: "Hisaab barabar hua", en: "Settled up" },
+  gev_settlement_removed: { ur: "Settlement hata di gayi", en: "Settlement removed" },
+  gev_expense_added_by: { ur: "Add hua · {name} ne diya", en: "Added · paid by {name}" },
+  gev_expense_added: { ur: "Kharcha add hua", en: "Expense added" },
+  gev_expense_updated: { ur: "Kharcha badla gaya", en: "Expense updated" },
+  gev_expense_deleted: { ur: "Kharcha delete hua", en: "Expense deleted" },
+  gev_member_joined: { ur: "Group mein shamil hue", en: "Joined the group" },
+  gev_member_invited: { ur: "Invite bheja gaya", en: "Invitation sent" },
+  gev_group_created: { ur: "Group bana", en: "Group created" },
 
   // Archive notifications (notify_group_archive_state templates).
   ntf_group_archived_title: { ur: "{group} archive ho gaya", en: "{group} was archived" },
@@ -3641,6 +3679,660 @@ const S = {
     en: "Hi! Feedback about Hisaab:",
   },
   fbk_email_subject: { ur: "Hisaab feedback", en: "Hisaab feedback" },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Audit 2026-09 UX-31 / F-16 / K-2 — hardcoded-English sweep
+  // --------------------------------------------------------------------------
+  // Copy that used to live as bare literals in JSX, toasts and confirm sheets
+  // across the oldest, most-visited screens. Roman Urdu here is deliberately
+  // the polite aap register (UX-32) and keeps the money vocabulary the audience
+  // actually speaks: udhaar, qarz, khata, kameti, qist, bachat, kharcha.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── Shared: accessibility labels & tiny common words ──────────────────────
+  a11y_quick_entry: { ur: "Jaldi entry", en: "Quick entry" },
+  a11y_close_search: { ur: "Talash band karein", en: "Close search" },
+  a11y_back: { ur: "Peechay", en: "Back" },
+  a11y_profile: { ur: "Profile", en: "Profile" },
+  a11y_unread_group: { ur: "Group mein nayi activity", en: "Unread group activity" },
+  a11y_unreconciled: {
+    ur: "Is group mein aap ke kuch kharche abhi milaye nahi gaye",
+    en: "You have unreconciled expenses in this group",
+  },
+  a11y_snooze_24h: { ur: "24 ghantay ke liye chhupa dein", en: "Snooze for 24 hours" },
+  a11y_remove_row: { ur: "Row hatayein", en: "Remove row" },
+  common_currency: { ur: "Currency", en: "Currency" },
+  common_back_arrow: { ur: "← Peechay", en: "← Back" },
+  common_of: { ur: "mein se", en: "of" },
+  common_this_month: { ur: "is maheenay", en: "this month" },
+
+  // ── Small shared components ───────────────────────────────────────────────
+  ac_of_month: { ur: "tareekh har mahine", en: "of month" },
+  ac_balance: { ur: "Balance", en: "Balance" },
+  ac_this_month: { ur: "Is mahine:", en: "This month:" },
+  // Split rather than interpolated: passing `query` into a .replace() call makes
+  // the React Compiler treat it as possibly-mutated and bail out of this
+  // component's manual memoization (react-hooks/preserve-manual-memoization).
+  cp_create_new_prefix: { ur: "+ Naya banayein: ", en: "+ Create new: " },
+  bwb_over_budget: { ur: "Budget se zyada", en: "Over budget" },
+  bwb_near_cap: { ur: "Limit ke kareeb", en: "Approaching cap" },
+  bwb_spent_of: { ur: "{spent} / {total} is maheenay", en: "{spent} of {total} this month" },
+  etm_credit_card: { ur: "Credit card", en: "Credit card" },
+  etm_will_create_contact: { ur: "Is se naya contact ban jayega.", en: "This will create a new contact." },
+  gcr_update_available: { ur: "App ka update aa gaya", en: "App update available" },
+  gcr_update_body: {
+    ur: "Aap ke peechay Hisaab update ho gaya tha. Mehfooz tareeqay se chalane ke liye app refresh karein.",
+    en: "Hisaab was updated while you were away. Refresh the app to continue safely.",
+  },
+  gcr_data_safe: { ur: "Aap ka save kiya hua data mehfooz hai.", en: "Your saved data is safe." },
+  gcr_refresh_cta: { ur: "App refresh karein", en: "Refresh app" },
+  gs_searching: { ur: "Hisaab dhoonda ja raha hai...", en: "Searching money activity..." },
+  mcc_hsb_tag: { ur: "HSB", en: "HSB" },
+  offline_banner: { ur: "Offline · changes save karne ke liye dobara connect karein", en: "Offline · reconnect to save changes" },
+  snb_days_ago: { ur: "{n} din pehle", en: "{n}d ago" },
+  snb_open_inbox: { ur: "Inbox mein kholein", en: "Open in Inbox" },
+  snb_whatsapp: { ur: "WhatsApp", en: "WhatsApp" },
+
+  // ── AddRecurringModal ─────────────────────────────────────────────────────
+  arm_err_amount: { ur: "Sahi amount daalein", en: "Enter a valid amount" },
+  arm_err_pick_account: { ur: "Ek account chunein", en: "Pick an account" },
+  arm_err_no_account: { ur: "Account nahi mila", en: "Account not found" },
+  arm_err_start_date: { ur: "Shuru ki tareekh dekh lein", en: "Check the start date" },
+  arm_past_start_title: { ur: "Shuru ki tareekh guzar chuki hai", en: "Start date is in the past" },
+  arm_use_this_date: { ur: "Yehi tareekh rakhein", en: "Use this date" },
+  arm_change_date: { ur: "Badlein", en: "Change" },
+  arm_updated: { ur: "Recurring entry update ho gayi", en: "Recurring entry updated" },
+  arm_saved: { ur: "Recurring entry save ho gayi", en: "Recurring entry saved" },
+  arm_err_save: { ur: "Save nahi ho saka", en: "Could not save" },
+  arm_type_expense: { ur: "Kharcha", en: "Expense" },
+  arm_type_income: { ur: "Amdani", en: "Income" },
+  arm_label_optional: { ur: "Label (marzi se)", en: "Label (optional)" },
+  arm_label_placeholder: { ur: "Jaise: Netflix · Gym · Kiraya · Tankhwah", en: "e.g. Netflix · Gym · Rent · Salary" },
+  arm_amount: { ur: "Amount", en: "Amount" },
+  arm_pick_account: { ur: "Ek account chunein…", en: "Pick an account…" },
+  arm_category: { ur: "Category", en: "Category" },
+  arm_repeats: { ur: "Kitni baar", en: "Repeats" },
+  arm_daily: { ur: "Rozana", en: "Daily" },
+  arm_weekly: { ur: "Har hafta", en: "Weekly" },
+  arm_monthly: { ur: "Har maheenay", en: "Monthly" },
+  arm_yearly: { ur: "Har saal", en: "Yearly" },
+  arm_next_due: { ur: "Agli baar kab", en: "Next due" },
+
+  // ── SubscriptionsPage ─────────────────────────────────────────────────────
+  subs_err_update: { ur: "Subscription update nahi hui", en: "Could not update subscription" },
+  subs_try_again: { ur: "Dobara koshish karein.", en: "Try again." },
+  subs_remove_confirm: { ur: "“{name}” hatayein?", en: "Remove “{name}”?" },
+  subs_remove_body: {
+    ur: "Iska track rakhna band ho jayega. Jo charges pehle record ho chuke hain woh rahenge.",
+    en: "This stops tracking it. Charges already recorded stay.",
+  },
+  subs_remove_cta: { ur: "Hatayein", en: "Remove" },
+  subs_removed: { ur: "Hat gaya", en: "Removed" },
+  subs_err_remove: { ur: "Hataya nahi ja saka", en: "Could not remove" },
+  subs_title: { ur: "Subscription Tracker", en: "Subscription Tracker" },
+  subs_a11y_add: { ur: "Subscription add karein", en: "Add subscription" },
+  subs_err_load: { ur: "Subscriptions load nahi ho sakein", en: "Couldn't load subscriptions" },
+  subs_empty_title: { ur: "Abhi koi subscription track nahi ho rahi", en: "No subscriptions tracked yet" },
+  subs_empty_desc: {
+    ur: "Ek recurring kharcha add karein aur usay “Subscriptions” category dein — Netflix, Spotify, aap ka gym. Hum maheenay ka total bhi banayenge aur har renewal se pehle yaad bhi dila denge.",
+    en: "Add a recurring expense and tag it “Subscriptions” — Netflix, Spotify, your gym. We'll total the monthly cost and nudge you before each renewal.",
+  },
+  subs_empty_subhint: { ur: "Bhooli hui subscriptions yahin pakdenge.", en: "This is where forgotten subscriptions get caught." },
+  subs_empty_cta: { ur: "Subscription add karein", en: "Add a subscription" },
+  subs_per_month: { ur: "Har maheenay", en: "Per month" },
+  subs_per_year: { ur: "Har saal", en: "Per year" },
+  subs_a_subscription: { ur: "Ek subscription", en: "A subscription" },
+  subs_renews_today: { ur: "aaj renew hogi", en: "renews today" },
+  subs_renews_in: { ur: "{n} din mein renew hogi", en: "renews in {n}d" },
+  subs_ghost_one: { ur: "1 subscription dekhne layak", en: "1 subscription worth a look" },
+  subs_ghost_many: { ur: "{n} subscriptions dekhne layak", en: "{n} subscriptions worth a look" },
+  subs_edit: { ur: "Edit", en: "Edit" },
+  subs_pause: { ur: "Rokein", en: "Pause" },
+  subs_resume: { ur: "Chalayein", en: "Resume" },
+  subs_other_recurring: { ur: "Baqi recurring", en: "Other recurring" },
+  subs_add_title: { ur: "Subscription add karein", en: "Add subscription" },
+
+  // ── ContactsPage ──────────────────────────────────────────────────────────
+  cts_added: { ur: "Contact add ho gaya", en: "Contact added" },
+  cts_added_local_sub: {
+    ur: "Local contact ke taur par save hua. Row se Hisaab par link karein taake dono taraf confirmation chale.",
+    en: "Saved as a local contact. Link to Hisaab from the row to enable two-way confirmation.",
+  },
+  cts_err_add: { ur: "Contact add nahi hua", en: "Could not add contact" },
+  cts_a11y_add: { ur: "Contact add karein", en: "Add contact" },
+  cts_count_one: { ur: "1 contact", en: "1 contact" },
+  cts_count_many: { ur: "{n} contacts", en: "{n} contacts" },
+  cts_linked_count: { ur: "{n} linked", en: "{n} linked" },
+  cts_unsettled_count: { ur: "{n} baqaya", en: "{n} unsettled" },
+  cts_search_placeholder: { ur: "Contacts dhoondein", en: "Search contacts" },
+  cts_add_title: { ur: "Contact add karein", en: "Add a contact" },
+  cts_add_desc: {
+    ur: "Jis ka bhi aap ne dena hai ya jis ne aap ka dena hai — dost, ghar walay, dukaandar. Zaroori nahi ke woh Hisaab par hon.",
+    en: "Anyone you owe or who owes you — friends, family, shopkeepers. They don't need to be on Hisaab.",
+  },
+  cts_name_label: { ur: "Naam", en: "Name" },
+  cts_name_placeholder: { ur: "Jaise: Asif Ali", en: "e.g. Asif Ali" },
+  cts_phone_label: { ur: "Phone (marzi se)", en: "Phone (optional)" },
+  cts_link_help_q: { ur: "Unlinked aur linked mein kya farq hai?", en: "What's the difference between unlinked and linked?" },
+  cts_hide: { ur: "Chhupayein", en: "Hide" },
+  cts_show: { ur: "Dikhayein", en: "Show" },
+  cts_unlinked: { ur: "Unlinked", en: "Unlinked" },
+  cts_unlinked_desc: {
+    ur: "Sirf aap ke hisaab mein ek naam. Qarz, split aur reminders aap likhte hain. Unhein kuch nazar nahi aata — sirf aap ko.",
+    en: "Just a name on your ledger. You record loans, splits and reminders. They don't see anything — only you.",
+  },
+  cts_linked: { ur: "Linked", en: "Linked" },
+  cts_linked_desc: {
+    ur: "Un ke code se doosray Hisaab user se juday hue. Qarz aur split ka record un ke inbox mein confirm ya decline ke liye jata hai — dono ka hisaab aik jaisa rehta hai.",
+    en: "Connected to another Hisaab user via their code. Loan and split records go to their inbox to confirm or decline — both ledgers stay in sync.",
+  },
+  cts_link_later: {
+    ur: "Abhi add karein, baad mein link kar lein — jab woh code share karein, un ki row par tap kar dein.",
+    en: "You can add now and link later — just tap their row when they share a code.",
+  },
+  cts_added_banner: { ur: "{name} add ho gaye", en: "{name} added" },
+  cts_added_banner_sub: {
+    ur: "Agar woh bhi Hisaab par hain to link kar dein — phir dono taraf confirmation chalegi.",
+    en: "If they're on Hisaab too, link to enable two-way confirmation.",
+  },
+  cts_link_cta: { ur: "Link", en: "Link" },
+  cts_linked_of_one: { ur: "{persons} mein se {linked} contact linked hai", en: "{linked} of {persons} contact is linked" },
+  cts_linked_of_many: { ur: "{persons} mein se {linked} contacts linked hain", en: "{linked} of {persons} contacts are linked" },
+  cts_linked_of_desc: {
+    ur: "Kisi contact par tap kar ke un ka Hisaab code daalein — phir jab bhi aap qarz ya split likhein ge, unhein confirmation request jayegi.",
+    en: "Tap a contact and use their Hisaab code to link — they'll get a confirmation request whenever you record a loan or split.",
+  },
+  cts_err_load: { ur: "Contacts load nahi ho sake", en: "Couldn't load contacts" },
+  cts_empty_title: { ur: "Abhi koi contact nahi", en: "No contacts yet" },
+  cts_empty_desc: {
+    ur: "Jis ka bhi aap ne dena hai ya jis ne aap ka dena hai, add kar lein. Jab woh Hisaab par aayein to link kar dijiye ga.",
+    en: "Add anyone you owe or who owes you. You can link them to Hisaab later when they sign up.",
+  },
+  cts_add_first: { ur: "Pehla contact add karein", en: "Add your first contact" },
+  cts_no_matches: { ur: "“{query}” se kuch nahi mila", en: "No matches for “{query}”" },
+  cts_a11y_whatsapp_added: { ur: "WhatsApp number mehfooz hai", en: "WhatsApp added" },
+  cts_local_chip: { ur: "local", en: "local" },
+
+  // ── AppLoadingScreen ──────────────────────────────────────────────────────
+  als_a11y_loading: { ur: "Hisaab khul raha hai", en: "Hisaab is loading" },
+  als_sr_loading: {
+    ur: "Hisaab khul raha hai. Aap ka hisaab mehfooz tareeqay se tayyar ho raha hai.",
+    en: "Hisaab is loading. Your finances are being prepared securely.",
+  },
+  als_subline: { ur: "Aap ka paisa, hamesha nazar mein.", en: "Your money, always in sight." },
+  als_trust: { ur: "Aap ka data private aur mehfooz rehta hai.", en: "Your data stays private and secure." },
+
+  // ── MonthlyWrapModal ──────────────────────────────────────────────────────
+  mwm_your_wrap: { ur: "Aap ka Hisaab Wrap", en: "Your Hisaab Wrap" },
+  mwm_where_it_went: { ur: "Kahan gaya", en: "Where it went" },
+  mwm_biggest_hit: { ur: "Sab se bara kharcha", en: "Biggest hit" },
+  mwm_busiest_day: { ur: "Sab se masroof din", en: "Busiest day" },
+  mwm_include_totals: { ur: "Card par poore totals bhi dikhayein", en: "Include exact totals on the card" },
+  mwm_preparing: { ur: "Tayyar ho raha hai…", en: "Preparing…" },
+  mwm_share_card: { ur: "Card share karein", en: "Share card" },
+  mwm_see_next_month: { ur: "Agle maheenay milte hain", en: "See you next month" },
+
+  // ── AccountDetailPage ─────────────────────────────────────────────────────
+  adp_err_load: { ur: "Yeh account load nahi ho saka", en: "Couldn't load this account" },
+  adp_err_load_sub: { ur: "Account ka data load nahi ho saka.", en: "Account data failed to load." },
+  adp_delete_account_cta: { ur: "Account delete karein", en: "Delete account" },
+  adp_failed: { ur: "Nahi ho saka", en: "Failed" },
+  adp_rename_title: { ur: "Account ka naam badlein", en: "Rename account" },
+  adp_renamed: { ur: "Account ka naam badal gaya", en: "Account renamed" },
+  adp_total_label: { ur: "Kul: {amount}", en: "Total: {amount}" },
+
+  // ── AddGroupExpenseModal ──────────────────────────────────────────────────
+  agem_dup_title: { ur: "Lagta hai yeh dobara aa gaya", en: "Looks like a duplicate" },
+  agem_dup_body: {
+    ur: "Abhi thori dair pehle “{desc}” ka {amount} add hua tha. Yeh bhi add karein?",
+    en: "A “{desc}” for {amount} was added moments ago. Add this one too?",
+  },
+  agem_add_anyway: { ur: "Phir bhi add karein", en: "Add anyway" },
+  agem_saved: { ur: "Group ka kharcha save ho gaya", en: "Group expense saved" },
+  agem_saved_sub: {
+    ur: "{payer} ne {amount}{from} diye aur {n} logon mein barabar bant gaya.",
+    en: "{payer} paid {amount}{from} and split it between {n} people.",
+  },
+  agem_from_account: { ur: " ({account} se)", en: " from {account}" },
+  agem_someone: { ur: "Kisi ne", en: "Someone" },
+  agem_not_saved: { ur: "Kharcha save nahi hua", en: "Expense not saved" },
+  agem_membership_unmatched: {
+    ur: "Is group mein aap ki membership match nahi hui. Group dobara kholein, ya owner se kahein ke aap ko dobara connect karein — phir kharcha add karein.",
+    en: "Your group membership could not be matched. Reopen the group or ask the owner to reconnect you before adding an expense.",
+  },
+  agem_historical_members: { ur: "Purane members: {names}", en: "Historical members: {names}" },
+  agem_shares: { ur: "hissay", en: "shares" },
+
+  // ── EditGroupExpenseModal ─────────────────────────────────────────────────
+  egem_updated: { ur: "Kharcha update ho gaya!", en: "Expense updated!" },
+  egem_not_updated: { ur: "Kharcha update nahi hua", en: "Expense not updated" },
+  egem_delete_confirm: { ur: "Yeh kharcha delete karein?", en: "Delete this expense?" },
+  egem_delete_body: { ur: "Group ke sab logon ke liye hat jayega.", en: "It will be removed for everyone in the group." },
+  egem_deleted: { ur: "Kharcha delete ho gaya", en: "Expense deleted" },
+  egem_title: { ur: "Kharcha edit karein", en: "Edit expense" },
+  egem_not_tracked: { ur: "Mere wallet mein track nahi", en: "Not tracked in my wallet" },
+  egem_not_tracked_sub: {
+    ur: "Jab card ya cash app ke bahar diya ho, to yeh chunein.",
+    en: "Use this for card/cash paid outside this app.",
+  },
+
+  // ── GoalsPage ─────────────────────────────────────────────────────────────
+  goals_a11y_add: { ur: "Bachat ka target add karein", en: "Add goal" },
+  goals_add_short: { ur: "Target", en: "Goal" },
+  goals_a11y_add_bill: { ur: "Aanay wala kharcha add karein", en: "Add upcoming expense" },
+  goals_add_bill_short: { ur: "Bill", en: "Bill" },
+  goals_count_one: { ur: "1 target", en: "1 goal" },
+  goals_count_many: { ur: "{n} target", en: "{n} goals" },
+  goals_upcoming_count: { ur: "{n} aanay wale", en: "{n} upcoming" },
+  goals_err_load: { ur: "Targets load nahi ho sake", en: "Couldn't load goals" },
+
+  // ── ConnectByCodePage ─────────────────────────────────────────────────────
+  cbc_title: { ur: "Hisaab par connect karein", en: "Connect on Hisaab" },
+  cbc_signin_title: { ur: "Connect karne ke liye sign in karein", en: "Sign in to connect" },
+  cbc_signin_body: {
+    ur: "Hisaab khol kar sign in karein, phir yeh code dobara scan karein.",
+    en: "Open Hisaab and sign in, then scan this code again.",
+  },
+  cbc_signin_cta: { ur: "Sign in", en: "Sign in" },
+  cbc_invalid_code: { ur: "Code theek nahi", en: "Invalid code" },
+  cbc_on_hisaab: { ur: "Hisaab par", en: "on Hisaab" },
+  cbc_already_contact: { ur: "Pehle se aap ke contacts mein: {name}", en: "Already in your contacts as {name}" },
+  cbc_already_contact_sub: {
+    ur: "Kuch karne ki zaroorat nahi — Contacts se un ko kholein aur qarz likhein ya settle karein.",
+    en: "Nothing to do — open them from Contacts to record a loan or settle up.",
+  },
+
+  // ── LoanDetailPage ────────────────────────────────────────────────────────
+  ldp_err_load: { ur: "Yeh qarz load nahi ho saka", en: "Couldn't load this loan" },
+  ldp_err_load_sub: { ur: "Qarz ka data load nahi ho saka.", en: "Loan data failed to load." },
+  ldp_linked_pill: { ur: "linked", en: "linked" },
+  ldp_linked_to_account: { ur: "Ek Hisaab account se juda hua", en: "Linked to a Hisaab account" },
+  ldp_use_linked_settle: { ur: "Upar wala linked-loan settle flow istemal karein.", en: "Use the linked-loan settle flow above." },
+
+  // ── AddUpcomingExpenseModal ───────────────────────────────────────────────
+  auem_title_placeholder: {
+    ur: "Jaise: Beti ki fees, Car service, Kiraya...",
+    en: "e.g. School fees, Car service, Rent...",
+  },
+  auem_reminder_label: { ur: "Reminder", en: "Reminder" },
+  auem_notes_placeholder: { ur: "Marzi se...", en: "Optional..." },
+
+  // ── Small pages ───────────────────────────────────────────────────────────
+  aas_issuer_placeholder: { ur: "Ya issuer ka naam likhein...", en: "Or type issuer name..." },
+  agm_title_placeholder: { ur: "Jaise Emergency Fund, Laptop, Eid", en: "e.g. Emergency Fund, Laptop, Eid" },
+  analytics_hero_sub: { ur: "Kharcha aur amdani ke rujhanaat", en: "Spend & income trends" },
+  idp_err_load: { ur: "Yeh insight load nahi ho saka", en: "Couldn't load this insight" },
+  idp_total_spent: { ur: "Kul kharcha", en: "Total spent" },
+  idp_across_one: { ur: "1 lenden mein", en: "across 1 transaction" },
+  idp_across_many: { ur: "{n} lenden mein", en: "across {n} transactions" },
+  idp_where_it_went: { ur: "Kahan gaya", en: "Where it went" },
+  repay_emi_number: { ur: "Qist #{n}", en: "EMI #{n}" },
+  sum_err_amount_zero: { ur: "Zero se zyada amount daalein.", en: "Enter an amount greater than zero." },
+  sum_err_amount_max: { ur: "Amount baqaya {amount} se zyada nahi ho sakta.", en: "Amount cannot exceed the outstanding {amount}." },
+  sum_saved_title: { ur: "Settlement save ho gaya", en: "Settlement saved" },
+  sum_saved_sub: { ur: "{from} ne {to} ko {amount} diye.", en: "{from} paid {to} {amount}." },
+  sum_not_saved: { ur: "Settlement save nahi hua", en: "Settlement not saved" },
+  sum_note_placeholder: { ur: "Jaise: Cash diya", en: "e.g. Cash diya" },
+
+  a11y_open_settings: { ur: "Settings kholein", en: "Open settings" },
+  a11y_search: { ur: "Talash karein", en: "Search" },
+  a11y_clear_search: { ur: "Talash saaf karein", en: "Clear search" },
+  a11y_dismiss: { ur: "Hata dein", en: "Dismiss" },
+  a11y_add: { ur: "Add karein", en: "Add" },
+  a11y_add_account: { ur: "Account add karein", en: "Add account" },
+  a11y_mark_all_read: { ur: "Sab parha hua mark karein", en: "Mark all read" },
+  a11y_unread: { ur: "Naya", en: "Unread" },
+  a11y_prev_round: { ur: "Pichla round", en: "Previous round" },
+  a11y_next_round: { ur: "Agla round", en: "Next round" },
+  a11y_close: { ur: "Band karein", en: "Close" },
+  common_add: { ur: "Add", en: "Add" },
+  common_view_all: { ur: "Sab dekhein", en: "View all" },
+  common_member_one: { ur: "1 member", en: "1 member" },
+  common_member_many: { ur: "{n} members", en: "{n} members" },
+  common_loan_one: { ur: "1 qarz", en: "1 loan" },
+  common_loan_many: { ur: "{n} qarz", en: "{n} loans" },
+  common_account_one: { ur: "1 account", en: "1 account" },
+  common_account_many: { ur: "{n} accounts", en: "{n} accounts" },
+  common_try_again_soon: { ur: "Thori dair baad dobara koshish karein.", en: "Try again in a moment." },
+  err_some_data_failed: { ur: "Kuch data load nahi ho saka.", en: "Some data failed to load." },
+
+  // ── HomePage ──────────────────────────────────────────────────────────────
+  home_greeting_pre: { ur: "Achha laga aap aaye", en: "Good to see you" },
+  home_splits_badge: { ur: "Sirf splits", en: "Splits only" },
+  home_splits_tagline: { ur: "Logon ka hisaab rakhein, accounts ka nahi.", en: "Track people, not accounts." },
+  home_splits_blurb: {
+    ur: "Udhaar aur groups. Na cash wallet, na bank balance.",
+    en: "Loans and groups. No cash wallets, no bank balances.",
+  },
+  home_no_ious: { ur: "Abhi koi hisaab nahi", en: "No IOUs yet" },
+  home_no_one: { ur: "koi nahi", en: "no one" },
+  home_group_splits: { ur: "Group Splits", en: "Group Splits" },
+  home_no_splits_title: { ur: "Abhi koi split nahi", en: "No splits yet" },
+  home_no_splits_desc: {
+    ur: "Group banayein ya join karein — mil kar kiya kharcha yahan barabar hoga.",
+    en: "Create or join a group to split shared expenses.",
+  },
+  home_no_splits_subhint: {
+    ur: "Dinner, kiraya, trips — har kharcha barabar.",
+    en: "Dinner, rent, trips — every expense split evenly.",
+  },
+  home_notify_needs_app: {
+    ur: "Kisi ko Hisaab par notify karne ke liye zaroori hai ke un ke paas bhi app ho aur woh apna code aap ke sath share karein. Settings > Contacts se unhein link karein.",
+    en: "To notify another person in Hisaab, they must also have the app and share their code with you. Link them from Settings > Contacts.",
+  },
+  home_your_money: { ur: "Aap ka paisa", en: "Your money" },
+  home_no_accounts_title: { ur: "Abhi koi account nahi", en: "No accounts yet" },
+  home_no_accounts_hero_desc: {
+    ur: "Ek account add karein, phir balance aur kharcha dono track hone lagenge.",
+    en: "Add an account to start tracking your balance and spending.",
+  },
+  home_err_dashboard: { ur: "Dashboard refresh nahi ho saka", en: "Couldn't refresh your dashboard" },
+  home_month_in_suffix: { ur: "aaye", en: "in" },
+  home_more_tap_manage: { ur: "{n} aur · manage karne ke liye tap karein", en: "{n} more · tap to manage" },
+  home_overdue_bang: { ur: "Deadline nikal gayi!", en: "Overdue!" },
+  home_due_tomorrow: { ur: "Kal dena hai!", en: "Due tomorrow!" },
+
+  // ── TransactionsPage ──────────────────────────────────────────────────────
+  tx_this_month: { ur: "Is maheenay", en: "This month" },
+  tx_flow_in: { ur: "aaye", en: "in" },
+  tx_flow_out: { ur: "gaye", en: "out" },
+  tx_no_outflow_yet: { ur: "Abhi koi kharcha nahi", en: "No outflow yet" },
+  tx_day_today: { ur: "Aaj", en: "Today" },
+  tx_day_yesterday: { ur: "Kal", en: "Yesterday" },
+  tx_err_load: { ur: "Lenden load nahi ho sake", en: "Couldn't load transactions" },
+  tx_hint_filtered_one: { ur: "Is view mein 1 lenden aayi hai.", en: "1 transaction matches the current view." },
+  tx_hint_filtered_many: { ur: "Is view mein {n} lenden aayi hain.", en: "{n} transactions match the current view." },
+  tx_hint_month_up: { ur: "Is maheenay aap {amount} plus mein hain.", en: "This month is positive by {amount}." },
+  tx_hint_month_down: { ur: "Is maheenay aap {amount} minus mein hain.", en: "This month is down by {amount}." },
+  tx_hint_next_filtered: {
+    ur: "Talash saaf karein ya chips badlein — poori timeline wapas aa jayegi.",
+    en: "Clear search or switch the chips to get back to your full timeline.",
+  },
+  tx_hint_next_overspend: {
+    ur: "Neeche sab se baray haaliya kharche dekhein, aur agar yeh har maheenay ho raha hai to budget bana lein.",
+    en: "Check the largest recent expenses below, then add a budget if the pattern is repeating.",
+  },
+  tx_hint_next_keep_logging: {
+    ur: "Amdani aur kharcha yahan likhte rahein taake Home aur Analytics sahi rahein.",
+    en: "Keep logging income and expenses here so Home and Analytics stay accurate.",
+  },
+  tx_clear_filters: { ur: "Filter hatayein", en: "Clear filters" },
+  tx_add_transaction: { ur: "Lenden add karein", en: "Add transaction" },
+
+  // ── AccountsPage ──────────────────────────────────────────────────────────
+  acct_total_balance: { ur: "Kul balance", en: "Total balance" },
+  acct_err_load: { ur: "Accounts load nahi ho sake", en: "Couldn't load accounts" },
+
+  // ── ActivityPage ──────────────────────────────────────────────────────────
+  act_mark_read_short: { ur: "Parha hua", en: "Mark read" },
+  act_no_personal_yet: { ur: "Abhi aap ki koi activity nahi.", en: "No personal activity yet." },
+  act_err_load: { ur: "Activity load nahi ho saki", en: "Couldn't load activity" },
+
+  // ── GroupDetailPage ───────────────────────────────────────────────────────
+  gdp_err_load: { ur: "Yeh group load nahi ho saka", en: "Couldn't load this group" },
+  gdp_err_load_sub: { ur: "Group ka data load nahi ho saka.", en: "The group data failed to load." },
+  gdp_loading: { ur: "Load ho raha hai...", en: "Loading..." },
+  gdp_delete_group_cta: { ur: "Group delete karein", en: "Delete group" },
+  gdp_leave_confirm_title: { ur: "Yeh group chhor dein?", en: "Leave this group?" },
+  gdp_leave_confirm_body: {
+    ur: "Aap tab hi nikal sakte hain jab aap ka balance aur group ke pending kaam poore ho jayein.",
+    en: "You can leave only after your balances and pending group items are fully resolved.",
+  },
+  gdp_leave_confirm_cta: { ur: "Group chhorein", en: "Leave group" },
+  gdp_leave_blocked: { ur: "Abhi aap yeh group nahi chhor sakte", en: "You cannot leave this group yet" },
+  gdp_leave_failed: { ur: "Group chhora nahi ja saka", en: "Could not leave this group" },
+  gdp_reconcile_failed: { ur: "Reconciliation update nahi hui", en: "Could not update reconciliation" },
+  common_please_try_again: { ur: "Dobara koshish karein.", en: "Please try again." },
+  a11y_invite: { ur: "Invite bhejein", en: "Invite" },
+  a11y_more: { ur: "Aur options", en: "More" },
+  a11y_dismiss_legend: { ur: "Legend hatayein", en: "Dismiss legend" },
+  a11y_edited_expense: { ur: "Kharcha edit hua", en: "Edited expense" },
+  a11y_edited: { ur: "Edited", en: "Edited" },
+  gdp_connected_count: { ur: "{n} connected", en: "{n} connected" },
+  gdp_code_copied: { ur: "Code copy ho gaya", en: "Code copied" },
+  gdp_code_copied_sub: { ur: "Share karein taake baqi log join kar sakein.", en: "Share it so others can join." },
+  gdp_copy: { ur: "Copy", en: "Copy" },
+  gdp_group_code: { ur: "Group Code", en: "Group Code" },
+  gdp_group_spend: { ur: "Group ka kharcha", en: "Group spend" },
+  gdp_outstanding_suffix: { ur: " baqi", en: " outstanding" },
+  gdp_expense_one: { ur: "1 kharcha", en: "1 expense" },
+  gdp_expense_many: { ur: "{n} kharche", en: "{n} expenses" },
+  gdp_no_balances: { ur: "Abhi koi balance nahi", en: "No balances yet" },
+  gdp_no_balances_desc: {
+    ur: "Ek kharcha add karein — phir har member ka diya hua, hissa aur final balance nazar aayega.",
+    en: "Add an expense to see paid, share, and final balance for each member.",
+  },
+  gdp_you_suffix: { ur: " · aap", en: " · you" },
+  gdp_gets_back: { ur: "Wapas lena hai", en: "Gets back" },
+  gdp_has_to_pay: { ur: "Dena hai", en: "Has to pay" },
+  gdp_balance: { ur: "Balance", en: "Balance" },
+  gdp_paid_total: { ur: "Kul diya", en: "Paid total" },
+  gdp_share_total: { ur: "Kul hissa", en: "Share total" },
+  gdp_no_activity: { ur: "Abhi koi shared activity nahi", en: "No shared activity yet" },
+  gdp_no_activity_desc: {
+    ur: "Kharche add hona, badalna, delete hona, naye members aur settlement — sab yahan sab ko nazar aayega.",
+    en: "Adds, edits, deletes, joins, and settlements will appear here for everyone.",
+  },
+
+  // ── SettingsPage ──────────────────────────────────────────────────────────
+  set_import_warn_body: {
+    ur: "Import ki hui file se maujooda data upar likha ja sakta hai.",
+    en: "Existing data may be overwritten by the imported file.",
+  },
+  set_import_cta: { ur: "Import karein", en: "Import" },
+  set_code_copied: { ur: "User code copy ho gaya", en: "User code copied" },
+  set_code_copy_failed: { ur: "Code copy nahi ho saka", en: "Couldn't copy code" },
+  set_code_chip_label: { ur: "code HSB", en: "code HSB" },
+  set_user_code_label: { ur: "User Code", en: "User Code" },
+  set_code_generating: { ur: "Ban raha hai...", en: "Generating..." },
+  set_copy: { ur: "Copy", en: "Copy" },
+  set_code_help: {
+    ur: "Log yeh code istemal kar ke shared groups mein aap se connect kar sakte hain.",
+    en: "People can use this code to connect with you in shared groups.",
+  },
+  set_pin_cancel: { ur: "Cancel", en: "Cancel" },
+  set_pin_save: { ur: "Save", en: "Save" },
+  set_row_budgets: { ur: "Budget", en: "Budgets" },
+  set_row_budgets_sub: {
+    ur: "Har category ki maheenay ki limit, halki warning",
+    en: "Monthly caps per category, soft warnings",
+  },
+  set_row_subs: { ur: "Subscription Tracker", en: "Subscription Tracker" },
+  set_row_subs_sub: {
+    ur: "Subscriptions, tankhwah, kiraya, EMI — sab recurring",
+    en: "Subscriptions, salary, rent, EMIs — all recurring",
+  },
+  set_row_privacy: { ur: "Privacy Policy", en: "Privacy Policy" },
+  set_row_privacy_sub: { ur: "Hisaab aap ka data kaise sambhalta hai", en: "How Hisaab handles your data" },
+  set_row_terms: { ur: "Terms of Use", en: "Terms of Use" },
+  set_row_terms_sub: { ur: "Early-release service terms", en: "Early-release service terms" },
+  set_row_contact: { ur: "Rabta aur madad", en: "Contact & Support" },
+  set_row_contact_sub: { ur: "Privacy, deletion, aur bug reports", en: "Privacy, deletion, and bug reports" },
+  set_row_deletion: { ur: "Account delete karne ka tareeqa", en: "Deletion Instructions" },
+  set_row_deletion_sub: { ur: "Apna Hisaab account kaise delete karein", en: "How to delete your Hisaab account" },
+  set_delete_account: { ur: "Account delete karein", en: "Delete account" },
+  set_delete_account_sub: { ur: "Apna Hisaab account hamesha ke liye delete karein", en: "Permanently delete your Hisaab account" },
+  set_delete_irreversible: { ur: "Yeh wapas nahi ho sakta.", en: "This cannot be undone." },
+  set_delete_body: {
+    ur: "Aap ki login identity aur zaati hisaab ke records delete ho jayenge. Jo shared groups ya records aap ne banaye, woh hat ya badal sakte hain.",
+    en: "Your login identity and personal finance records will be deleted. Shared groups or records you created may be removed or adjusted.",
+  },
+  set_delete_type_label: { ur: "Confirm karne ke liye DELETE likhein", en: "Type DELETE to confirm" },
+  set_delete_placeholder: { ur: "DELETE", en: "DELETE" },
+  set_logout: { ur: "Logout", en: "Logout" },
+  set_footer_credit: { ur: "Hisaab by Muhammad Abdullah", en: "Hisaab by Muhammad Abdullah" },
+
+  // ── BudgetsPage ───────────────────────────────────────────────────────────
+  bud_title: { ur: "Budget", en: "Budgets" },
+  bud_a11y_add: { ur: "Budget add karein", en: "Add budget" },
+  bud_intro: {
+    ur: "Har category ke liye maheenay ki limit rakhein. 80% cross hone par hum halka sa yaad dila denge — na shor, na taana.",
+    en: "Set a monthly cap per category. We'll quietly nudge you when you cross 80% — no shouting, no judgment.",
+  },
+  bud_err_load: { ur: "Budget load nahi ho sake", en: "Couldn't load budgets" },
+  bud_empty_title: { ur: "Abhi koi budget nahi", en: "No budgets yet" },
+  bud_empty_desc: {
+    ur: "Ek category aur maheenay ki limit chunein. Baqi hisaab hum rakh lenge.",
+    en: "Pick a category and a monthly cap. We'll track the rest.",
+  },
+  bud_empty_subhint: {
+    ur: "Groceries ya Bahar Khana se shuru karein — sab se aasan.",
+    en: "Start with Groceries or Eating Out — easiest wins.",
+  },
+  bud_empty_cta: { ur: "Budget add karein", en: "Add a budget" },
+  bud_err_amount: { ur: "Sahi maheenay ka amount daalein", en: "Enter a valid monthly amount" },
+  bud_dup_title: { ur: "Yeh budget pehle se hai", en: "Budget already exists" },
+  bud_dup_sub: {
+    ur: "{category} ka {currency} budget aap pehle hi bana chuke hain.",
+    en: "You already have a {currency} budget for {category}.",
+  },
+  bud_saved: { ur: "Budget set ho gaya", en: "Budget set" },
+  bud_err_save: { ur: "Budget save nahi hua", en: "Could not save budget" },
+  bud_new_title: { ur: "Naya budget", en: "New budget" },
+  bud_field_category: { ur: "Category", en: "Category" },
+  bud_field_cap: { ur: "Maheenay ki limit", en: "Monthly cap" },
+  bud_field_cap_cur: { ur: "Maheenay ki limit ({currency})", en: "Monthly cap ({currency})" },
+  bud_field_currency: { ur: "Currency", en: "Currency" },
+  bud_field_warn_at: { ur: "Warning kab", en: "Warn at" },
+  bud_warn_help: {
+    ur: "Jab yeh category is percent se aage jayegi, Home par halki si warning aa jayegi.",
+    en: "We'll show a soft warning on Home when this category crosses this percent.",
+  },
+  bud_saving: { ur: "Save ho raha hai…", en: "Saving…" },
+  bud_save_cta: { ur: "Budget save karein", en: "Save budget" },
+  bud_updated: { ur: "Budget update ho gaya", en: "Budget updated" },
+  bud_delete_confirm: { ur: "{category} ka budget delete karein?", en: "Delete the {category} budget?" },
+  bud_deleted: { ur: "Budget delete ho gaya", en: "Budget deleted" },
+  bud_err_delete: { ur: "Budget delete nahi hua", en: "Could not delete budget" },
+  bud_edit_title: { ur: "{category} edit karein", en: "Edit {category}" },
+  common_delete: { ur: "Delete", en: "Delete" },
+  common_save: { ur: "Save", en: "Save" },
+
+  // ── ContactDetailSheet ────────────────────────────────────────────────────
+  // The who-owes-whom sentences reuse loan_done_owes_you / loan_done_you_owe.
+  cds_sync_skipped_note: {
+    ur: " {n} qarz aisi currency mein thay jo support nahi — woh sirf aap ke paas rahe.",
+    en: " {n} loans in unsupported currencies stayed local.",
+  },
+  cds_sync_sent_one: { ur: "1 record confirmation ke liye bhej diya", en: "Sent 1 record for confirmation" },
+  cds_sync_sent_many: { ur: "{n} records confirmation ke liye bhej diye", en: "Sent {n} records for confirmation" },
+  cds_sync_sent_sub: {
+    ur: "Har ek un ke Inbox mein aayega — accept ya decline karne ke liye.{extra}",
+    en: "Each one shows up in their Inbox to accept or decline.{extra}",
+  },
+  cds_sync_err: { ur: "Purane records sync nahi ho sake", en: "Could not sync past records" },
+  cds_remove_confirm_title: { ur: "Yeh contact hata dein?", en: "Remove this contact?" },
+  cds_remove_confirm_cta: { ur: "Contact hatayein", en: "Remove contact" },
+  cds_removed_title: { ur: "Contact hat gaya", en: "Contact removed" },
+  cds_removed_sub: {
+    ur: "Pehle se settled records par naam waise hi rahega.",
+    en: "Past settled records still keep the contact name.",
+  },
+  cds_remove_err: { ur: "Contact hataya nahi ja saka. Dobara koshish karein.", en: "Could not remove this contact. Try again." },
+  cds_settled_with: { ur: "{name} ke sath aap ka hisaab barabar hai.", en: "You are settled up with {name}." },
+  cds_no_history: {
+    ur: "{name} ke sath abhi koi hisaab nahi. Upar se pehli entry add karein.",
+    en: "No money history with {name} yet. Add the first entry above.",
+  },
+  cds_private_history: { ur: "Aap ki apni history", en: "Your private history" },
+  cds_stat_total: { ur: "Kul", en: "Total" },
+  cds_stat_settled: { ur: "Barabar", en: "Settled" },
+  cds_stat_open: { ur: "Baqi", en: "Open" },
+  cds_private_note: {
+    ur: "Yeh sirf aap dekh sakte hain. Doosre banday ko kabhi pata nahi chalta.",
+    en: "Only you can see this. The other person is never notified.",
+  },
+  cds_past_records_one: { ur: "{name} ke sath 1 purana record", en: "1 past record with {name}" },
+  cds_past_records_many: { ur: "{name} ke sath {n} purane records", en: "{n} past records with {name}" },
+  cds_past_records_desc: {
+    ur: "Confirmation ke liye bhejein taake dono ka hisaab aik jaisa rahe. Har ek un ke Inbox mein accept ya decline ke liye jayega — aap ki repayment history waise hi mehfooz rahegi.",
+    en: "Send them for confirmation so both ledgers stay in sync. Each lands in their Inbox to accept or decline — your repayment history stays intact on your side.",
+  },
+  cds_open_balance: { ur: "Baqaya balance:", en: "Open balance:" },
+  cds_sending: { ur: "Bhej rahe hain…", en: "Sending…" },
+  cds_sync_cta_one: { ur: "Yeh record sync karein", en: "Sync this record" },
+  cds_sync_cta_many: { ur: "{n} records sync karein", en: "Sync {n} records" },
+  cds_mutual_desc: {
+    ur: "{name} aap ke contacts mein hain aur aap un ke. Jo qarz ya split aap likhein ge, share ho sakta hai.",
+    en: "{name} appears in your contacts and you appear in theirs. Loans and splits you record can be shared.",
+  },
+  cds_working: { ur: "Kaam ho raha hai…", en: "Working…" },
+  cds_unlink: { ur: "Unlink karein", en: "Unlink" },
+  cds_user_code_label: { ur: "User code", en: "User code" },
+  cds_code_help: {
+    ur: "Un se kahein ke Contacts → Your connect code kholein — ya jo QR woh dikhayein use scan kar lein.",
+    en: "Ask them to open their code in Contacts → Your connect code — or scan the QR they show you.",
+  },
+  cds_found: { ur: "Mil gaya", en: "Found" },
+  cds_confirm_explainer: {
+    ur: "Confirm karte hi aap ki taraf link ban jayega, aur {name} ko request jayegi ke woh bhi aap ko add kar lein taake records dono taraf chalein.",
+    en: "Confirming links them on your side straight away, and asks {name} to add you back so records can flow both ways.",
+  },
+  cds_looking_up: { ur: "Dhoond rahe hain…", en: "Looking up…" },
+  cds_resolve: { ur: "Dhoondein", en: "Resolve" },
+  cds_linking: { ur: "Link ho raha hai…", en: "Linking…" },
+  cds_confirm_link: { ur: "Link confirm karein", en: "Confirm link" },
+  cds_removing: { ur: "Hataya ja raha hai…", en: "Removing…" },
+  cds_remove_local: { ur: "Local contact hatayein", en: "Remove local contact" },
+  cds_remove_after_settled: {
+    ur: "Yeh tab hoga jab is contact ke sath aap ka balance barabar ho jaye.",
+    en: "Available after your balance with this contact is settled.",
+  },
+  a11y_whatsapp: { ur: "WhatsApp", en: "WhatsApp" },
+  cds_code_placeholder: { ur: "HSB-XXXXXX", en: "HSB-XXXXXX" },
+
+  // ── InboxPage ─────────────────────────────────────────────────────────────
+  inbox_accepted_title: { ur: "Accept ho gaya ✓", en: "Accepted ✓" },
+  inbox_accepted_sub: { ur: "{amount} ab aap ke hisaab mein hai.", en: "{amount} is now on your ledger." },
+  inbox_amount_off_title: { ur: "Yeh amount theek nahi lag raha", en: "This amount looks off" },
+  inbox_amount_off_sub: { ur: "{reason} Un se kahein ke dobara bhejein.", en: "{reason} Ask them to resend it." },
+  inbox_settled_title: { ur: "Hisaab barabar 🎉", en: "Settled up 🎉" },
+  inbox_settled_sub: { ur: "{amount} clear ho gaye.", en: "{amount} cleared." },
+  inbox_err_load: { ur: "Inbox load nahi ho saka", en: "Couldn't load inbox" },
+  inbox_past_record_tag: { ur: "purana record", en: "past record" },
+
+  // ── LoansPage ─────────────────────────────────────────────────────────────
+  loans_instalments_left: { ur: "{n} qisten baqi", en: "{n} instalments left" },
+  loans_next_label: { ur: "Agli", en: "Next" },
+  loans_a11y_add: { ur: "Qarz add karein", en: "Add loan" },
+  loans_your_stance: { ur: "Aap ka hisaab", en: "Your stance" },
+  loans_to_receive_short: { ur: "lena hai", en: "to receive" },
+  loans_to_pay_short: { ur: "dena hai", en: "to pay" },
+  loans_people_one: { ur: "1 banda", en: "1 person" },
+  loans_people_many: { ur: "{n} log", en: "{n} people" },
+  loans_search_by_name: { ur: "Naam se dhoondein", en: "Search by name" },
+  loans_other_currencies: { ur: "Doosri currencies", en: "Other currencies" },
+  loans_err_load: { ur: "Qarz load nahi ho sake", en: "Couldn't load loans" },
+  loans_individual: { ur: "Alag alag qarz", en: "Individual loans" },
+  loans_activity: { ur: "Activity", en: "Activity" },
+  loans_no_activity: { ur: "Abhi koi lenden nahi hui.", en: "No transaction activity yet." },
+  loans_progress_received: { ur: "{paid} wusool hue, kul {total} mein se", en: "{paid} received of {total}" },
+  loans_progress_paid: { ur: "{paid} ada hue, kul {total} mein se", en: "{paid} paid of {total}" },
+  loan_status_active: { ur: "Chal raha hai", en: "Active" },
+  loan_status_settled: { ur: "Barabar", en: "Settled" },
+
+  // ── GroupInviteModal ──────────────────────────────────────────────────────
+  ginv_title: { ur: "Members bulayein", en: "Invite members" },
+  ginv_link_copied: { ur: "Invite link copy ho gaya", en: "Invite link copied" },
+  ginv_err_create: { ur: "Invite nahi ban saka", en: "Could not create invite" },
+  ginv_transparency_title: { ur: "Sab kuch group ke andar hi rehta hai", en: "Transparency stays inside the group" },
+  ginv_transparency_body: {
+    ur: "Connected members ko group ke kharche add, edit, delete aur settlement sab nazar aayenge — lekin ek dusray ke apne accounts nahi.",
+    en: "Connected members will see shared expense adds, edits, deletes, and settlements, but not each other's private accounts.",
+  },
+  ginv_copied_sub_member: {
+    ur: "Yeh link us member ko bhejein taake woh connect ho jayein.",
+    en: "Share it with that member to connect them.",
+  },
+  ginv_copied_sub_open: {
+    ur: "Jis ke paas bhi yeh link hoga woh is group mein aa sakta hai.",
+    en: "Anyone with the link can join this group.",
+  },
+  ginv_creating_link: { ur: "Link ban raha hai...", en: "Creating link..." },
+  ginv_copy_link_cta: { ur: "Group invite link copy karein", en: "Copy group invite link" },
+  ginv_invite_ready: { ur: "Invite tayyar", en: "Invite ready" },
+  ginv_copy: { ur: "Copy", en: "Copy" },
+  ginv_invite: { ur: "Bulayein", en: "Invite" },
 } as const;
 
 type Key = keyof typeof S;
@@ -3652,11 +4344,32 @@ interface I18nState {
   setLang: (lang: Language) => void;
 }
 
+/**
+ * Mirror the active language onto `profiles.lang` (audit N-1).
+ *
+ * Cross-user notification content is written by the *sender's* device, which
+ * cannot know the recipient's language while that preference only lives in the
+ * recipient's `localStorage`. Persisting it server-side is the precondition for
+ * localizing those templates. Best-effort and fire-and-forget: the language
+ * switch must never block or fail on a network hiccup, and it is a no-op while
+ * signed out (`profilesDb.updateCurrent` throws without a session).
+ *
+ * Dynamic import keeps `supabaseDb` — which pulls in the whole data layer — out
+ * of the i18n module graph (i18n is imported by virtually every component).
+ */
+function syncProfileLang(lang: Language) {
+  if (!localStorage.getItem("hisaab_supabase_uid")) return;
+  void import("./supabaseDb")
+    .then((m) => m.profilesDb.updateCurrent({ lang }))
+    .catch(() => {});
+}
+
 export const useI18nStore = create<I18nState>((set) => ({
-  lang: (localStorage.getItem("hisaab_lang") as Language) || "en",
+  lang: readStoredLang(),
   setLang: (lang) => {
     localStorage.setItem("hisaab_lang", lang);
     set({ lang });
+    syncProfileLang(lang);
     // Scheduled Android reminders freeze their text at plan time — rebuild
     // so they arrive in the newly chosen language. Dynamic import: the
     // scheduler's planner statically imports THIS module. No-op on web.
@@ -3665,6 +4378,20 @@ export const useI18nStore = create<I18nState>((set) => ({
       .catch(() => {});
   },
 }));
+
+/**
+ * Boot-time reconcile for `profiles.lang` (audit N-1).
+ *
+ * `setLang` covers every *future* switch, but users who chose a language before
+ * the column existed would otherwise sit on the DB default forever. Called once
+ * per session from App.tsx with the language the profile row currently holds;
+ * the device preference wins, so this is a no-op when they already agree.
+ */
+export function reconcileProfileLang(profileLang: unknown) {
+  const active = useI18nStore.getState().lang;
+  if (profileLang === active) return;
+  syncProfileLang(active);
+}
 
 export function useT() {
   const lang = useI18nStore((s) => s.lang);

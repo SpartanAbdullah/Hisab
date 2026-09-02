@@ -13,11 +13,23 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 // to the Button component's props — not worth a separate file.
 // eslint-disable-next-line react-refresh/only-export-components
 export const BUTTON_VARIANT_CLASSES = {
-  primary: 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 active:bg-indigo-700 active:shadow-none focus-visible:ring-indigo-500',
+  // House accent (violet), not legacy indigo — matches the dominant
+  // primary-button fill used elsewhere (HomePage quick actions,
+  // LoansPage repay CTA, SettleUpModal toggle, .auth-cta). No accent-700
+  // exists for an active:bg-* darken step, so press feedback follows the
+  // same idiom as .auth-cta: active:brightness-95 alongside the shared
+  // active:scale-[0.97] on the base className below.
+  primary: 'bg-accent-600 text-white shadow-sm shadow-accent-600/20 active:brightness-95 active:shadow-none focus-visible:ring-accent-500',
   secondary: 'bg-slate-100 border border-slate-200 text-slate-700 active:bg-slate-200 focus-visible:ring-slate-400',
   danger: 'bg-pay-600 text-white shadow-sm shadow-pay-600/20 active:bg-pay-700 focus-visible:ring-pay-600',
   warning: 'bg-warn-600 text-white shadow-sm shadow-warn-600/20 active:bg-warn-600 focus-visible:ring-warn-600',
-  ghost: 'bg-transparent text-indigo-600 active:bg-indigo-50 focus-visible:ring-indigo-500',
+  ghost: 'bg-transparent text-accent-600 active:bg-accent-50 focus-visible:ring-accent-500',
+  // Left on the legacy indigo gradient deliberately: it composes with the
+  // `.btn-gradient` CSS class (index.css), whose background is a hardcoded
+  // indigo linear-gradient value — out of scope here (this pass is
+  // dead-token removal, not CSS value changes) and still real UI
+  // (ConfirmationSheet, EmptyState). Ring/shadow stay indigo so they don't
+  // mismatch the fill they sit on.
   gradient: 'btn-gradient shadow-md shadow-indigo-500/25 focus-visible:ring-indigo-500',
 };
 

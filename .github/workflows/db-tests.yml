@@ -1,0 +1,95 @@
+name: Database tests
+
+# Applies the whole SQL corpus — supabase-schema.sql, the 40 historical
+# migrations, the 11 audit-P0 files and the 4 P1 files — to a throwaway
+# Postgres in the canonical order, then runs the trust-boundary assertions in
+# supabase/tests/tests/ as role `authenticated`.
+#
+# Why this exists: the repo has no migration runner and no ledger table. Every
+# file is applied by hand in Supabase Studio, filenames do not sort into apply
+# order, and until 2026-09 nothing verified that the corpus even composes
+# (audit 2026-09: 13-engineering-standards.md §2.7, 02-repository-architecture.md
+# M-2). This job is the regression net.
+#
+# See docs/testing-the-trust-boundary.md for how to run it locally and what it
+# deliberately cannot simulate.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch cancels the first — a full apply is ~90s of
+# runner time and there is no value in racing two of them.
+concurrency:
+  group: db-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sql:
+    name: Apply corpus + trust-boundary assertions
+    runs-on: ubuntu-latest
+    # Local wall-clock is ~75s (apply ~45s, assertions ~25s). 10 gives headroom
+    # for a cold image pull without letting a hung run burn the whole budget.
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        # Supabase projects commonly run 15.x. APPLY-ORDER.md §3's throwaway
+        # harness used 16; pinning 15 here covers the version production is
+        # actually most likely to be on.
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hisaab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      TZ: UTC
+      # run.sh skips its own docker lifecycle when this is set and talks to the
+      # service container over the mapped port instead.
+      HISAAB_TEST_DSN: postgresql://postgres:postgres@127.0.0.1:5432/hisaab
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the postgres client
+        # ubuntu-latest ships psql already; this is a no-op guard so the job
+        # does not silently depend on the runner image's package set.
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: Sanity-check apply-order.txt against the repo
+        # A migration added without an apply-order.txt line would otherwise be
+        # silently untested. This fails loudly instead.
+        run: |
+          missing=0
+          for f in supabase-schema.sql supabase-migration-*.sql; do
+            if ! grep -qxF "$f" supabase/tests/apply-order.txt; then
+              echo "::error file=supabase/tests/apply-order.txt::$f is not listed in apply-order.txt"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Apply the corpus and run the assertions
+        run: bash supabase/tests/run.sh
+
+      - name: Assertion tally
+        if: always()
+        run: |
+          psql -X -A -F' | ' "$HISAAB_TEST_DSN" -c \
+            "SELECT suite, count(*) AS assertions,
+                    count(*) FILTER (WHERE NOT passed) AS failed
+               FROM test.results GROUP BY suite ORDER BY suite" || true

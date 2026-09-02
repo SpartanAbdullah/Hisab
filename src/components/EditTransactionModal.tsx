@@ -632,7 +632,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                 >
                   <div>
                     <p className="text-[13px] font-semibold text-ink-800">{account.name}</p>
-                    <p className="text-[10px] text-ink-500">Credit card</p>
+                    <p className="text-[10px] text-ink-500">{t('etm_credit_card')}</p>
                   </div>
                   <p className="text-[13px] font-bold text-ink-800 tabular-nums">{formatSignedMoney(account.balance, account.currency)}</p>
                 </button>
@@ -651,7 +651,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
               className="input-field"
             />
             {willCreateNewContact && (
-              <p className="text-[11px] text-warn-600 mt-1.5">This will create a new contact.</p>
+              <p className="text-[11px] text-warn-600 mt-1.5">{t('etm_will_create_contact')}</p>
             )}
           </div>
         )}

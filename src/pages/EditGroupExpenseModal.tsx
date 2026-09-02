@@ -225,11 +225,11 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
         category,
         paidFromAccountId: shouldTrackExpense ? paidFromAccountId || null : null,
       });
-      toast.show({ type: 'success', title: 'Expense updated!' });
+      toast.show({ type: 'success', title: t('egem_updated') });
       onClose();
     } catch (err) {
       const message = friendlyGroupParticipantError(err) || t('error');
-      toast.show({ type: 'error', title: 'Expense not updated', subtitle: message });
+      toast.show({ type: 'error', title: t('egem_not_updated'), subtitle: message });
     } finally {
       setSaving(false);
     }
@@ -238,15 +238,15 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const runDelete = async () => {
     if (!expense) return;
     const ok = await confirmDestructive({
-      title: 'Delete this expense?',
-      description: 'It will be removed for everyone in the group.',
-      confirmLabel: 'Delete',
+      title: t('egem_delete_confirm'),
+      description: t('egem_delete_body'),
+      confirmLabel: t('common_delete'),
     });
     if (!ok) return;
     setSaving(true);
     try {
       await deleteGroupExpense(expense.id);
-      toast.show({ type: 'success', title: 'Expense deleted' });
+      toast.show({ type: 'success', title: t('egem_deleted') });
       onClose();
     } catch (err) {
       // Honest failure — previously a silently no-op'd delete toasted success.
@@ -263,7 +263,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit Expense"
+    <Modal open={open} onClose={onClose} title={t('egem_title')}
       confirmClose={() => guardClose(!!expense && (
         description !== expense.description ||
         amount !== String(expense.amount) ||
@@ -324,8 +324,8 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
                 }`}
               >
                 <div>
-                  <p className="text-[13px] font-semibold text-ink-800">Not tracked in my wallet</p>
-                  <p className="text-[10px] text-ink-500">Use this for card/cash paid outside this app.</p>
+                  <p className="text-[13px] font-semibold text-ink-800">{t('egem_not_tracked')}</p>
+                  <p className="text-[10px] text-ink-500">{t('egem_not_tracked_sub')}</p>
                 </div>
               </button>
               {/* "Not tracked" is a deliberate state (paidFromAccountId=''),
@@ -360,7 +360,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
 
         {inactiveMembers.length > 0 && (
           <p className="text-[11px] text-ink-500">
-            Historical members: {inactiveMembers.map((member) => member.name).join(', ')}
+            {t('agem_historical_members').replace('{names}', inactiveMembers.map((member) => member.name).join(', '))}
           </p>
         )}
 

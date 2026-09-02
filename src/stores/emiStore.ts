@@ -5,6 +5,7 @@ import type { EmiSchedule, EmiStatus } from '../db';
 import { addMonths, format } from 'date-fns';
 import { useActivityStore } from './activityStore';
 import { uncoveredToPaidIds } from '../lib/emiCoverage';
+import { reportError } from '../lib/errorReporter';
 
 interface GenerateEmiInput {
   loanId: string;
@@ -177,7 +178,7 @@ export const useEmiStore = create<EmiState>((set, get) => ({
         'loan',
       );
     } catch (err) {
-      console.error('logActivity failed in reconcileCovered (non-fatal)', err);
+      reportError(err, { feature: 'emiStore.reconcileCovered.logActivity', extra: { loanId, count: ids.length } });
     }
     return ids.length;
   },

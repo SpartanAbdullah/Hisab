@@ -22,6 +22,7 @@ import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { AccountSelect } from '../components/AccountSelect';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { linkedLoanIdSet } from '../lib/linkedLoanIdSet';
+import { useVisualViewportInset } from '../hooks/useVisualViewportInset';
 import { buildRepaymentGroups } from '../lib/repaymentGroups';
 import { allocateRepayment, previewAllocations } from '../lib/repaymentAllocation';
 import { executeAllocatedRepayments } from '../lib/repaymentExecution';
@@ -41,6 +42,8 @@ import { localIso } from '../lib/thisWeek';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { track } from '../lib/telemetry';
+import { bucketAmount } from '../lib/telemetryEvents';
 import { SUPPORTED_CURRENCIES, type Currency, type TransactionType, type SplitGroup, type Loan } from '../db';
 import { AddAccountStepper } from './AddAccountStepper';
 
@@ -113,6 +116,13 @@ export function QuickEntry({
   const t = useT();
   const guardClose = useDiscardGuard();
   const submitGuard = useSubmitGuard();
+  // Audit MF-02: the Save footer sits inside Modal's fixed bottom sheet,
+  // which stays pinned to the (keyboard-unaware) layout viewport on iOS
+  // Safari / standalone PWA. Extra bottom padding — invisible until the
+  // keyboard covers it — pushes the visible buttons up above the keyboard.
+  // No-op on Chrome/Android (index.html's `interactive-widget=resizes-
+  // content` already handles it there) and on native (hook returns 0).
+  const keyboardInset = useVisualViewportInset();
 
   const [step, setStep] = useState(0);
   const [intent, setIntent] = useState<EntryIntent | null>(null);
@@ -160,6 +170,84 @@ export function QuickEntry({
   useEffect(() => {
     if (open && step === 0) setTimeout(() => amountRef.current?.focus(), 300);
   }, [open, step]);
+
+  // ── Telemetry (audit 2026-09 report 10, catalog #8/#9/#10) ──────────────
+  // QuickEntry is the activation moment: a user who never reaches
+  // `entry_created` never activated. `quick_entry_abandoned` is its shadow —
+  // opened, typed, walked away — which no other signal can reconstruct.
+  // Refs, not state: the abandonment event fires from a cleanup where the
+  // rendered closure is already stale.
+  const wasOpenRef = useRef(false);
+  const savedRef = useRef(false);
+  const firstEverRef = useRef(false);
+  const stepRef = useRef(step);
+  const hadAmountRef = useRef(false);
+  const hasPresetRef = useRef(false);
+  useEffect(() => {
+    stepRef.current = step;
+    hadAmountRef.current = amount.trim().length > 0;
+    hasPresetRef.current = !!preset;
+  }, [step, amount, preset]);
+
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      wasOpenRef.current = true;
+      savedRef.current = false;
+      // "First ever" is decided at OPEN time — after a successful save the
+      // stores are no longer empty, so reading it later would always say false.
+      firstEverRef.current =
+        useTransactionStore.getState().transactions.length === 0
+        && useLoanStore.getState().loans.length === 0;
+      track('quick_entry_opened', { source: hasPresetRef.current ? 'preset' : 'fab' });
+    } else if (!open && wasOpenRef.current) {
+      wasOpenRef.current = false;
+      if (!savedRef.current) {
+        track('quick_entry_abandoned', { last_step: stepRef.current, had_amount: hadAmountRef.current });
+      }
+    }
+  }, [open]);
+
+  // One place where a saved entry is reported. Amount travels as a BUCKET and
+  // the note/contact/account names never leave the device (enforced by the
+  // schema in src/lib/telemetryEvents.ts).
+  const trackSaved = (
+    entryType: 'expense' | 'income' | 'transfer' | 'loan_given' | 'loan_taken' | 'repayment'
+      | 'goal_contribution' | 'cash_advance' | 'split' | 'linked_request',
+    entryCurrency: string,
+    amountValue: number,
+    extra?: {
+      loan?: { direction: 'given' | 'taken'; linked: boolean; hasSchedule: boolean };
+      repayment?: { consolidated: boolean; settles: boolean };
+    },
+  ) => {
+    savedRef.current = true;
+    const mode = appMode === 'splits_only' ? 'splits_only' : 'full_tracker';
+    track('entry_created', {
+      entry_type: entryType,
+      source: 'quick_entry',
+      is_first_ever: firstEverRef.current,
+      mode,
+      currency: entryCurrency,
+      amount_bucket: bucketAmount(amountValue),
+    });
+    if (extra?.loan) {
+      track('loan_created', {
+        direction: extra.loan.direction,
+        linked_contact: extra.loan.linked,
+        has_schedule: extra.loan.hasSchedule,
+        currency: entryCurrency,
+        mode,
+      });
+    }
+    if (extra?.repayment) {
+      track('repayment_recorded', {
+        consolidated: extra.repayment.consolidated,
+        settles_loan: extra.repayment.settles,
+        mode,
+        currency: entryCurrency,
+      });
+    }
+  };
 
   // Safety-net: kick off a groups load the moment QuickEntry opens. If
   // App.tsx already preloaded on boot (the common case), this is a no-op
@@ -693,6 +781,9 @@ export function QuickEntry({
               return;
             }
             const clearedCount = previewAllocations(selectedRepayGroup.allocatable, repayAllocations).filter((l) => l.cleared).length;
+            trackSaved('repayment', selectedRepayGroup.currency, result.totalApplied, {
+              repayment: { consolidated: true, settles: clearedCount > 0 },
+            });
             setConfirmData({
               title: t('confirm_repayment_saved'),
               description:
@@ -708,6 +799,9 @@ export function QuickEntry({
           }
           if (!effectiveSingleLoan) throw new Error('Loan not found');
           await applyRepayment(effectiveSingleLoan.id, amt, notes);
+          trackSaved('repayment', effectiveSingleLoan.currency, amt, {
+            repayment: { consolidated: false, settles: amt >= repayCap - 0.00001 },
+          });
           setConfirmData({
             title: t('confirm_repayment_saved'),
             description: (effectiveSingleLoan.type === 'given' ? t('repay_done_received_desc') : t('repay_done_paid_desc'))
@@ -741,6 +835,11 @@ export function QuickEntry({
                 note: notes,
                 requestId: nextRequestId(),
               });
+              // Ledger-only mirror of a loan to a linked Hisaab user. It is a
+              // real created entry from the user's point of view, so it counts.
+              trackSaved('linked_request', branch.currency, amt, {
+                loan: { direction: type === 'loan_given' ? 'given' : 'taken', linked: true, hasSchedule: false },
+              });
               toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
               reset();
               onClose();
@@ -754,6 +853,9 @@ export function QuickEntry({
             totalAmount: amt,
             currency: ledgerCurrency,
             notes,
+          });
+          trackSaved(type === 'loan_given' ? 'loan_given' : 'loan_taken', ledgerCurrency, amt, {
+            loan: { direction: loan.type, linked: false, hasSchedule: false },
           });
           setConfirmData({
             title: t('confirm_loan_saved'),
@@ -801,6 +903,9 @@ export function QuickEntry({
             // currency-match check can't fire.)
             requesterAccountId: accountForBranch?.id ?? null,
             requestId: nextRequestId(),
+          });
+          trackSaved('linked_request', branch.currency, amt, {
+            loan: { direction: type === 'loan_given' ? 'given' : 'taken', linked: true, hasSchedule: false },
           });
           toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
           reset();
@@ -862,6 +967,9 @@ export function QuickEntry({
           return;
         }
         const clearedCount = previewAllocations(selectedRepayGroup.allocatable, repayAllocations).filter((l) => l.cleared).length;
+        trackSaved('repayment', selectedRepayGroup.currency, result.totalApplied, {
+          repayment: { consolidated: true, settles: clearedCount > 0 },
+        });
         setConfirmData({
           title: `${t('tx_repayment')} — Done!`,
           description:
@@ -942,6 +1050,9 @@ export function QuickEntry({
         }
 
         const owed = Math.round(others.reduce((sum, o) => sum + o.amount, 0) * 100) / 100;
+        // Ad-hoc split (no group). Participant names/amounts stay local; only
+        // the fact that a split happened, and its magnitude band, are reported.
+        trackSaved('split', splitCurrency, splitPlan.myShare + owed);
         const accountMove = splitPlan.direction === 'i_paid' && appMode !== 'splits_only'
           ? Math.round((splitPlan.myShare + owed) * 100) / 100
           : 0;
@@ -1138,6 +1249,18 @@ export function QuickEntry({
         if (type === 'goal_contribution') return '/goals';
         return undefined;
       })();
+      // The ordinary full-tracker save path (catalog #9, plus #11/#12 where the
+      // entry is also a loan or a repayment).
+      trackSaved(
+        cashAdvance ? 'cash_advance' : (type as 'expense' | 'income' | 'transfer' | 'loan_given' | 'loan_taken' | 'repayment' | 'goal_contribution'),
+        confirmationCurrency,
+        amt,
+        (type === 'loan_given' || type === 'loan_taken')
+          ? { loan: { direction: type === 'loan_given' ? 'given' : 'taken', linked: false, hasSchedule: hasEmi && !emiFailed && !!resultTx.relatedLoanId } }
+          : type === 'repayment'
+            ? { repayment: { consolidated: false, settles: amt >= repayCap - 0.00001 } }
+            : undefined,
+      );
       setConfirmData({
         title: (emiFailed ? t('title_saved_emi_pending') : t('title_done')).replace('{label}', typeLabel),
         description: resultDescription,
@@ -1196,12 +1319,9 @@ export function QuickEntry({
   // presets that fix the type land directly on the amount.
   const canGoBackFromAmount = !preset?.type && !preset?.cashAdvanceCardId;
 
-  return (
-    <>
-      <Modal open={open && !showInlineAccount} onClose={handleClose}
-        confirmClose={() => guardClose(!!amount.trim() || step === 2)}
-        title={step === 0 ? amountTitle : step === 2 ? t('quick_details') : t('qe_title_what_happened')}
-        footer={step === 0 ? (
+  // Audit MF-02: computed once so it can be wrapped with the keyboard-inset
+  // padding below without duplicating the step-0/step-2/undefined ternary.
+  const footerContent = step === 0 ? (
           <div className="flex gap-2.5">
           {canGoBackFromAmount && (
             <button
@@ -1242,7 +1362,16 @@ export function QuickEntry({
               >{saving ? t('quick_processing') : wouldBranchToLinked ? t('ltr_branch_cta') : `${t('quick_save')} \u2713`}</button>
             </div>
           )
-        ) : undefined}
+        ) : undefined;
+
+  return (
+    <>
+      <Modal open={open && !showInlineAccount} onClose={handleClose}
+        confirmClose={() => guardClose(!!amount.trim() || step === 2)}
+        title={step === 0 ? amountTitle : step === 2 ? t('quick_details') : t('qe_title_what_happened')}
+        footer={footerContent && keyboardInset > 0 ? (
+          <div style={{ paddingBottom: keyboardInset }}>{footerContent}</div>
+        ) : footerContent}
       >
 
         {/* Step 0: Amount — Sukoon's centred big number + white keypad */}

@@ -5,6 +5,7 @@ import { accountsDb, transactionsDb } from '../lib/supabaseDb';
 import { loadCacheFirst, mirrorDelete, mirrorPut, markMirrorStale } from '../lib/mirrorCache';
 import type { Account, AccountType, Currency, Transaction } from '../db';
 import { useActivityStore } from './activityStore';
+import { reportError } from '../lib/errorReporter';
 
 interface CreateAccountInput {
   name: string;
@@ -138,7 +139,13 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     try {
       newBalance = await apply(account.balance);
     } catch (err) {
-      if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') throw err;
+      if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') {
+        // A BALANCE_CONFLICT is expected (the ladder below retries it) and is
+        // deliberately NOT reported. Anything else is a real failure of the
+        // optimistic-lock RPC - the money write did not land.
+        reportError(err, { feature: 'accountStore.applyBalanceDelta.rpcFailed', extra: { accountId: id } });
+        throw err;
+      }
       // Refetch the row to learn the true balance, then retry once.
       const fresh = await accountsDb.getAll();
       const updated = fresh.find((a) => a.id === id);
@@ -211,8 +218,10 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       // account) surfaces as code 23503. Translate to a user-friendly message.
       const pgErr = err as { code?: string; message?: string };
       if (pgErr?.code === '23503' || /foreign key/i.test(pgErr?.message ?? '')) {
+        // Expected business outcome - the user is told to archive instead.
         throw new Error('This account has linked transactions. Delete them first, or archive the account instead.');
       }
+      reportError(err, { feature: 'accountStore.deleteAccount', extra: { accountId: id } });
       throw err;
     }
     set((s) => ({

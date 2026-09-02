@@ -8,6 +8,7 @@ import { cardPaymentThisCycle, daysUntilDayOfMonth } from './inboxInfo';
 import { buildCardStatement } from './cardStatement';
 import { daysUntil } from './subscriptionMetrics';
 import { roundDate } from './committeeMath';
+import { localIso } from './localDate';
 import type {
   Account,
   Committee,
@@ -71,17 +72,12 @@ export interface ThisWeekInputs {
 
 const WINDOW_DAYS = 7;
 
-// Local calendar date as YYYY-MM-DD. Exported because every surface that
-// compares against date-only fields (dueDate, nextDueDate, stamps) must use
-// the SAME calendar — toISOString() is UTC and lags local by 4-5h in this
-// app's Gulf/Pakistan markets, misclassifying "today" between midnight and
-// dawn.
-export function localIso(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+// Local calendar date as YYYY-MM-DD. Every surface that compares against
+// date-only fields (dueDate, nextDueDate, stamps) must use the SAME calendar
+// — toISOString() is UTC and lags local by 4-5h in this app's Gulf/Pakistan
+// markets, misclassifying "today" between midnight and dawn. Canonical home
+// is src/lib/localDate.ts; re-exported here for existing importers.
+export { localIso } from './localDate';
 
 export function buildThisWeek(inp: ThisWeekInputs): ThisWeekRow[] {
   const todayIso = localIso(inp.today);

@@ -65,7 +65,9 @@ function pinIsConfigured(): boolean {
 function initialLockout(): PinLockoutState {
   try {
     return readLockout();
-  } catch {
+  } catch (err) {
+    // A lockout record we cannot read is a security control we cannot honour.
+    reportError(err, { feature: 'authStore.initialLockout' });
     return EMPTY_LOCKOUT;
   }
 }

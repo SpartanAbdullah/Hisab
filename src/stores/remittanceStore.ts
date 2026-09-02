@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { remittancesDb } from '../lib/supabaseDb';
 import type { Remittance, RemittanceChannel, RemittanceStatus, Currency } from '../db';
 import { useTransactionStore } from './transactionStore';
+import { reportError } from '../lib/errorReporter';
 
 interface CreateInput {
   sourceAccountId: string;
@@ -78,6 +79,7 @@ export const useRemittanceStore = create<RemittanceState>((set, get) => ({
     } catch (err) {
       // If the source debit fails (insufficient balance, etc.) the
       // remittance record never gets persisted — surface the error.
+      reportError(err, { feature: 'remittanceStore.createRemittance.sourceDebit' });
       throw err instanceof Error ? err : new Error('Source debit failed');
     }
 
@@ -127,6 +129,7 @@ export const useRemittanceStore = create<RemittanceState>((set, get) => ({
         });
         destinationTxnId = tx.id;
       } catch (err) {
+        reportError(err, { feature: 'remittanceStore.markReceived.destinationCredit', extra: { remittanceId: id } });
         throw err instanceof Error ? err : new Error('Destination credit failed');
       }
     }

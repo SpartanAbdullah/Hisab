@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersonStore } from '../stores/personStore';
 import type { Person } from '../db';
+import { useT } from '../lib/i18n';
 
 export interface ContactValue {
   id: string | null;
@@ -54,6 +55,8 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
     () => matches.find((p) => p.name.toLocaleLowerCase() === queryLower) ?? null,
     [matches, queryLower],
   );
+
+  const t = useT();
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -125,7 +128,7 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
               }}
               className="w-full text-left px-4 py-2.5 text-[12px] font-semibold text-indigo-600 hover:bg-indigo-50/60 active:bg-indigo-100/60 transition-colors"
             >
-              + Create new: &ldquo;{query}&rdquo;
+              {t('cp_create_new_prefix')}&ldquo;{query}&rdquo;
             </button>
           )}
         </div>

@@ -43,7 +43,7 @@ import {
   type AppVersionConfig,
   type AppVersionIdentity,
 } from './lib/versionGate';
-import { useT, useI18nStore } from './lib/i18n';
+import { useT, useI18nStore, reconcileProfileLang } from './lib/i18n';
 import { Globe } from 'lucide-react';
 
 // Lazy-loaded pages for code splitting
@@ -100,6 +100,17 @@ import type { SplitGroup } from './db';
 
 function PageLoader() {
   return <AppLoadingScreen />;
+}
+
+// Native only (no-op on web): rebuild the local reminder schedule from the
+// freshly loaded state. Kept as a module-level helper because BOTH boot
+// branches need it — full_tracker chains it after the recurring templates
+// land, splits_only (which has no recurring templates) calls it directly.
+// Never rejects: a missing plugin must not surface as an unhandled rejection.
+function rescheduleLocalNotifications(): Promise<void> {
+  return import('./lib/notificationScheduler')
+    .then((m) => m.rescheduleNotifications())
+    .catch(() => {});
 }
 
 function UnverifiedEmailScreen({ email }: { email: string }) {
@@ -458,13 +469,6 @@ function AppContent() {
     void useNotificationStore.getState().loadNotifications().catch((err) => {
       console.error('loadNotifications failed (non-fatal)', err);
     });
-    // Accounts feed the globally-mounted QuickEntry (and its "you need an
-    // account first" gate). They used to load only when a page that needed
-    // them mounted — on an unmatched URL the FAB opened over an empty store
-    // and told a 13-account user to create their first account.
-    void useAccountStore.getState().loadAccounts().catch((err) => {
-      console.error('loadAccounts failed (non-fatal)', err);
-    });
     // Preload groups on app boot so the QuickEntry "Group expense" picker
     // is ready the moment the user opens it from any page. Previously
     // groups only loaded on /groups visit, which made the picker show
@@ -472,36 +476,79 @@ function AppContent() {
     void useSplitStore.getState().loadGroups().catch((err) => {
       console.error('loadGroups failed (non-fatal)', err);
     });
-    // Phase 3: load budgets and recurring templates.
-    // Budgets feed the home banner; recurring needs to be loaded BEFORE
-    // the expansion runner can decide which entries are due.
-    void useBudgetStore.getState().loadBudgets().catch((err) => {
-      console.error('loadBudgets failed (non-fatal)', err);
-    });
     // Custom categories feed every category picker; load early so the merged
     // (built-in + custom) lists are ready before the user opens an entry form.
+    // Deliberately NOT mode-gated: group expenses are categorised in
+    // splits_only too, so the ledger-mode AddGroupExpenseModal needs them.
     void useCustomCategoryStore.getState().loadCategories().catch((err) => {
       console.error('loadCategories failed (non-fatal)', err);
     });
+    // Kameti is a no-custody tracker and is routed in BOTH modes, so it stays
+    // here. `loadAll` now shares an in-flight promise + 60 s freshness window
+    // with HomePage's own call (audit M2: committees were loaded twice per
+    // boot = 6 queries).
     void useCommitteeStore.getState().loadAll().catch((err) => {
       console.error('loadCommittees failed (non-fatal)', err);
     });
-    void useRecurringStore.getState().loadTemplates().then(() => {
-      // Defer expansion to next tick so the first paint isn't blocked by
-      // potentially many confirmation prompts. The runner only prompts;
-      // the user still confirms each expansion.
-      void runRecurringExpansion().catch((err) => {
-        console.error('runRecurringExpansion failed (non-fatal)', err);
-      });
-      // Native only (no-op on web): rebuild the local reminder schedule
-      // from the freshly loaded state.
-      void import('./lib/notificationScheduler')
-        .then((m) => m.rescheduleNotifications())
-        .catch(() => {});
-    }).catch((err) => {
-      console.error('loadRecurring failed (non-fatal)', err);
-    });
   }, [user?.id]);
+
+  // ── Full-tracker-only boot loads (audit 03-performance M2 / quick win #8) ──
+  // splits_only is a ledger: it has NO accounts, and /accounts, /transactions,
+  // /budgets, /subscriptions and /investments are all routed to Navigate("/")
+  // in that mode. Loading their stores on every ledger-mode boot was ~4-5
+  // requests for data nothing can render.
+  //
+  // `mode` is read from the store (not the boot effect above) and IS a
+  // dependency here, so the flip that App's profile-hydration effect performs
+  // — localStorage default → the server's real app_mode — still triggers the
+  // loads for a full_tracker user on a fresh device. The mode-independent
+  // effect above keeps `[user?.id]` alone so that flip cannot re-run it.
+  //
+  // Every store below is loaded on mount by each page that needs it
+  // (AccountsPage, AddGroupExpenseModal, BudgetsPage, HisaabAIPage, …), so a
+  // user who switches splits_only → full_tracker mid-session is covered even
+  // before this effect re-runs.
+  useEffect(() => {
+    if (!user?.id) return;
+    const fullTracker = mode === 'full_tracker';
+
+    if (fullTracker) {
+      // Accounts feed the globally-mounted QuickEntry (and its "you need an
+      // account first" gate). They used to load only when a page that needed
+      // them mounted — on an unmatched URL the FAB opened over an empty store
+      // and told a 13-account user to create their first account. In
+      // splits_only QuickEntry offers only the person/group intents, both of
+      // which are account-free (`isLedgerOnlyPersonFlow`), so the gate that
+      // reads `accounts.length` is unreachable there.
+      void useAccountStore.getState().loadAccounts().catch((err) => {
+        console.error('loadAccounts failed (non-fatal)', err);
+      });
+      // Phase 3: load budgets and recurring templates.
+      // Budgets feed the home banner; recurring needs to be loaded BEFORE
+      // the expansion runner can decide which entries are due.
+      void useBudgetStore.getState().loadBudgets().catch((err) => {
+        console.error('loadBudgets failed (non-fatal)', err);
+      });
+      void useRecurringStore.getState().loadTemplates().then(() => {
+        // Defer expansion to next tick so the first paint isn't blocked by
+        // potentially many confirmation prompts. The runner only prompts;
+        // the user still confirms each expansion.
+        void runRecurringExpansion().catch((err) => {
+          console.error('runRecurringExpansion failed (non-fatal)', err);
+        });
+        void rescheduleLocalNotifications();
+      }).catch((err) => {
+        console.error('loadRecurring failed (non-fatal)', err);
+      });
+    } else {
+      // Ledger mode still gets its reminders: loans, kameti rounds and
+      // upcoming expenses all exist in splits_only. Only the recurring
+      // *templates* (a full-tracker surface that materialises account
+      // transactions) are skipped, so the reschedule is called directly
+      // instead of hanging off loadTemplates().
+      void rescheduleLocalNotifications();
+    }
+  }, [user?.id, mode]);
 
   // Phase 1B-A: historical backfill of person_id on legacy loans/transactions.
   // Deferred ~800ms so other boot work (profile fetch, realtime subscribe,
@@ -527,6 +574,11 @@ function AppContent() {
       if (name) localStorage.setItem('hisaab_user_name', name);
       if (currency) localStorage.setItem('hisaab_primary_currency', currency);
       if (profileMode) setMode(profileMode);
+      // Audit N-1: cross-user notification content is written by the *sender*,
+      // who can only localize it if the recipient's language lives on the
+      // profile row. setLang keeps it current from here on; this catches users
+      // who picked a language before profiles.lang existed.
+      reconcileProfileLang(profile.lang);
     });
     return () => {
       cancelled = true;

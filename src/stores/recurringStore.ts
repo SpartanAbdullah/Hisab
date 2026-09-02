@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { recurringTransactionsDb } from '../lib/supabaseDb';
 import { validateRecurringStart } from '../lib/recurringStartValidation';
+import { reportError } from '../lib/errorReporter';
 import type { RecurringTransaction, RecurringCadence, Currency } from '../db';
 
 interface CreateInput {
@@ -85,7 +86,9 @@ export const useRecurringStore = create<RecurringState>((set, get) => ({
     // a store↔scheduler cycle.
     void import('../lib/notificationScheduler')
       .then((m) => m.rescheduleNotifications({ force: true }))
-      .catch(() => {});
+      .catch((err) => {
+        reportError(err, { feature: 'recurringStore.updateTemplate.nudgeReminderSchedule' });
+      });
   },
 
   deleteTemplate: async (id) => {
@@ -112,7 +115,9 @@ export const useRecurringStore = create<RecurringState>((set, get) => ({
     // this template is now stale.
     void import('../lib/notificationScheduler')
       .then((m) => m.rescheduleNotifications({ force: true }))
-      .catch(() => {});
+      .catch((err) => {
+        reportError(err, { feature: 'recurringStore.advanceTemplate.nudgeReminderSchedule' });
+      });
   },
 }));
 

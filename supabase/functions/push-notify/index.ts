@@ -20,7 +20,33 @@ interface PushRequest {
   body?: string;
   type?: string;
   notification_id?: string;
+  // ── Added by supabase-migration-p2-notification-maturity.sql §8 ──────────
+  /** In-app route to open on tap, e.g. /group/G1, /kameti/K1, /inbox.
+   *  Audit 08-notifications.md N-8: every push used to land on /inbox or
+   *  /groups and make the user hunt. */
+  href?: string;
+  /** Android notification channel: money | groups | kameti. Lets a user
+   *  demote group chatter in OS settings without losing loan requests
+   *  (audit N-10). Unknown/absent values fall back to CHANNEL_FALLBACK. */
+  channel_id?: string;
+  /** Tray grouping key (group id + template, or type + row id). Ten expenses
+   *  in one trip become one tray entry instead of ten (audit N-10). */
+  collapse_key?: string;
+  /** TRUE when it is currently inside the RECIPIENT's configured quiet hours,
+   *  computed by notification_in_quiet_hours() in the trigger — the DB has the
+   *  prefs row one index lookup away, this function would need an extra REST
+   *  round-trip per push. The DELIVERY DECISION is made here (see quiet-hours
+   *  handling below), not there. */
+  quiet?: boolean;
 }
+
+// Must stay in step with the channels registered in
+// src/lib/pushRegistration.ts and with notification_channel_for() in
+// supabase-migration-p2-notification-maturity.sql §3. An unknown channel is
+// dropped rather than forwarded: Android silently refuses to display a
+// notification whose channel_id does not exist on the device.
+const CHANNELS = new Set(['money', 'groups', 'kameti', 'reminders']);
+const CHANNEL_FALLBACK = 'groups';
 
 interface ServiceAccount {
   project_id: string;
@@ -163,6 +189,26 @@ Deno.serve(async (req) => {
     const endpoint =
       `https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`;
 
+    // ── Anti-fatigue shaping (audit N-10) ─────────────────────────────────
+    // QUIET HOURS DELIVER SILENTLY, THEY DO NOT DEFER. The notification still
+    // lands in the tray — the user must not lose a loan request because it
+    // arrived at 01:00 — but it does not ring, buzz, or wake the screen. They
+    // find it waiting in the morning instead of being woken by it.
+    //
+    // Why not defer: pg_net is fire-and-forget and there is no queue or
+    // scheduler in this pipeline. Deferring would mean a pending-push table
+    // plus a cron drain, i.e. a second delivery path that can fail silently —
+    // exactly the failure mode audit N-4 is about. Silent delivery gets almost
+    // all of the benefit for almost none of the machinery.
+    const quiet = payload.quiet === true;
+    const channelId = payload.channel_id && CHANNELS.has(payload.channel_id)
+      ? payload.channel_id
+      : CHANNEL_FALLBACK;
+    // Tray grouping. Falls back to the row id, which is what this function used
+    // before M5 — so retry dedupe is preserved even for a pre-migration
+    // database that sends no collapse_key.
+    const tag = String(payload.collapse_key || payload.notification_id || '');
+
     let sent = 0;
     await Promise.all(tokens.map(async (token) => {
       const message = {
@@ -173,22 +219,44 @@ Deno.serve(async (req) => {
             body: payload.body || '',
           },
           // `data` reaches the app on tap so it can route (see
-          // pushRegistration.ts hrefForType). Values must be strings.
+          // pushRegistration.ts). Values must be strings.
           data: {
             type: String(payload.type ?? 'system'),
             notification_id: String(payload.notification_id ?? ''),
+            // Deep link. The tap handler prefers this over the type-based
+            // guess, so a "Ali added an expense in Flat 12" push opens Flat 12
+            // (audit N-8).
+            href: String(payload.href ?? ''),
+            collapse_key: tag,
+            channel_id: channelId,
           },
           android: {
-            priority: 'HIGH',
+            // Quiet hours drop the message out of the high-priority lane, so
+            // Android does not heads-up/peek it or bypass Doze.
+            priority: quiet ? 'NORMAL' : 'HIGH',
             notification: {
               // Matches the local-notification glyph so tray notifications
               // from both channels look like the same app.
               icon: 'ic_stat_hisaab',
               color: '#0B0E2A',
-              // Collapse on the notification row id: a retry can never
-              // produce two identical entries in the tray.
-              tag: String(payload.notification_id ?? ''),
-              default_sound: true,
+              // Android 8+ routes by channel; the client registers these in
+              // pushRegistration.ts. Without a valid channel_id the OS drops
+              // the notification entirely, which is why unknown values fall
+              // back rather than pass through.
+              channel_id: channelId,
+              // Collapse per group thread (or per row for money items): a trip
+              // entered as ten expenses is one tray entry that updates, not
+              // ten (audit N-10).
+              tag,
+              // NOTE: android.collapse_key (transit collapse) is deliberately
+              // NOT set. FCM allows only four distinct collapse keys per
+              // device and may discard an entire key's messages beyond that —
+              // a user in five active groups could silently lose a thread.
+              // `tag` collapses in the tray with no such limit and no risk of
+              // dropped delivery.
+              default_sound: !quiet,
+              default_vibrate_timings: !quiet,
+              notification_priority: quiet ? 'PRIORITY_LOW' : 'PRIORITY_DEFAULT',
             },
           },
         },
@@ -215,10 +283,10 @@ Deno.serve(async (req) => {
       console.error('[push-notify] FCM send failed', res.status, text);
     }));
 
-    return new Response(JSON.stringify({ sent, devices: tokens.length }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ sent, devices: tokens.length, channel: channelId, quiet, tag }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
   } catch (err) {
     console.error('[push-notify] failed', err);
     // 200 on purpose: pg_net does not retry, and a non-2xx here would only

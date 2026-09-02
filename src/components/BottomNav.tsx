@@ -64,7 +64,7 @@ export function BottomNav({ onQuickEntry }: Props) {
         <div className="flex flex-col items-center justify-center">
           <button
             onClick={onQuickEntry}
-            aria-label="Quick entry"
+            aria-label={t('a11y_quick_entry')}
             className="w-[54px] h-[54px] rounded-full flex items-center justify-center text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 press-sm"
             style={{
               marginTop: -22,

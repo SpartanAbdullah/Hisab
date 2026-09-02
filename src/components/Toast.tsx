@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { CheckCircle, AlertCircle, Info, X, Undo2 } from 'lucide-react';
 import { create } from 'zustand';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import { useT } from '../lib/i18n';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -47,6 +48,7 @@ const bgColors = {
 };
 
 function ToastItem({ toast }: { toast: ToastData }) {
+  const t = useT();
   const { dismiss } = useToast();
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
@@ -101,7 +103,7 @@ function ToastItem({ toast }: { toast: ToastData }) {
       )}
       <button
         onClick={handleDismiss}
-        aria-label="Dismiss"
+        aria-label={t('a11y_dismiss')}
         className="relative shrink-0 mt-0.5 opacity-50 active:opacity-100 transition-opacity before:absolute before:-inset-2.5 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 rounded"
       >
         <X size={14} />

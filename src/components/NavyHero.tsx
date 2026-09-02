@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { InboxAction } from './InboxAction';
+import { useT } from '../lib/i18n';
 
 interface NavyHeroProps {
   children: ReactNode;
@@ -38,6 +39,7 @@ interface TopBarProps {
 // on the cream body it picks up the slate-100/80 chrome that the rest
 // of the codebase already uses (`.nav-icon-button` in index.css).
 export function TopBar({ title, back, action, onBack, tone = 'on-navy', showInbox = true }: TopBarProps) {
+  const t = useT();
   const navigate = useNavigate();
   const handleBack = onBack ?? (() => navigate(-1));
 
@@ -56,7 +58,7 @@ export function TopBar({ title, back, action, onBack, tone = 'on-navy', showInbo
         <button
           onClick={handleBack}
           className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${backTileClass}`}
-          aria-label="Back"
+          aria-label={t('a11y_back')}
         >
           <ArrowLeft size={16} className={backIconClass} strokeWidth={2.2} />
         </button>

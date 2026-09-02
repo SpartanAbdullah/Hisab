@@ -320,7 +320,7 @@ export function RepaymentModal({
                 </p>
                 {installmentNumber ? (
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-500 mt-1">
-                    EMI #{installmentNumber}
+                    {t('repay_emi_number').replace('{n}', String(installmentNumber))}
                   </p>
                 ) : null}
                 <p className="text-lg font-bold tabular-nums tracking-tight mt-1 text-ink-900">

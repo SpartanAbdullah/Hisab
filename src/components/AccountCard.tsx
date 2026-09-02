@@ -93,7 +93,7 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
             </p>
             {dueDay && (
               <p className={`text-[10px] font-semibold mt-0.5 ${design.accentText}`}>
-                {t('cc_next_due')}: {dueDay}{getOrdinal(parseInt(dueDay))} of month
+                {t('cc_next_due')}: {dueDay}{getOrdinal(parseInt(dueDay))} {t('ac_of_month')}
               </p>
             )}
           </div>
@@ -135,12 +135,12 @@ export function AccountCard({ account, onClick, nearestExpense, monthStats }: Pr
           <p className={`font-bold text-[15px] tabular-nums tracking-tight ${account.balance < 0 ? 'text-pay-100' : 'text-white'}`}>
             {formatSignedMoney(account.balance, account.currency)}
           </p>
-          <p className="text-[10px] text-white/50 mt-0.5">Balance</p>
+          <p className="text-[10px] text-white/50 mt-0.5">{t('ac_balance')}</p>
         </div>
       </div>
       {monthStats && (monthStats.income > 0 || monthStats.expense > 0) && (
         <div className="relative mt-2 flex items-center gap-2 text-[10px] font-medium text-white/60">
-          <span>Is mahine:</span>
+          <span>{t('ac_this_month')}</span>
           {monthStats.income > 0 && <span className="text-receive-100">+{formatMoney(monthStats.income, account.currency)}</span>}
           {monthStats.income > 0 && monthStats.expense > 0 && <span>/</span>}
           {monthStats.expense > 0 && <span className="text-pay-100">-{formatMoney(monthStats.expense, account.currency)}</span>}

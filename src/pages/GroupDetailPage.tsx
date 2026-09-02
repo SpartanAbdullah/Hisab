@@ -70,7 +70,7 @@ function getActivityDisplay(
         icon: <Handshake size={16} />,
         iconBg: 'bg-receive-50 text-receive-text',
         title: `${memberName(fromId)} → ${memberName(toId)}`,
-        subtitle: 'Settled up',
+        subtitle: t('gev_settled_up'),
         note: settlement?.note || undefined,
         amount: formatMoney(amount, group.currency),
         amountClass: 'text-receive-text',
@@ -84,7 +84,7 @@ function getActivityDisplay(
         icon: <Handshake size={16} />,
         iconBg: 'bg-warn-50 text-warn-600',
         title: `${memberName(fromId)} → ${memberName(toId)}`,
-        subtitle: 'Settlement removed',
+        subtitle: t('gev_settlement_removed'),
         amount: formatMoney(amount, group.currency),
         amountClass: 'text-warn-600',
       };
@@ -98,7 +98,7 @@ function getActivityDisplay(
         icon: <Receipt size={16} />,
         iconBg: 'bg-accent-100 text-accent-600',
         title: description,
-        subtitle: actorName ? `Added · paid by ${actorName}` : 'Expense added',
+        subtitle: actorName ? t('gev_expense_added_by').replace('{name}', actorName) : t('gev_expense_added'),
         amount: amount > 0 ? formatMoney(amount, group.currency) : undefined,
         amountClass: 'text-ink-900',
       };
@@ -112,7 +112,7 @@ function getActivityDisplay(
         icon: <Pencil size={16} />,
         iconBg: 'bg-warn-50 text-warn-600',
         title: description,
-        subtitle: 'Expense updated',
+        subtitle: t('gev_expense_updated'),
         amount: typeof after.amount === 'number' && after.amount > 0 ? formatMoney(after.amount, group.currency) : undefined,
         amountClass: 'text-ink-900',
         amountChange: amountChanged
@@ -128,7 +128,7 @@ function getActivityDisplay(
         iconBg: 'bg-pay-50 text-pay-text',
         title: description,
         titleClass: 'line-through text-ink-500',
-        subtitle: 'Expense deleted',
+        subtitle: t('gev_expense_deleted'),
         amount: amount > 0 ? formatMoney(amount, group.currency) : undefined,
         amountClass: 'text-ink-500 line-through',
       };
@@ -138,21 +138,21 @@ function getActivityDisplay(
         icon: <UserPlus size={16} />,
         iconBg: 'bg-info-50 text-info-600',
         title: event.summary,
-        subtitle: 'Joined the group',
+        subtitle: t('gev_member_joined'),
       };
     case 'member_invited':
       return {
         icon: <Share2 size={16} />,
         iconBg: 'bg-info-50 text-info-600',
         title: event.summary,
-        subtitle: 'Invitation sent',
+        subtitle: t('gev_member_invited'),
       };
     case 'group_created':
       return {
         icon: <Sparkles size={16} />,
         iconBg: 'bg-accent-100 text-accent-600',
         title: event.summary,
-        subtitle: 'Group created',
+        subtitle: t('gev_group_created'),
       };
     // ── Lifecycle events written by the audit-2026-09 migrations ────────────
     // All four carry a server-composed `summary`, so the title is that
@@ -336,8 +336,8 @@ export function GroupDetailPage() {
   if (loadStatus === 'error') {
     return (
       <PageErrorState
-        title="Couldn't load this group"
-        message={loadError ?? 'The group data failed to load.'}
+        title={t('gdp_err_load')}
+        message={loadError ?? t('gdp_err_load_sub')}
         onRetry={retryLoad}
       />
     );
@@ -346,7 +346,7 @@ export function GroupDetailPage() {
   if (!group || loadStatus === 'loading') {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-mesh">
-        <p className="text-ink-500">Loading...</p>
+        <p className="text-ink-500">{t('gdp_loading')}</p>
       </div>
     );
   }
@@ -528,7 +528,7 @@ export function GroupDetailPage() {
       description: outstanding > 0.005
         ? `${t('group_delete_unsettled').replace('{amount}', formatMoney(outstanding, group.currency))} ${t('del_group_body')}`
         : t('del_group_body'),
-      confirmLabel: 'Delete group',
+      confirmLabel: t('gdp_delete_group_cta'),
     });
     if (!ok) return;
 
@@ -645,9 +645,9 @@ export function GroupDetailPage() {
   const handleLeave = async () => {
     if (leaving) return;
     const ok = await confirmDestructive({
-      title: 'Leave this group?',
-      description: 'You can leave only after your balances and pending group items are fully resolved.',
-      confirmLabel: 'Leave group',
+      title: t('gdp_leave_confirm_title'),
+      description: t('gdp_leave_confirm_body'),
+      confirmLabel: t('gdp_leave_confirm_cta'),
       tone: 'warning',
     });
     if (!ok) return;
@@ -658,7 +658,7 @@ export function GroupDetailPage() {
       if (!result.success) {
         toast.show({
           type: 'error',
-          title: 'You cannot leave this group yet',
+          title: t('gdp_leave_blocked'),
           subtitle: result.userMessage,
           duration: 6000,
         });
@@ -670,8 +670,8 @@ export function GroupDetailPage() {
       console.error('Failed to leave group', err);
       toast.show({
         type: 'error',
-        title: 'Could not leave this group',
-        subtitle: err instanceof Error ? err.message : 'Please try again.',
+        title: t('gdp_leave_failed'),
+        subtitle: err instanceof Error ? err.message : t('common_please_try_again'),
       });
     } finally {
       setLeaving(false);
@@ -688,8 +688,8 @@ export function GroupDetailPage() {
       console.error('Failed to update group expense reconciliation', err);
       toast.show({
         type: 'error',
-        title: 'Could not update reconciliation',
-        subtitle: err instanceof Error ? err.message : 'Please try again.',
+        title: t('gdp_reconcile_failed'),
+        subtitle: err instanceof Error ? err.message : t('common_please_try_again'),
       });
     } finally {
       setSavingReconciliationId(null);
@@ -715,7 +715,7 @@ export function GroupDetailPage() {
                 <button
                   onClick={() => setShowInvite(true)}
                   className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                  aria-label="Invite"
+                  aria-label={t('a11y_invite')}
                 >
                   <Share2 size={14} className="text-white" />
                 </button>
@@ -724,7 +724,7 @@ export function GroupDetailPage() {
                 <button
                   onClick={() => setShowMenu((v) => !v)}
                   className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                  aria-label="More"
+                  aria-label={t('a11y_more')}
                   aria-haspopup="menu"
                   aria-expanded={showMenu}
                 >
@@ -776,7 +776,7 @@ export function GroupDetailPage() {
                         className="w-full px-4 py-3 text-left text-[13px] font-medium text-pay-text active:bg-pay-50 flex items-center gap-2.5 border-t border-cream-hairline transition-colors"
                       >
                         <Trash2 size={14} className="text-pay-text" />
-                        Delete group
+                        {t('gdp_delete_group_cta')}
                       </button>
                     )}
                   </div>
@@ -788,7 +788,7 @@ export function GroupDetailPage() {
         <div className="px-5 pb-7">
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
             {group.members.length} {t('group_members_count')} ·{' '}
-            {group.members.filter((m) => m.status === 'connected').length} connected ·{' '}
+            {t('gdp_connected_count').replace('{n}', String(group.members.filter((m) => m.status === 'connected').length))} ·{' '}
             {group.currency}
           </p>
 
@@ -827,7 +827,7 @@ export function GroupDetailPage() {
               <button
                 onClick={dismissLegend}
                 className="ml-auto relative -m-2 p-2 text-white/60 active:text-white transition-colors"
-                aria-label="Dismiss legend"
+                aria-label={t('a11y_dismiss_legend')}
               >
                 <X size={13} />
               </button>
@@ -880,7 +880,7 @@ export function GroupDetailPage() {
         const copyCode = async () => {
           if (!group.joinCode) return;
           await navigator.clipboard.writeText(group.joinCode);
-          toast.show({ type: 'success', title: 'Code copied', subtitle: 'Share it so others can join.' });
+          toast.show({ type: 'success', title: t('gdp_code_copied'), subtitle: t('gdp_code_copied_sub') });
         };
 
         if (isSolo) {
@@ -915,7 +915,7 @@ export function GroupDetailPage() {
                     onClick={copyCode}
                     className="shrink-0 rounded-xl bg-ink-900 text-white text-white px-3 py-1.5 text-[11px] font-bold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/20"
                   >
-                    <Copy size={11} strokeWidth={2.5} /> Copy
+                    <Copy size={11} strokeWidth={2.5} /> {t('gdp_copy')}
                   </button>
                 </div>
                 {isOwner && (
@@ -940,7 +940,7 @@ export function GroupDetailPage() {
                 <Share2 size={16} className="text-accent-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Group Code</p>
+                <p className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('gdp_group_code')}</p>
                 <p className="text-[15px] font-bold text-ink-900 font-mono tracking-tight">{group.joinCode}</p>
                 {joinCodeExpiryLabel && (
                   <p className={`text-[10px] mt-0.5 font-semibold ${joinCodeExpired ? 'text-pay-text' : 'text-ink-500'}`}>
@@ -963,7 +963,7 @@ export function GroupDetailPage() {
                 onClick={copyCode}
                 className="shrink-0 rounded-xl bg-cream-card border border-cream-border text-ink-700 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-all"
               >
-                <Copy size={12} /> Copy
+                <Copy size={12} /> {t('gdp_copy')}
               </button>
             </div>
           </div>
@@ -977,7 +977,7 @@ export function GroupDetailPage() {
         <div className="px-5 pt-4">
           <div className="rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-4">
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Group spend</p>
+              <p className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('gdp_group_spend')}</p>
               <p className="text-[22px] font-extrabold text-ink-900 tabular-nums tracking-tight mt-0.5 leading-tight">
                 {formatMoney(totalSpend, group.currency)}
               </p>
@@ -989,10 +989,10 @@ export function GroupDetailPage() {
                 ) : (
                   <>
                     <span className="text-pay-text font-semibold">{formatMoney(totalOutstanding, group.currency)}</span>
-                    <span> outstanding</span>
+                    <span>{t('gdp_outstanding_suffix')}</span>
                   </>
                 )}
-                <span className="mx-1.5">·</span>{expenses.length} {expenses.length === 1 ? 'expense' : 'expenses'}
+                <span className="mx-1.5">·</span>{expenses.length === 1 ? t('gdp_expense_one') : t('gdp_expense_many').replace('{n}', String(expenses.length))}
               </p>
             </div>
             <ProgressRing
@@ -1191,8 +1191,8 @@ export function GroupDetailPage() {
                         {(expense.version ?? 1) > 1 ? (
                           <span
                             className="h-2.5 w-2.5 rounded-full bg-warn-600 ring-2 ring-warn-50 shrink-0"
-                            aria-label="Edited expense"
-                            title="Edited"
+                            aria-label={t('a11y_edited_expense')}
+                            title={t('a11y_edited')}
                           />
                         ) : null}
                       </div>
@@ -1233,8 +1233,8 @@ export function GroupDetailPage() {
               <div className="w-12 h-12 rounded-2xl bg-cream-soft border border-cream-hairline text-ink-500 mx-auto flex items-center justify-center">
                 <Receipt size={22} />
               </div>
-              <p className="text-sm font-semibold text-ink-800 mt-3">No balances yet</p>
-              <p className="text-[12px] text-ink-500 mt-1">Add an expense to see paid, share, and final balance for each member.</p>
+              <p className="text-sm font-semibold text-ink-800 mt-3">{t('gdp_no_balances')}</p>
+              <p className="text-[12px] text-ink-500 mt-1">{t('gdp_no_balances_desc')}</p>
             </div>
           ) : balanceRows.map(({ member, paid, share, net }, index) => {
             const ringProgress = Math.abs(net) / maxAbs;
@@ -1256,7 +1256,7 @@ export function GroupDetailPage() {
                       <p className="text-[13px] font-semibold text-ink-800 truncate">{member.name}</p>
                       <p className="text-[10px] text-ink-500 mt-0.5">
                         {memberStatusLabel(t, member.status, member.isOwner)}
-                        {member.id === currentMember?.id ? <span className="font-semibold text-accent-600"> · you</span> : null}
+                        {member.id === currentMember?.id ? <span className="font-semibold text-accent-600">{t('gdp_you_suffix')}</span> : null}
                       </p>
                     </div>
                   </div>
@@ -1264,17 +1264,17 @@ export function GroupDetailPage() {
                     <div className="text-right">
                       {isPositive ? (
                         <>
-                          <p className="text-[10px] text-receive-text font-bold uppercase tracking-wide">Gets back</p>
+                          <p className="text-[10px] text-receive-text font-bold uppercase tracking-wide">{t('gdp_gets_back')}</p>
                           <p className="text-[13px] font-extrabold text-receive-text tabular-nums">+{formatMoney(net, group.currency)}</p>
                         </>
                       ) : isNegative ? (
                         <>
-                          <p className="text-[10px] text-pay-text font-bold uppercase tracking-wide">Has to pay</p>
+                          <p className="text-[10px] text-pay-text font-bold uppercase tracking-wide">{t('gdp_has_to_pay')}</p>
                           <p className="text-[13px] font-extrabold text-pay-text tabular-nums">-{formatMoney(Math.abs(net), group.currency)}</p>
                         </>
                       ) : (
                         <>
-                          <p className="text-[10px] text-ink-500 font-bold uppercase tracking-wide">Balance</p>
+                          <p className="text-[10px] text-ink-500 font-bold uppercase tracking-wide">{t('gdp_balance')}</p>
                           <p className="text-[11px] text-ink-500">{t('group_settled')}</p>
                         </>
                       )}
@@ -1290,11 +1290,11 @@ export function GroupDetailPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <div className="rounded-xl bg-cream-soft border border-cream-hairline px-3 py-2">
-                    <p className="text-[9px] font-bold text-ink-500 uppercase tracking-widest">Paid total</p>
+                    <p className="text-[9px] font-bold text-ink-500 uppercase tracking-widest">{t('gdp_paid_total')}</p>
                     <p className="text-[12px] font-bold text-ink-800 tabular-nums mt-0.5">{formatMoney(paid, group.currency)}</p>
                   </div>
                   <div className="rounded-xl bg-cream-soft border border-cream-hairline px-3 py-2">
-                    <p className="text-[9px] font-bold text-ink-500 uppercase tracking-widest">Share total</p>
+                    <p className="text-[9px] font-bold text-ink-500 uppercase tracking-widest">{t('gdp_share_total')}</p>
                     <p className="text-[12px] font-bold text-ink-800 tabular-nums mt-0.5">{formatMoney(share, group.currency)}</p>
                   </div>
                 </div>
@@ -1309,8 +1309,8 @@ export function GroupDetailPage() {
               <div className="w-12 h-12 rounded-2xl bg-cream-soft border border-cream-hairline text-ink-500 mx-auto flex items-center justify-center">
                 <Clock3 size={22} />
               </div>
-              <p className="text-sm font-semibold text-ink-800 mt-3">No shared activity yet</p>
-              <p className="text-[12px] text-ink-500 mt-1">Adds, edits, deletes, joins, and settlements will appear here for everyone.</p>
+              <p className="text-sm font-semibold text-ink-800 mt-3">{t('gdp_no_activity')}</p>
+              <p className="text-[12px] text-ink-500 mt-1">{t('gdp_no_activity_desc')}</p>
             </div>
           ) : (
             events.map((event, index) => {

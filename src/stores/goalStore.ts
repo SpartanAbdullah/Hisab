@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { goalsDb } from '../lib/supabaseDb';
 import type { Goal, Currency } from '../db';
 import { useActivityStore } from './activityStore';
+import { reportError } from '../lib/errorReporter';
 
 interface CreateGoalInput {
   title: string;
@@ -116,7 +117,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
         'goal',
       );
     } catch (err) {
-      console.error('logActivity failed in correctSavedAmount (non-fatal)', err);
+      reportError(err, { feature: 'goalStore.correctSavedAmount.logActivity', extra: { goalId } });
     }
   },
 
@@ -135,7 +136,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
         'goal',
       );
     } catch (err) {
-      console.error('logActivity failed in deleteGoal (non-fatal)', err);
+      reportError(err, { feature: 'goalStore.deleteGoal.logActivity', extra: { goalId } });
     }
   },
 

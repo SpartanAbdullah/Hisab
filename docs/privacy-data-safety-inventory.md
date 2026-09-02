@@ -129,12 +129,12 @@ This is a draft for Play Console and must be reviewed against the final Android 
 | Personal info - Email address | Yes | Collected for app functionality, account management | Supabase Auth email login |
 | Personal info - Name | Yes | Collected for app functionality and account management | Name/display name/profile name; shared in groups |
 | Personal info - Phone number | **Yes** | Collected for app functionality (optional, user-entered) | Contact phone is **cloud-synced** to Supabase `persons.phone` (+ committee member phone); `hisaab_mobile` in Settings is local-only |
-| Personal info - User IDs | Yes | Collected for app functionality/account management | Supabase user ids, profile ids, group member profile ids |
+| Personal info - User IDs | Yes | Collected for app functionality/account management; **also shared with PostHog for Analytics when the opt-in usage-stats toggle is ON** | Supabase user ids, profile ids, group member profile ids. The analytics distinct id is the Supabase auth UUID and nothing else — `isSafeDistinctId()` in `src/lib/telemetryEvents.ts` rejects any identifier that is not a bare UUID, so an email/phone/name cannot be passed even by mistake |
 | Financial info - User payment info | No evidence | Do not disclose unless payment cards/bank credentials are added | App stores account names/balances, not payment credentials |
 | Financial info - Purchase history | No evidence | Not collected | No purchase flow found |
 | Financial info - Credit score | No evidence | Not collected | No credit scoring found |
 | Financial info - Other financial info | Yes | Collected for app functionality | Accounts, balances, transactions, loans, settlements, goals |
-| App activity - App interactions | Yes | Collected for app functionality | Activity logs, group events, notification read state |
+| App activity - App interactions | Yes | Collected for app functionality; **additionally collected + shared for Analytics when the opt-in usage-stats toggle is ON** | Activity logs, group events, notification read state. Plus, only with consent, a fixed catalog of product events sent to PostHog EU (`src/lib/telemetryEvents.ts`) — event name + enum/boolean/integer/bucket properties. Amounts are sent as coarse buckets (`lt_100`, `1k_10k`…), never as figures; counts as buckets (`6-10`, `10+`) |
 | App activity - In-app search history | No evidence | Not collected | No search history storage found |
 | App activity - Other user-generated content | Yes | Collected for app functionality | Notes, descriptions, group event payloads, invite/request notes |
 | Files and docs | User controlled | Disclose if backup import/export is considered file handling | JSON backup selected/downloaded by user |
@@ -147,8 +147,9 @@ This is a draft for Play Console and must be reviewed against the final Android 
 | Device or other IDs | Possibly | Review Supabase/browser/device identifiers in final native build | No advertising ID found; Supabase/session/browser identifiers may apply |
 | App info and performance - Crash logs/diagnostics | **Yes** | Collected for diagnostics; **shared with Sentry** (third party) | Sentry enabled via `VITE_SENTRY_DSN` (EU region); `sendDefaultPii: false`, no user ID attached at current call sites |
 
-**Third-party data processors (mark BOTH as "shared with third parties" in the Data Safety form):**
+**Third-party data processors (mark ALL of these as "shared with third parties" in the Data Safety form):**
 - **Supabase** (Supabase Inc.) — auth + Postgres database + realtime; receives all cloud-synced user, financial and contact data (incl. `persons.phone`).
+- **PostHog Inc. (EU Cloud, Frankfurt)** — opt-in product analytics, added 2026-09-02. **Conditional processor: it receives nothing at all unless (a) the build sets `VITE_POSTHOG_KEY` and (b) the user switches on "Help improve Hisaab" in Settings.** Consent is stored per device in `localStorage['hisaab_telemetry_consent']`, defaults to `denied`, and is re-read before every event; switching it off calls `optOut()`, which stops capture and deletes the SDK's `ph_*` keys from the device. What it receives: catalogued event names, enum/boolean/integer/bucket properties, and the Supabase auth UUID as distinct id. What it never receives: amounts, balances, names, phone numbers, notes/descriptions, account/group/kameti names, AI input, free text of any kind, page URLs or referrers (denylisted), IP address (`ip: false`). Autocapture, session recording, surveys, web experiments and remote feature flags are all disabled, and `disable_external_dependency_loading` keeps the app's `script-src 'self'` CSP intact. Self-hosting PostHog is the documented exit path if a zero-third-party posture is later required.
 - **Sentry GmbH** (EU region) — crash & diagnostic reporting, **now enabled** (`VITE_SENTRY_DSN` set). Receives exception/stack-trace/diagnostic context. `sendDefaultPii: false`; no user ID is attached at any current call site, so **no User ID is presently transmitted to Sentry** — if any future `reportError` call starts passing `context.userId`, update this disclosure.
 
 Google Play sources reviewed: Play Console Data safety guidance and User Data policy. Google requires clear, accurate Data Safety disclosures and a publicly accessible privacy policy consistent with app behavior.
@@ -170,6 +171,7 @@ Include:
 - Security measures: authentication, RLS, HTTPS/cloud provider controls, logout clearing.
 - User rights/contact method for data access, correction, deletion, and support.
 - Whether data is sold/shared for advertising: current code shows no ad SDK or advertising ID.
+- Opt-in product analytics: that it exists, that it is off until the user turns it on in Settings, that PostHog (EU) is the processor, exactly which categories are sent (never amounts, names, phone numbers or note text), and how to turn it off again.
 - International transfer/storage note if Supabase region is outside user country.
 - Effective date and update process.
 
@@ -186,6 +188,8 @@ Include:
 | Shared records can be removed or anonymized during deletion | Medium | Keep public wording aligned with the deployed deletion RPC |
 | Service worker caches shell/assets | Low-Medium | Review before Android packaging and disclose only if caching user data ever happens |
 | Server/provider logs not documented | Medium | Include Supabase/Vercel operational logging in privacy policy if applicable |
+| Analytics consent toggle exists but is not yet placed in Settings (added 2026-09-02) | High if the key ships | Do not set `VITE_POSTHOG_KEY` in production until `<TelemetryConsentToggle />` is rendered in `SettingsPage` — otherwise consent is unreachable. It is default-OFF, so no data flows meanwhile, but the control must exist before the key does |
+| Default-off vs default-on consent not legally reviewed (PK PDPB status, UAE PDPL) | Medium | Shipping default-OFF, which is the conservative direction; counsel may relax it, and only the default constant in `src/lib/telemetry.ts` changes |
 
 ## 10. Final Recommendation
 

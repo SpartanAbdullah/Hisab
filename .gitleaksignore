@@ -1,0 +1,52 @@
+# Gitleaks known-findings allowlist for Hisaab. Read before adding a line.
+#
+# Format: one gitleaks fingerprint per line — `<commit>:<file>:<rule-id>:<start-line>`
+# — exactly as gitleaks itself prints in a finding's "Fingerprint" field.
+# Generated 2026-09-02 by running gitleaks v8.30.1 with .gitleaks.toml
+# against this repo's full history (`--log-opts="--all"`, 184 commits). Every
+# entry below was individually verified (git show + git grep on the commit,
+# never printing the actual secret value) before being added — do not copy a
+# fingerprint in here without doing the same, and never paste a real secret
+# value into this file or into a commit message that explains one.
+#
+# This file suppresses CI noise for KNOWN, ALREADY-TRIAGED findings only. A
+# new entry should come with a one-line reason (below) and, for a real
+# secret, a note on whether it was rotated. Do not use this file to silence a
+# finding you have not actually looked at.
+
+# ─────────────────────────────────────────────────────────────────────────
+# Historical Supabase URL + key exposure — ARCH-RECON-hisaab.md §2
+# ─────────────────────────────────────────────────────────────────────────
+# Commits 88ed40c and dfea60e (2026-05-01 and 2026-05-31) accidentally
+# committed BUILT Android JS bundles under
+# android/app/build/intermediates/.../assets/public/assets/*.js and
+# android/app/src/main/assets/public/assets/*.js with the production
+# VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY compiled in. Commit 7768457
+# (2026-05-31) deleted the build artifacts and added android/**/build/ to
+# .gitignore going forward, but the values remain reachable by anyone who
+# checks out these two commits from git history on `main` / `origin/main`.
+#
+# Why this is allowlisted rather than treated as a live incident: the key is
+# Supabase's client-safe publishable/anon key — it is DESIGNED to ship inside
+# a browser bundle, and every table it can reach is gated by Row-Level
+# Security (see CLAUDE.md "Data flow" / ARCH-RECON-hisaab.md §1 RLS notes).
+# It is not a service-role/secret key. That mitigates but does not zero out
+# the exposure (see docs/release-and-rollback.md "Secret scanning" for the
+# founder decision on whether to rotate it and/or rewrite history).
+#
+# Both files 88ed40c touched carry the same secret (two copies of the same
+# compiled chunk under different Capacitor asset paths):
+88ed40c1869682805035cf5cbb4aa57cab418d2f:android/app/build/intermediates/assets/debug/mergeDebugAssets/public/assets/supabaseDb-DeT0W-13.js:supabase-key:24
+88ed40c1869682805035cf5cbb4aa57cab418d2f:android/app/src/main/assets/public/assets/supabaseDb-DWGFGQcI.js:supabase-key:24
+dfea60efba96edfa62bfb7d50632ac328ec4f40b:android/app/src/main/assets/public/assets/index-DNyF56CQ.js:supabase-key:41
+
+# ─────────────────────────────────────────────────────────────────────────
+# False positive — numeric constant, not a secret
+# ─────────────────────────────────────────────────────────────────────────
+# `const SNOOZE_DURATION_MS = 24 * 60 * 60 * 1000;` in the settlement-nudge
+# snooze helper. The default gitleaks `generic-api-key` rule's entropy
+# heuristic misfires on the surrounding assignment context (there is a
+# quoted localStorage key on the next line, `hisaab_settlement_snoozes_v1`).
+# Verified by reading the file at this exact commit — it is a plain duration
+# constant, nothing that touches credentials.
+42f096996792915238edbd046389068ea0ffe045:src/lib/settlementNudges.ts:generic-api-key:14

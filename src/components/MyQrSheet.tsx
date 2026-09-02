@@ -46,6 +46,8 @@ export function MyQrSheet({ open, onClose, code }: Props) {
     const text = `${t('connect_share_text')} @${code}`;
     try {
       if (navigator.share) {
+        // Brand name — identical in both languages, not a copy string.
+        // eslint-disable-next-line no-restricted-syntax
         await navigator.share({ title: 'Hisaab', text, url: payload || buildAppShareUrl() });
         return;
       }
@@ -73,7 +75,7 @@ export function MyQrSheet({ open, onClose, code }: Props) {
           onClick={copy}
           className="w-full rounded-2xl bg-cream-soft border border-cream-border py-3 flex items-center justify-center gap-2.5 press"
         >
-          <span className="text-[9px] font-semibold text-ink-400 uppercase tracking-[0.14em]">HSB</span>
+          <span className="text-[9px] font-semibold text-ink-400 uppercase tracking-[0.14em]">{t('mcc_hsb_tag')}</span>
           <span className="text-[17px] font-bold text-ink-900 tabular-nums tracking-wide">
             {code ? `@${code}` : '…'}
           </span>

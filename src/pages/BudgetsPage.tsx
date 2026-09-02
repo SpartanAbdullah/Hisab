@@ -120,12 +120,12 @@ export function BudgetsPage() {
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
       <PageHeader
-        title="Budgets"
+        title={t('bud_title')}
         back
         action={
           <button
             onClick={() => setShowAdd(true)}
-            aria-label="Add budget"
+            aria-label={t('bud_a11y_add')}
             className="nav-icon-button"
           >
             <Plus size={16} className="text-ink-600" />
@@ -135,15 +135,14 @@ export function BudgetsPage() {
 
       <div className="px-5 pt-5 space-y-3">
         <p className="text-[12px] text-ink-500 leading-relaxed">
-          Set a monthly cap per category. We&rsquo;ll quietly nudge you when you
-          cross 80% — no shouting, no judgment.
+          {t('bud_intro')}
         </p>
 
         {loadStatus === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load budgets"
-            message={loadError ?? 'Some data failed to load.'}
+            title={t('bud_err_load')}
+            message={loadError ?? t('err_some_data_failed')}
             onRetry={retryLoad}
           />
         )}
@@ -253,10 +252,10 @@ export function BudgetsPage() {
             <EmptyState
               icon={Wallet2}
               tone="accent"
-              title="No budgets yet"
-              description="Pick a category and a monthly cap. We'll track the rest."
-              subhint="Start with Groceries or Eating Out — easiest wins."
-              actionLabel="Add a budget"
+              title={t('bud_empty_title')}
+              description={t('bud_empty_desc')}
+              subhint={t('bud_empty_subhint')}
+              actionLabel={t('bud_empty_cta')}
               onAction={() => setShowAdd(true)}
             />
           ) : null
@@ -459,6 +458,7 @@ interface AddBudgetModalProps {
 function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
   const createBudget = useBudgetStore((s) => s.createBudget);
   const toast = useToast();
+  const t = useT();
   const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>(
@@ -479,7 +479,7 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
   const handleSave = async () => {
     const numeric = Number(amount);
     if (!Number.isFinite(numeric) || numeric <= 0) {
-      toast.show({ type: 'error', title: 'Enter a valid monthly amount' });
+      toast.show({ type: 'error', title: t('bud_err_amount') });
       return;
     }
     // Check for duplicate (same category + currency) up-front so the
@@ -490,22 +490,22 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
     if (dup) {
       toast.show({
         type: 'error',
-        title: 'Budget already exists',
-        subtitle: `You already have a ${currency} budget for ${category}.`,
+        title: t('bud_dup_title'),
+        subtitle: t('bud_dup_sub').replace('{currency}', currency).replace('{category}', category),
       });
       return;
     }
     setSaving(true);
     try {
       await createBudget({ category, monthlyAmount: numeric, currency, warnAtPercent: warnAt });
-      toast.show({ type: 'success', title: 'Budget set' });
+      toast.show({ type: 'success', title: t('bud_saved') });
       reset();
       onClose();
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not save budget',
-        subtitle: err instanceof Error ? err.message : 'Try again in a moment.',
+        title: t('bud_err_save'),
+        subtitle: err instanceof Error ? err.message : t('common_try_again_soon'),
       });
     } finally {
       setSaving(false);
@@ -513,10 +513,10 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="New budget">
+    <Modal open={open} onClose={onClose} title={t('bud_new_title')}>
       <div className="space-y-4">
         <div>
-          <label className="form-label">Category</label>
+          <label className="form-label">{t('bud_field_category')}</label>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
@@ -530,7 +530,7 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
 
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
-            <label className="form-label">Monthly cap</label>
+            <label className="form-label">{t('bud_field_cap')}</label>
             <input
               type="number"
               inputMode="decimal"
@@ -541,7 +541,7 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
             />
           </div>
           <div>
-            <label className="form-label">Currency</label>
+            <label className="form-label">{t('bud_field_currency')}</label>
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value as Currency)}
@@ -555,7 +555,7 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
         </div>
 
         <div>
-          <label className="form-label">Warn at</label>
+          <label className="form-label">{t('bud_field_warn_at')}</label>
           <div className="flex items-center gap-2">
             <input
               type="range"
@@ -571,8 +571,7 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
             </span>
           </div>
           <p className="text-[11px] text-ink-500 mt-1.5">
-            We&rsquo;ll show a soft warning on Home when this category crosses
-            this percent.
+            {t('bud_warn_help')}
           </p>
         </div>
 
@@ -581,7 +580,7 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
           disabled={saving || !amount}
           className="cta-primary"
         >
-          {saving ? 'Saving…' : 'Save budget'}
+          {saving ? t('bud_saving') : t('bud_save_cta')}
         </button>
       </div>
     </Modal>
@@ -614,19 +613,19 @@ function EditBudgetModal({ budget, onClose }: EditBudgetModalProps) {
   const handleSave = async () => {
     const numeric = Number(amount);
     if (!Number.isFinite(numeric) || numeric <= 0) {
-      toast.show({ type: 'error', title: 'Enter a valid monthly amount' });
+      toast.show({ type: 'error', title: t('bud_err_amount') });
       return;
     }
     setSaving(true);
     try {
       await updateBudget(budget.id, { monthlyAmount: numeric, warnAtPercent: warnAt });
-      toast.show({ type: 'success', title: 'Budget updated' });
+      toast.show({ type: 'success', title: t('bud_updated') });
       onClose();
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not save budget',
-        subtitle: err instanceof Error ? err.message : 'Try again in a moment.',
+        title: t('bud_err_save'),
+        subtitle: err instanceof Error ? err.message : t('common_try_again_soon'),
       });
     } finally {
       setSaving(false);
@@ -635,21 +634,21 @@ function EditBudgetModal({ budget, onClose }: EditBudgetModalProps) {
 
   const handleDelete = async () => {
     const ok = await confirmDestructive({
-      title: `Delete the ${budget.category} budget?`,
+      title: t('bud_delete_confirm').replace('{category}', budget.category),
       description: t('del_budget_body'),
-      confirmLabel: 'Delete',
+      confirmLabel: t('common_delete'),
     });
     if (!ok) return;
     setSaving(true);
     try {
       await deleteBudget(budget.id);
-      toast.show({ type: 'success', title: 'Budget deleted' });
+      toast.show({ type: 'success', title: t('bud_deleted') });
       onClose();
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not delete budget',
-        subtitle: err instanceof Error ? err.message : 'Try again in a moment.',
+        title: t('bud_err_delete'),
+        subtitle: err instanceof Error ? err.message : t('common_try_again_soon'),
       });
     } finally {
       setSaving(false);
@@ -657,10 +656,10 @@ function EditBudgetModal({ budget, onClose }: EditBudgetModalProps) {
   };
 
   return (
-    <Modal open={!!budget} onClose={onClose} title={`Edit ${budget.category}`}>
+    <Modal open={!!budget} onClose={onClose} title={t('bud_edit_title').replace('{category}', budget.category)}>
       <div className="space-y-4">
         <div>
-          <label className="form-label">Monthly cap ({budget.currency})</label>
+          <label className="form-label">{t('bud_field_cap_cur').replace('{currency}', budget.currency)}</label>
           <input
             type="number"
             inputMode="decimal"
@@ -671,7 +670,7 @@ function EditBudgetModal({ budget, onClose }: EditBudgetModalProps) {
         </div>
 
         <div>
-          <label className="form-label">Warn at</label>
+          <label className="form-label">{t('bud_field_warn_at')}</label>
           <div className="flex items-center gap-2">
             <input
               type="range"
@@ -694,14 +693,14 @@ function EditBudgetModal({ budget, onClose }: EditBudgetModalProps) {
             disabled={saving}
             className="cta-destructive flex-1 flex items-center justify-center gap-2"
           >
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} /> {t('common_delete')}
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
             className="cta-primary flex-1 flex items-center justify-center gap-2"
           >
-            <Pencil size={14} /> Save
+            <Pencil size={14} /> {t('common_save')}
           </button>
         </div>
       </div>

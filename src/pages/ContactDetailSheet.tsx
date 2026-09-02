@@ -227,19 +227,22 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       if (result.created.length > 0) {
         const skippedNote =
           result.skipped.length > 0
-            ? ` ${result.skipped.length} ${result.skipped.length === 1 ? 'loan' : 'loans'} in unsupported currencies stayed local.`
+            ? t('cds_sync_skipped_note').replace('{n}', String(result.skipped.length))
             : '';
         toast.show({
           type: 'success',
-          title: `Sent ${result.created.length} ${result.created.length === 1 ? 'record' : 'records'} for confirmation`,
-          subtitle: `Each one shows up in their Inbox to accept or decline.${skippedNote}`,
+          title:
+            result.created.length === 1
+              ? t('cds_sync_sent_one')
+              : t('cds_sync_sent_many').replace('{n}', String(result.created.length)),
+          subtitle: t('cds_sync_sent_sub').replace('{extra}', skippedNote),
         });
       }
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not sync past records',
-        subtitle: err instanceof Error ? err.message : 'Try again in a moment.',
+        title: t('cds_sync_err'),
+        subtitle: err instanceof Error ? err.message : t('common_try_again_soon'),
       });
     } finally {
       setSyncing(false);
@@ -353,9 +356,9 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const handleArchive = () => archiveGuard.run(runArchive);
   const runArchive = async () => {
     const confirmed = await confirmDestructive({
-      title: 'Remove this contact?',
+      title: t('cds_remove_confirm_title'),
       description: t('del_contact_body'),
-      confirmLabel: 'Remove contact',
+      confirmLabel: t('cds_remove_confirm_cta'),
     });
     if (!confirmed) return;
 
@@ -369,12 +372,12 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       }
       toast.show({
         type: 'success',
-        title: 'Contact removed',
-        subtitle: 'Past settled records still keep the contact name.',
+        title: t('cds_removed_title'),
+        subtitle: t('cds_removed_sub'),
       });
       onClose();
     } catch {
-      setError('Could not remove this contact. Try again.');
+      setError(t('cds_remove_err'));
     } finally {
       setArchiving(false);
     }
@@ -477,14 +480,18 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
         <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4">
           <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-accent-600">{t('current_balance')}</p>
           {relationshipBalances.length === 0 ? (
-            <p className="text-[14px] font-semibold text-ink-900 mt-1">You are settled up with {person.name}.</p>
+            <p className="text-[14px] font-semibold text-ink-900 mt-1">{t('cds_settled_with').replace('{name}', person.name)}</p>
           ) : (
             <div className="space-y-1 mt-1">
               {relationshipBalances.map(([currency, balance]) => (
                 <p key={currency} className="text-[14px] font-semibold text-ink-900">
                   {balance > 0
-                    ? `${person.name} owes you ${formatMoney(balance, currency)}.`
-                    : `You owe ${person.name} ${formatMoney(Math.abs(balance), currency)}.`}
+                    ? t('loan_done_owes_you')
+                        .replace('{person}', person.name)
+                        .replace('{amount}', formatMoney(balance, currency))
+                    : t('loan_done_you_owe')
+                        .replace('{person}', person.name)
+                        .replace('{amount}', formatMoney(Math.abs(balance), currency))}
                 </p>
               ))}
             </div>
@@ -532,7 +539,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   <p className="text-[11px] text-ink-500 truncate">{person.phone || t('contact_whatsapp_none')}</p>
                 </div>
                 {hasWhatsAppNumber(person.phone) && (
-                  <a href={buildWhatsAppUrl(person.phone, '')} target="_blank" rel="noopener noreferrer" className="shrink-0 press-xs" style={{ color: '#1FA855' }} aria-label="WhatsApp">
+                  <a href={buildWhatsAppUrl(person.phone, '')} target="_blank" rel="noopener noreferrer" className="shrink-0 press-xs" style={{ color: '#1FA855' }} aria-label={t('a11y_whatsapp')}>
                     <MessageCircle size={17} />
                   </a>
                 )}
@@ -590,7 +597,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
         )}
         {recentEntries.length === 0 && (
           <p className="text-[12px] text-ink-500 bg-cream-soft border border-cream-hairline rounded-xl p-3 leading-relaxed">
-            No money history with {person.name} yet. Add the first entry above.
+            {t('cds_no_history').replace('{name}', person.name)}
           </p>
         )}
 
@@ -606,7 +613,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-[12.5px] font-semibold text-ink-900 tracking-tight">
-                    Your private history
+                    {t('cds_private_history')}
                   </p>
                   <span
                     className={`text-[10px] font-bold uppercase tracking-widest rounded-full px-2 py-0.5 border ${trustStyle.badgeClass} flex items-center gap-1.5`}
@@ -621,7 +628,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 <div className="grid grid-cols-3 gap-2 mt-2.5">
                   <div className="rounded-xl bg-cream-soft px-2 py-1.5">
                     <p className="text-[9.5px] text-ink-500 uppercase tracking-widest font-bold">
-                      Total
+                      {t('cds_stat_total')}
                     </p>
                     <p className="text-[13px] text-ink-900 font-bold tabular-nums">
                       {trustScore.totalLoans}
@@ -629,7 +636,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   </div>
                   <div className="rounded-xl bg-cream-soft px-2 py-1.5">
                     <p className="text-[9.5px] text-ink-500 uppercase tracking-widest font-bold">
-                      Settled
+                      {t('cds_stat_settled')}
                     </p>
                     <p className="text-[13px] text-receive-text font-bold tabular-nums">
                       {trustScore.settledLoans}
@@ -637,7 +644,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   </div>
                   <div className="rounded-xl bg-cream-soft px-2 py-1.5">
                     <p className="text-[9.5px] text-ink-500 uppercase tracking-widest font-bold">
-                      Open
+                      {t('cds_stat_open')}
                     </p>
                     <p className="text-[13px] text-ink-900 font-bold tabular-nums">
                       {trustScore.activeLoans}
@@ -645,7 +652,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   </div>
                 </div>
                 <p className="text-[10.5px] text-ink-400 mt-2 italic leading-relaxed">
-                  Only you can see this. The other person is never notified.
+                  {t('cds_private_note')}
                 </p>
               </div>
             </div>
@@ -667,19 +674,19 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
-                      {syncable.length} past{' '}
-                      {syncable.length === 1 ? 'record' : 'records'} with {person.name}
+                      {(syncable.length === 1
+                        ? t('cds_past_records_one')
+                        : t('cds_past_records_many').replace('{n}', String(syncable.length))
+                      ).replace('{name}', person.name)}
                     </p>
                     <p className="text-[11px] text-ink-500 mt-0.5 leading-relaxed">
-                      Send {syncable.length === 1 ? 'it' : 'them'} for confirmation so
-                      both ledgers stay in sync. Each lands in their Inbox to accept
-                      or decline — your repayment history stays intact on your side.
+                      {t('cds_past_records_desc')}
                     </p>
                   </div>
                 </div>
                 {syncableByCurrency.length > 0 && (
                   <div className="text-[11px] text-ink-500 mt-2.5 pl-[52px] space-y-0.5">
-                    <p className="text-ink-500">Open balance:</p>
+                    <p className="text-ink-500">{t('cds_open_balance')}</p>
                     {syncableByCurrency.map(([currency, { total, count }]) => (
                       <p
                         key={currency}
@@ -689,7 +696,9 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                           {formatMoney(total, currency)}
                         </span>
                         <span className="text-ink-500 text-[10.5px]">
-                          {count} {count === 1 ? 'loan' : 'loans'}
+                          {count === 1
+                            ? t('common_loan_one')
+                            : t('common_loan_many').replace('{n}', String(count))}
                         </span>
                       </p>
                     ))}
@@ -702,16 +711,18 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 >
                   <RefreshCw size={12} strokeWidth={2.4} />
                   {syncing
-                    ? 'Sending…'
-                    : `Sync ${syncable.length === 1 ? 'this record' : `${syncable.length} records`}`}
+                    ? t('cds_sending')
+                    : syncable.length === 1
+                    ? t('cds_sync_cta_one')
+                    : t('cds_sync_cta_many').replace('{n}', String(syncable.length))}
                 </button>
               </div>
             )}
 
             {linkVerified ? (
               <p className="text-[11px] text-ink-500 leading-relaxed">
-                {t('clink_mutual')} &mdash; {person.name} appears in your contacts and you
-                appear in theirs. Loans and splits you record can be shared.
+                {t('clink_mutual')} &mdash;{' '}
+                {t('cds_mutual_desc').replace('{name}', person.name)}
               </p>
             ) : (
               // Honest intermediate state. Claiming a mutual connection that
@@ -736,7 +747,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
               disabled={saving}
               className="cta-destructive"
             >
-              {saving ? 'Working…' : 'Unlink'}
+              {saving ? t('cds_working') : t('cds_unlink')}
             </button>
           </div>
         ) : mode === 'idle' ? (
@@ -796,7 +807,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
           <div className="space-y-3">
             <div>
               <label className="form-label">
-                User code
+                {t('cds_user_code_label')}
               </label>
               <input
                 value={code}
@@ -808,15 +819,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   if (mode === 'resolved') setMode('entering');
                   if (error) setError('');
                 }}
-                placeholder="HSB-XXXXXX"
+                placeholder={t('cds_code_placeholder')}
                 autoCapitalize="characters"
                 autoCorrect="off"
                 autoComplete="off"
                 className="input-field"
               />
               <p className="text-[11px] text-ink-500 mt-1.5">
-                Ask them to open their code in Contacts &rarr; Your connect code
-                &mdash; or scan the QR they show you.
+                {t('cds_code_help')}
               </p>
               <button
                 type="button"
@@ -829,14 +839,13 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
 
             {mode === 'resolved' && resolved ? (
               <div className="rounded-2xl border border-receive-100/70 bg-receive-50/60 p-3">
-                <p className="text-[11px] font-bold text-receive-text uppercase tracking-widest">Found</p>
+                <p className="text-[11px] font-bold text-receive-text uppercase tracking-widest">{t('cds_found')}</p>
                 <p className="text-[14px] font-semibold text-ink-900 mt-0.5">{resolved.displayName}</p>
                 <p className="text-[11px] text-ink-500 mt-1">
                   {/* Precise about what confirming does and doesn't do: the
                       link is yours immediately; appearing in THEIR contacts
                       is their call, not something this button decides. */}
-                  Confirming links them on your side straight away, and asks{' '}
-                  {resolved.displayName} to add you back so records can flow both ways.
+                  {t('cds_confirm_explainer').replace('{name}', resolved.displayName)}
                 </p>
               </div>
             ) : (
@@ -845,7 +854,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 disabled={resolving || !code.trim()}
                 className="w-full py-3 rounded-2xl bg-accent-100 text-accent-600 text-[13px] font-bold active:bg-accent-100 transition-all disabled:opacity-40"
               >
-                {resolving ? 'Looking up…' : 'Resolve'}
+                {resolving ? t('cds_looking_up') : t('cds_resolve')}
               </button>
             )}
 
@@ -859,14 +868,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   disabled={saving}
                   className="px-4 py-3 rounded-2xl bg-cream-soft text-ink-500 text-[12px] font-bold active:bg-slate-200 transition-all disabled:opacity-50"
                 >
-                  Cancel
+                  {t('cancel')}
                 </button>
                 <button
                   onClick={handleConfirmLink}
                   disabled={saving}
                   className="flex-1 py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40 shadow-md shadow-indigo-500/20"
                 >
-                  {saving ? 'Linking…' : 'Confirm link'}
+                  {saving ? t('cds_linking') : t('cds_confirm_link')}
                 </button>
               </div>
             )}
@@ -897,10 +906,10 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
               className="w-full mt-2 py-3 rounded-2xl bg-pay-50 text-pay-text text-[12.5px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               <Trash2 size={13} strokeWidth={2.2} />
-              {archiving ? 'Removing…' : 'Remove local contact'}
+              {archiving ? t('cds_removing') : t('cds_remove_local')}
             </button>
             <p className="text-[10.5px] text-ink-400 mt-1.5 text-center leading-relaxed">
-              Available after your balance with this contact is settled.
+              {t('cds_remove_after_settled')}
             </p>
           </div>
         )}

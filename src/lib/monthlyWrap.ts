@@ -6,6 +6,7 @@
 // trigger logic in MonthlyWrapModal handles when to display.
 
 import type { Transaction, Currency } from '../db';
+import { localIso } from './localDate';
 
 export interface WrapStats {
   // Which month this wrap describes — "2026-04" form.
@@ -83,7 +84,10 @@ export function computeMonthlyWrap(
   // Day with the highest spend
   const byDay = new Map<string, number>();
   for (const e of expenses) {
-    const d = new Date(e.createdAt).toISOString().slice(0, 10);
+    // Local calendar day, not toISOString() (UTC) — an expense logged late
+    // at night in this app's UTC+4/+5 markets must bucket into the day the
+    // user actually experienced it, not UTC's earlier day.
+    const d = localIso(new Date(e.createdAt));
     byDay.set(d, (byDay.get(d) ?? 0) + e.amount);
   }
   const bigSpendDay = byDay.size > 0

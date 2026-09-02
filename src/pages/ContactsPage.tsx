@@ -309,7 +309,7 @@ export function ContactsPage() {
         } catch (err) {
           toast.show({
             type: 'info',
-            title: 'Contact added',
+            title: t('cts_added'),
             // Say WHY the link didn't happen (wrong code, stale discovery
             // match, rate limit) instead of the old blanket "linking failed".
             subtitle: `${t('addc_link_partial')} ${formatLinkError(err, t, linkTarget.code ? 'code' : 'discovery')}`,
@@ -318,8 +318,8 @@ export function ContactsPage() {
       } else {
         toast.show({
           type: 'success',
-          title: 'Contact added',
-          subtitle: 'Saved as a local contact. Link to Hisaab from the row to enable two-way confirmation.',
+          title: t('cts_added'),
+          subtitle: t('cts_added_local_sub'),
         });
       }
       setLastCreatedId(created.id);
@@ -327,8 +327,8 @@ export function ContactsPage() {
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not add contact',
-        subtitle: err instanceof Error ? err.message : 'Try again.',
+        title: t('cts_err_add'),
+        subtitle: err instanceof Error ? err.message : t('common_please_try_again'),
       });
     } finally {
       setCreating(false);
@@ -346,7 +346,7 @@ export function ContactsPage() {
               <button
                 onClick={() => setShowSearch((v) => !v)}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Search"
+                aria-label={t('a11y_search')}
               >
                 <Search size={15} className="text-white" />
               </button>
@@ -356,9 +356,9 @@ export function ContactsPage() {
                   setShowSearch(false);
                 }}
                 className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[12px] font-semibold text-white transition-colors"
-                aria-label="Add contact"
+                aria-label={t('cts_a11y_add')}
               >
-                <UserPlus size={13} strokeWidth={2.4} /> Add
+                <UserPlus size={13} strokeWidth={2.4} /> {t('common_add')}
               </button>
               <LanguageToggle />
             </div>
@@ -366,9 +366,13 @@ export function ContactsPage() {
         />
         <div className="px-5 pb-6">
           <p className="text-[10.5px] font-semibold text-white/55 tracking-[0.12em] uppercase">
-            {persons.length} {persons.length === 1 ? 'contact' : 'contacts'}
-            {linkedCount > 0 && <> · {linkedCount} linked</>}
-            {openCount > 0 && <> · <span className="text-warn-50">{openCount} unsettled</span></>}
+            {persons.length === 1
+              ? t('cts_count_one')
+              : t('cts_count_many').replace('{n}', String(persons.length))}
+            {linkedCount > 0 && <> · {t('cts_linked_count').replace('{n}', String(linkedCount))}</>}
+            {openCount > 0 && (
+              <> · <span className="text-warn-50">{t('cts_unsettled_count').replace('{n}', String(openCount))}</span></>
+            )}
           </p>
         </div>
       </NavyHero>
@@ -384,7 +388,7 @@ export function ContactsPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search contacts"
+              placeholder={t('cts_search_placeholder')}
               className="w-full bg-cream-card border border-cream-border rounded-2xl pl-10 pr-10 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
               autoFocus
             />
@@ -392,7 +396,7 @@ export function ContactsPage() {
               <button
                 onClick={() => setQuery('')}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 press-xs"
-                aria-label="Clear search"
+                aria-label={t('a11y_clear_search')}
               >
                 <X size={14} />
               </button>
@@ -412,17 +416,16 @@ export function ContactsPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
-                  Add a contact
+                  {t('cts_add_title')}
                 </p>
                 <p className="text-[11px] text-ink-500 mt-0.5 leading-relaxed">
-                  Anyone you owe or who owes you — friends, family, shopkeepers.
-                  They don't need to be on Hisaab.
+                  {t('cts_add_desc')}
                 </p>
               </div>
               <button
                 onClick={resetAddForm}
                 className="w-8 h-8 rounded-xl flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors shrink-0"
-                aria-label="Cancel"
+                aria-label={t('cancel')}
               >
                 <X size={14} />
               </button>
@@ -430,12 +433,12 @@ export function ContactsPage() {
 
             <div>
               <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-1.5">
-                Name
+                {t('cts_name_label')}
               </label>
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. Asif Ali"
+                placeholder={t('cts_name_placeholder')}
                 autoFocus
                 className="w-full bg-cream-bg border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
               />
@@ -449,7 +452,7 @@ export function ContactsPage() {
 
             <div>
               <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-1.5">
-                Phone (optional)
+                {t('cts_phone_label')}
               </label>
               <input
                 value={newPhone}
@@ -554,7 +557,7 @@ export function ContactsPage() {
                             setLinkCode(e.target.value);
                             if (linkError) setLinkError('');
                           }}
-                          placeholder="HSB-XXXXXX"
+                          placeholder={t('cds_code_placeholder')}
                           autoCapitalize="characters"
                           autoCorrect="off"
                           autoComplete="off"
@@ -604,11 +607,11 @@ export function ContactsPage() {
               <span className="flex items-center gap-2 min-w-0">
                 <Info size={12} className="text-accent-600 shrink-0" />
                 <span className="text-[11.5px] font-semibold text-ink-800 truncate">
-                  What's the difference between unlinked and linked?
+                  {t('cts_link_help_q')}
                 </span>
               </span>
               <span className="text-[10px] text-ink-400 shrink-0">
-                {showLinkHelp ? 'Hide' : 'Show'}
+                {showLinkHelp ? t('cts_hide') : t('cts_show')}
               </span>
             </button>
 
@@ -620,11 +623,10 @@ export function ContactsPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-[12px] font-semibold text-ink-900">
-                      Unlinked
+                      {t('cts_unlinked')}
                     </p>
                     <p className="text-[11px] text-ink-500 leading-relaxed mt-0.5">
-                      Just a name on your ledger. You record loans, splits and
-                      reminders. They don't see anything — only you.
+                      {t('cts_unlinked_desc')}
                     </p>
                   </div>
                 </div>
@@ -634,18 +636,15 @@ export function ContactsPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-[12px] font-semibold text-ink-900">
-                      Linked
+                      {t('cts_linked')}
                     </p>
                     <p className="text-[11px] text-ink-500 leading-relaxed mt-0.5">
-                      Connected to another Hisaab user via their code. Loan and
-                      split records go to their inbox to confirm or decline —
-                      both ledgers stay in sync.
+                      {t('cts_linked_desc')}
                     </p>
                   </div>
                 </div>
                 <p className="text-[10.5px] text-ink-400 leading-relaxed pt-1">
-                  You can add now and link later — just tap their row when
-                  they share a code.
+                  {t('cts_link_later')}
                 </p>
               </div>
             )}
@@ -663,10 +662,10 @@ export function ContactsPage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[12.5px] font-semibold text-ink-900 tracking-tight">
-                {lastCreated.name} added
+                {t('cts_added_banner').replace('{name}', lastCreated.name)}
               </p>
               <p className="text-[11px] text-ink-500 mt-0.5 leading-relaxed">
-                If they're on Hisaab too, link to enable two-way confirmation.
+                {t('cts_added_banner_sub')}
               </p>
             </div>
             <button
@@ -676,12 +675,12 @@ export function ContactsPage() {
               }}
               className="shrink-0 rounded-xl bg-ink-900 text-white px-3 py-1.5 text-[11px] font-semibold flex items-center gap-1.5 press-sm"
             >
-              <Link2 size={11} /> Link
+              <Link2 size={11} /> {t('cts_link_cta')}
             </button>
             <button
               onClick={() => setLastCreatedId(null)}
               className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors shrink-0"
-              aria-label="Dismiss"
+              aria-label={t('a11y_dismiss')}
             >
               <X size={13} />
             </button>
@@ -697,11 +696,12 @@ export function ContactsPage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
-                {linkedCount} of {persons.length} {persons.length === 1 ? 'contact is' : 'contacts are'} linked
+                {(persons.length === 1 ? t('cts_linked_of_one') : t('cts_linked_of_many'))
+                  .replace('{linked}', String(linkedCount))
+                  .replace('{persons}', String(persons.length))}
               </p>
               <p className="text-[11px] text-ink-500 mt-0.5 leading-relaxed">
-                Tap a contact and use their Hisaab code to link — they'll get
-                a confirmation request whenever you record a loan or split.
+                {t('cts_linked_of_desc')}
               </p>
             </div>
           </div>
@@ -710,8 +710,8 @@ export function ContactsPage() {
         {loadStatus === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load contacts"
-            message={loadError ?? 'Some data failed to load.'}
+            title={t('cts_err_load')}
+            message={loadError ?? t('err_some_data_failed')}
             onRetry={retryLoad}
           />
         )}
@@ -728,25 +728,24 @@ export function ContactsPage() {
                 <Sparkles size={22} className="text-accent-600" />
               </div>
               <p className="text-[13px] font-semibold text-ink-900">
-                No contacts yet
+                {t('cts_empty_title')}
               </p>
               <p className="text-[11px] text-ink-500 mt-1 max-w-[260px] mx-auto leading-relaxed">
-                Add anyone you owe or who owes you. You can link them to Hisaab
-                later when they sign up.
+                {t('cts_empty_desc')}
               </p>
               {!showAdd && (
                 <button
                   onClick={() => setShowAdd(true)}
                   className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 text-white px-4 py-2.5 text-[12px] font-semibold press-sm"
                 >
-                  <UserPlus size={12} /> Add your first contact
+                  <UserPlus size={12} /> {t('cts_add_first')}
                 </button>
               )}
             </div>
           ) : null
         ) : filtered.length === 0 ? (
           <p className="text-[13px] text-ink-400 text-center py-10">
-            No matches for "{query}"
+            {t('cts_no_matches').replace('{query}', query)}
           </p>
         ) : (
           // Wrapped in its OWN stagger container rather than staggering the
@@ -789,7 +788,7 @@ export function ContactsPage() {
                         {/* WhatsApp badge — at a glance, whether this contact
                             has a number saved for reminders. */}
                         {hasWhatsAppNumber(person.phone) && (
-                          <MessageCircle size={13} strokeWidth={2.2} className="shrink-0" style={{ color: '#1FA855' }} aria-label="WhatsApp added" />
+                          <MessageCircle size={13} strokeWidth={2.2} className="shrink-0" style={{ color: '#1FA855' }} aria-label={t('cts_a11y_whatsapp_added')} />
                         )}
                         {!person.linkedProfileId && (
                           // A saved number that resolved to a Hisaab account
@@ -806,7 +805,7 @@ export function ContactsPage() {
                             </span>
                           ) : (
                             <span className="text-[10px] font-medium uppercase tracking-[0.08em] rounded-full bg-cream-soft border border-cream-hairline text-ink-500 px-1.5 py-0.5 shrink-0">
-                              local
+                              {t('cts_local_chip')}
                             </span>
                           )
                         )}

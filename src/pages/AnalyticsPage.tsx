@@ -174,7 +174,7 @@ export function AnalyticsPage() {
         <TopBar title={t('analytics_title')} back action={<LanguageToggle />} />
         <div className="px-5 pb-7">
           <p className="text-[10.5px] font-semibold text-white/55 tracking-[0.12em] uppercase">
-            Spend & income trends
+            {t('analytics_hero_sub')}
           </p>
         </div>
       </NavyHero>

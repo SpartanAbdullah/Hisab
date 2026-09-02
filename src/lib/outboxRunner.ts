@@ -15,6 +15,7 @@
 //      "stuck operations" count and lets the user retry or discard.
 
 import { db, type OutboxEntry, type OutboxOpKind } from '../db/database';
+import { reportError } from './errorReporter';
 
 const SWEEP_INTERVAL_MS = 30_000;
 const MAX_ATTEMPTS = 10;
@@ -33,12 +34,13 @@ export function startOutboxRunner(): void {
   if (sweepHandle != null) return;
   // Initial sweep on start so any pre-existing outbox rows flush before
   // the user can pile more in.
-  void sweepOnce().catch(() => {
+  void sweepOnce().catch((err) => {
     // Errors here are non-fatal — the timer will retry.
+    reportError(err, { feature: 'outboxRunner.startOutboxRunner.initialSweep' });
   });
   sweepHandle = window.setInterval(() => {
-    void sweepOnce().catch(() => {
-      /* Logged inside sweepOnce */
+    void sweepOnce().catch((err) => {
+      reportError(err, { feature: 'outboxRunner.sweepTimer' });
     });
   }, SWEEP_INTERVAL_MS);
   window.addEventListener('online', triggerImmediateSweep);
@@ -53,8 +55,8 @@ export function stopOutboxRunner(): void {
 }
 
 function triggerImmediateSweep() {
-  void sweepOnce().catch(() => {
-    /* swallow */
+  void sweepOnce().catch((err) => {
+    reportError(err, { feature: 'outboxRunner.triggerImmediateSweep' });
   });
 }
 
@@ -80,6 +82,21 @@ async function sweepOnce(): Promise<void> {
           lastError: err instanceof Error ? err.message : String(err),
           nextAttemptAt: new Date(Date.now() + backoff).toISOString(),
         });
+        // A retryable dispatch failure is routine while offline (the de-dupe
+        // window keeps a stuck sweep from flooding). Hitting MAX_ATTEMPTS is
+        // NOT routine - that is a queued user mutation the app has given up on.
+        if (attempts >= MAX_ATTEMPTS) {
+          reportError(err, {
+            feature: 'outboxRunner.dispatch.stuck',
+            extra: { kind: entry.kind, entryId: entry.id, attempts },
+          });
+        } else {
+          reportError(err, {
+            feature: 'outboxRunner.dispatch.retrying',
+            level: 'warning',
+            extra: { kind: entry.kind, entryId: entry.id, attempts },
+          });
+        }
       }
     }
   } finally {
@@ -101,8 +118,8 @@ export async function enqueueOutboxOp(kind: OutboxOpKind, payload: unknown): Pro
   await db.outbox.add(entry);
   // Best-effort: try to flush immediately. If offline, sweep will pick
   // it up on reconnect.
-  void sweepOnce().catch(() => {
-    /* swallow */
+  void sweepOnce().catch((err) => {
+    reportError(err, { feature: 'outboxRunner.enqueueOutboxOp.immediateSweep', extra: { kind } });
   });
 }
 

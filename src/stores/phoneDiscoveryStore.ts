@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { phoneDiscoveryDb, type PhoneMatch } from '../lib/supabaseDb';
 import { toE164Candidates } from '../lib/phoneIdentity';
+import { reportError } from '../lib/errorReporter';
 
 // "This contact is already on Hisaab."
 //
@@ -113,7 +114,11 @@ export const usePhoneDiscoveryStore = create<PhoneDiscoveryState>((set, get) => 
       // Rate limit, missing RPC (migration not applied yet), or offline.
       // All of them mean the same thing to the UI: stop asking. The badge
       // simply doesn't appear — nothing else in the app depends on it.
-      console.error('[phoneDiscovery] lookup failed (non-fatal)', err);
+      reportError(err, {
+        feature: 'phoneDiscoveryStore.lookup',
+        level: 'warning',
+        extra: { batchSize: numbers.length },
+      });
       set({ exhausted: true });
     } finally {
       numbers.forEach((n) => inflight.delete(n));

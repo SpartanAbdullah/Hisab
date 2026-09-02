@@ -271,7 +271,7 @@ export const useLoanStore = create<LoanState>((set, get) => ({
       );
 
       return result;
-    }, refetchAfterFailedRollback);
+    }, refetchAfterFailedRollback, 'loanStore.applyRepayment');
 
     // ── Post-commit, best-effort ──────────────────────────────────────────
     // The money and its record are committed; these are derived/decorative and

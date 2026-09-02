@@ -56,7 +56,7 @@ The public deletion instructions are available at `https://usehisaab.com/delete-
 
 Current code review found:
 
-- **Analytics:** no product analytics SDK found.
+- **Analytics:** `posthog-js` (pinned, EU Cloud) is present as of 2026-09-02. It is **opt-in and default-off**, and is inert with no `VITE_POSTHOG_KEY` (the SDK is behind a dynamic import, so it is not even downloaded). Before submitting, check whether the release build sets the key: if it does, declare "App activity → App interactions" and "User IDs" as **collected and shared with a third party, optional, for Analytics**; if it does not, analytics is genuinely absent from that build. Note `src/lib/analytics.ts` is NOT telemetry — it is the user's own spending aggregation for in-app charts and sends nothing anywhere.
 - **Ads:** no advertising SDK found.
 - **Crash reporting:** Sentry integration is **enabled** (`VITE_SENTRY_DSN` configured). Crash/diagnostic data is collected and shared with Sentry GmbH (EU). `sendDefaultPii: false`; no user ID attached at current call sites.
 - **Push notifications:** no Android push-notification SDK found. The app has database-backed in-app notifications.
@@ -77,3 +77,4 @@ Current code review found:
 4. Confirm the final Android manifest permissions after regenerating the complete Android wrapper.
 5. Confirm that the published privacy policy and deletion page match the production RPC deployed in Supabase.
 6. Review Google Play's current Data Safety definitions before completing the console form.
+7. ⚠️ **Added 2026-09-02 (analytics):** confirm whether the production/Play release build sets `VITE_POSTHOG_KEY`. The declaration differs: with the key set, "App activity → App interactions" and "Personal info → User IDs" must be marked **collected + shared (optional, Analytics)**; with it unset, no analytics is shipped at all. Either way the consent toggle must be reachable in Settings before the key is enabled in production — the toggle component exists (`src/components/TelemetryConsentToggle.tsx`) but its one-line placement in `SettingsPage` is a separate change. Also confirm the published privacy policy names PostHog (EU) as a processor, and re-verify the event catalog in `src/lib/telemetryEvents.ts` has not grown a free-text property.

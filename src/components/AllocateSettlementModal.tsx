@@ -235,7 +235,7 @@ export function AllocateSettlementModal({ open, onClose, loans, direction, curre
               onClick={() => setLump(String(maxRemaining))}
               className="mt-2 text-[11px] text-accent-600 font-bold active:opacity-70"
             >
-              Full amount: {formatMoney(maxRemaining, currency)}
+              {t('repay_full_amount').replace('{amount}', formatMoney(maxRemaining, currency))}
             </button>
             {totalAllocated > maxRemaining + 0.001 && (
               <p className="mt-2 text-[11px] text-pay-text font-semibold">{t('alloc_over')}</p>

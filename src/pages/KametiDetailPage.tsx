@@ -244,14 +244,14 @@ export function KametiDetailPage() {
         {/* Round navigator */}
         {isDrawn && (
           <div className="flex items-center justify-between">
-            <button onClick={() => setViewRound(Math.max(1, round - 1))} disabled={round <= 1} className="nav-icon-button disabled:opacity-30" aria-label="Previous round">
+            <button onClick={() => setViewRound(Math.max(1, round - 1))} disabled={round <= 1} className="nav-icon-button disabled:opacity-30" aria-label={t('a11y_prev_round')}>
               <ChevronLeft size={16} className="text-ink-600" />
             </button>
             <div className="text-center">
               <p className="text-[13px] font-bold text-ink-900">{t('kameti_round_of').replace('{r}', String(round)).replace('{n}', String(committee.totalRounds))}</p>
               <p className="text-[10.5px] text-ink-500 tabular-nums">{format(roundDate(committee.startDate, committee.cadence, round), 'd MMM yyyy')}</p>
             </div>
-            <button onClick={() => setViewRound(Math.min(committee.totalRounds, round + 1))} disabled={round >= committee.totalRounds} className="nav-icon-button disabled:opacity-30" aria-label="Next round">
+            <button onClick={() => setViewRound(Math.min(committee.totalRounds, round + 1))} disabled={round >= committee.totalRounds} className="nav-icon-button disabled:opacity-30" aria-label={t('a11y_next_round')}>
               <ChevronRight size={16} className="text-ink-600" />
             </button>
           </div>

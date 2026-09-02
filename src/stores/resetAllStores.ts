@@ -32,6 +32,7 @@
 // would create cycles.
 
 import { clearLegacyDatabase, clearUserDatabase, getCurrentDatabaseUserId } from '../db/database';
+import { reportError } from '../lib/errorReporter';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Store registry
@@ -170,7 +171,7 @@ export async function resetAllUserStores(userId = getCurrentDatabaseUserId()): P
     } catch (err) {
       // One store's reset must never abort the others — a half-cleared device
       // is the leak we are here to prevent.
-      console.error(`[resetAllUserStores] ${entry.exportName} reset failed (continuing)`, err);
+      reportError(err, { feature: 'resetAllStores.storeReset', extra: { store: entry.exportName } });
     }
   }
 
@@ -183,7 +184,7 @@ export async function resetAllUserStores(userId = getCurrentDatabaseUserId()): P
   try {
     sweepStorage(localStorage);
   } catch (err) {
-    console.error('[resetAllUserStores] localStorage sweep failed (continuing)', err);
+    reportError(err, { feature: 'resetAllStores.localStorageSweep' });
   }
   try {
     // Same rule for sessionStorage (hisaab_just_verified, the budget-warning
@@ -191,7 +192,7 @@ export async function resetAllUserStores(userId = getCurrentDatabaseUserId()): P
     // about when a second account signs in without closing the tab.
     sweepStorage(sessionStorage);
   } catch (err) {
-    console.error('[resetAllUserStores] sessionStorage sweep failed (continuing)', err);
+    reportError(err, { feature: 'resetAllStores.sessionStorageSweep' });
   }
 
   // Wipe IndexedDB tables. Even though most stores write directly to Supabase
@@ -205,7 +206,9 @@ export async function resetAllUserStores(userId = getCurrentDatabaseUserId()): P
   ]);
   for (const result of results) {
     if (result.status === 'rejected') {
-      console.error('[resetAllUserStores] Dexie wipe failed (non-fatal)', result.reason);
+      // A surviving Dexie partition is the shared-device data leak this
+      // module exists to prevent - never silent.
+      reportError(result.reason, { feature: 'resetAllStores.dexieWipe' });
     }
   }
 }

@@ -15,7 +15,9 @@
                         injects a remote <script> — script-src stays 'self'.
                         Harmless when VITE_POSTHOG_KEY is unset or consent is
                         declined: nothing connects. See src/lib/telemetry.ts.)
-      - Google Fonts    (Geist font CSS + woff2 files)
+      - Geist font      (self-hosted from /fonts — see public/fonts/ and the
+                        @font-face block at the top of src/index.css; no
+                        third-party font host needed any more, P2 M2a)
       - data:/blob:     (inline icons, generated blob URLs)
       - 'unsafe-inline' on style-src because Tailwind v4 injects runtime
         CSS via inline <style> tags and Modal/animation utilities use
@@ -25,7 +27,7 @@
       connect-src includes wss:// for Supabase realtime and ws://localhost
       for Vite HMR in dev (harmless in prod since it just won't connect).
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://*.ingest.de.sentry.io https://*.ingest.us.sentry.io https://eu.i.posthog.com https://eu-assets.i.posthog.com ws://localhost:* http://localhost:*; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://*.ingest.de.sentry.io https://*.ingest.us.sentry.io https://eu.i.posthog.com https://eu-assets.i.posthog.com ws://localhost:* http://localhost:*; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
@@ -46,9 +48,11 @@
     <meta name="twitter:title" content="Hisaab - Money Flow Manager" />
     <meta name="twitter:description" content="Your money, always in sight. Personal finance management for Pakistani expats." />
     <title>Hisaab - Money Flow Manager</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" />
+    <!-- Self-hosted Geist (P2 M2a): a single variable-font file covers every
+         weight the app uses (400/500/600/700), so there's exactly one file
+         to preload — see the @font-face block at the top of src/index.css
+         and docs/performance.md for the before/after and the source URL. -->
+    <link rel="preload" href="/fonts/geist-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>

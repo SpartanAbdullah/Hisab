@@ -236,7 +236,7 @@ export function AccountsPage() {
               <button
                 onClick={() => setShowAdd(true)}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Add account"
+                aria-label={t('a11y_add_account')}
               >
                 <Plus size={15} strokeWidth={2.4} className="text-white" />
               </button>
@@ -246,13 +246,13 @@ export function AccountsPage() {
         />
         <div className="px-5 pb-7">
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
-            Total balance · {primaryCurrency}
+            {t('acct_total_balance')} · {primaryCurrency}
           </p>
           {isInitialLoading ? (
             <div className="mt-1.5 h-10 w-44 rounded-xl bg-white/10 animate-pulse" />
           ) : showEmptyState ? (
             <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
-              No accounts yet
+              {t('home_no_accounts_title')}
             </p>
           ) : (
             <>
@@ -300,8 +300,8 @@ export function AccountsPage() {
         {status === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load accounts"
-            message={error ?? 'Some data failed to load.'}
+            title={t('acct_err_load')}
+            message={error ?? t('err_some_data_failed')}
             onRetry={retry}
           />
         )}

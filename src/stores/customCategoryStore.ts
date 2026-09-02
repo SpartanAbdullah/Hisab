@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { customCategoriesDb } from '../lib/supabaseDb';
 import { validateNewCategoryName, type CategoryValidationError } from '../lib/mergedCategories';
 import type { CustomCategory, CustomCategoryType } from '../db';
+import { reportError } from '../lib/errorReporter';
 
 // Thrown by addCategory so the UI can map a code to a localized message.
 export class CustomCategoryError extends Error {
@@ -62,8 +63,10 @@ export const useCustomCategoryStore = create<CustomCategoryState>((set, get) => 
     try {
       await customCategoriesDb.add(category);
     } catch (err) {
-      // The DB unique index is the final backstop (e.g. a race across devices).
+      // The DB unique index is the final backstop (e.g. a race across
+      // devices). DUPLICATE is an expected outcome - not reported.
       if (isUniqueViolation(err)) throw new CustomCategoryError('DUPLICATE');
+      reportError(err, { feature: 'customCategoryStore.addCategory', extra: { categoryType: type } });
       throw err;
     }
     set((s) => ({ categories: [...s.categories, category] }));

@@ -201,8 +201,8 @@ export function AccountDetailPage() {
     if (loadStatus === 'error') {
       return (
         <PageErrorState
-          title="Couldn't load this account"
-          message={loadError ?? 'Account data failed to load.'}
+          title={t('adp_err_load')}
+          message={loadError ?? t('adp_err_load_sub')}
           onRetry={retryLoad}
         />
       );
@@ -344,7 +344,7 @@ export function AccountDetailPage() {
                 <button
                   onClick={() => setShowMenu(!showMenu)}
                   className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                  aria-label="More"
+                  aria-label={t('a11y_more')}
                 >
                   <MoreVertical size={15} className="text-white" />
                 </button>
@@ -389,7 +389,7 @@ export function AccountDetailPage() {
                           const ok = await confirmDestructive({
                             title: t('acct_delete_confirm'),
                             description: t('del_account_body'),
-                            confirmLabel: 'Delete account',
+                            confirmLabel: t('adp_delete_account_cta'),
                           });
                           if (ok) {
                             try {
@@ -399,14 +399,14 @@ export function AccountDetailPage() {
                             } catch (err) {
                               toast.show({
                                 type: 'error',
-                                title: err instanceof Error ? err.message : 'Failed',
+                                title: err instanceof Error ? err.message : t('adp_failed'),
                               });
                             }
                           }
                         }}
                         className="w-full px-4 py-2.5 flex items-center gap-2.5 text-[13px] font-medium text-pay-text active:bg-pay-50"
                       >
-                        <Trash2 size={14} /> Delete
+                        <Trash2 size={14} /> {t('common_delete')}
                       </button>
                     </div>
                   </>
@@ -762,7 +762,7 @@ export function AccountDetailPage() {
               className="bg-cream-card rounded-2xl p-5 w-[90%] max-w-sm shadow-xl border border-cream-border"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-[15px] font-semibold text-ink-900 mb-3">Rename account</h3>
+              <h3 className="text-[15px] font-semibold text-ink-900 mb-3">{t('adp_rename_title')}</h3>
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -774,20 +774,20 @@ export function AccountDetailPage() {
                   onClick={() => setShowRename(false)}
                   className="flex-1 py-2.5 rounded-xl bg-cream-soft border border-cream-border text-ink-600 text-[12px] font-semibold"
                 >
-                  Cancel
+                  {t('cancel')}
                 </button>
                 <button
                   disabled={!newName.trim() || newName.trim() === account.name}
                   onClick={async () => {
                     if (newName.trim() && newName.trim() !== account.name) {
                       await renameAccount(account.id, newName.trim());
-                      toast.show({ type: 'success', title: 'Account renamed' });
+                      toast.show({ type: 'success', title: t('adp_renamed') });
                     }
                     setShowRename(false);
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30 transition-opacity"
                 >
-                  Save
+                  {t('common_save')}
                 </button>
               </div>
             </div>
@@ -985,7 +985,7 @@ export function AccountDetailPage() {
                   {accountUpcoming.length} {t('upcoming_title')}
                 </p>
                 <p className="text-[11px] text-ink-500">
-                  Total: {formatMoney(totalUpcoming, account.currency)}
+                  {t('adp_total_label').replace('{amount}', formatMoney(totalUpcoming, account.currency))}
                   {hasWarning && ` — ${t('upcoming_low_balance')}!`}
                 </p>
               </div>

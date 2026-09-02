@@ -44,8 +44,33 @@ describe('computeLoggingStreak', () => {
   });
 
   it('accepts ISO datetimes and date-only strings interchangeably', () => {
-    const r = computeLoggingStreak(['2026-06-19T23:30:00Z', '2026-06-20'], '2026-06-20T09:00:00Z');
+    // Noon UTC is safely mid-day for any realistic device offset (this repo
+    // does not pin the test process's timezone — see localDate.test.ts for
+    // why boundary-crossing instants can't be asserted this way), so this
+    // stays about FORMAT handling, not the local-day boundary itself.
+    const r = computeLoggingStreak(['2026-06-19T12:00:00Z', '2026-06-20'], '2026-06-20T09:00:00Z');
     expect(r.streak).toBe(2);
     expect(r.loggedToday).toBe(true);
+  });
+
+  it('attributes a full ISO timestamp to its LOCAL calendar day, not the UTC day (F-11/F-18)', () => {
+    // Same fixed-offset technique as localDate.test.ts: this repo's test
+    // process timezone is unpinned, so we can't rely on `new Date(...)`
+    // local getters to reproduce a UTC+4 market's midnight gap deterministically.
+    // Instead we precompute the LOCAL day a Dubai device would derive via
+    // `localIso` (shift the UTC instant by the fixed market offset, then
+    // read its UTC calendar fields) and feed that in as an already-resolved
+    // bare day-key — exercising the streak-counting logic on the exact
+    // value `dayOf` is now required to produce for this instant on a real
+    // device, without depending on this process's own offset.
+    const loggedAt = new Date('2026-09-02T22:30:00Z'); // 22:30 UTC
+    const localDay = new Date(loggedAt.getTime() + 4 * 3_600_000).toISOString().slice(0, 10);
+    expect(localDay).toBe('2026-09-03'); // already tomorrow at UTC+4
+    // If a Sep-2 entry also exists, a Sep-3-local log continues the streak
+    // into a 2-day run ending "today" (Sep 3 local) — the old UTC-slice
+    // derivation would have filed the 22:30Z entry under Sep 2 instead,
+    // making Sep 3 look unlogged and breaking the streak at 1.
+    const r = computeLoggingStreak(['2026-09-02', localDay], localDay);
+    expect(r).toEqual({ streak: 2, loggedToday: true });
   });
 });

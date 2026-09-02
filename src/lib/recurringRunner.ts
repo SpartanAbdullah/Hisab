@@ -11,6 +11,8 @@
 // "wait, my rent went up — I should edit this".
 
 import { useRecurringStore } from '../stores/recurringStore';
+import { reportError } from './errorReporter';
+import { localIso } from './localDate';
 
 const RUN_LOCK_KEY = 'hisaab_recurring_run_lock_v1';
 const RUN_LOCK_TTL_MS = 60_000;
@@ -26,12 +28,17 @@ export async function runRecurringExpansion(): Promise<void> {
       if (Number.isFinite(ts) && Date.now() - ts < RUN_LOCK_TTL_MS) return;
     }
     localStorage.setItem(RUN_LOCK_KEY, String(Date.now()));
-  } catch {
-    // localStorage unavailable — proceed without lock.
+  } catch (err) {
+    // localStorage unavailable — proceed without lock. Reported because
+    // the consequence is duplicate due-prompts across tabs, not a silent no-op.
+    reportError(err, { feature: 'recurringRunner.runLock' });
   }
 
   const templates = useRecurringStore.getState().templates;
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // Local calendar day, not toISOString() (UTC) — a template due "today" at
+  // 00:30 local in this app's UTC+4/+5 markets must read as due, not as
+  // still-tomorrow-in-UTC. See src/lib/localDate.ts.
+  const todayIso = localIso(new Date());
   const due = templates.filter((t) => t.active && t.nextDueDate <= todayIso);
   if (due.length === 0) return;
 
@@ -44,8 +51,9 @@ export async function runRecurringExpansion(): Promise<void> {
         detail: { templates: due, todayIso },
       }),
     );
-  } catch {
+  } catch (err) {
     // window unavailable in SSR / tests — fine, runner is a no-op there.
+    reportError(err, { feature: 'recurringRunner.dispatchDueEvent', extra: { dueCount: due.length } });
   }
 }
 

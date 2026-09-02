@@ -2,14 +2,29 @@
 // yesterday if you haven't logged yet today) you've recorded at least one
 // expense. Pure + tested. The UI shows it ONLY as encouragement — never to
 // shame — per the "streaks can feel annoying if misrepresented" rule.
+import { localIso } from './localDate';
 
 export interface StreakResult {
   streak: number;
   loggedToday: boolean;
 }
 
+const BARE_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Callers pass either a bare calendar day (YYYY-MM-DD — already unambiguous,
+// no conversion needed) or a full ISO timestamp (a transaction's createdAt,
+// stored as `new Date().toISOString()` — always UTC). A full timestamp must
+// be read back through its LOCAL calendar day, not sliced as UTC: a purchase
+// logged at 22:30 local-late in this app's UTC+4/+5 markets can already be
+// past UTC midnight, and slicing would silently attribute it to the wrong
+// day, breaking the streak a day early (or extending it a day late).
 function dayOf(iso: string): string {
-  return (iso ?? '').slice(0, 10);
+  const s = (iso ?? '').trim();
+  if (!s) return '';
+  if (BARE_DAY_RE.test(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+  return localIso(d);
 }
 
 function shiftDay(dayIso: string, delta: number): string {

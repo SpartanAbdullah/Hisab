@@ -5,6 +5,7 @@
 
 import { renderHtmlToA4Pdf } from './renderNodeToImage';
 import { AMOUNT_MASK } from './maskMoney';
+import { localIso } from './localDate';
 import type { GroupDebt } from './groupDebts';
 
 const NAVY = '#0B0E2A';
@@ -161,7 +162,10 @@ export async function generateGroupSettleUpPdf(input: GroupSettleUpPdfInput): Pr
     subject: 'Group settle-up plan',
     author: input.fromName || 'Hisaab',
   });
-  const datePart = new Date(input.asOf).toISOString().slice(0, 10);
+  // Local calendar day, not toISOString() (UTC) — generating this near local
+  // midnight in this app's UTC+4/+5 markets must not date-stamp the filename
+  // a day early.
+  const datePart = localIso(new Date(input.asOf));
   const filename = `SettleUp-${sanitizeFilename(input.groupName)}-${datePart}.pdf`;
   return { blob, filename };
 }

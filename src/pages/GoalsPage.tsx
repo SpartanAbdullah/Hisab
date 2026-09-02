@@ -235,16 +235,16 @@ export function GoalsPage() {
               <button
                 onClick={() => setShowAdd(true)}
                 className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[12px] font-semibold text-white transition-colors"
-                aria-label="Add goal"
+                aria-label={t('goals_a11y_add')}
               >
-                <Plus size={12} strokeWidth={2.4} /> Goal
+                <Plus size={12} strokeWidth={2.4} /> {t('goals_add_short')}
               </button>
               <button
                 onClick={() => setShowAddExpense(true)}
                 className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[12px] font-semibold text-white transition-colors"
-                aria-label="Add upcoming expense"
+                aria-label={t('goals_a11y_add_bill')}
               >
-                <Plus size={12} strokeWidth={2.4} /> Bill
+                <Plus size={12} strokeWidth={2.4} /> {t('goals_add_bill_short')}
               </button>
               <LanguageToggle />
             </div>
@@ -252,8 +252,12 @@ export function GoalsPage() {
         />
         <div className="px-5 pb-7">
           <p className="text-[10.5px] font-semibold text-white/55 tracking-[0.12em] uppercase">
-            {goals.length} {goals.length === 1 ? 'goal' : 'goals'}
-            {upcomingExpenses.length > 0 && <> · {upcomingExpenses.length} upcoming</>}
+            {goals.length === 1
+              ? t('goals_count_one')
+              : t('goals_count_many').replace('{n}', String(goals.length))}
+            {upcomingExpenses.length > 0 && (
+              <> · {t('goals_upcoming_count').replace('{n}', String(upcomingExpenses.length))}</>
+            )}
           </p>
         </div>
       </NavyHero>
@@ -263,8 +267,8 @@ export function GoalsPage() {
       {loadStatus === 'error' && (
         <PageErrorState
           variant="inline"
-          title="Couldn't load goals"
-          message={loadError ?? 'Some data failed to load.'}
+          title={t('goals_err_load')}
+          message={loadError ?? t('err_some_data_failed')}
           onRetry={retryLoad}
         />
       )}
@@ -285,9 +289,9 @@ export function GoalsPage() {
             <button
               onClick={() => setShowAddExpense(true)}
               className="text-[11px] font-semibold text-accent-600 flex items-center gap-1 active:opacity-70"
-              aria-label="Add upcoming expense"
+              aria-label={t('goals_a11y_add_bill')}
             >
-              <Plus size={11} strokeWidth={2.5} /> Bill
+              <Plus size={11} strokeWidth={2.5} /> {t('goals_add_bill_short')}
             </button>
           </div>
           <div className="space-y-2.5">

@@ -91,8 +91,8 @@ export function LoanDetailPage() {
     if (loadStatus === 'error') {
       return (
         <PageErrorState
-          title="Couldn't load this loan"
-          message={loadError ?? 'Loan data failed to load.'}
+          title={t('ldp_err_load')}
+          message={loadError ?? t('ldp_err_load_sub')}
           onRetry={retryLoad}
         />
       );
@@ -370,7 +370,7 @@ export function LoanDetailPage() {
                 <button
                   onClick={() => setShowMenu(!showMenu)}
                   className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                  aria-label="More"
+                  aria-label={t('a11y_more')}
                 >
                   <MoreVertical size={15} className="text-white" />
                 </button>
@@ -438,7 +438,7 @@ export function LoanDetailPage() {
               </p>
               <p className="text-[11px] text-white/55 mt-0.5">
                 {t('loan_since_date').replace('{date}', format(new Date(loan.createdAt), 'd MMM yyyy'))}
-                {isLinkedLoan && <span className="ml-1.5 inline-flex items-center text-[9.5px] font-semibold uppercase tracking-[0.1em] text-accent-500/90 bg-accent-500/15 rounded-full px-1.5 py-0.5">linked</span>}
+                {isLinkedLoan && <span className="ml-1.5 inline-flex items-center text-[9.5px] font-semibold uppercase tracking-[0.1em] text-accent-500/90 bg-accent-500/15 rounded-full px-1.5 py-0.5">{t('ldp_linked_pill')}</span>}
                 {isCardLoan && <span className="ml-1.5 inline-flex items-center gap-1 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-warn-600 bg-warn-50 rounded-full px-2 py-0.5">{t('ca_pill')}</span>}
               </p>
             </div>
@@ -568,7 +568,7 @@ export function LoanDetailPage() {
                 </p>
                 {isLinkedLoan && (
                   <p className="text-[10.5px] text-ink-500 mt-0.5">
-                    Linked to a Hisaab account
+                    {t('ldp_linked_to_account')}
                   </p>
                 )}
               </div>
@@ -589,7 +589,7 @@ export function LoanDetailPage() {
                 </button>
               ) : isLinkedLoan ? (
                 <p className="text-[11px] text-ink-500 text-center py-2">
-                  Use the linked-loan settle flow above.
+                  {t('ldp_use_linked_settle')}
                 </p>
               ) : (
                 <button

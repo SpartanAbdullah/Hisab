@@ -39,6 +39,15 @@ export type NotificationTranslate = (key: I18nKey) => string;
 const TITLE_KEYS: Record<string, I18nKey> = {
   group_added: 'ntf_group_added_title',
   member_joined: 'ntf_member_joined_title',
+  // tg_group_members_notify_left, supabase-migration-p2-notification-
+  // maturity.sql §5b. Params: { groupId, groupName, memberId, memberName,
+  // actorName }. Audit N-11: members used to discover a departure silently.
+  member_left: 'ntf_member_left_title',
+  // notify_committee_members, same migration §6. Params: { committeeId,
+  // committeeName, currency, amount, round, slot, memberName }.
+  kameti_draw_completed: 'ntf_kameti_draw_title',
+  kameti_round_due: 'ntf_kameti_round_due_title',
+  kameti_payout_due: 'ntf_kameti_payout_title',
   expense_added: 'ntf_expense_added_title',
   expense_updated: 'ntf_expense_updated_title',
   expense_deleted: 'ntf_expense_deleted_title',
@@ -53,6 +62,10 @@ const TITLE_KEYS: Record<string, I18nKey> = {
 const BODY_KEYS: Record<string, I18nKey> = {
   group_added: 'ntf_group_added_body',
   member_joined: 'ntf_member_joined_body',
+  member_left: 'ntf_member_left_body',
+  kameti_draw_completed: 'ntf_kameti_draw_body',
+  kameti_round_due: 'ntf_kameti_round_due_body',
+  kameti_payout_due: 'ntf_kameti_payout_body',
   expense_added: 'ntf_expense_added_body',
   expense_updated: 'ntf_expense_updated_body',
   expense_deleted: 'ntf_expense_deleted_body',
@@ -125,6 +138,13 @@ export function renderNotificationContent(
     from: text(params, 'fromName') || t('ntf_someone'),
     to: text(params, 'toName') || t('ntf_someone'),
     amount: amount === null ? '' : formatMoney(amount, currency || 'PKR'),
+    // Kameti templates (audit N-11). `member` is the person the event is
+    // ABOUT, which for member_left is the leaver and for kameti is the
+    // recipient's own committee_members row.
+    kameti: text(params, 'committeeName') || t('ntf_the_kameti'),
+    member: text(params, 'memberName') || t('ntf_someone'),
+    round: text(params, 'round'),
+    slot: text(params, 'slot'),
   };
 
   const bodyKey = amount === null && BODY_KEYS_NO_AMOUNT[template]
@@ -142,11 +162,31 @@ export function renderNotificationContent(
 
 /** Where a notification should land when tapped. Group rows deep-link to the
  *  group itself (the audit's N-8: everything used to dump the user at the top
- *  of /groups and make them hunt). */
+ *  of /groups and make them hunt).
+ *
+ *  MUST stay in step with notification_href_for() in
+ *  supabase-migration-p2-notification-maturity.sql §3, which stamps the same
+ *  route into `notifications.href` so the FCM payload — which cannot run this
+ *  code — deep-links identically. The stored value wins when present; this
+ *  function is the fallback for rows written before that migration. */
 export function notificationHref(n: {
   type?: string | null;
   groupId?: string | null;
+  href?: string | null;
+  params?: Record<string, unknown> | null;
 }): string {
+  const stored = typeof n.href === 'string' ? n.href.trim() : '';
+  // Only accept an in-app absolute path. A row is server-written, but this is
+  // the value we hand to navigate() — refusing anything that isn't "/…" keeps
+  // a future writer from turning a notification into an open redirect.
+  if (stored.startsWith('/') && !stored.startsWith('//')) return stored;
+
+  const committeeId = n.params && typeof n.params === 'object' && !Array.isArray(n.params)
+    ? (n.params as Record<string, unknown>).committeeId
+    : undefined;
+  if (n.type === 'kameti' && typeof committeeId === 'string' && committeeId) {
+    return `/kameti/${committeeId}`;
+  }
   if (n.type === 'group_update' && n.groupId) return `/group/${n.groupId}`;
   // 'invite' rows are written by tg_group_members_notify_invited
   // (supabase-migration-audit-p0-consent-guards.sql §2.4) and DO carry a
@@ -156,4 +196,61 @@ export function notificationHref(n: {
   // Accept/Decline card lives, so that is the only correct destination.
   if (n.type === 'group_update' || n.type === 'invite') return '/groups';
   return '/inbox';
+}
+
+// ── Android notification channels (audit N-10) ─────────────────────────────
+// Before M5 every push landed on one undifferentiated channel, so a user who
+// wanted less group chatter could only turn Hisaab off entirely — taking loan
+// requests with it. Splitting them lets the OS settings screen do the job a
+// preference centre would otherwise have to.
+//
+// 'reminders' is client-only: it is where notificationPlanner's device-local
+// bill/EMI/kameti/budget reminders go, and no server row ever carries it.
+export const NOTIFICATION_CHANNELS = ['money', 'groups', 'kameti', 'reminders'] as const;
+export type NotificationChannel = typeof NOTIFICATION_CHANNELS[number];
+
+const CHANNEL_SET = new Set<string>(NOTIFICATION_CHANNELS);
+
+/** Which Android channel a persisted notification belongs to.
+ *
+ *  MUST stay in step with notification_channel_for() in
+ *  supabase-migration-p2-notification-maturity.sql §3. The stored value wins;
+ *  this is the fallback for pre-migration rows and for a channel this build
+ *  does not know about (an unregistered channel_id makes Android drop the
+ *  notification silently, so an unknown value must never be passed through). */
+export function notificationChannel(n: {
+  type?: string | null;
+  template?: string | null;
+  channelId?: string | null;
+}): NotificationChannel {
+  const stored = typeof n.channelId === 'string' ? n.channelId.trim() : '';
+  if (CHANNEL_SET.has(stored)) return stored as NotificationChannel;
+  if (n.type === 'kameti' || (n.template ?? '').startsWith('kameti_')) return 'kameti';
+  if (n.type === 'linked_request' || n.type === 'linked_settlement') return 'money';
+  return 'groups';
+}
+
+/** Tray grouping key. Mirrors notification_collapse_key_for() in the same
+ *  migration §3: group traffic collapses per (group, template) so a trip
+ *  entered as ten expenses is ONE tray entry; money items key off the row id
+ *  so two different loan requests stay two different decisions. */
+export function notificationCollapseKey(n: {
+  id: string;
+  type?: string | null;
+  groupId?: string | null;
+  template?: string | null;
+  collapseKey?: string | null;
+  params?: Record<string, unknown> | null;
+}): string {
+  const stored = typeof n.collapseKey === 'string' ? n.collapseKey.trim() : '';
+  if (stored) return stored;
+  const params = n.params && typeof n.params === 'object' && !Array.isArray(n.params)
+    ? (n.params as Record<string, unknown>)
+    : {};
+  const committeeId = typeof params.committeeId === 'string' ? params.committeeId : '';
+  if (committeeId && (n.type === 'kameti' || (n.template ?? '').startsWith('kameti_'))) {
+    return `kameti:${committeeId}:${n.template || n.type}`;
+  }
+  if (n.groupId) return `group:${n.groupId}:${n.template || n.type}`;
+  return `${n.type || 'system'}:${n.id}`;
 }

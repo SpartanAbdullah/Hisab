@@ -25,6 +25,32 @@
 --   "double-tap the draw button — slots must not silently re-shuffle
 --   (F-13, expected fragile)".
 --
+-- supabase/tests (M7, docs/testing-the-trust-boundary.md) — THE NEVER-DRAW PATH.
+--   The first cut of this file gated BOTH immutability triggers on
+--   `committees.draw_seed IS NOT NULL`, i.e. on the draw having already
+--   happened. Before a draw there was no lock at all, so the organiser's client
+--   could simply UPDATE committee_members.slot on a payout_method='ballot'
+--   kameti and then never call perform_committee_draw() — which from then on
+--   refused FOREVER, because its guard trips on `v_slotted > 0`. The result was
+--   a "ballot" kameti with a hand-picked payout order, no seed and no
+--   commitment: M10's abuse reached by never drawing instead of by re-rolling.
+--   Hand-stamping committees.drawn_at had the same effect. The harness pinned
+--   the hole in supabase/tests/tests/50-lifecycle-and-config.sql as two
+--   assertions named GAP(kameti-draw); they now assert the refusals below.
+--
+--   The fix could NOT be "block slot writes". payout_method='fixed' is the
+--   column default and manual slots are that mode's entire point (the organiser
+--   chooses who gets paid in which round). So both triggers now gate on
+--   payout_method, and enforce a STATE INVARIANT rather than a write-delta:
+--
+--     on a ballot kameti, drawn_at and every member slot are NULL unless
+--     committees.draw_seed is non-null — and draw_seed is reachable only from
+--     inside perform_committee_draw().
+--
+--   Because it is an invariant and not a delta rule, it holds identically for
+--   INSERT and UPDATE, before and after a draw, and it survives a
+--   payout_method flip — which is what the old delta rules did not.
+--
 -- ── What this migration does ────────────────────────────────────────────────
 --
 -- 1. perform_committee_draw(p_committee_id) — a SECURITY DEFINER RPC that, in
@@ -36,15 +62,57 @@
 --    it is committed, so there is nothing left to re-roll.
 --
 -- 2. Two BEFORE INSERT/UPDATE triggers that make the draw append-only against
---    RAW PostgREST writes, not just against the app:
---      * committees: draw_seed / draw_commitment / draw_scheme can only ever be
---        written from inside perform_committee_draw; once a ballot draw exists,
---        drawn_at and payout_method are frozen.
---      * committee_members: once the parent committee carries a draw seed, slot
---        becomes immutable and no member may be inserted or deleted.
+--    RAW PostgREST writes, not just against the app. Every rule below is
+--    skipped inside perform_committee_draw() via the transaction-local
+--    `hisaab.committee_draw` flag, so "client" here means any write that did
+--    not come through the RPC.
+--
+--    THE FULL RULE TABLE — payout_method × column × before/after the draw.
+--    ("locked" = refused; "free" = the client may write it.)
+--
+--      committees                     fixed              ballot
+--        draw_seed / draw_commitment
+--        / draw_scheme                locked always      locked always
+--                                     (DRAW_FIELDS_ARE_SERVER_ONLY, 42501)
+--        drawn_at                     free               locked while
+--                                                        draw_seed IS NULL
+--                                                        (BALLOT_DRAW_SERVER_ONLY)
+--                                     locked once draw_seed IS NOT NULL
+--                                     (DRAW_LOCKED)
+--        payout_method                free -> ballot     locked once draw_seed
+--                                     ONLY if no member  IS NOT NULL
+--                                     holds a slot       (DRAW_LOCKED)
+--                                     (else BALLOT_SWITCH_NEEDS_CLEAR_SLOTS)
+--
+--      committee_members              fixed              ballot
+--        slot (INSERT or UPDATE)      free before the    locked while the
+--                                     draw               parent's draw_seed
+--                                                        IS NULL
+--                                                        (BALLOT_SLOTS_SERVER_ONLY)
+--                                     locked once the parent's draw_seed
+--                                     IS NOT NULL (DRAW_LOCKED)
+--        INSERT a member              free               free  (both: locked
+--                                                        once drawn)
+--        committee_id (re-parent)     locked if EITHER the old or the new
+--                                     parent carries a draw_seed (DRAW_LOCKED)
+--
+--    Every refusal raises SQLSTATE 42501 (insufficient_privilege), which
+--    PostgREST surfaces as HTTP 403 rather than a 500. The message still
+--    carries the stable code, which is what the client matches on
+--    (COMMITTEE_DRAW_ERRORS in src/lib/supabaseDb.ts).
+--
+--    fixed -> ballot with slots already set is REFUSED, not silently cleared.
+--    Clearing would have the trigger destroy rows the organiser can see in the
+--    UI without telling them, and would need a nested write into
+--    committee_members from inside the committees trigger. Refusing is the
+--    safer half of the choice the audit left open: the remedy is explicit and
+--    reversible — NULL the slots (still allowed while the kameti is 'fixed'),
+--    then switch with `payout_method = 'ballot', drawn_at = NULL`, then draw.
+--
 --    Without (2), an organiser could simply INSERT a committee that already
---    carries a brute-forced seed, or re-order the slots afterwards. Fixing the
---    RPC alone would have moved the hole, not closed it.
+--    carries a brute-forced seed, re-order the slots afterwards, or hand-write
+--    the slots of a ballot and never draw at all. Fixing the RPC alone would
+--    have moved the hole, not closed it.
 --
 -- ── Single-phase, and why that is the right bar here ────────────────────────
 --
@@ -170,15 +238,29 @@ begin
     raise exception 'perform_committee_draw: NOT_ACTIVE';
   end if;
 
-  -- The drawn-guard. Any one of these three means an order already exists and
-  -- members may have seen it; re-rolling is exactly the abuse M10 describes.
+  -- The drawn-guard. Either of these means an order already exists and members
+  -- may have seen it; re-rolling is exactly the abuse M10 describes.
   select count(*), count(*) filter (where slot is not null)
     into v_members, v_slotted
     from public.committee_members
    where committee_id = v.id;
 
-  if v.drawn_at is not null or v.draw_seed is not null or v_slotted > 0 then
+  if v.drawn_at is not null or v.draw_seed is not null then
     raise exception 'perform_committee_draw: ALREADY_DRAWN';
+  end if;
+
+  -- Defence in depth, and no longer the ballot path's guard. Section 3's
+  -- invariant makes a slotted-but-unseeded BALLOT committee unrepresentable,
+  -- so for payout_method='ballot' this branch is now UNREACHABLE BY DESIGN.
+  -- What it still catches is a payout_method='fixed' kameti whose organiser
+  -- already hand-picked an order and is now asking for a ballot: drawing would
+  -- silently overwrite that order. It gets its own code rather than
+  -- ALREADY_DRAWN, because nothing was drawn and the remedy is different —
+  -- NULL the slots first (allowed while the kameti is 'fixed'), then draw.
+  -- Reaching this at all from the app would be a bug: the draw CTA is only
+  -- offered on a ballot kameti.
+  if v_slotted > 0 then
+    raise exception 'perform_committee_draw: SLOTS_ALREADY_SET — % member(s) already hold a hand-picked slot; clear them before drawing', v_slotted;
   end if;
 
   if v_members < 2 then
@@ -254,35 +336,76 @@ set search_path = public
 as $$
 declare
   v_in_draw boolean := coalesce(current_setting('hisaab.committee_draw', true), 'off') = 'on';
+  v_slotted int;
 begin
   if v_in_draw then
     return new;
   end if;
 
+  -- (a) The three seal columns are server-only in BOTH modes, forever. A client
+  --     that could supply its own seed could brute-force one matching a
+  --     hand-picked order (~N! hashes) and every verification would pass.
   if tg_op = 'INSERT' then
-    -- A client that could insert its own seed could brute-force a seed matching
-    -- a hand-picked order (~N! hashes) and every verification would pass.
     if new.draw_seed is not null or new.draw_commitment is not null or new.draw_scheme is not null then
-      raise exception 'committees: DRAW_FIELDS_ARE_SERVER_ONLY — use perform_committee_draw()';
+      raise exception 'committees: DRAW_FIELDS_ARE_SERVER_ONLY — use perform_committee_draw()'
+        using errcode = '42501';
     end if;
-    return new;
-  end if;
-
-  if new.draw_seed is distinct from old.draw_seed
+  elsif new.draw_seed is distinct from old.draw_seed
      or new.draw_commitment is distinct from old.draw_commitment
      or new.draw_scheme is distinct from old.draw_scheme then
-    raise exception 'committees: DRAW_FIELDS_ARE_SERVER_ONLY — use perform_committee_draw()';
+    raise exception 'committees: DRAW_FIELDS_ARE_SERVER_ONLY — use perform_committee_draw()'
+      using errcode = '42501';
   end if;
 
-  -- Once a ballot draw exists the outcome is frozen: no re-dating it, and no
-  -- flipping to 'fixed' to escape the member-slot lock in section 3b.
-  if old.draw_seed is not null then
+  -- (b) Once a draw exists the outcome is frozen: no re-dating it, and no
+  --     flipping payout_method to escape the member-slot lock in section 3b.
+  if tg_op = 'UPDATE' and old.draw_seed is not null then
     if new.drawn_at is distinct from old.drawn_at then
-      raise exception 'committees: DRAW_LOCKED — drawn_at is immutable after a draw';
+      raise exception 'committees: DRAW_LOCKED — drawn_at is immutable after a draw'
+        using errcode = '42501';
     end if;
     if new.payout_method is distinct from old.payout_method then
-      raise exception 'committees: DRAW_LOCKED — payout_method is immutable after a draw';
+      raise exception 'committees: DRAW_LOCKED — payout_method is immutable after a draw'
+        using errcode = '42501';
     end if;
+  end if;
+
+  -- (c) THE LAUNDERING ROUTE. Set the slots while the kameti is 'fixed'
+  --     (legal — that is the mode), then relabel it 'ballot' so the hand-picked
+  --     order is presented to witnesses as a draw. Section 3b's per-row check
+  --     cannot see this: no member row is written, only the parent's mode.
+  --
+  --     Refused rather than silently cleared — see the rule table in this
+  --     file's header for the reasoning and the two-step remedy. Checked BEFORE
+  --     (d) so a slotted switch names the slots, which are the actual problem,
+  --     rather than the drawn_at it also carries.
+  if tg_op = 'UPDATE'
+     and new.payout_method = 'ballot'
+     and old.payout_method is distinct from 'ballot' then
+    select count(*) into v_slotted
+      from public.committee_members
+     where committee_id = new.id and slot is not null;
+    if v_slotted > 0 then
+      raise exception 'committees: BALLOT_SWITCH_NEEDS_CLEAR_SLOTS — % member(s) hold a hand-picked slot; clear the slots before switching this kameti to ballot', v_slotted
+        using errcode = '42501';
+    end if;
+  end if;
+
+  -- (d) THE NEVER-DRAW GAP. A ballot kameti is "drawn" only if the SERVER drew
+  --     it. Stated as an invariant on the resulting row rather than as a delta,
+  --     so it holds for INSERT and UPDATE alike and cannot be walked around by
+  --     changing payout_method in the same statement that carries a stale
+  --     drawn_at. draw_seed is unreachable from a client by (a), so pinning
+  --     drawn_at to it pins it to perform_committee_draw().
+  --
+  --     payout_method='fixed' is untouched here: an organiser-chosen order IS
+  --     that mode, and committeeStore.setFixedOrder stamps drawn_at as "the
+  --     order was settled at", which stays legal.
+  if new.payout_method = 'ballot'
+     and new.drawn_at is not null
+     and new.draw_seed is null then
+    raise exception 'committees: BALLOT_DRAW_SERVER_ONLY — drawn_at on a ballot kameti is set only by perform_committee_draw()'
+      using errcode = '42501';
   end if;
 
   return new;
@@ -293,10 +416,22 @@ create trigger trg_committees_draw_immutable
   before insert or update on public.committees
   for each row execute function public.tg_committees_draw_immutable();
 
--- 3b. Slots and membership freeze once a ballot draw exists — otherwise the
+-- 3b. Two rules, in order of when they bite:
+--
+--     BEFORE the draw, on a payout_method='ballot' kameti, a slot must be NULL.
+--     Slots are the draw's OUTPUT, never an input to it. Without this the
+--     organiser hand-writes the order and never calls the RPC at all — the
+--     never-draw path this file's Evidence section describes. Stated as an
+--     invariant on the row (`new.slot is not null`), not as a change, so an
+--     INSERT that arrives already slotted is refused too.
+--
+--     AFTER the draw, slots and membership freeze in BOTH modes — otherwise the
 --     organiser keeps the honest seed and simply rewrites the slots. (That is
 --     detectable by CommitteeVerifyDraw, but "detectable" is a weaker promise
 --     than "impossible", and the witness page is what non-app relatives see.)
+--
+--     payout_method='fixed' before a draw is deliberately left wide open: the
+--     organiser picking the payout round for each member is the whole feature.
 --
 --     DELETE is deliberately NOT blocked. Deleting a committee cascades into
 --     committee_members, and a BEFORE DELETE guard here would make
@@ -310,30 +445,57 @@ language plpgsql
 set search_path = public
 as $$
 declare
-  v_drawn boolean;
+  v_drawn  boolean;
+  v_method text;
 begin
   if coalesce(current_setting('hisaab.committee_draw', true), 'off') = 'on' then
     return new;
   end if;
 
-  select (c.draw_seed is not null) into v_drawn
+  select (c.draw_seed is not null), c.payout_method
+    into v_drawn, v_method
     from public.committees c where c.id = new.committee_id;
 
-  -- Not drawn (or parent already gone) → nothing to protect.
-  if v_drawn is not true then
+  -- Parent already gone (a cascade in flight) → nothing to protect.
+  if not found then
     return new;
   end if;
 
-  if tg_op = 'INSERT' then
-    raise exception 'committee_members: DRAW_LOCKED — cannot add a member after the ballot draw';
+  if v_drawn then
+    if tg_op = 'INSERT' then
+      raise exception 'committee_members: DRAW_LOCKED — cannot add a member after the ballot draw'
+        using errcode = '42501';
+    end if;
+
+    if new.slot is distinct from old.slot then
+      raise exception 'committee_members: DRAW_LOCKED — slot is immutable after the ballot draw'
+        using errcode = '42501';
+    end if;
+
+    if new.committee_id is distinct from old.committee_id then
+      raise exception 'committee_members: DRAW_LOCKED — a drawn member cannot be moved between committees'
+        using errcode = '42501';
+    end if;
+
+  -- PRE-DRAW, BALLOT: the slot is the draw's output. Refusing it here is what
+  -- makes perform_committee_draw()'s `v_slotted > 0` branch unreachable for
+  -- ballot, and therefore what stops the RPC from being permanently bricked by
+  -- a hand-written order.
+  elsif v_method = 'ballot' and new.slot is not null then
+    raise exception 'committee_members: BALLOT_SLOTS_SERVER_ONLY — slot on a ballot kameti is assigned only by perform_committee_draw()'
+      using errcode = '42501';
   end if;
 
-  if new.slot is distinct from old.slot then
-    raise exception 'committee_members: DRAW_LOCKED — slot is immutable after the ballot draw';
-  end if;
-
-  if new.committee_id is distinct from old.committee_id then
-    raise exception 'committee_members: DRAW_LOCKED — a drawn member cannot be moved between committees';
+  -- The lookup above sees only the NEW parent, so moving a member OUT of a
+  -- drawn kameti and into an undrawn one slipped past the DRAW_LOCKED check —
+  -- an equivalent of the member removal the DELETE note below accepts, but one
+  -- the error message above already claimed to block. Check the old parent too.
+  if tg_op = 'UPDATE'
+     and new.committee_id is distinct from old.committee_id
+     and exists (select 1 from public.committees c
+                  where c.id = old.committee_id and c.draw_seed is not null) then
+    raise exception 'committee_members: DRAW_LOCKED — a drawn member cannot be moved between committees'
+      using errcode = '42501';
   end if;
 
   return new;
@@ -451,7 +613,20 @@ select count(*) as seeded_but_unslotted
    and not exists (select 1 from public.committee_members m
                     where m.committee_id = c.id and m.slot is not null);
 
--- 5.8 Manual QA as a signed-in organiser (do this on a throwaway committee):
+-- 5.9 THE NEVER-DRAW INVARIANT. A ballot kameti may carry slots or a drawn_at
+--     only if the server drew it. Anything here is a pre-fix hand-picked
+--     "ballot" order: it has no seed, so its fairness is not merely unproven,
+--     it is unprovable. Delete the row or relabel it 'fixed' (honest) — the
+--     witness page must not present it as a draw. Expect: 0
+select count(*) as unseeded_ballots_with_an_order
+  from public.committees c
+ where c.payout_method = 'ballot'
+   and c.draw_seed is null
+   and (c.drawn_at is not null
+        or exists (select 1 from public.committee_members m
+                    where m.committee_id = c.id and m.slot is not null));
+
+-- 5.10 Manual QA as a signed-in organiser (do this on a throwaway committee):
 --   a. Create a 'ballot' kameti with 4 members, then:
 --        select public.perform_committee_draw('<committee id>');
 --      -> {"status":"ok", ..., "drawScheme":"sha256-rank-v1", "order":[...]}
@@ -467,7 +642,28 @@ select count(*) as seeded_but_unslotted
 --      -> ERROR: committee_members: DRAW_LOCKED
 --        insert into public.committees (..., draw_seed, draw_commitment) values (...);
 --      -> ERROR: committees: DRAW_FIELDS_ARE_SERVER_ONLY
---   e. Open the witness link and press "Check this draw" -> must say verified.
+--   e. The NEVER-DRAW attack, on a SECOND throwaway ballot kameti that has NOT
+--      been drawn:
+--        update public.committee_members set slot = 1 where id = '<any member>';
+--      -> ERROR: committee_members: BALLOT_SLOTS_SERVER_ONLY
+--        update public.committees set drawn_at = now() where id = '<undrawn id>';
+--      -> ERROR: committees: BALLOT_DRAW_SERVER_ONLY
+--      then perform_committee_draw('<undrawn id>') must still SUCCEED — the
+--      point of the fix is that a refused rig does not brick the real draw.
+--   f. The fixed mode is untouched. On a THIRD throwaway kameti created with
+--      payout_method = 'fixed':
+--        update public.committee_members set slot = 2 where id = '<member>';
+--      -> ok (this is what the mode is for)
+--        update public.committees set drawn_at = now() where id = '<fixed id>';
+--      -> ok
+--        update public.committees set payout_method = 'ballot' where id = '<fixed id>';
+--      -> ERROR: committees: BALLOT_SWITCH_NEEDS_CLEAR_SLOTS
+--      The documented remedy, in this order:
+--        update public.committee_members set slot = null where committee_id = '<fixed id>';
+--        update public.committees set payout_method = 'ballot', drawn_at = null
+--          where id = '<fixed id>';
+--        select public.perform_committee_draw('<fixed id>');
+--   g. Open the witness link and press "Check this draw" -> must say verified.
 --      Recompute independently to be sure, e.g.:
 --        printf '%s' '<drawSeed>:<member id>' | sha256sum
 --      Sorting every member by that hash must reproduce the slot order shown.

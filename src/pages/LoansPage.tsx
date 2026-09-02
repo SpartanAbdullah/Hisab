@@ -491,14 +491,16 @@ export function LoansPage() {
             </span>
           )}
           <p className="text-[11px] text-ink-500 mt-0.5">
-            {totalLoans} {totalLoans === 1 ? 'loan' : 'loans'}
+            {totalLoans === 1
+              ? t('common_loan_one')
+              : t('common_loan_many').replace('{n}', String(totalLoans))}
             {remainingInstalments > 0 && (
-              <> · {remainingInstalments} instalments left</>
+              <> · {t('loans_instalments_left').replace('{n}', String(remainingInstalments))}</>
             )}
           </p>
           {nextInst && !isSettled && (
             <p className="text-[10.5px] text-ink-400 mt-0.5 tabular-nums">
-              Next: {format(new Date(nextInst.dueDate), 'd MMM')} ·{' '}
+              {t('loans_next_label')}: {format(new Date(nextInst.dueDate), 'd MMM')} ·{' '}
               {formatMoney(nextInst.amount, group.currency)}
             </p>
           )}
@@ -530,14 +532,14 @@ export function LoansPage() {
               <button
                 onClick={() => setShowSearch((v) => !v)}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Search"
+                aria-label={t('a11y_search')}
               >
                 <Search size={15} className="text-white" />
               </button>
               <button
                 onClick={() => setShowAdd(true)}
                 className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[12px] font-semibold text-white transition-colors"
-                aria-label="Add loan"
+                aria-label={t('loans_a11y_add')}
               >
                 <Plus size={13} strokeWidth={2.4} /> {t('naya')}
               </button>
@@ -548,7 +550,7 @@ export function LoansPage() {
 
         <div className="px-5 pb-7">
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
-            Your stance · {primaryCurrency}
+            {t('loans_your_stance')} · {primaryCurrency}
           </p>
           <div className="mt-1.5">
             <MoneyDisplay
@@ -586,12 +588,16 @@ export function LoansPage() {
               </div>
               <div className="flex items-center justify-between mt-2 text-[10.5px]">
                 <span className="text-receive-text/90 tabular-nums" style={{ color: '#7CE3B6' }}>
-                  +{formatMoney(recvPrimary, primaryCurrency)} to receive ·{' '}
-                  {recvPeopleCount} {recvPeopleCount === 1 ? 'pp' : 'ppl'}
+                  +{formatMoney(recvPrimary, primaryCurrency)} {t('loans_to_receive_short')} ·{' '}
+                  {recvPeopleCount === 1
+                    ? t('loans_people_one')
+                    : t('loans_people_many').replace('{n}', String(recvPeopleCount))}
                 </span>
                 <span className="tabular-nums" style={{ color: '#F0A496' }}>
-                  −{formatMoney(payPrimary, primaryCurrency)} to pay ·{' '}
-                  {payPeopleCount} {payPeopleCount === 1 ? 'pp' : 'ppl'}
+                  −{formatMoney(payPrimary, primaryCurrency)} {t('loans_to_pay_short')} ·{' '}
+                  {payPeopleCount === 1
+                    ? t('loans_people_one')
+                    : t('loans_people_many').replace('{n}', String(payPeopleCount))}
                 </span>
               </div>
             </>
@@ -606,7 +612,7 @@ export function LoansPage() {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by name"
+              placeholder={t('loans_search_by_name')}
               className="w-full bg-cream-card border border-cream-border rounded-2xl pl-10 pr-10 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
               autoFocus
             />
@@ -614,7 +620,7 @@ export function LoansPage() {
               <button
                 onClick={() => setSearchQuery('')}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 press-xs"
-                aria-label="Clear search"
+                aria-label={t('a11y_clear_search')}
               >
                 <X size={14} />
               </button>
@@ -713,7 +719,7 @@ export function LoansPage() {
         {otherGroups.length > 0 && (
           <div>
             <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5 px-1">
-              Other currencies
+              {t('loans_other_currencies')}
             </h2>
             <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
               {otherGroups.map(renderPersonRow)}
@@ -724,8 +730,8 @@ export function LoansPage() {
         {loadStatus === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load loans"
-            message={loadError ?? 'Some data failed to load.'}
+            title={t('loans_err_load')}
+            message={loadError ?? t('err_some_data_failed')}
             onRetry={retryLoad}
           />
         )}
@@ -808,7 +814,7 @@ export function LoansPage() {
 
             <div>
               <h3 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5">
-                Individual loans
+                {t('loans_individual')}
               </h3>
               <div className="space-y-2">
                 {selectedGroup.loans
@@ -826,11 +832,11 @@ export function LoansPage() {
 
             <div>
               <h3 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5">
-                Activity
+                {t('loans_activity')}
               </h3>
               {selectedTransactions.length === 0 ? (
                 <p className="text-[12px] text-ink-400 text-center py-5">
-                  No transaction activity yet.
+                  {t('loans_no_activity')}
                 </p>
               ) : (
                 <div className="rounded-[18px] bg-cream-card border border-cream-border px-3 divide-y divide-cream-hairline">
@@ -967,8 +973,9 @@ function LoanGroupSummary({
         {formatMoney(primaryAmount, group.currency)}
       </p>
       <p className="text-[11px] text-ink-500 mt-1">
-        {formatMoney(settledAmount, group.currency)} {isGiven ? 'received' : 'paid'} of{' '}
-        {formatMoney(group.total, group.currency)}
+        {(isGiven ? t('loans_progress_received') : t('loans_progress_paid'))
+          .replace('{paid}', formatMoney(settledAmount, group.currency))
+          .replace('{total}', formatMoney(group.total, group.currency))}
       </p>
       <div className="mt-3 h-1.5 rounded-full overflow-hidden bg-white/60">
         <div
@@ -1020,7 +1027,7 @@ function LoanDrilldownRow({ loan, onClick }: { loan: Loan; onClick: () => void }
             }`}
           >
             {loan.status === 'settled' && <VerifiedBadge size={12} />}
-            {loan.status}
+            {loan.status === 'settled' ? t('loan_status_settled') : t('loan_status_active')}
           </span>
         </div>
         <p className="text-[10.5px] text-ink-500 mt-1">

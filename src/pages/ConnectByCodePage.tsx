@@ -115,15 +115,15 @@ export function ConnectByCodePage() {
     return (
       <main className="min-h-dvh bg-cream-bg">
         <NavyHero>
-          <TopBar title="Connect on Hisaab" back />
+          <TopBar title={t('cbc_title')} back />
         </NavyHero>
         <div className="sukoon-body px-5 pt-6">
           <PageErrorState
             variant="inline"
-            title="Sign in to connect"
-            message="Open Hisaab and sign in, then scan this code again."
+            title={t('cbc_signin_title')}
+            message={t('cbc_signin_body')}
             onRetry={() => navigate('/auth')}
-            actionLabel="Sign in"
+            actionLabel={t('cbc_signin_cta')}
           />
         </div>
       </main>
@@ -133,10 +133,10 @@ export function ConnectByCodePage() {
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
       <NavyHero>
-        <TopBar title="Connect on Hisaab" back />
+        <TopBar title={t('cbc_title')} back />
         <div className="px-5 pb-6">
           <p className="text-[10.5px] font-semibold text-white/55 tracking-[0.12em] uppercase">
-            {normalised ? `HSB-${normalised}` : 'Invalid code'}
+            {normalised ? `HSB-${normalised}` : t('cbc_invalid_code')}
           </p>
         </div>
       </NavyHero>
@@ -184,7 +184,7 @@ export function ConnectByCodePage() {
                 <p className="text-[15px] font-semibold text-ink-900 flex items-center gap-1.5 min-w-0">
                   <span className="truncate">{found.displayName}</span>
                 </p>
-                <p className="text-[11.5px] text-ink-500 mt-0.5">on Hisaab</p>
+                <p className="text-[11.5px] text-ink-500 mt-0.5">{t('cbc_on_hisaab')}</p>
               </div>
             </div>
 
@@ -193,10 +193,10 @@ export function ConnectByCodePage() {
                 <CheckCircle2 size={18} className="text-receive-600 shrink-0 mt-0.5" />
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-ink-900">
-                    Already in your contacts as {existing.name}
+                    {t('cbc_already_contact').replace('{name}', existing.name)}
                   </p>
                   <p className="text-[11.5px] text-ink-500 mt-0.5 leading-relaxed">
-                    Nothing to do — open them from Contacts to record a loan or settle up.
+                    {t('cbc_already_contact_sub')}
                   </p>
                 </div>
               </div>

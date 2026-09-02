@@ -6,6 +6,8 @@ import { resetAllUserStores } from './resetAllStores';
 import { accountDeletionDb } from '../lib/supabaseDb';
 import { stopPushRegistration } from '../lib/pushRegistration';
 import { cancelAllScheduledNotifications } from '../lib/notificationScheduler';
+import { reportError, reportMessage } from '../lib/errorReporter';
+import { getCachedProfile, invalidateProfileCache } from '../lib/profileCache';
 
 interface SupabaseAuthState {
   user: User | null;
@@ -56,7 +58,7 @@ async function clearLocalAuthSession(): Promise<void> {
     // cleanly) whenever the first failure was server-side rather than offline.
     await supabase.auth.signOut({ scope: 'local' });
   } catch (err) {
-    console.error('[signOut] local session teardown failed (continuing)', err);
+    reportError(err, { feature: 'supabaseAuthStore.clearLocalAuthSession.signOutLocal' });
   }
   try {
     // Last resort. GoTrue parks everything under the `sb-` prefix:
@@ -67,7 +69,8 @@ async function clearLocalAuthSession(): Promise<void> {
       if (key.startsWith('sb-')) localStorage.removeItem(key);
     }
   } catch (err) {
-    console.error('[signOut] auth-key purge failed', err);
+    // The device may still hold a usable refresh token - a real security event.
+    reportError(err, { feature: 'supabaseAuthStore.clearLocalAuthSession.keyPurge' });
   }
 }
 
@@ -82,12 +85,16 @@ const DEVICE_TEARDOWN_TIMEOUT_MS = 3000;
 function withTeardownTimeout(label: string, work: Promise<unknown>): Promise<void> {
   return new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
-      console.error(`[signOut] ${label} timed out after ${DEVICE_TEARDOWN_TIMEOUT_MS}ms (continuing)`);
+      reportMessage('device teardown timed out during sign-out', {
+        feature: 'supabaseAuthStore.withTeardownTimeout.timeout',
+        level: 'warning',
+        extra: { step: label, timeoutMs: DEVICE_TEARDOWN_TIMEOUT_MS },
+      });
       resolve();
     }, DEVICE_TEARDOWN_TIMEOUT_MS);
     void work
       .catch((err) => {
-        console.error(`[signOut] ${label} failed (continuing)`, err);
+        reportError(err, { feature: 'supabaseAuthStore.withTeardownTimeout.stepFailed', extra: { step: label } });
       })
       .finally(() => {
         clearTimeout(timer);
@@ -123,14 +130,16 @@ async function teardownDeviceNotifications(): Promise<void> {
   ]);
 }
 
+// Audit 03-performance M2: this used to be its own `profiles` SELECT, fired
+// once from initialize() and again from the INITIAL_SESSION auth event —
+// while onboardingStore and App.tsx read the same row twice more. It now goes
+// through the shared boot cache, so all four reads collapse into one request.
+// Failure semantics are unchanged: no row / any error ⇒ "not deleted", i.e.
+// the gate fails OPEN exactly as before (a deleted account is still refused
+// server-side by the RESTRICTIVE active-profile RLS policies).
 async function isDeletedProfile(userId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('is_deleted')
-    .eq('id', userId)
-    .single();
-  if (error) return false;
-  return data?.is_deleted === true;
+  const profile = await getCachedProfile(userId);
+  return profile?.is_deleted === true;
 }
 
 async function blockDeletedSession(set: (state: Partial<SupabaseAuthState>) => void) {
@@ -147,7 +156,7 @@ async function blockDeletedSession(set: (state: Partial<SupabaseAuthState>) => v
     try {
       await resetAllUserStores(userId ?? undefined);
     } catch (err) {
-      console.error('[blockDeletedSession] store reset failed (continuing)', err);
+      reportError(err, { feature: 'supabaseAuthStore.blockDeletedSession.storeReset' });
     }
     localStorage.removeItem('hisaab_supabase_uid');
     set({
@@ -186,26 +195,38 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
       set({ session, user: session?.user ?? null, loading: false });
 
       // Listen for auth changes
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange((event, session) => {
         void (async () => {
           if (session?.user?.id) {
             const previousUserId = localStorage.getItem('hisaab_supabase_uid');
             if (previousUserId && previousUserId !== session.user.id) {
+              // A different user: the memoized profile row belongs to the
+              // previous one and must never be served to this session.
+              invalidateProfileCache();
               await resetAllUserStores(previousUserId);
             }
             localStorage.setItem('hisaab_supabase_uid', session.user.id);
-            void isDeletedProfile(session.user.id).then((isDeleted) => {
-              if (isDeleted) void blockDeletedSession(set);
-            });
+            // Audit 03-performance quick win #9: TOKEN_REFRESHED fires roughly
+            // hourly for every open session and cannot change is_deleted, so it
+            // no longer triggers the gate — that was a fleet-wide query per
+            // user per hour. INITIAL_SESSION still runs it, and is now free:
+            // initialize() already primed the shared profile cache.
+            if (event !== 'TOKEN_REFRESHED') {
+              void isDeletedProfile(session.user.id).then((isDeleted) => {
+                if (isDeleted) void blockDeletedSession(set);
+              });
+            }
           } else {
             const previousUserId = localStorage.getItem('hisaab_supabase_uid');
+            invalidateProfileCache();
             await resetAllUserStores(previousUserId ?? undefined);
             localStorage.removeItem('hisaab_supabase_uid');
           }
           set({ session, user: session?.user ?? null });
         })();
       });
-    } catch {
+    } catch (err) {
+      reportError(err, { feature: 'supabaseAuthStore.initialize' });
       set({ loading: false });
     }
   },
@@ -288,10 +309,10 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
       if (error) {
         // Not fatal, but worth recording: the refresh token is still live
         // server-side and only the local teardown below protects the device.
-        console.error('[signOut] server revocation failed; forcing local sign-out', error);
+        reportError(error, { feature: 'supabaseAuthStore.signOut.serverRevocationFailed' });
       }
     } catch (err) {
-      console.error('[signOut] server revocation threw; forcing local sign-out', err);
+      reportError(err, { feature: 'supabaseAuthStore.signOut.serverRevocationThrew' });
     } finally {
       // ...and this is the half that must ALWAYS happen. Runs first in the
       // finally block so nothing downstream can throw before the device's
@@ -301,9 +322,10 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
         await resetAllUserStores(userId ?? undefined);
       } catch (err) {
         // A failed Dexie/store wipe must not leave the user "still signed in".
-        console.error('[signOut] store reset failed (continuing)', err);
+        reportError(err, { feature: 'supabaseAuthStore.signOut.storeReset' });
       }
       localStorage.removeItem('hisaab_supabase_uid');
+      invalidateProfileCache();
       set({ user: null, session: null, error: null });
     }
   },
@@ -334,6 +356,8 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     const user = get().user;
     if (!user) return;
     await supabase.from('profiles').update(data).eq('id', user.id);
+    // The boot memo must never mask a write the user just made.
+    invalidateProfileCache();
   },
 
   changePassword: async (newPassword) => {
@@ -341,10 +365,12 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     if (error) throw error;
   },
 
+  // Shares the boot cache with the deleted-account gate and
+  // onboardingStore.checkOnboarding (audit M2: the same row was read 3-4×
+  // per cold boot). Pass through to the same query when the memo is cold.
   getProfile: async () => {
     const user = get().user;
     if (!user) return null;
-    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    return data;
+    return getCachedProfile(user.id);
   },
 }));

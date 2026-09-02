@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { PageErrorState } from './PageErrorState';
 import { recoverFromStaleApp, STALE_APP_CHUNK_EVENT } from '../lib/appRecovery';
+import { useT } from '../lib/i18n';
 
 export function GlobalChunkRecoveryOverlay() {
+  const t = useT();
   const [showRecovery, setShowRecovery] = useState(false);
 
   useEffect(() => {
@@ -16,10 +18,10 @@ export function GlobalChunkRecoveryOverlay() {
   return (
     <div className="fixed inset-0 z-[100]">
       <PageErrorState
-        title="App update available"
-        message="Hisaab was updated while you were away. Refresh the app to continue safely."
-        secondaryText="Your saved data is safe."
-        actionLabel="Refresh app"
+        title={t('gcr_update_available')}
+        message={t('gcr_update_body')}
+        secondaryText={t('gcr_data_safe')}
+        actionLabel={t('gcr_refresh_cta')}
         onRetry={() => void recoverFromStaleApp()}
       />
     </div>

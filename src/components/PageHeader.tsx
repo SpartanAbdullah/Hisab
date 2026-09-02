@@ -18,7 +18,11 @@ export function PageHeader({ title, back, action, showInbox = true }: Props) {
     <header
       className="sticky top-0 border-b border-cream-hairline px-5 pt-safe pb-3.5 flex items-center justify-between z-40"
       style={{
-        background: 'rgba(244, 242, 236, 0.9)', // cream-bg @ 90% — matches the modal-header cream treatment
+        // Theme-aware surface (see --header-surface in index.css, mirrors
+        // BottomNav's --nav-surface): a plain inline rgba() can't flip in
+        // dark mode since inline styles always beat any stylesheet rule,
+        // including html.dark (audit finding #3, 09-ui-quality.md §8).
+        background: 'var(--header-surface)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
       }}

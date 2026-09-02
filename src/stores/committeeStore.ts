@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { committeesDb, committeeMembersDb, committeePaymentsDb, CommitteeDrawError } from '../lib/supabaseDb';
 import { generateSeed } from '../lib/committeeDraw';
+import { reportError } from '../lib/errorReporter';
 import type {
   Committee, CommitteeMember, CommitteePayment,
   CommitteeCadence, CommitteePayoutMethod, Currency,
@@ -28,7 +29,8 @@ interface CommitteeState {
   members: CommitteeMember[];
   payments: CommitteePayment[];
   loading: boolean;
-  loadAll: () => Promise<void>;
+  /** `force: true` bypasses the in-flight/freshness gate (see below). */
+  loadAll: (options?: { force?: boolean }) => Promise<void>;
   createCommittee: (input: CreateCommitteeInput) => Promise<Committee>;
   deleteCommittee: (id: string) => Promise<void>;
   runBallot: (committeeId: string) => Promise<void>;
@@ -47,23 +49,52 @@ interface CommitteeState {
 
 const INITIAL = { committees: [] as Committee[], members: [] as CommitteeMember[], payments: [] as CommitteePayment[], loading: false };
 
+// Audit 03-performance M2: `loadAll` is three unbounded queries and had no
+// gate of any kind, so the App boot effect and HomePage's mount effect both
+// ran it within the same second — six queries for one set of rows. Kameti data
+// is low-churn (a payment tick, a draw), so a short freshness window plus an
+// in-flight share is enough; anything that MUST see the server (the
+// ALREADY_DRAWN resync) passes `{ force: true }`.
+const COMMITTEE_FRESH_MS = 60_000;
+let committeesLoadedAt = 0;
+let committeesInFlight: Promise<void> | null = null;
+
+/** Test/reset seam — also called from `reset()` so a user switch re-fetches. */
+function clearCommitteeLoadGate(): void {
+  committeesLoadedAt = 0;
+  committeesInFlight = null;
+}
+
 export const useCommitteeStore = create<CommitteeState>((set, get) => ({
   ...INITIAL,
 
-  reset: () => set(INITIAL),
+  reset: () => {
+    clearCommitteeLoadGate();
+    set(INITIAL);
+  },
 
-  loadAll: async () => {
-    set({ loading: true });
-    try {
-      const [committees, members, payments] = await Promise.all([
-        committeesDb.getAll(),
-        committeeMembersDb.getAll(),
-        committeePaymentsDb.getAll(),
-      ]);
-      set({ committees, members, payments });
-    } finally {
-      set({ loading: false });
+  loadAll: async (options) => {
+    if (!options?.force) {
+      if (committeesInFlight) return committeesInFlight;
+      if (committeesLoadedAt > 0 && Date.now() - committeesLoadedAt < COMMITTEE_FRESH_MS) return;
     }
+    set({ loading: true });
+    const run = (async () => {
+      try {
+        const [committees, members, payments] = await Promise.all([
+          committeesDb.getAll(),
+          committeeMembersDb.getAll(),
+          committeePaymentsDb.getAll(),
+        ]);
+        set({ committees, members, payments });
+        committeesLoadedAt = Date.now();
+      } finally {
+        committeesInFlight = null;
+        set({ loading: false });
+      }
+    })();
+    committeesInFlight = run;
+    return run;
   },
 
   createCommittee: async (input) => {
@@ -139,7 +170,15 @@ export const useCommitteeStore = create<CommitteeState>((set, get) => ({
       // The server refused because an order already exists — our local copy was
       // stale (another device, another tab). Pull the real one back.
       if (err instanceof CommitteeDrawError && err.code === 'ALREADY_DRAWN') {
-        await get().loadAll().catch(() => {});
+        // Expected: another device drew first. Only the recovery reload is
+        // worth reporting if it too fails.
+        // Must hit the server: our copy is known-stale, so the freshness gate
+        // would otherwise hand back the very rows that are wrong.
+        await get().loadAll({ force: true }).catch((reloadErr) => {
+          reportError(reloadErr, { feature: 'committeeStore.runBallot.staleReload', extra: { committeeId } });
+        });
+      } else {
+        reportError(err, { feature: 'committeeStore.runBallot', extra: { committeeId } });
       }
       throw err;
     }
@@ -191,7 +230,9 @@ export const useCommitteeStore = create<CommitteeState>((set, get) => ({
     // debounce can't swallow it; no-op on web.
     void import('../lib/notificationScheduler')
       .then((m) => m.rescheduleNotifications({ force: true }))
-      .catch(() => {});
+      .catch((err) => {
+        reportError(err, { feature: 'committeeStore.setPaid.nudgeReminderSchedule' });
+      });
   },
 
   confirmPayout: async (memberId, received) => {

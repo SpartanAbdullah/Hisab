@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { SettlementNudge } from '../lib/settlementNudges';
 import { snoozeNudge } from '../lib/settlementNudges';
 import { formatMoney } from '../lib/constants';
+import { useT } from '../lib/i18n';
 
 interface Props {
   nudges: SettlementNudge[];
@@ -15,6 +16,7 @@ interface Props {
 // "Send WhatsApp" opens wa.me only if the contact has a phone on file.
 // "Dismiss" snoozes the nudge for 24h.
 export function SettlementNudgeBanner({ nudges }: Props) {
+  const t = useT();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
   const visible = nudges.filter((n) => !dismissed.has(n.request.id));
@@ -51,14 +53,14 @@ export function SettlementNudgeBanner({ nudges }: Props) {
               </p>
               <p className="text-[11px] text-ink-600 mt-0.5">
                 {formatMoney(nudge.request.amount, nudge.request.currency)} ·{' '}
-                {nudge.daysOpen}d ago
+                {t('snb_days_ago').replace('{n}', String(nudge.daysOpen))}
               </p>
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <button
                   onClick={() => navigate('/inbox')}
                   className="min-h-[44px] text-[11px] font-semibold text-white bg-ink-900 rounded-lg px-3 py-1.5 press-sm"
                 >
-                  Open in Inbox
+                  {t('snb_open_inbox')}
                 </button>
                 {nudge.whatsappUrl && (
                   <a
@@ -68,14 +70,14 @@ export function SettlementNudgeBanner({ nudges }: Props) {
                     className="min-h-[44px] text-[11px] font-semibold text-receive-text bg-receive-50 rounded-lg px-3 py-1.5 flex items-center gap-1 press-sm"
                   >
                     <MessageCircle size={11} strokeWidth={2.4} />
-                    WhatsApp
+                    {t('snb_whatsapp')}
                   </a>
                 )}
               </div>
             </div>
             <button
               onClick={() => handleDismiss(nudge.request.id)}
-              aria-label="Snooze for 24 hours"
+              aria-label={t('a11y_snooze_24h')}
               className='relative w-7 h-7 rounded-lg flex items-center justify-center text-ink-500 active:bg-warn-50/60 transition-colors shrink-0 before:absolute before:-inset-2 before:content-[""]'
             >
               <X size={14} />

@@ -51,6 +51,8 @@ export function MyConnectCode() {
     const url = buildAppShareUrl();
     const text = `${t('connect_share_text')} @${code}`;
     try {
+      // Brand name — identical in both languages, not a copy string.
+      // eslint-disable-next-line no-restricted-syntax
       if (navigator.share) { await navigator.share({ title: 'Hisaab', text, url }); return; }
       await copyText(`${text}\n${url}`);
       toast.show({ type: 'success', title: t('connect_code_copied') });
@@ -77,7 +79,7 @@ export function MyConnectCode() {
           disabled={!code}
           className="flex-1 min-w-0 flex items-center justify-center gap-2 rounded-xl bg-cream-card border border-cream-border py-2.5 disabled:opacity-50 press"
         >
-          <span className="text-[9px] font-semibold text-ink-400 uppercase tracking-[0.12em]">HSB</span>
+          <span className="text-[9px] font-semibold text-ink-400 uppercase tracking-[0.12em]">{t('mcc_hsb_tag')}</span>
           <span className="text-[14px] font-bold text-ink-900 tabular-nums">{code ? `@${code}` : '…'}</span>
           {code && <Copy size={13} className="text-ink-400" />}
         </button>

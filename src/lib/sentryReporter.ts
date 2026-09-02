@@ -1,13 +1,72 @@
-import * as Sentry from '@sentry/browser';
+// NOTE: `@sentry/browser` is imported for TYPES ONLY here. The runtime import
+// is the `await import('@sentry/browser')` inside loadSentryReporter() —
+// audit 2026-09 H1 / quick win #13: a static import put the whole ~262 kB
+// SDK in the eager graph on every cold boot, DSN or no DSN. `import type` is
+// erased by the compiler, so it does not resurrect that edge.
+import type * as SentryNs from '@sentry/browser';
 import type { ErrorContext, ErrorReporter } from './errorReporter';
 
-// Initialise Sentry from VITE_SENTRY_DSN. Call once at app boot before any
-// user-visible code runs. Returns the reporter to pass to setErrorReporter().
-// Returns null if no DSN is configured (dev/local), so the caller can fall
-// back to the noop reporter.
-export function initSentry(): ErrorReporter | null {
+// ─────────────────────────────────────────────────────────────────────────
+// NATIVE CRASH REPORTING (audit 2026-09 §2.3) — NOT ENABLED.
+//
+// Only JS errors inside the WebView reach Sentry today. A WebView process
+// crash, an ANR, an OOM kill, or a crash inside a Capacitor plugin is
+// invisible on the platform where most users live.
+//
+// The decision, the version evidence, the Gradle answer (spoiler: no Gradle
+// changes needed) and the verification checklist are in
+// docs/native-crash-reporting.md. `@sentry/capacitor` is NOT installed —
+// package.json is deliberately untouched — so the block below is inert until
+// the lead runs the install in the next native change window.
+//
+// To enable, do exactly three things:
+//   1. npm install --save-exact @sentry/capacitor@4.3.0 @sentry/browser@10.69.0
+//   2. swap the DYNAMIC import inside loadSentryReporter() (keep it dynamic —
+//      audit H1; the static import is what put the SDK in the entry graph):
+//        const Sentry = await import('@sentry/capacitor');
+//        const { init: browserInit } = await import('@sentry/browser');
+//      and point the type-only import at '@sentry/capacitor' too.
+//   3. replace the Sentry.init({ ... }) call below with:
+//
+//        Sentry.init(
+//          {
+//            dsn,
+//            environment: import.meta.env.MODE,
+//            tracesSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
+//            sendDefaultPii: false,
+//            enableNative: true,                        // no-op on web
+//            anrEnabled: true,                          // main-thread freezes
+//            enableWatchdogTerminationTracking: true,   // WebView process death
+//            ignoreErrors: [ /* unchanged */ ],
+//          },
+//          browserInit,                                 // the sibling SDK's init
+//        );
+//
+// Nothing below that call changes: @sentry/capacitor re-exports the same
+// withScope / captureException / captureMessage surface, so the `feature`
+// tag, the fingerprint and the DSN-absent console fallback all survive.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Is a DSN configured at all? Checked by the caller BEFORE this module is
+ *  even fetched, so a build with no DSN never downloads the SDK chunk. */
+export function hasSentryDsn(): boolean {
+  const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
+  return typeof dsn === 'string' && dsn.length > 0;
+}
+
+// Fetch + initialise Sentry from VITE_SENTRY_DSN. Called once from main.tsx
+// AFTER first paint (requestIdleCallback), never during module evaluation.
+// Resolves to the reporter to hand to resolveDeferredReporter(), or null if
+// no DSN is configured (dev/local) so the caller keeps the noop reporter.
+//
+// Everything reported between boot and this promise resolving is buffered by
+// errorReporter's pending queue and replayed here — see the deferred-reporter
+// block in errorReporter.ts.
+export async function loadSentryReporter(): Promise<ErrorReporter | null> {
   const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
   if (!dsn || dsn.length === 0) return null;
+
+  const Sentry = await import('@sentry/browser');
 
   Sentry.init({
     dsn,
@@ -27,26 +86,36 @@ export function initSentry(): ErrorReporter | null {
     ],
   });
 
-  const applyContext = (context: ErrorContext | undefined): void => {
+  // Everything is applied to the *event's own* scope, never the global one.
+  // (Audit 2026-09 H1: the previous version called the global `Sentry.setTag`
+  // / `setUser` / `setContext` inside withScope, so the last-reported feature
+  // leaked onto every subsequent unrelated event and broke grouping.)
+  const applyContext = (scope: SentryNs.Scope, context: ErrorContext | undefined, fallbackLevel: 'info' | 'error'): void => {
+    scope.setLevel(context?.level ?? fallbackLevel);
     if (!context) return;
-    if (context.feature) Sentry.setTag('feature', context.feature);
-    if (context.userId) Sentry.setUser({ id: context.userId });
-    if (context.extra) Sentry.setContext('extra', context.extra);
+    if (context.feature) {
+      // `feature` is the greppable `<module>.<method>[.<detail>]` key. As a
+      // tag it is searchable and alertable; in the fingerprint it keeps two
+      // different call sites from collapsing into one Sentry issue.
+      scope.setTag('feature', context.feature);
+      scope.setTag('feature_module', context.feature.split('.')[0]);
+      scope.setFingerprint(['{{ default }}', context.feature]);
+    }
+    if (context.userId) scope.setUser({ id: context.userId });
+    if (context.extra) scope.setContext('extra', context.extra);
   };
 
   return {
     captureException(error, context) {
       Sentry.withScope((scope) => {
-        applyContext(context);
-        if (context?.feature) scope.setTag('feature', context.feature);
+        applyContext(scope, context, 'error');
         Sentry.captureException(error);
       });
     },
     captureMessage(message, context) {
       Sentry.withScope((scope) => {
-        applyContext(context);
-        if (context?.feature) scope.setTag('feature', context.feature);
-        Sentry.captureMessage(message);
+        applyContext(scope, context, 'info');
+        Sentry.captureMessage(message, context?.level ?? 'info');
       });
     },
   };

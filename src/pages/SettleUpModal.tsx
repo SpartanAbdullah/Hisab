@@ -82,11 +82,11 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
     if (!selectedDebt) return;
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) {
-      setError('Enter an amount greater than zero.');
+      setError(t('sum_err_amount_zero'));
       return;
     }
     if (amt > selectedDebt.amount + 0.00001) {
-      setError(`Amount cannot exceed the outstanding ${formatMoney(selectedDebt.amount, group.currency)}.`);
+      setError(t('sum_err_amount_max').replace('{amount}', formatMoney(selectedDebt.amount, group.currency)));
       return;
     }
     setSaving(true);
@@ -95,15 +95,18 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
       await addSettlement({ groupId: group.id, fromMember: selectedDebt.from, toMember: selectedDebt.to, amount: amt, note });
       toast.show({
         type: 'success',
-        title: 'Settlement saved',
-        subtitle: `${selectedDebt.fromName} paid ${selectedDebt.toName} ${formatMoney(amt, group.currency)}.`,
+        title: t('sum_saved_title'),
+        subtitle: t('sum_saved_sub')
+          .replace('{from}', selectedDebt.fromName)
+          .replace('{to}', selectedDebt.toName)
+          .replace('{amount}', formatMoney(amt, group.currency)),
       });
       setSelectedDebt(null); setAmount(''); setNote('');
       onClose();
     } catch (error) {
       const message = friendlyGroupParticipantError(error) || (error instanceof Error ? error.message : t('error'));
       setError(message);
-      toast.show({ type: 'error', title: 'Settlement not saved', subtitle: message });
+      toast.show({ type: 'error', title: t('sum_not_saved'), subtitle: message });
     }
     finally { setSaving(false); }
   };
@@ -258,10 +261,10 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
             )}
             <div>
               <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('group_settle_note')}</label>
-              <input className={inputClass + ' mt-1.5'} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Cash diya" />
+              <input className={inputClass + ' mt-1.5'} value={note} onChange={e => setNote(e.target.value)} placeholder={t('sum_note_placeholder')} />
             </div>
             <button onClick={() => { setSelectedDebt(null); setError(''); }} className="text-[12px] text-ink-500 font-medium underline min-h-[44px]">
-              &larr; Back
+              {t('common_back_arrow')}
             </button>
           </>
         )}

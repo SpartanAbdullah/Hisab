@@ -190,10 +190,12 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
       const dup = findRecentDuplicate({ description: description.trim(), amount: amt }, recentExpenses, Date.now());
       if (dup) {
         const ok = await confirmDestructive({
-          title: 'Looks like a duplicate',
-          description: `A "${dup.description}" for ${formatMoney(dup.amount, group.currency)} was added moments ago. Add this one too?`,
-          confirmLabel: 'Add anyway',
-          cancelLabel: 'Cancel',
+          title: t('agem_dup_title'),
+          description: t('agem_dup_body')
+            .replace('{desc}', dup.description)
+            .replace('{amount}', formatMoney(dup.amount, group.currency)),
+          confirmLabel: t('agem_add_anyway'),
+          cancelLabel: t('cancel'),
           tone: 'warning',
         });
         if (!ok) return;
@@ -212,12 +214,16 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
         category,
         paidFromAccountId: (shouldTrackExpense && !dontTrackInAccounts) ? paidFromAccountId : undefined,
       });
-      const payerName = activeMembers.find((member) => member.id === paidBy)?.name ?? 'Someone';
+      const payerName = activeMembers.find((member) => member.id === paidBy)?.name ?? t('agem_someone');
       const paidFrom = paidFromAccountId ? accounts.find((account) => account.id === paidFromAccountId)?.name : null;
       toast.show({
         type: 'success',
-        title: 'Group expense saved',
-        subtitle: `${payerName} paid ${formatMoney(amt, group.currency)}${paidFrom ? ` from ${paidFrom}` : ''} and split it between ${splits.length} people.`,
+        title: t('agem_saved'),
+        subtitle: t('agem_saved_sub')
+          .replace('{payer}', payerName)
+          .replace('{amount}', formatMoney(amt, group.currency))
+          .replace('{from}', paidFrom ? t('agem_from_account').replace('{account}', paidFrom) : '')
+          .replace('{n}', String(splits.length)),
       });
       setDescription('');
       setAmount('');
@@ -228,7 +234,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
       // the user guessing whether a retry was safe.
       const message = friendlyGroupParticipantError(err) || t('error');
       setSubmitError(message);
-      toast.show({ type: 'error', title: 'Expense not saved', subtitle: message });
+      toast.show({ type: 'error', title: t('agem_not_saved'), subtitle: message });
     } finally {
       setSaving(false);
     }
@@ -258,7 +264,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
       <div className="space-y-5 p-5">
         {!defaultPayerId && (
           <p role="alert" className="text-[12px] font-medium text-pay-text bg-pay-50 border border-pay-100 rounded-xl px-3 py-2 leading-snug">
-            Your group membership could not be matched. Reopen the group or ask the owner to reconnect you before adding an expense.
+            {t('agem_membership_unmatched')}
           </p>
         )}
         {activeMembers.length < 2 && (
@@ -329,7 +335,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
 
         {inactiveMembers.length > 0 && (
           <p className="text-[11px] text-ink-500">
-            Historical members: {inactiveMembers.map((member) => member.name).join(', ')}
+            {t('agem_historical_members').replace('{names}', inactiveMembers.map((member) => member.name).join(', '))}
           </p>
         )}
 
@@ -383,7 +389,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
                 <span className="text-[12px] text-ink-700 font-medium w-20 truncate">{group.members.find(member => member.id === id)?.name}</span>
                 <input className="flex-1 min-h-[44px] border border-cream-border rounded-xl px-3 py-2 text-sm bg-cream-card" type="number" inputMode="numeric"
                   value={shares[id] || '1'} onChange={e => setShares({ ...shares, [id]: e.target.value })} placeholder="1" />
-                <span className="text-[11px] text-ink-500">shares</span>
+                <span className="text-[11px] text-ink-500">{t('agem_shares')}</span>
               </div>
             ))}
             {splitType === 'shares' && (

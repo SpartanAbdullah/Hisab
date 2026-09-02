@@ -254,7 +254,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                     })}
                   </div>
                   <input value={ccIssuer} onChange={e => { setCcIssuer(e.target.value); setName(`${e.target.value} Credit Card`); }}
-                    placeholder="Or type issuer name..." className="input-field" />
+                    placeholder={t('aas_issuer_placeholder')} className="input-field" />
                 </div>
 
                 <div>
@@ -284,7 +284,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                 </div>
 
                 <div>
-                  <label className="form-label">Currency</label>
+                  <label className="form-label">{t('common_currency')}</label>
                   <div className="grid grid-cols-2 gap-2">
                     {SUPPORTED_CURRENCIES.map(c => {
                       const meta = currencyMeta[c];
@@ -334,7 +334,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                 </div>
 
                 <div>
-                  <label className="form-label">Currency</label>
+                  <label className="form-label">{t('common_currency')}</label>
                   <div className="grid grid-cols-2 gap-2">
                     {SUPPORTED_CURRENCIES.map(c => {
                       const meta = currencyMeta[c];

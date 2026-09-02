@@ -302,8 +302,8 @@ export function SettingsPage() {
     if (!file) return;
     const ok = await confirmDestructive({
       title: t("settings_import_warn"),
-      description: 'Existing data may be overwritten by the imported file.',
-      confirmLabel: 'Import',
+      description: t('set_import_warn_body'),
+      confirmLabel: t('set_import_cta'),
       tone: 'warning',
     });
     if (!ok) {
@@ -379,6 +379,8 @@ export function SettingsPage() {
     try {
       if (navigator.share) {
         await navigator.share({
+          // Brand name — identical in both languages, not a copy string.
+          // eslint-disable-next-line no-restricted-syntax
           title: "Hisaab",
           text: shareText,
           url: shareUrl,
@@ -500,9 +502,9 @@ export function SettingsPage() {
     if (!publicCode) return;
     try {
       await copyShareText(`@${publicCode}`);
-      toast.show({ type: "success", title: "User code copied" });
+      toast.show({ type: "success", title: t('set_code_copied') });
     } catch {
-      toast.show({ type: "error", title: "Couldn't copy code" });
+      toast.show({ type: "error", title: t('set_code_copy_failed') });
     }
   };
 
@@ -535,7 +537,7 @@ export function SettingsPage() {
             className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/15 px-3 py-1.5 text-[11px] font-semibold text-white active:bg-white/20 transition-colors disabled:opacity-50"
           >
             <span className="text-white/55 uppercase tracking-[0.12em] text-[9px]">
-              code HSB
+              {t('set_code_chip_label')}
             </span>
             <span className="tabular-nums">
               {publicCode ? `@${publicCode}` : "—"}
@@ -601,14 +603,14 @@ export function SettingsPage() {
               </div>
               <div>
                 <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
-                  <User size={10} /> User Code
+                  <User size={10} /> {t('set_user_code_label')}
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={publicCode ? `@${publicCode}` : ""}
                     readOnly
-                    placeholder="Generating..."
+                    placeholder={t('set_code_generating')}
                     className="flex-1 border border-cream-border rounded-xl px-4 py-3 text-[13px] bg-cream-soft text-ink-900"
                   />
                   <button
@@ -617,17 +619,17 @@ export function SettingsPage() {
                       await navigator.clipboard.writeText(`@${publicCode}`);
                       toast.show({
                         type: "success",
-                        title: "User code copied",
+                        title: t('set_code_copied'),
                       });
                     }}
                     disabled={!publicCode}
                     className="px-4 rounded-xl bg-accent-100 text-accent-600 text-[12px] font-semibold disabled:opacity-40"
                   >
-                    Copy
+                    {t('set_copy')}
                   </button>
                 </div>
                 <p className="text-[10px] text-ink-500 mt-1.5">
-                  People can use this code to connect with you in shared groups.
+                  {t('set_code_help')}
                 </p>
               </div>
               <div>
@@ -929,14 +931,14 @@ export function SettingsPage() {
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-cream-soft text-ink-500 text-[12px] font-bold"
                 >
-                  Cancel
+                  {t('set_pin_cancel')}
                 </button>
                 <button
                   onClick={handleSetPin}
                   disabled={pin1.length !== 4 || pin2.length !== 4}
                   className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30"
                 >
-                  Save
+                  {t('set_pin_save')}
                 </button>
               </div>
             </div>
@@ -986,8 +988,8 @@ export function SettingsPage() {
                 <Wallet2 size={16} className="text-receive-text" />
               </div>
               <div className="flex-1">
-                <p className="text-[13px] font-semibold text-ink-900">Budgets</p>
-                <p className="text-[11px] text-ink-500">Monthly caps per category, soft warnings</p>
+                <p className="text-[13px] font-semibold text-ink-900">{t('set_row_budgets')}</p>
+                <p className="text-[11px] text-ink-500">{t('set_row_budgets_sub')}</p>
               </div>
               <ChevronRight size={16} className="text-ink-300" />
             </button>
@@ -999,8 +1001,8 @@ export function SettingsPage() {
                 <Repeat size={16} className="text-accent-600" />
               </div>
               <div className="flex-1">
-                <p className="text-[13px] font-semibold text-ink-900">Subscription Tracker</p>
-                <p className="text-[11px] text-ink-500">Subscriptions, salary, rent, EMIs — all recurring</p>
+                <p className="text-[13px] font-semibold text-ink-900">{t('set_row_subs')}</p>
+                <p className="text-[11px] text-ink-500">{t('set_row_subs_sub')}</p>
               </div>
               <ChevronRight size={16} className="text-ink-300" />
             </button>
@@ -1236,8 +1238,8 @@ export function SettingsPage() {
               <Shield size={16} className="text-info-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-ink-900">Privacy Policy</p>
-              <p className="text-[11px] text-ink-500">How Hisaab handles your data</p>
+              <p className="text-[13px] font-semibold text-ink-900">{t('set_row_privacy')}</p>
+              <p className="text-[11px] text-ink-500">{t('set_row_privacy_sub')}</p>
             </div>
             <ChevronRight size={16} className="text-ink-300" />
           </button>
@@ -1249,8 +1251,8 @@ export function SettingsPage() {
               <FileText size={16} className="text-ink-500" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-ink-900">Terms of Use</p>
-              <p className="text-[11px] text-ink-500">Early-release service terms</p>
+              <p className="text-[13px] font-semibold text-ink-900">{t('set_row_terms')}</p>
+              <p className="text-[11px] text-ink-500">{t('set_row_terms_sub')}</p>
             </div>
             <ChevronRight size={16} className="text-ink-300" />
           </button>
@@ -1262,8 +1264,8 @@ export function SettingsPage() {
               <Mail size={16} className="text-receive-text" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-ink-900">Contact & Support</p>
-              <p className="text-[11px] text-ink-500">Privacy, deletion, and bug reports</p>
+              <p className="text-[13px] font-semibold text-ink-900">{t('set_row_contact')}</p>
+              <p className="text-[11px] text-ink-500">{t('set_row_contact_sub')}</p>
             </div>
             <ChevronRight size={16} className="text-ink-300" />
           </button>
@@ -1275,8 +1277,8 @@ export function SettingsPage() {
               <Trash2 size={16} className="text-pay-text" />
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold text-ink-900">Deletion Instructions</p>
-              <p className="text-[11px] text-ink-500">How to delete your Hisaab account</p>
+              <p className="text-[13px] font-semibold text-ink-900">{t('set_row_deletion')}</p>
+              <p className="text-[11px] text-ink-500">{t('set_row_deletion_sub')}</p>
             </div>
             <ChevronRight size={16} className="text-ink-300" />
           </button>
@@ -1294,10 +1296,10 @@ export function SettingsPage() {
               </div>
               <div className="flex-1">
                 <p className="text-[13px] font-semibold text-pay-text">
-                  Delete account
+                  {t('set_delete_account')}
                 </p>
                 <p className="text-[11px] text-ink-500">
-                  Permanently delete your Hisaab account
+                  {t('set_delete_account_sub')}
                 </p>
               </div>
               <ChevronRight
@@ -1309,23 +1311,22 @@ export function SettingsPage() {
               <div className="p-4 space-y-3 bg-pay-50 animate-fade-in">
                 <div className="rounded-xl border border-pay-100 bg-cream-card px-3.5 py-3">
                   <p className="text-[12px] font-bold text-pay-text">
-                    This cannot be undone.
+                    {t('set_delete_irreversible')}
                   </p>
                   <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">
-                    Your login identity and personal finance records will be deleted.
-                    Shared groups or records you created may be removed or adjusted.
+                    {t('set_delete_body')}
                   </p>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-pay-text uppercase tracking-widest mb-1.5 block">
-                    Type DELETE to confirm
+                    {t('set_delete_type_label')}
                   </label>
                   <input
                     value={deleteConfirm}
                     onChange={(event) => setDeleteConfirm(event.target.value)}
                     disabled={deleteSaving}
                     className="w-full border border-pay-100 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-pay-600/20 focus:border-pay-text transition-all bg-cream-card"
-                    placeholder="DELETE"
+                    placeholder={t('set_delete_placeholder')}
                   />
                 </div>
                 {/* Re-auth: irreversible destruction of years of khata history
@@ -1381,7 +1382,7 @@ export function SettingsPage() {
                 <LogOut size={16} className="text-pay-text" />
               </div>
               <div className="flex-1">
-                <p className="text-[13px] font-semibold text-pay-text">Logout</p>
+                <p className="text-[13px] font-semibold text-pay-text">{t('set_logout')}</p>
                 <p className="text-[11px] text-ink-500">{user.email}</p>
               </div>
             </button>
@@ -1391,7 +1392,7 @@ export function SettingsPage() {
         {/* Footer */}
         <div className="text-center pt-4 pb-2">
           <p className="text-[11px] text-ink-500">
-            Hisaab by Muhammad Abdullah
+            {t('set_footer_credit')}
           </p>
         </div>
       </div>

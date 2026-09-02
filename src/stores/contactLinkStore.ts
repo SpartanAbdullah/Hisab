@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { contactLinksDb, type ContactLinkRequest } from '../lib/supabaseDb';
 import { usePersonStore } from './personStore';
+import { reportError } from '../lib/errorReporter';
 
 // Connection consent. When A links B with B's code, A is linked immediately
 // (it's A's own private ledger) but B is only ASKED — nothing is written into
@@ -59,7 +60,11 @@ export const useContactLinkStore = create<ContactLinkState>((set, get) => ({
     if (accept) {
       // The new contact row was written server-side — refetch rather than
       // guess at its id/name.
-      await usePersonStore.getState().loadPersons().catch(() => {});
+      await usePersonStore.getState().loadPersons().catch((err) => {
+        // The link was accepted server-side; only the local contact list is
+        // stale, so this stays swallowed - but it must not stay invisible.
+        reportError(err, { feature: 'contactLinkStore.respond.reloadPersons', extra: { requestId } });
+      });
     }
     return true;
   },

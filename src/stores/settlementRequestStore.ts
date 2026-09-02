@@ -6,6 +6,7 @@ import { translateLinkedWriteError, isDuplicateKeyError } from '../lib/linkedErr
 import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
 import { useAccountStore } from './accountStore';
+import { reportError } from '../lib/errorReporter';
 
 interface CreateInput {
   loanPairId: string;
@@ -94,6 +95,9 @@ export const useSettlementRequestStore = create<SettlementRequestState>((set, ge
         // database without that migration, translate the raw SQLSTATE 23514
         // instead of showing the Postgres string. Covers SettleLinkedLoanModal
         // and the bulk AllocateSettlementModal loop.
+        // Report the RAW error: the translation below deliberately hides the
+        // SQLSTATE from the user, which also hid a missing migration from us.
+        reportError(err, { feature: 'settlementRequestStore.createRequest', extra: { requestId: id } });
         throw translateLinkedWriteError(err, 'settlement');
       }
     }
@@ -114,7 +118,7 @@ export const useSettlementRequestStore = create<SettlementRequestState>((set, ge
       // receiver's landing account chosen just now.
       await useAccountStore.getState().loadAccounts();
     } catch (err) {
-      console.error('post-settlement-accept reload failed (non-fatal)', err);
+      reportError(err, { feature: 'settlementRequestStore.accept.reload', extra: { requestId } });
     }
     return updated;
   },

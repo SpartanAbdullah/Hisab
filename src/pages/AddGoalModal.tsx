@@ -79,7 +79,7 @@ export function AddGoalModal({ open, onClose }: Props) {
 
         <div>
           <label className="form-label">{t('goal_name')}</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Emergency Fund, Laptop, Eid" className="input-field" required />
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('agm_title_placeholder')} className="input-field" required />
         </div>
 
         <div>
@@ -88,7 +88,7 @@ export function AddGoalModal({ open, onClose }: Props) {
         </div>
 
         <div>
-          <label className="form-label">Currency</label>
+          <label className="form-label">{t('common_currency')}</label>
           <div className="grid grid-cols-2 gap-2">
             {SUPPORTED_CURRENCIES.map(c => {
               const meta = currencyMeta[c];

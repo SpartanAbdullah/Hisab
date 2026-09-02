@@ -1,3 +1,5 @@
+import { useT } from '../lib/i18n';
+
 interface Props {
   name: string;
   size?: number;
@@ -28,6 +30,7 @@ function hashName(s: string): number {
 }
 
 export function UserAvatar({ name, size = 40, onClick }: Props) {
+  const t = useT();
   const trimmed = name.trim();
   const letter = (trimmed[0] || 'U').toUpperCase();
   const palette = PALETTES[hashName(trimmed || 'User') % PALETTES.length];
@@ -42,7 +45,7 @@ export function UserAvatar({ name, size = 40, onClick }: Props) {
         onClick={onClick}
         className={`${className} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2`}
         style={style}
-        aria-label="Profile"
+        aria-label={t('a11y_profile')}
       >
         {letter}
       </button>

@@ -1,0 +1,31 @@
+# Gitleaks config for Hisaab. Used by .github/workflows/security.yml via
+# GITLEAKS_CONFIG=.gitleaks.toml (also usable locally: `gitleaks detect
+# --source . --config .gitleaks.toml`).
+#
+# [extend] useDefault pulls in gitleaks' full built-in ruleset (AWS keys,
+# generic high-entropy secrets, JWTs, Stripe/Slack/etc. tokens, ...) and adds
+# one project-specific rule below.
+#
+# WHY THE EXTRA RULE EXISTS — read before deleting it:
+# Verified against gitleaks v8.30.1's bundled ruleset (2026-09-02): there is
+# NO rule for Supabase's key formats (`sb_publishable_...` / `sb_secret_...`,
+# the format this project's Supabase JS SDK version uses) anywhere in
+# gitleaks' default config. A plain `gitleaks detect --source .` against this
+# repo's full history — including the two commits ARCH-RECON-hisaab.md §2
+# names (88ed40c, dfea60e), which committed built Android JS bundles with the
+# production VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY baked in — finds
+# ZERO leaks. Without this rule, the CI gate documented in
+# docs/release-and-rollback.md ("Secret scanning") would be silently blind to
+# the one known-real historical exposure it exists to catch. With the rule
+# added, the same scan finds exactly those 3 lines (2 files touched by
+# 88ed40c, 1 by dfea60e) plus one pre-existing false positive — all four are
+# listed with their gitleaks fingerprints in .gitleaksignore at the repo
+# root, with the reasoning for each.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "supabase-key"
+description = "Supabase publishable/secret API key (sb_publishable_... / sb_secret_...)"
+regex = '''sb_(publishable|secret)_[A-Za-z0-9_-]{20,}'''
+tags = ["key", "supabase"]

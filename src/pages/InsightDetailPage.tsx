@@ -6,6 +6,7 @@ import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { EmptyState } from '../components/EmptyState';
 import { useTransactionStore } from '../stores/transactionStore';
+import { useT } from '../lib/i18n';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { parseInternalNote } from '../lib/internalNotes';
@@ -20,6 +21,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // selected on Analytics (passed as ?from=&to=&cur=); falls back to the current
 // month in the primary currency when opened without them.
 export function InsightDetailPage() {
+  const t = useT();
   const { category = '' } = useParams();
   const [params] = useSearchParams();
   const cat = decodeURIComponent(category);
@@ -99,8 +101,8 @@ export function InsightDetailPage() {
         {status === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load this insight"
-            message={error ?? 'Some data failed to load.'}
+            title={t('idp_err_load')}
+            message={error ?? t('err_some_data_failed')}
             onRetry={retry}
           />
         )}
@@ -121,13 +123,15 @@ export function InsightDetailPage() {
             {/* total */}
             <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
               <p className="text-[11px] text-ink-500 font-semibold tracking-[0.12em] uppercase">
-                Total spent
+                {t('idp_total_spent')}
               </p>
               <p className="text-[28px] font-bold text-ink-900 tabular-nums mt-1">
                 {formatMoney(data.total, data.cur)}
               </p>
               <p className="text-[11px] text-ink-500 mt-1">
-                across {data.count} {data.count === 1 ? 'transaction' : 'transactions'}
+                {data.count === 1
+                  ? t('idp_across_one')
+                  : t('idp_across_many').replace('{n}', String(data.count))}
               </p>
             </div>
 
@@ -160,7 +164,7 @@ export function InsightDetailPage() {
             {/* by merchant */}
             <div className="rounded-2xl bg-cream-card border border-cream-border overflow-hidden">
               <p className="text-[11px] text-ink-500 font-semibold tracking-[0.12em] uppercase px-4 pt-4 pb-1">
-                Where it went
+                {t('idp_where_it_went')}
               </p>
               {data.merchants.map((m, i) => (
                 <div

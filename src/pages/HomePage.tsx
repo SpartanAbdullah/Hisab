@@ -481,12 +481,12 @@ export function HomePage() {
             <button
               onClick={() => navigate("/settings")}
               className="flex items-center gap-3 min-w-0 active:opacity-70"
-              aria-label="Open settings"
+              aria-label={t('a11y_open_settings')}
             >
               <UserAvatar name={userName} size={36} />
               <div className="text-left min-w-0">
                 <p className="text-[11px] text-white/55 truncate">
-                  Good to see you
+                  {t('home_greeting_pre')}
                 </p>
                 <p className="text-[15px] font-semibold text-white tracking-tight truncate">
                   {userName}
@@ -497,7 +497,7 @@ export function HomePage() {
               <button
                 onClick={() => setShowGlobalSearch(true)}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Search"
+                aria-label={t('a11y_search')}
               >
                 <Search size={16} className="text-white" />
               </button>
@@ -514,10 +514,10 @@ export function HomePage() {
             className="block w-full text-left px-5 pb-7 active:opacity-80 transition-opacity"
           >
             <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
-              Splits only
+              {t('home_splits_badge')}
             </p>
             <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
-              Track people, not accounts.
+              {t('home_splits_tagline')}
             </p>
             {/* Live summary from active loans + groups carrying a balance.
                 Falls back to the static blurb when nothing is outstanding. */}
@@ -531,7 +531,7 @@ export function HomePage() {
               </p>
             ) : (
               <p className="text-[12px] text-white/55 mt-2 max-w-[280px] leading-relaxed">
-                Loans and groups. No cash wallets, no bank balances.
+                {t('home_splits_blurb')}
               </p>
             )}
           </button>
@@ -540,7 +540,7 @@ export function HomePage() {
         <div className="sukoon-body min-h-[60dvh] px-5 pt-5 space-y-4">
           {loadStatus === "error" ? (
             <PageErrorState
-              message={loadError ?? "Some data failed to load."}
+              message={loadError ?? t('err_some_data_failed')}
               onRetry={retryLoad}
             />
           ) : isInitialLoading ? (
@@ -557,7 +557,7 @@ export function HomePage() {
                 <div className="rounded-[18px] bg-cream-card border border-cream-border p-5 text-center">
                   <HandCoins size={26} className="text-accent-600 mx-auto" />
                   <p className="font-semibold text-ink-900 mt-2">
-                    No IOUs yet
+                    {t('home_no_ious')}
                   </p>
                   <p className="text-[12px] text-ink-500 mt-1">
                     {t('home_record_iou_hint')}
@@ -581,13 +581,13 @@ export function HomePage() {
                         <ArrowDownLeft size={14} className="text-receive-text" />
                       </div>
                       <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
-                        To receive
+                        {t('check_receivable')}
                       </p>
                     </div>
                     {recvLoanCount === 0 ? (
                       <>
                         <p className="text-[20px] font-semibold text-ink-300 tabular-nums">—</p>
-                        <p className="text-[11px] text-ink-400 mt-1">no one</p>
+                        <p className="text-[11px] text-ink-400 mt-1">{t('home_no_one')}</p>
                       </>
                     ) : (
                       <>
@@ -597,7 +597,9 @@ export function HomePage() {
                         <p className="text-[11px] text-ink-500 mt-1">
                           {recvSecond
                             ? `+ ${formatMoney(recvSecond[1], recvSecond[0])}`
-                            : `${recvLoanCount} ${recvLoanCount === 1 ? "loan" : "loans"}`}
+                            : recvLoanCount === 1
+                            ? t('common_loan_one')
+                            : t('common_loan_many').replace('{n}', String(recvLoanCount))}
                         </p>
                       </>
                     )}
@@ -611,13 +613,13 @@ export function HomePage() {
                         <ArrowUpRight size={14} className="text-pay-text" />
                       </div>
                       <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
-                        To pay
+                        {t('check_payable')}
                       </p>
                     </div>
                     {payLoanCount === 0 ? (
                       <>
                         <p className="text-[20px] font-semibold text-ink-300 tabular-nums">—</p>
-                        <p className="text-[11px] text-ink-400 mt-1">no one</p>
+                        <p className="text-[11px] text-ink-400 mt-1">{t('home_no_one')}</p>
                       </>
                     ) : (
                       <>
@@ -627,7 +629,9 @@ export function HomePage() {
                         <p className="text-[11px] text-ink-500 mt-1">
                           {paySecond
                             ? `+ ${formatMoney(paySecond[1], paySecond[0])}`
-                            : `${payLoanCount} ${payLoanCount === 1 ? "loan" : "loans"}`}
+                            : payLoanCount === 1
+                            ? t('common_loan_one')
+                            : t('common_loan_many').replace('{n}', String(payLoanCount))}
                         </p>
                       </>
                     )}
@@ -673,13 +677,13 @@ export function HomePage() {
               <div>
                 <div className="flex items-center justify-between mb-2.5 px-1">
                   <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
-                    Group Splits
+                    {t('home_group_splits')}
                   </h2>
                   <button
                     onClick={() => navigate("/groups")}
                     className="text-[11px] font-semibold text-accent-600 active:opacity-70"
                   >
-                    View all
+                    {t('common_view_all')}
                   </button>
                 </div>
                 {groups.length === 0 ? (
@@ -687,9 +691,9 @@ export function HomePage() {
                     icon={Users}
                     tone="accent"
                     size="compact"
-                    title="No splits yet"
-                    description="Create or join a group to split shared expenses."
-                    subhint="Dinner, rent, trips — har kharcha barabar."
+                    title={t('home_no_splits_title')}
+                    description={t('home_no_splits_desc')}
+                    subhint={t('home_no_splits_subhint')}
                   />
                 ) : (
                   <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
@@ -709,8 +713,9 @@ export function HomePage() {
                               {group.name}
                             </p>
                             <p className="text-[11px] text-ink-500 mt-0.5">
-                              {group.members.length}{" "}
-                              {group.members.length === 1 ? "member" : "members"}
+                              {group.members.length === 1
+                                ? t('common_member_one')
+                                : t('common_member_many').replace('{n}', String(group.members.length))}
                             </p>
                           </div>
                           <p
@@ -723,7 +728,7 @@ export function HomePage() {
                             }`}
                           >
                             {balance === 0
-                              ? "Settled"
+                              ? t('settled')
                               : `${balance > 0 ? "+" : "−"}${formatMoney(
                                   Math.abs(balance),
                                   group.currency,
@@ -738,9 +743,7 @@ export function HomePage() {
 
               <div className="rounded-[18px] bg-info-50 border border-cream-border p-4">
                 <p className="text-[12px] text-info-600 leading-relaxed">
-                  To notify another person in Hisaab, they must also have the
-                  app and share their code with you. Link them from Settings
-                  &gt; Contacts.
+                  {t('home_notify_needs_app')}
                 </p>
               </div>
             </>
@@ -863,7 +866,7 @@ export function HomePage() {
           <button
             onClick={() => navigate("/settings")}
             className="flex items-center gap-3 min-w-0 active:opacity-70"
-            aria-label="Open settings"
+            aria-label={t('a11y_open_settings')}
           >
             <UserAvatar name={userName} size={36} />
             <div className="text-left min-w-0">
@@ -879,7 +882,7 @@ export function HomePage() {
             <button
               onClick={() => setShowGlobalSearch(true)}
               className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-              aria-label="Search"
+              aria-label={t('a11y_search')}
             >
               <Search size={16} className="text-white" />
             </button>
@@ -894,17 +897,17 @@ export function HomePage() {
           className="block w-full text-left px-5 pb-7 disabled:cursor-default active:opacity-80 transition-opacity"
         >
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
-            Your money
+            {t('home_your_money')}
           </p>
           {isInitialLoading ? (
             <div className="mt-1.5 h-12 w-48 rounded-xl bg-white/10 animate-pulse" />
           ) : accountCount === 0 ? (
             <>
               <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
-                No accounts yet
+                {t('home_no_accounts_title')}
               </p>
               <p className="text-[12px] text-white/55 mt-1.5 max-w-[260px] leading-relaxed">
-                Add an account to start tracking your balance and spending.
+                {t('home_no_accounts_hero_desc')}
               </p>
             </>
           ) : (
@@ -938,7 +941,9 @@ export function HomePage() {
                 </p>
               )}
               <p className="text-[12px] text-white/55 mt-2">
-                {accountCount} {accountCount === 1 ? "account" : "accounts"}
+                {accountCount === 1
+                  ? t('common_account_one')
+                  : t('common_account_many').replace('{n}', String(accountCount))}
                 {otherTotals.length > 0 && (
                   <>
                     {" · "}
@@ -958,8 +963,8 @@ export function HomePage() {
         {loadStatus === "error" && (
           <PageErrorState
             variant="inline"
-            title="Couldn't refresh your dashboard"
-            message={loadError ?? "Some data failed to load."}
+            title={t('home_err_dashboard')}
+            message={loadError ?? t('err_some_data_failed')}
             onRetry={retryLoad}
           />
         )}
@@ -1031,7 +1036,7 @@ export function HomePage() {
                   <p className="text-[20px] font-semibold text-ink-300 tabular-nums">
                     —
                   </p>
-                  <p className="text-[11px] text-ink-400 mt-1">no one</p>
+                  <p className="text-[11px] text-ink-400 mt-1">{t('home_no_one')}</p>
                 </>
               )}
             </button>
@@ -1066,7 +1071,7 @@ export function HomePage() {
                   <p className="text-[20px] font-semibold text-ink-300 tabular-nums">
                     —
                   </p>
-                  <p className="text-[11px] text-ink-400 mt-1">no one</p>
+                  <p className="text-[11px] text-ink-400 mt-1">{t('home_no_one')}</p>
                 </>
               )}
             </button>
@@ -1410,9 +1415,9 @@ export function HomePage() {
                     </p>
                     <p className="text-[11px] text-warn-600 mt-0.5">
                       {daysLeft <= 0
-                        ? "Overdue!"
+                        ? t('home_overdue_bang')
                         : daysLeft === 1
-                        ? "Kal dena hai!"
+                        ? t('home_due_tomorrow')
                         : `${daysLeft} ${t("upcoming_due_in")}`}
                     </p>
                   </div>
@@ -1421,7 +1426,7 @@ export function HomePage() {
                       setDismissedReminders((d) => [...d, exp.id])
                     }
                     className='relative w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors shrink-0 before:absolute before:-inset-2 before:content-[""]'
-                    aria-label="Dismiss"
+                    aria-label={t('a11y_dismiss')}
                   >
                     &#x2715;
                   </button>
@@ -1442,9 +1447,9 @@ export function HomePage() {
               <button
                 onClick={() => setShowAddAccount(true)}
                 className="text-[11px] text-accent-600 font-semibold active:opacity-70 flex items-center gap-1"
-                aria-label="Add account"
+                aria-label={t('a11y_add_account')}
               >
-                <Plus size={12} strokeWidth={2.5} /> Add
+                <Plus size={12} strokeWidth={2.5} /> {t('common_add')}
               </button>
             </div>
             <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
@@ -1469,7 +1474,7 @@ export function HomePage() {
                         {monthStats && (
                           <span className="text-receive-text font-medium">
                             {" · "}+{formatMoney(monthStats.income, a.currency)}{" "}
-                            in
+                            {t('home_month_in_suffix')}
                           </span>
                         )}
                       </p>
@@ -1491,7 +1496,7 @@ export function HomePage() {
                 onClick={() => navigate('/accounts')}
                 className="w-full mt-2 text-center text-[11px] font-semibold text-accent-600 py-2 active:opacity-70"
               >
-                {accounts.length - 3} more · tap to manage
+                {t('home_more_tap_manage').replace('{n}', String(accounts.length - 3))}
               </button>
             )}
           </div>

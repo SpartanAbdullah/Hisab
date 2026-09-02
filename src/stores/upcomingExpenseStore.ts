@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { upcomingExpensesDb } from '../lib/supabaseDb';
 import type { UpcomingExpense, UpcomingExpenseStatus, Currency } from '../db';
+import { reportError } from '../lib/errorReporter';
 
 interface CreateExpenseInput {
   title: string;
@@ -38,7 +39,9 @@ const INITIAL_UPCOMING_EXPENSE_STATE = {
 function nudgeReminderSchedule(): void {
   void import('../lib/notificationScheduler')
     .then((m) => m.rescheduleNotifications({ force: true }))
-    .catch(() => {});
+    .catch((err) => {
+      reportError(err, { feature: 'upcomingExpenseStore.nudgeReminderSchedule' });
+    });
 }
 
 export const useUpcomingExpenseStore = create<UpcomingExpenseState>((set, get) => ({

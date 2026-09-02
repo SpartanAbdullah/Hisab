@@ -58,6 +58,8 @@ Output: `android\app\build\outputs\bundle\release\app-release.aab`
 > The signing is automatic — Gradle reads `android/keystore.properties` (your upload key).
 > That file and `android/app/hisaab-upload.jks` are **git-ignored**; keep your offline backup safe.
 > If you lose the keystore, you can never update the app again.
+> See `docs/ops-checklist.md` §1 for the backup-location and restore-verification steps —
+> a backup you haven't restored-and-tested with `keytool` is a hope, not a backup.
 
 ### 3. (Optional) Verify it's signed with your upload key
 ```powershell
@@ -75,6 +77,11 @@ The `Owner:` line should be **your** cert (`CN=abdullah …`), not `CN=Android D
 Users get the update automatically via the Play Store (auto-update is on by default, usually within
 a day). You can do a **staged rollout** (e.g. 20% → 50% → 100%) and watch crash-free metrics in
 Play Console → Quality → Android vitals.
+
+For a release that also ships a database migration or a coordinated web deploy, follow
+`docs/release-and-rollback.md` instead of freelancing the ordering — it covers the full
+apply-migrations → deploy-web → staged-rollout → raise-the-`app_config`-floor sequence, and
+what "halting" a rollout can and can't undo.
 
 ---
 
@@ -95,6 +102,11 @@ phones with **no Play Store round-trip** — the Vercel-style instant update.
   app's core purpose or use it to bypass review for policy-violating content. Stay within your
   stated purpose and you're fine.
 - Set this up **after** v1 is stable — it's not needed to launch.
+
+See `docs/release-and-rollback.md` §6 for the full Capgo-vs-Appflow evaluation (recommendation:
+Capgo, once the P0 SQL/client remediation batch has stabilized and at least one full Play release
+cycle has run cleanly — not before) and how OTA relates to the `app_config` version-floor kill
+switch (`src/lib/versionGate.ts`) — they solve different problems and neither replaces the other.
 
 ---
 

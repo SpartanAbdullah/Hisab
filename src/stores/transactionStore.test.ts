@@ -206,6 +206,17 @@ vi.mock('../lib/supabaseDb', async () => {
       async getAll() { return Array.from(investmentPrices.values()); },
       async upsert(p: Record<string, unknown>) { investmentPrices.set(p.id as string, p); },
     },
+
+    // L4 pilot gateway. Present because transactionStore imports it by name
+    // (an ESM named import missing from a mock factory throws at import time);
+    // NEVER called here, because VITE_ATOMIC_TRANSFER is unset in this file, so
+    // every transfer above still exercises the legacy two-leg path. The flagged
+    // path has its own suite: transactionStoreAtomicTransfer.test.ts.
+    atomicMoneyDb: {
+      async transferAtomic() {
+        throw new Error('atomicMoneyDb.transferAtomic must not be called with the flag off');
+      },
+    },
   };
 });
 

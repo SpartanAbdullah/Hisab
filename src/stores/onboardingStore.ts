@@ -6,6 +6,8 @@ import { useTransactionStore } from "./transactionStore";
 import { useLoanStore } from "./loanStore";
 import { useGoalStore } from "./goalStore";
 import { useAppModeStore } from "./appModeStore";
+import { reportError } from "../lib/errorReporter";
+import { getCachedProfile, invalidateProfileCache } from "../lib/profileCache";
 
 interface OnboardingState {
   completed: boolean;
@@ -39,9 +41,20 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     // DB is the source of truth. A returning user on a fresh device has no
     // localStorage flag but will have accounts / a flagged profile in Supabase.
     try {
+      // Audit 03-performance M2: the profile row is read through the shared
+      // boot cache — supabaseAuthStore's deleted-account gate and App.tsx's
+      // hydration effect want the same row within the same few hundred ms.
+      // `getCachedProfile` never rejects; the catch is kept for shape.
+      const userId = localStorage.getItem('hisaab_supabase_uid') ?? '';
       const [count, profile] = await Promise.all([
-        accountsDb.count().catch(() => 0),
-        profilesDb.getCurrent().catch(() => null),
+        accountsDb.count().catch((err) => {
+          reportError(err, { feature: 'onboardingStore.checkOnboarding.accountCount' });
+          return 0;
+        }),
+        getCachedProfile(userId).catch((err) => {
+          reportError(err, { feature: 'onboardingStore.checkOnboarding.profileRead' });
+          return null;
+        }),
       ]);
       const profileDone = profile?.onboarding_completed === true;
       if (
@@ -54,7 +67,8 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
       const completed = profileDone || count > 0 || localDone;
       if (completed) localStorage.setItem("hisaab_onboarded", "1");
       set({ completed, loading: false });
-    } catch {
+    } catch (err) {
+      reportError(err, { feature: 'onboardingStore.checkOnboarding' });
       const localDone = localStorage.getItem("hisaab_onboarded") === "1";
       set({ completed: localDone, loading: false });
     }
@@ -68,7 +82,10 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
 
     // Full Money Tracker needs a starter wallet. Splits Only is deliberately
     // account-free, so it must not create a hidden Cash Wallet.
-    const existingCount = await accountsDb.count().catch(() => 0);
+    const existingCount = await accountsDb.count().catch((err) => {
+      reportError(err, { feature: 'onboardingStore.completeOnboarding.accountCount' });
+      return 0;
+    });
     if (mode === "full_tracker" && existingCount === 0) {
       await useAccountStore.getState().createAccount({
         name: currency === "AED" ? "Cash Wallet" : "Naqdee",
@@ -86,7 +103,13 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
         app_mode: mode,
         onboarding_completed: true,
       })
-      .catch(() => {});
+      .catch((err) => {
+        // Swallowed on purpose (localStorage carries this device), but an
+        // unpersisted profile means the user re-onboards on their next device.
+        reportError(err, { feature: 'onboardingStore.completeOnboarding.profileWrite', extra: { mode } });
+      });
+    // The boot memo predates this write (name / currency / mode / completed).
+    invalidateProfileCache();
 
     // Set localStorage flag after required mode setup finishes.
     localStorage.setItem("hisaab_onboarded", "1");
@@ -190,7 +213,10 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
         primary_currency: currency,
         onboarding_completed: true,
       })
-      .catch(() => {});
+      .catch((err) => {
+        reportError(err, { feature: 'onboardingStore.seedDemoData.profileWrite' });
+      });
+    invalidateProfileCache();
 
     localStorage.setItem("hisaab_onboarded", "1");
     set({ completed: true });

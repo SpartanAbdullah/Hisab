@@ -307,8 +307,8 @@ export function TransactionsPage() {
   const today = new Date();
   const yesterday = subDays(today, 1);
   const formatDayLabel = (d: Date) => {
-    if (isSameDay(d, today)) return `Today · ${format(d, 'EEE d MMM')}`;
-    if (isSameDay(d, yesterday)) return `Yesterday · ${format(d, 'EEE d MMM')}`;
+    if (isSameDay(d, today)) return `${t('tx_day_today')} · ${format(d, 'EEE d MMM')}`;
+    if (isSameDay(d, yesterday)) return `${t('tx_day_yesterday')} · ${format(d, 'EEE d MMM')}`;
     return format(d, 'EEE d MMM');
   };
 
@@ -327,14 +327,14 @@ export function TransactionsPage() {
               <button
                 onClick={() => setShowSearch((v) => !v)}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Search"
+                aria-label={t('a11y_search')}
               >
                 <Search size={15} className="text-white" />
               </button>
               <button
                 onClick={() => setShowAdd(true)}
                 className="h-9 px-3 rounded-xl bg-white/10 active:bg-white/15 flex items-center gap-1.5 text-[12px] font-semibold text-white transition-colors"
-                aria-label="Add"
+                aria-label={t('a11y_add')}
               >
                 <Plus size={13} strokeWidth={2.4} /> {t('naya')}
               </button>
@@ -345,7 +345,7 @@ export function TransactionsPage() {
 
         <div className="px-5 pb-7">
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
-            This month · {primaryCurrency}
+            {t('tx_this_month')} · {primaryCurrency}
           </p>
           <div className="mt-1.5 flex items-end justify-between gap-3">
             <MoneyDisplay
@@ -362,14 +362,14 @@ export function TransactionsPage() {
                   color: '#7CE3B6',
                 }}
               >
-                +{formatMoney(monthFlow.inflow, primaryCurrency)} in
+                +{formatMoney(monthFlow.inflow, primaryCurrency)} {t('tx_flow_in')}
               </span>
             )}
           </div>
           <p className="text-[11px] text-white/50 mt-2 tabular-nums">
             {monthFlow.outflow > 0
-              ? `−${formatMoney(monthFlow.outflow, primaryCurrency)} out`
-              : 'No outflow yet'}
+              ? `−${formatMoney(monthFlow.outflow, primaryCurrency)} ${t('tx_flow_out')}`
+              : t('tx_no_outflow_yet')}
           </p>
         </div>
       </NavyHero>
@@ -390,7 +390,7 @@ export function TransactionsPage() {
                 <button
                   onClick={() => setSearch('')}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 w-9 h-9 flex items-center justify-center press-xs"
-                  aria-label="Clear search"
+                  aria-label={t('a11y_clear_search')}
                 >
                   <X size={14} />
                 </button>
@@ -452,19 +452,21 @@ export function TransactionsPage() {
             tone={filtersActive ? 'info' : monthFlow.net >= 0 ? 'receive' : 'pay'}
             status={
               filtersActive
-                ? `${filtered.length} transaction${filtered.length === 1 ? '' : 's'} match the current view.`
+                ? filtered.length === 1
+                  ? t('tx_hint_filtered_one')
+                  : t('tx_hint_filtered_many').replace('{n}', String(filtered.length))
                 : monthFlow.net >= 0
-                ? `This month is positive by ${formatMoney(monthFlow.net, primaryCurrency)}.`
-                : `This month is down by ${formatMoney(Math.abs(monthFlow.net), primaryCurrency)}.`
+                ? t('tx_hint_month_up').replace('{amount}', formatMoney(monthFlow.net, primaryCurrency))
+                : t('tx_hint_month_down').replace('{amount}', formatMoney(Math.abs(monthFlow.net), primaryCurrency))
             }
             next={
               filtersActive
-                ? 'Clear search or switch the chips to get back to your full timeline.'
+                ? t('tx_hint_next_filtered')
                 : monthFlow.outflow > monthFlow.inflow
-                ? 'Check the largest recent expenses below, then add a budget if the pattern is repeating.'
-                : 'Keep logging income and expenses here so Home and Analytics stay accurate.'
+                ? t('tx_hint_next_overspend')
+                : t('tx_hint_next_keep_logging')
             }
-            actionLabel={filtersActive ? 'Clear filters' : 'Add transaction'}
+            actionLabel={filtersActive ? t('tx_clear_filters') : t('tx_add_transaction')}
             onAction={
               filtersActive
                 ? () => {
@@ -480,8 +482,8 @@ export function TransactionsPage() {
         {loadStatus === 'error' && (
           <PageErrorState
             variant="inline"
-            title="Couldn't load transactions"
-            message={loadError ?? 'Some data failed to load.'}
+            title={t('tx_err_load')}
+            message={loadError ?? t('err_some_data_failed')}
             onRetry={retryLoad}
           />
         )}

@@ -1,0 +1,78 @@
+# Dependabot configuration for Hisaab.
+#
+# Two ecosystems: the root npm package (web + the Capacitor/Android tooling
+# that lives in package.json — there is no separate android/package.json)
+# and the GitHub Actions used by .github/workflows/*.yml.
+#
+# Design:
+#   - Weekly cadence (not daily) — this is a solo-maintainer repo; daily PRs
+#     would just pile up unreviewed. Security *alerts* are NOT governed by
+#     this schedule — GitHub opens a Dependabot security PR immediately when
+#     a used dependency gets a new advisory, regardless of `schedule:` below.
+#     That auto-alerting requires "Dependabot alerts" + "Dependabot security
+#     updates" to be turned on in GitHub repo Settings -> Code security (see
+#     docs/ops-checklist.md) — this file does not and cannot enable those.
+#   - Minor/patch version updates are grouped into one PR per ecosystem per
+#     week, so routine bumps don't create a wall of PRs.
+#   - Major version updates are DELIBERATELY left out of the group (Dependabot
+#     defaults to one PR per major bump) — a major of React, Vite, Tailwind,
+#     Capacitor, or Supabase-js is exactly the kind of change that needs its
+#     own review and its own `npm run build && npm test` pass, not to be
+#     silently bundled with a lodash patch bump.
+#   - `ignore:` is intentionally EMPTY on both ecosystems. Nothing here is
+#     security-relevant enough to suppress — this app moves money, and the
+#     failure mode of ignoring a package is a silent gap in coverage.
+
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------
+  # Root npm package (web app + Capacitor CLI tooling)
+  # ---------------------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Dubai"
+    open-pull-requests-limit: 10
+    versioning-strategy: "increase"
+    groups:
+      npm-minor-patch:
+        applies-to: "version-updates"
+        update-types:
+          - "minor"
+          - "patch"
+    # Majors: no group entry -> Dependabot opens one PR per major bump.
+    ignore: []
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels:
+      - "dependencies"
+
+  # ---------------------------------------------------------------------
+  # GitHub Actions used by .github/workflows/*.yml (ci.yml, security.yml,
+  # and any workflow another track adds, e.g. db-tests.yml)
+  # ---------------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Dubai"
+    open-pull-requests-limit: 10
+    groups:
+      actions-minor-patch:
+        applies-to: "version-updates"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore: []
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - "dependencies"
+      - "github-actions"

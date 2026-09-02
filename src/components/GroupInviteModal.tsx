@@ -62,12 +62,12 @@ export function GroupInviteModal({ open, group, onClose }: Props) {
       await navigator.clipboard.writeText(result.url);
       toast.show({
         type: 'success',
-        title: 'Invite link copied',
-        subtitle: linkedMemberId ? 'Share it with that member to connect them.' : 'Anyone with the link can join this group.',
+        title: t('ginv_link_copied'),
+        subtitle: linkedMemberId ? t('ginv_copied_sub_member') : t('ginv_copied_sub_open'),
       });
       setInvites(await getGroupInvites(group.id));
     } catch {
-      toast.show({ type: 'error', title: 'Could not create invite' });
+      toast.show({ type: 'error', title: t('ginv_err_create') });
     } finally {
       setLoading(false);
     }
@@ -77,22 +77,22 @@ export function GroupInviteModal({ open, group, onClose }: Props) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Invite Members"
+      title={t('ginv_title')}
       footer={(
         <button
           onClick={() => handleCreateInvite(null)}
           disabled={loading}
           className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2"
         >
-          <Link2 size={16} /> {loading ? 'Creating link...' : 'Copy group invite link'}
+          <Link2 size={16} /> {loading ? t('ginv_creating_link') : t('ginv_copy_link_cta')}
         </button>
       )}
     >
       <div className="p-5 space-y-4">
         <div className="rounded-2xl bg-accent-100/60 border border-cream-border px-4 py-3">
-          <p className="text-[13px] font-semibold text-accent-600">Transparency stays inside the group</p>
+          <p className="text-[13px] font-semibold text-accent-600">{t('ginv_transparency_title')}</p>
           <p className="text-[12px] text-accent-600/80 mt-1">
-            Connected members will see shared expense adds, edits, deletes, and settlements, but not each other&apos;s private accounts.
+            {t('ginv_transparency_body')}
           </p>
         </div>
 
@@ -115,7 +115,7 @@ export function GroupInviteModal({ open, group, onClose }: Props) {
                     </span>
                     {linkedInvite && (
                       <span className="text-[10px] text-ink-500 truncate">
-                        Invite ready
+                        {t('ginv_invite_ready')}
                       </span>
                     )}
                   </div>
@@ -127,7 +127,7 @@ export function GroupInviteModal({ open, group, onClose }: Props) {
                     className="shrink-0 rounded-xl bg-cream-soft text-ink-700 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 disabled:opacity-40"
                   >
                     {linkedInvite ? <Copy size={13} /> : <UserPlus size={13} />}
-                    {linkedInvite ? 'Copy' : 'Invite'}
+                    {linkedInvite ? t('ginv_copy') : t('ginv_invite')}
                   </button>
                 )}
               </div>

@@ -86,16 +86,16 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
   const runSave = async () => {
     const numeric = Number(amount);
     if (!Number.isFinite(numeric) || numeric <= 0) {
-      toast.show({ type: 'error', title: 'Enter a valid amount' });
+      toast.show({ type: 'error', title: t('arm_err_amount') });
       return;
     }
     if (!accountId) {
-      toast.show({ type: 'error', title: 'Pick an account' });
+      toast.show({ type: 'error', title: t('arm_err_pick_account') });
       return;
     }
     const account = accounts.find((a) => a.id === accountId);
     if (!account) {
-      toast.show({ type: 'error', title: 'Account not found' });
+      toast.show({ type: 'error', title: t('arm_err_no_account') });
       return;
     }
     // Only re-validate the start date when it actually changed — an existing
@@ -104,15 +104,15 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
     if (dateChanged) {
       const startCheck = validateRecurringStart(nextDueDate, new Date().toISOString().slice(0, 10));
       if (startCheck.severity === 'block') {
-        toast.show({ type: 'error', title: 'Check the start date', subtitle: startCheck.reason });
+        toast.show({ type: 'error', title: t('arm_err_start_date'), subtitle: startCheck.reason });
         return;
       }
       if (startCheck.severity === 'warn') {
         const ok = await confirmDestructive({
-          title: 'Start date is in the past',
+          title: t('arm_past_start_title'),
           description: startCheck.reason ?? '',
-          confirmLabel: 'Use this date',
-          cancelLabel: 'Change',
+          confirmLabel: t('arm_use_this_date'),
+          cancelLabel: t('arm_change_date'),
           tone: 'warning',
         });
         if (!ok) return;
@@ -134,11 +134,11 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
       };
       if (template) {
         await updateTemplate(template.id, payload);
-        toast.show({ type: 'success', title: 'Recurring entry updated' });
+        toast.show({ type: 'success', title: t('arm_updated') });
         onClose();
       } else {
         await createTemplate(payload);
-        toast.show({ type: 'success', title: 'Recurring entry saved' });
+        toast.show({ type: 'success', title: t('arm_saved') });
         onClose();
         setLabel('');
         setAmount('');
@@ -147,7 +147,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
     } catch (err) {
       toast.show({
         type: 'error',
-        title: 'Could not save',
+        title: t('arm_err_save'),
         subtitle: err instanceof Error ? err.message : 'Try again.',
       });
     } finally {
@@ -183,7 +183,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
               type === 'expense' ? 'selector-selected' : ''
             }`}
           >
-            Expense
+            {t('arm_type_expense')}
           </button>
           <button
             onClick={() => {
@@ -194,22 +194,22 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
               type === 'income' ? 'selector-selected' : ''
             }`}
           >
-            Income
+            {t('arm_type_income')}
           </button>
         </div>
 
         <div>
-          <label className="form-label">Label (optional)</label>
+          <label className="form-label">{t('arm_label_optional')}</label>
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Netflix · Gym · Rent · Salary"
+            placeholder={t('arm_label_placeholder')}
             className="input-field"
           />
         </div>
 
         <div>
-          <label className="form-label">Amount</label>
+          <label className="form-label">{t('arm_amount')}</label>
           <input
             type="number"
             inputMode="decimal"
@@ -223,7 +223,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
         <div>
           <label className="form-label">{type === 'expense' ? 'From account' : 'To account'}</label>
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="input-field">
-            <option value="">Pick an account…</option>
+            <option value="">{t('arm_pick_account')}</option>
             {groupAccountsByType(accounts).map((g) => (
               <optgroup key={g.id} label={t(g.labelKey)}>
                 {g.accounts.map((a) => (
@@ -237,7 +237,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
         </div>
 
         <div>
-          <label className="form-label">Category</label>
+          <label className="form-label">{t('arm_category')}</label>
           <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-field">
             {categoryList.map((c) => (
               <option key={c} value={c}>
@@ -249,20 +249,20 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="form-label">Repeats</label>
+            <label className="form-label">{t('arm_repeats')}</label>
             <select
               value={cadence}
               onChange={(e) => setCadence(e.target.value as RecurringCadence)}
               className="input-field"
             >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Yearly</option>
+              <option value="daily">{t('arm_daily')}</option>
+              <option value="weekly">{t('arm_weekly')}</option>
+              <option value="monthly">{t('arm_monthly')}</option>
+              <option value="yearly">{t('arm_yearly')}</option>
             </select>
           </div>
           <div>
-            <label className="form-label">Next due</label>
+            <label className="form-label">{t('arm_next_due')}</label>
             <input
               type="date"
               value={nextDueDate}

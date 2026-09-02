@@ -1,0 +1,104 @@
+# Canonical apply order for the Hisaab SQL corpus.
+#
+# Source of truth: docs/audit-2026-09/APPLY-ORDER.md
+#   §1 = the base schema + the 40 historical migrations (reconstructed from
+#        `git log --diff-filter=A`, corroborated by in-file "Apply after …"
+#        headers). FILENAMES DO NOT SORT INTO APPLY ORDER — see the
+#        `fix-settlement-cancel-reject` alphabetical trap at #26.
+#   §2 = the 2026-09-02 audit-P0 remediation batch (11 files).
+#   The four P1 files are ordered from their own headers' prerequisites; they
+#   are not in APPLY-ORDER.md, which predates them.
+#
+# Lines starting with '#' and blank lines are ignored by run.sh.
+# Paths are relative to the repository root, except the two `supabase/tests/`
+# entries, which are harness-only and must never be applied to production.
+
+# ── §1.0 base schema ────────────────────────────────────────────────────────
+supabase-schema.sql
+
+# ── harness-only prelude (APPLY-ORDER.md §6 "notifications-rls drift") ──────
+supabase/tests/prelude-notifications-rls.sql
+
+# ── §1 historical migrations, 1 → 40 ───────────────────────────────────────
+supabase-migration-fix-rls-recursion.sql
+supabase-migration-group-codes.sql
+supabase-migration-notifications-rls.sql
+supabase-migration-realtime.sql
+supabase-migration-join-by-code-rpc.sql
+supabase-migration-phase1-persons.sql
+supabase-migration-phase2a-linked-profile.sql
+supabase-migration-phase2b-linked-requests.sql
+supabase-migration-phase2c-a-settlement-requests.sql
+supabase-migration-phase2c-b-sender-opt-in.sql
+supabase-migration-fix-settlement-request-rls.sql
+supabase-migration-fix-bidirectional-linked-settlements.sql
+supabase-migration-reconciliation.sql
+supabase-migration-phase2d-sync-past-records.sql
+supabase-migration-phase3-budgets-recurring-remittances.sql
+supabase-migration-fix-group-expense-reconciliation-rpc.sql
+supabase-migration-performance-indexes.sql
+supabase-migration-prelaunch-hardening.sql
+supabase-migration-incremental-sync-core.sql
+supabase-migration-incremental-sync-tombstones.sql
+supabase-migration-p0-launch-blockers.sql
+supabase-migration-safe-leave-group.sql
+supabase-migration-fix-group-invite-join-rpc.sql
+supabase-migration-enforce-active-group-transaction-members.sql
+supabase-migration-safe-contact-archive.sql
+# ↓ THE ALPHABETICAL TRAP: sorts 5th by filename, actually runs 27th. It
+#   rewrites cancel_settlement_request / reject_settlement_request created by
+#   phase2c-a/-b (April). Applying it earlier silently loses the fix.
+supabase-migration-fix-settlement-cancel-reject.sql
+supabase-migration-linked-notifications-realtime.sql
+supabase-migration-contact-link-notify.sql
+supabase-migration-contact-link-reciprocal.sql
+supabase-migration-goal-target-date.sql
+supabase-migration-custom-categories.sql
+supabase-migration-receipts.sql
+supabase-migration-committees.sql
+supabase-migration-committees-phase2.sql
+# ↓ the five APPLY-ORDER.md §1 flags as possibly UNAPPLIED in production.
+#   The harness always applies them; production state is unverified.
+supabase-migration-investments.sql
+supabase-migration-settlement-emi-and-account-guards.sql
+supabase-migration-onboarding-intent.sql
+supabase-migration-contacts-merge-unarchive.sql
+supabase-migration-cross-user-account-effects.sql
+supabase-migration-connections-push-discovery.sql
+
+# ── §2 audit-P0 batch, steps 1 → 11 ────────────────────────────────────────
+supabase-migration-audit-p0-currencies.sql
+supabase-migration-audit-p0-loan-concurrency.sql
+supabase-migration-audit-p0-settlement-row-locks.sql
+supabase-migration-audit-p0-kameti-draw.sql
+# ↓ keystone: MUST precede notifications, group-concurrency, group-deletion-guard
+supabase-migration-audit-p0-group-ledger-integrity.sql
+supabase-migration-audit-p0-notifications.sql
+supabase-migration-audit-p0-group-concurrency.sql
+supabase-migration-audit-p0-account-deletion.sql
+supabase-migration-audit-p0-group-deletion-guard.sql
+supabase-migration-audit-p0-join-abuse-limits.sql
+supabase-migration-audit-p0-consent-guards.sql
+
+# ── P1 batch (order from each file's own "Apply AFTER" header) ─────────────
+supabase-migration-p1-app-config.sql
+supabase-migration-p1-profile-lang.sql
+supabase-migration-p1-group-preview.sql
+supabase-migration-p1-money-bounds.sql
+supabase-migration-p1-profile-lang.sql
+
+# ── P2 batch. Its own header: "Apply LAST — after every audit-p0 file and
+#    after every supabase-migration-p1-*.sql", because it CREATE-OR-REPLACEs
+#    functions those files own (join_group_by_code, lookup_profile_by_code,
+#    delete_current_user, accept_group_invite, accept_group_membership,
+#    fan_out_group_notification, …).
+supabase-migration-p2-trust-safety.sql
+# ↓ each declares "AFTER p2-trust-safety" in its own header
+supabase-migration-p2-notification-maturity.sql
+supabase-migration-p3-khata-link.sql
+# ↓ flag-gated, safe ahead of the client; needs prelaunch-hardening + p1-money-bounds
+supabase-migration-p3-atomic-transfer.sql
+# ↓ order-independent (new objects only); its header says LAST-ish
+supabase-migration-p2-realtime-broadcast.sql
+# ↓ LAST — reconciliation reads every table above
+supabase-migration-p3-invariant-monitoring.sql

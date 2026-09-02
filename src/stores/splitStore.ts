@@ -28,6 +28,7 @@ import type {
   PendingGroupInvitation,
 } from '../lib/supabaseDb';
 import type { JoinCodeFailureStatus, InviteAcceptFailureStatus } from '../lib/joinCodeStatus';
+import { reportError } from '../lib/errorReporter';
 
 /** Outcome of a join-by-code attempt. Failures are data, not exceptions. */
 export type JoinGroupOutcome =
@@ -249,7 +250,10 @@ function patchGroupMemberInState(
 
 async function hydrateGroup(group: SplitGroup | null): Promise<SplitGroup | null> {
   if (!group) return null;
-  const members = await groupMembersDb.getByGroup(group.id).catch(() => []);
+  const members = await groupMembersDb.getByGroup(group.id).catch((err) => {
+    reportError(err, { feature: 'splitStore.hydrateGroup.members', extra: { groupId: group.id } });
+    return [];
+  });
   if (members.length === 0) return group;
   return { ...group, members };
 }
@@ -326,7 +330,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       // bucketed client-side. Replaces the prior N round-trips
       // (hydrateGroup per group) with 1.
       const ids = groups.map((g) => g.id);
-      const membersByGroup = await groupMembersDb.getByGroups(ids).catch(() => new Map());
+      const membersByGroup = await groupMembersDb.getByGroups(ids).catch((err) => {
+        // Groups still render, but with no member names — worth a signal.
+        reportError(err, { feature: 'splitStore.loadGroups.members', extra: { groupCount: ids.length } });
+        return new Map();
+      });
       const hydrated = groups.map((group) => {
         const members = membersByGroup.get(group.id);
         return members && members.length > 0 ? { ...group, members } : group;
@@ -390,7 +398,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       }
       set({ balances, balancesLoaded: true });
     } catch (err) {
-      console.error('loadBalances failed', err);
+      reportError(err, { feature: 'splitStore.loadBalances' });
       // Keep existing balances; mark loaded so UI doesn't spin forever.
       set({ balancesLoaded: true });
     }
@@ -429,7 +437,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       }
       set({ unreconciledFlags: flags });
     } catch (err) {
-      console.error('loadUnreconciledFlags failed', err);
+      reportError(err, { feature: 'splitStore.loadUnreconciledFlags' });
     }
   },
 
@@ -503,7 +511,10 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       await splitGroupsDb.add(group);
       await groupMembersDb.addMany(group.id, members);
     } catch (err) {
-      await splitGroupsDb.delete(group.id).catch(() => {});
+      reportError(err, { feature: 'splitStore.createGroup.write', extra: { groupId: group.id, memberCount: members.length } });
+      await splitGroupsDb.delete(group.id).catch((rollbackErr) => {
+        reportError(rollbackErr, { feature: 'splitStore.createGroup.rollback', extra: { groupId: group.id } });
+      });
       throw err;
     }
 
@@ -518,7 +529,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     try {
       await useActivityStore.getState().logActivity('group_created', `Created group "${name}"`, group.id, 'group');
     } catch (err) {
-      console.error('activity log failed (non-fatal)', err);
+      reportError(err, { feature: 'splitStore.createGroup.logActivity', extra: { groupId: group.id } });
     }
     return group;
   },
@@ -597,7 +608,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     try {
       set({ pendingInvitations: await groupMembershipDb.listPending() });
     } catch (err) {
-      console.error('loadPendingInvitations failed', err);
+      reportError(err, { feature: 'splitStore.loadPendingInvitations' });
     }
   },
 
@@ -804,7 +815,11 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     } catch (err) {
       if (linkedTransactionId) {
         await useTransactionStore.getState().deleteTransaction(linkedTransactionId, { allowLinkedGroupExpense: true }).catch((rollbackErr) => {
-          console.error('linked group transaction rollback failed', rollbackErr);
+          // Money left an account for an expense row that never landed.
+          reportError(rollbackErr, {
+            feature: 'splitStore.addGroupExpense.linkedTransactionRollback',
+            extra: { groupId: expense.groupId, expenseId: expense.id, linkedTransactionId },
+          });
         });
       }
       throw err;
@@ -875,7 +890,13 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     let linkedTransactionId = existingMeta.linkedTransactionId;
     let createdLinkedTransactionId: string | undefined;
     const originalLinkedTx = linkedTransactionId
-      ? await transactionsDb.get(linkedTransactionId).catch(() => null)
+      ? await transactionsDb.get(linkedTransactionId).catch((err) => {
+          reportError(err, {
+            feature: 'splitStore.updateGroupExpense.snapshotRead',
+            extra: { linkedTransactionId },
+          });
+          return null;
+        })
       : null;
     type Rollback = () => Promise<void>;
     const rollbacks: Rollback[] = [];
@@ -979,7 +1000,10 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       // others — we want best-effort recovery.
       for (let i = rollbacks.length - 1; i >= 0; i -= 1) {
         await rollbacks[i]().catch((rollbackErr) => {
-          console.error('[updateGroupExpense] rollback step failed', rollbackErr);
+          reportError(rollbackErr, {
+            feature: 'splitStore.updateGroupExpense.rollbackStepFailed',
+            extra: { expenseId: existing.id, groupId: existing.groupId, step: i },
+          });
         });
       }
       // createdLinkedTransactionId kept for telemetry parity with older code paths.
@@ -987,7 +1011,9 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       // Pull the winning version back into the UI before the error surfaces,
       // so the user sees the other person's numbers rather than their own
       // rejected ones sitting there looking saved.
-      await get().loadBalances().catch(() => {});
+      await get().loadBalances().catch((reloadErr) => {
+        reportError(reloadErr, { feature: 'splitStore.updateGroupExpense.postConflictReload' });
+      });
       throw err;
     }
 

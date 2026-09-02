@@ -352,7 +352,11 @@ export interface AppNotification {
   userId: string;
   groupId: string | null;
   eventId: string | null;
-  type: 'group_update' | 'invite' | 'system' | 'linked_request' | 'linked_settlement' | 'contact_linked';
+  // 'kameti' is written by notify_committee_members
+  // (supabase-migration-p2-notification-maturity.sql §6) for draw-completed,
+  // round-due and payout-due — the cross-user kameti gap in audit
+  // 08-notifications.md N-11.
+  type: 'group_update' | 'invite' | 'system' | 'linked_request' | 'linked_settlement' | 'contact_linked' | 'kameti';
   // Server-composed fallback text. Since the fan-out moved into Postgres
   // triggers (supabase-migration-audit-p0-notifications.sql) these are written
   // ONLY by the database — a client can no longer author notification text for
@@ -369,6 +373,21 @@ export interface AppNotification {
   params: Record<string, unknown>;
   // Who caused it. Also the key the server-side per-sender rate limit uses.
   actorId: string | null;
+  // Routing + grouping metadata, stamped server-side by the
+  // tg_notifications_defaults BEFORE INSERT trigger
+  // (supabase-migration-p2-notification-maturity.sql §3) so EVERY writer's
+  // rows carry them, not just the group fan-out.
+  //   collapseKey — tray grouping ("group:<id>:expense_added"): ten expenses
+  //     in one trip become one tray entry (audit N-10).
+  //   channelId   — Android notification channel: money | groups | kameti,
+  //     so group chatter is demotable without losing loan requests (N-10).
+  //   href        — the in-app route to open on tap (N-8: pushes used to dump
+  //     the user at the top of /groups).
+  // All three are null on rows written before that migration; the client
+  // derives its own fallback via notificationHref() / notificationChannel().
+  collapseKey: string | null;
+  channelId: string | null;
+  href: string | null;
   readAt: string | null;
   createdAt: string;
 }

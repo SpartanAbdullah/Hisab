@@ -6,6 +6,7 @@
 
 import { renderHtmlToA4Pdf } from './renderNodeToImage';
 import { AMOUNT_MASK } from './maskMoney';
+import { localIso } from './localDate';
 
 const NAVY = '#0B0E2A';
 const INK = '#1A1A24';
@@ -148,7 +149,10 @@ export async function generateKametiSlipPdf(input: KametiSlipInput): Promise<Kam
     subject: 'Kameti payout slip',
     author: input.organiserName || 'Hisaab',
   });
-  const datePart = new Date(input.date).toISOString().slice(0, 10);
+  // Local calendar day, not toISOString() (UTC) — generating this near local
+  // midnight in this app's UTC+4/+5 markets must not date-stamp the filename
+  // a day early.
+  const datePart = localIso(new Date(input.date));
   const filename = `Kameti-Payout-${sanitizeFilename(input.committeeName)}-R${input.round}-${datePart}.pdf`;
   return { blob, filename };
 }

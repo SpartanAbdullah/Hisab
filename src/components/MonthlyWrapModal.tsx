@@ -13,6 +13,7 @@ import { formatMoney } from '../lib/constants';
 import { generateWrapCard } from '../lib/wrapCard';
 import { shareStatementFile } from '../lib/shareStatement';
 import type { Currency } from '../db';
+import { useT } from '../lib/i18n';
 
 // Spotify-Wrapped-style end-of-month summary. Triggers on app boot:
 // - we're at least 24h into a new month
@@ -21,6 +22,7 @@ import type { Currency } from '../db';
 //
 // All the cleverness is in monthlyWrap.ts; this component is the surface.
 export function MonthlyWrapModal() {
+  const t = useT();
   const transactions = useTransactionStore((s) => s.transactions);
   const user = useSupabaseAuthStore((s) => s.user);
   const [open, setOpen] = useState(false);
@@ -89,7 +91,7 @@ export function MonthlyWrapModal() {
           <div className="flex items-center gap-2 text-white/70">
             <Sparkles size={14} />
             <p className="text-[10.5px] font-bold uppercase tracking-[0.12em]">
-              Your Hisaab Wrap
+              {t('mwm_your_wrap')}
             </p>
           </div>
           <p className="text-[20px] font-semibold tracking-tight mt-2 leading-snug">
@@ -123,7 +125,7 @@ export function MonthlyWrapModal() {
         {stats.topCategories.length > 0 && (
           <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
             <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-ink-500">
-              Where it went
+              {t('mwm_where_it_went')}
             </p>
             <div className="mt-2.5 space-y-2">
               {stats.topCategories.map((c) => (
@@ -152,7 +154,7 @@ export function MonthlyWrapModal() {
           {stats.biggestExpense && (
             <div className="rounded-2xl bg-cream-card border border-cream-border p-3.5">
               <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-ink-500">
-                Biggest hit
+                {t('mwm_biggest_hit')}
               </p>
               <p className="text-[16px] font-semibold text-ink-900 tabular-nums mt-1">
                 {formatMoney(stats.biggestExpense.amount, stats.biggestExpense.currency)}
@@ -165,7 +167,7 @@ export function MonthlyWrapModal() {
           {stats.bigSpendDay && (
             <div className="rounded-2xl bg-cream-card border border-cream-border p-3.5">
               <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-ink-500">
-                Busiest day
+                {t('mwm_busiest_day')}
               </p>
               <p className="text-[16px] font-semibold text-ink-900 tabular-nums mt-1">
                 {formatMoney(stats.bigSpendDay.amount, stats.primaryCurrency)}
@@ -183,7 +185,7 @@ export function MonthlyWrapModal() {
 
         {/* Privacy: default to "proud numbers"; exact totals are opt-in. */}
         <label className="flex items-center justify-between rounded-2xl bg-cream-card border border-cream-border px-4 py-3 cursor-pointer">
-          <span className="text-[12.5px] font-semibold text-ink-800">Include exact totals on the card</span>
+          <span className="text-[12.5px] font-semibold text-ink-800">{t('mwm_include_totals')}</span>
           <input
             type="checkbox"
             checked={includeTotals}
@@ -198,10 +200,10 @@ export function MonthlyWrapModal() {
             disabled={sharing}
             className="cta-secondary flex-1 flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
-            <Share2 size={12} /> {sharing ? 'Preparing…' : 'Share card'}
+            <Share2 size={12} /> {sharing ? t('mwm_preparing') : t('mwm_share_card')}
           </button>
           <button onClick={handleClose} className="cta-primary flex-1">
-            See you next month
+            {t('mwm_see_next_month')}
           </button>
         </div>
       </div>
