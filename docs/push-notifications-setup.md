@@ -83,6 +83,16 @@ apply plugin: 'com.google.gms.google-services'
 inside every APK), but it *is* environment-specific — if you keep separate
 Firebase projects for staging and production, keep the files separate too.
 
+**Release builds now enforce this file.** `android/app/build.gradle` fails
+`bundleRelease`/`assembleRelease` loudly (`GradleException`, before the AAB/APK
+is produced) if `android/app/google-services.json` is missing — mirroring the
+existing keystore guard right above it in the same file. This exists because
+a checkout without the file used to build a release AAB that *looked* fine
+but shipped with zero FCM delivery, silently. Debug builds (`cap run
+android`) are unaffected and still work without the file — only a release
+bundle/APK is blocked. If you hit this error, it means Step 2-3 above
+weren't done on the machine building the release.
+
 ---
 
 ## Step 4 — Deploy the Edge Function
@@ -146,9 +156,17 @@ Then build the APK/AAB in Android Studio and install on a real device
 To test end-to-end:
 
 1. Sign in on the device.
-2. **Settings → Payment reminders → on.** This grants Android 13+'s
+2. **Settings → Payment reminders → on** — or open a loan with an active
+   balance (`/loan/:id`) and tap **Remind**; after that sheet closes,
+   `NotificationPermissionPrompt` (`src/components/NotificationPermissionPrompt.tsx`)
+   offers the same opt-in at that higher-intent moment instead of only from
+   the buried Settings toggle. Either path grants Android 13+'s
    `POST_NOTIFICATIONS` and registers the FCM token in the same step — there
-   is deliberately no second, separate push opt-in.
+   is deliberately no second, separate push opt-in. Declining the in-context
+   prompt ("Not now") is remembered for 14 days (`localStorage`) before it
+   asks again; Settings always stays available regardless. Other high-intent
+   moments worth wiring the same prompt into later: first kameti round going
+   due, a budget breach.
 3. Confirm a row appeared:
    ```sql
    select user_id, platform, created_at from public.device_push_tokens;

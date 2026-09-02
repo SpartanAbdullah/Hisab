@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { profilesDb } from '../lib/supabaseDb';
+import { track } from '../lib/telemetry';
 import type { Language } from '../lib/i18n';
 import { ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle, Sparkles } from 'lucide-react';
 import { BrandMark } from '../components/BrandMark';
@@ -92,6 +93,26 @@ export function OnboardingPage() {
     if (next.length === MODE_QUIZ.length) setSelectedMode(recommendMode(next));
   };
 
+  // Catalog #5. Fired once, when the user leaves the mode screen with a choice
+  // committed — the direct measure of "did the quiz put people in the right
+  // mode" (report 10 funnel 2). `was_default_kept` is false whenever they
+  // overrode the recommendation, which is the quiz-mislead signal.
+  const confirmModeSelection = () => {
+    track('onboarding_mode_selected', {
+      mode: selectedMode,
+      quiz_intent: intent ?? 'none',
+      was_default_kept: !quizSkipped && selectedMode === recommended,
+      quiz_skipped: quizSkipped,
+    });
+  };
+
+  // Activation funnel, catalog #4: one event per step entered. The biggest
+  // drop between consecutive `step` values IS the onboarding problem — today
+  // that is unknowable (audit 2026-09 report 10, F1).
+  useEffect(() => {
+    track('onboarding_step_viewed', { step });
+  }, [step]);
+
   // First-account fields — only used (and only shown) for full_tracker.
   const [acctType, setAcctType] = useState<AccountType>('cash');
   const [acctName, setAcctName] = useState('');
@@ -107,16 +128,29 @@ export function OnboardingPage() {
     if (!name.trim()) return;
     setLoading(true);
     setMode(selectedMode);
+    let accountCreated = false;
     if (withAccount && selectedMode === 'full_tracker' && acctName.trim()) {
       try {
         await useAccountStore.getState().createAccount({
           name: acctName.trim(), type: acctType, currency, balance: Math.max(0, parseFloat(acctBalance) || 0),
         });
+        accountCreated = true;
+        // Catalog #7 for the onboarding source. The accounts-page source is
+        // owned by AddAccountStepper (see the telemetry follow-up list).
+        track('account_created', { account_type: acctType, is_first: true, source: 'onboarding' });
       } catch (err) {
         console.error('onboarding account create failed (non-fatal)', err);
       }
     }
     await completeOnboarding(name.trim(), currency, selectedMode);
+    // Catalog #6 — the activation funnel's second milestone. `mode` here is the
+    // fork the whole app branches on, so every downstream cohort splits by it.
+    track('onboarding_completed', {
+      mode: selectedMode,
+      language: lang,
+      currency,
+      created_first_account: accountCreated,
+    });
     // Land the user where their stated intent lives — locally instant,
     // durably mirrored to the profile (best-effort; column may not exist
     // until the migration is applied).
@@ -414,7 +448,7 @@ export function OnboardingPage() {
                 </div>
 
                 <div className="pb-4">
-                  <Button variant="secondary" size="lg" onClick={() => setStep(5)} icon={<ArrowRight size={16} />}>
+                  <Button variant="secondary" size="lg" onClick={() => { confirmModeSelection(); setStep(5); }} icon={<ArrowRight size={16} />}>
                     {t('onboard_next')}
                   </Button>
                   <button onClick={() => { setQuizAnswers([]); setQuizSkipped(false); }} className="text-[11px] text-white/40 w-full text-center min-h-[44px] mt-2 font-medium">

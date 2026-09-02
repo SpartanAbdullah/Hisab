@@ -43,6 +43,9 @@ export const useBudgetStore = create<BudgetState>((set) => ({
         fetchDeletedSince: budgetsDb.getDeletedSince,
         getUpdatedAt: (budget) => budget.updatedAt ?? budget.createdAt,
         sort: (a, b) => a.category.localeCompare(b.category),
+        // A background refresh used to land in Dexie only, leaving the store
+        // rendering the pre-refresh snapshot (audit 04-supabase F-RT1).
+        onRefreshed: (rows) => set({ budgets: rows }),
       });
       set({ budgets });
     } finally {

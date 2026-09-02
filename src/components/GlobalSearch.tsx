@@ -9,6 +9,7 @@ import { useSplitStore } from '../stores/splitStore';
 import { groupExpensesDb } from '../lib/supabaseDb';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { useBackStackLayer } from '../hooks/useBackStackLayer';
 import type { Currency, GroupExpense } from '../db';
 
 interface Props {
@@ -72,6 +73,10 @@ export function GlobalSearch({ open, onClose }: Props) {
     loadLoans,
     loadGroups,
   ]);
+
+  // Audit MF-08: a back press with search open used to fall through to the
+  // route underneath.
+  useBackStackLayer(open, onClose, 'global-search');
 
   const groupById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups]);
   const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);

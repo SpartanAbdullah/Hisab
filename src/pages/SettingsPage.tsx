@@ -47,7 +47,7 @@ import { PhoneDiscoverySection } from "../components/PhoneDiscoverySection";
 import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
 import { ManageCategoriesModal } from "../components/ManageCategoriesModal";
 import { useThemeStore, type ThemeMode } from "../stores/themeStore";
-import { useT, useI18nStore } from "../lib/i18n";
+import { useT, useI18nStore, type I18nKey } from "../lib/i18n";
 import { validatePassword, PASSWORD_MIN_LENGTH } from "../lib/passwordPolicy";
 import { exportAllData, importData, downloadJSON } from "../lib/dataExport";
 import { profilesDb } from "../lib/supabaseDb";
@@ -127,34 +127,45 @@ function readOwnedGroupsBlocker(error: unknown): { blocked: boolean; names: stri
   return { blocked: true, names };
 }
 
-const SYNC_LABELS: Record<MirrorSyncSnapshot["key"], string> = {
-  accounts: "Accounts",
-  transactions: "Transactions",
-  loans: "Loans",
-  budgets: "Budgets",
+// Audit UX-09: the whole Sync Status card is gated behind VITE_ENABLE_OUTBOX,
+// the same flag that gates the outbox runner (src/lib/outboxRunner.ts:29). The
+// outbox is inert in shipping builds — stores are only partially rewired to it
+// — so a card headlined "Queued offline changes: 0" told users offline queueing
+// existed and their unsent edits were safe. It is not deleted, only hidden, so
+// it returns the day the outbox actually ships.
+const OUTBOX_UI_ENABLED = import.meta.env.VITE_ENABLE_OUTBOX === "true";
+
+const SYNC_LABEL_KEYS: Record<MirrorSyncSnapshot["key"], I18nKey> = {
+  accounts: "sync_tbl_accounts",
+  transactions: "sync_tbl_transactions",
+  loans: "sync_tbl_loans",
+  budgets: "sync_tbl_budgets",
 };
 
-function formatSyncTime(value: string | null): string {
-  if (!value) return "Not synced yet";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  return date.toLocaleString([], {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function SyncStatusRow({ snapshot }: { snapshot: MirrorSyncSnapshot }) {
+  const t = useT();
+  // i18n'd here rather than in a module-level helper: the old formatSyncTime
+  // returned hardcoded "Not synced yet" / "Unknown" strings.
+  const formatSyncTime = (value: string | null): string => {
+    if (!value) return t("sync_never");
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return t("sync_unknown");
+    return date.toLocaleString([], {
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="text-[11px] font-semibold text-ink-800">
-          {SYNC_LABELS[snapshot.key]}
+          {t(SYNC_LABEL_KEYS[snapshot.key])}
         </p>
         <p className="text-[10px] text-ink-400 mt-0.5">
-          Full refresh: {formatSyncTime(snapshot.lastFullRefreshAt)}
+          {t("sync_full_refresh")}: {formatSyncTime(snapshot.lastFullRefreshAt)}
         </p>
       </div>
       <p className={`text-[10.5px] font-semibold text-right tabular-nums ${snapshot.lastSyncedAt ? "text-receive-text" : "text-ink-400"}`}>
@@ -262,6 +273,9 @@ export function SettingsPage() {
   }, [user]);
 
   useEffect(() => {
+    // No card, no query: skip the mirror reads and the outbox count entirely
+    // while the Sync Status card is hidden (audit UX-09).
+    if (!OUTBOX_UI_ENABLED) return;
     void loadSyncStatus();
   }, []);
 
@@ -303,10 +317,14 @@ export function SettingsPage() {
         toast.show({ type: "success", title: t("settings_import_success") });
         setTimeout(() => window.location.reload(), 1000);
       } else {
+        // Audit M8: importData now validates the file before touching a row,
+        // so the reason is a localised key ("nothing was deleted") rather than
+        // a raw Postgres/JSON error string.
         toast.show({
           type: "error",
           title: t("settings_import_fail"),
-          subtitle: result.message,
+          subtitle: t(result.messageKey),
+          duration: 7000,
         });
       }
     } catch {
@@ -1112,7 +1130,10 @@ export function SettingsPage() {
           />
         </div>
 
-        {/* About */}
+        {/* Sync Status — audit UX-09. Hidden unless VITE_ENABLE_OUTBOX is on,
+            because "Queued offline changes: 0" is a promise the inert outbox
+            cannot keep. Kept (not deleted) so it returns with the feature. */}
+        {OUTBOX_UI_ENABLED && (
         <div className={sectionClass}>
           <div className={rowClass}>
             <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center">
@@ -1120,21 +1141,23 @@ export function SettingsPage() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[13px] font-semibold text-ink-900">
-                Sync Status
+                {t("sync_title")}
               </p>
               <p className="text-[11px] text-ink-500">
                 {syncStatusLoading
-                  ? "Checking local mirror..."
+                  ? t("sync_checking")
                   : outboxCount > 0
-                    ? `${outboxCount} queued change${outboxCount === 1 ? "" : "s"} waiting to sync`
-                    : "Local mirror is ready"}
+                    ? outboxCount === 1
+                      ? t("sync_queued_one")
+                      : t("sync_queued_n").replace("{n}", String(outboxCount))
+                    : t("sync_ready")}
               </p>
             </div>
             <button
               type="button"
               onClick={() => void loadSyncStatus()}
               disabled={syncStatusLoading}
-              aria-label="Refresh sync status"
+              aria-label={t("sync_refresh_aria")}
               className="nav-icon-button shrink-0 disabled:opacity-40"
             >
               <RefreshCw size={14} className={`text-ink-500 ${syncStatusLoading ? "animate-spin" : ""}`} />
@@ -1143,7 +1166,7 @@ export function SettingsPage() {
           <div className="px-4 py-3 space-y-2.5">
             {syncSnapshots.length === 0 && !syncStatusLoading ? (
               <p className="text-[11px] text-ink-500 leading-relaxed">
-                Sync metadata will appear after the first successful data refresh on this device.
+                {t("sync_empty")}
               </p>
             ) : (
               syncSnapshots.map((snapshot) => (
@@ -1151,13 +1174,14 @@ export function SettingsPage() {
               ))
             )}
             <div className="pt-2 border-t border-cream-hairline flex items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold text-ink-700">Queued offline changes</p>
+              <p className="text-[11px] font-semibold text-ink-700">{t("sync_queued_label")}</p>
               <span className={`text-[11px] font-semibold tabular-nums ${outboxCount > 0 ? "text-warn-600" : "text-receive-text"}`}>
                 {outboxCount}
               </span>
             </div>
           </div>
         </div>
+        )}
 
         {/* Group header — About & legal */}
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 px-1 pt-2">

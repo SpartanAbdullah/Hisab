@@ -94,6 +94,8 @@ gradle.taskGraph.whenReady { graph ->
 
 apply from: 'capacitor.build.gradle'
 
+def hasGoogleServicesJson = file('google-services.json').exists()
+
 try {
     def servicesJSON = file('google-services.json')
     if (servicesJSON.text) {
@@ -101,4 +103,24 @@ try {
     }
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+// Safety net: fail a RELEASE build loudly if google-services.json is absent,
+// instead of silently producing an AAB/APK with zero FCM delivery while the
+// app is backgrounded or killed (MF-05, docs/audit-2026-09/07-mobile-first.md).
+// Mirrors the keystore guard above. Debug builds (`cap run android`) are
+// unaffected — only bundleRelease/assembleRelease are blocked. See
+// docs/push-notifications-setup.md to obtain the file from Firebase console
+// and place it at android/app/google-services.json.
+gradle.taskGraph.whenReady { graph ->
+    def buildingRelease = graph.allTasks.any { task ->
+        task.name == 'bundleRelease' || task.name == 'assembleRelease'
+    }
+    if (buildingRelease && !hasGoogleServicesJson) {
+        throw new GradleException(
+            "Release build requested but android/app/google-services.json is missing — " +
+            "this AAB/APK would ship with zero push notification delivery while the app " +
+            "is backgrounded or killed. Get the file from the Firebase console and place " +
+            "it at android/app/google-services.json (see docs/push-notifications-setup.md).")
+    }
 }

@@ -50,6 +50,9 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         fetchDeletedSince: accountsDb.getDeletedSince,
         getUpdatedAt: (account) => account.updatedAt ?? account.createdAt,
         sort: (a, b) => a.createdAt.localeCompare(b.createdAt),
+        // A background refresh used to land in Dexie only, leaving the store
+        // rendering the pre-refresh snapshot (audit 04-supabase F-RT1).
+        onRefreshed: (rows) => set({ accounts: rows }),
       });
       set({ accounts });
     } finally {

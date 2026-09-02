@@ -55,6 +55,15 @@
                   browser. Same graceful fallback as /join/ until then.
                 -->
                 <data android:pathPrefix="/u/" />
+                <!--
+                  Public kameti "witness" links (https://usehisaab.com/kameti/witness/TOKEN),
+                  shared with committee members/relatives who may not have the
+                  app installed yet — src/App.tsx renders KametiWitnessPage for
+                  this path without requiring auth. Same graceful browser
+                  fallback as the other two prefixes until assetlinks.json
+                  verifies.
+                -->
+                <data android:pathPrefix="/kameti/witness/" />
             </intent-filter>
 
         </activity>

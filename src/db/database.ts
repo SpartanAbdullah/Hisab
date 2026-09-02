@@ -67,6 +67,12 @@ export interface MirrorSyncState {
   key: string;
   lastSyncedAt: string;
   lastFullRefreshAt: string | null;
+  // Set when a local write or a remote realtime event changed rows we haven't
+  // pulled yet. Deliberately separate from the cursors above: marking a mirror
+  // stale must never erase `lastSyncedAt` (that turned every money write into a
+  // full-table re-download — audit 03-performance H2). Not indexed, so no Dexie
+  // version bump is needed; older rows simply read as undefined.
+  dirtyAt?: string | null;
 }
 
 export class HisaabDatabase extends Dexie {

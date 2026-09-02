@@ -9,6 +9,8 @@ import { currencyMeta } from '../lib/design-tokens';
 import { poolAmount } from '../lib/committeeMath';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { track } from '../lib/telemetry';
+import { bucketCount } from '../lib/telemetryEvents';
 import { SUPPORTED_CURRENCIES, type Currency, type CommitteeCadence, type CommitteePayoutMethod } from '../db';
 
 interface Props {
@@ -81,6 +83,17 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
       const c = await createCommittee({
         name: name.trim(), currency, contributionAmount: amt, cadence, startDate,
         payoutMethod: method, members,
+      });
+      // Catalog #21. Kameti is the differentiator; report 10 funnel 4 asks
+      // whether created kametis reach round 1 or die as empty shells, and this
+      // is its first step. `rounds` == member count (one payout per member);
+      // the contribution amount and every member name stay on the device.
+      track('kameti_created', {
+        member_count_bucket: bucketCount(members.length),
+        rounds: members.length,
+        frequency: cadence,
+        payout_method: method,
+        currency,
       });
       reset();
       onClose();

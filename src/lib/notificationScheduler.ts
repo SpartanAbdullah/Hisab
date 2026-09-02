@@ -41,18 +41,25 @@ async function ensureLoaded(): Promise<void> {
   await Promise.all(jobs.map((j) => j.catch(() => {})));
 }
 
+// Drops every pending local notification. Shared by the reschedule path
+// (which must start from a clean slate) and by the sign-out path.
+async function cancelPending(): Promise<void> {
+  const { LocalNotifications } = await import('@capacitor/local-notifications');
+  const pending = await LocalNotifications.getPending();
+  if (pending.notifications.length > 0) {
+    await LocalNotifications.cancel({
+      notifications: pending.notifications.map((n) => ({ id: n.id })),
+    });
+  }
+}
+
 async function runReschedule(): Promise<void> {
   try {
     const { LocalNotifications } = await import('@capacitor/local-notifications');
 
     // Always clear first — stale reminders must die even when the feature
     // was just disabled or permission was revoked.
-    const pending = await LocalNotifications.getPending();
-    if (pending.notifications.length > 0) {
-      await LocalNotifications.cancel({
-        notifications: pending.notifications.map((n) => ({ id: n.id })),
-      });
-    }
+    await cancelPending();
 
     if (!remindersEnabled()) return;
     const perm = await LocalNotifications.checkPermissions();
@@ -124,6 +131,35 @@ export function rescheduleNotifications(opts?: { force?: boolean }): Promise<voi
     })
     .catch(() => {
       queued = false;
+    });
+  return chain;
+}
+
+/** Sign-out teardown: drop every pending reminder for the account that is
+ *  leaving this device.
+ *
+ *  Audit 2026-09 L5: reminders are scheduled with the OS, not with us — they
+ *  survive sign-out, app kill and reboot, and their bodies name real people
+ *  and real amounts ("Ali ko 500 AED dena hai"). On a shared/handed-over
+ *  phone that is the previous user's ledger leaking into the next holder's
+ *  notification tray, indefinitely.
+ *
+ *  Goes through the same serialization chain as rescheduleNotifications() so
+ *  an in-flight or queued reschedule cannot re-populate the schedule in the
+ *  window between our getPending() and our cancel(). `lastRun` is stamped so
+ *  the debounce also swallows any non-forced run for the next 30s; after
+ *  that, remindersEnabled() is false (sign-out clears the opt-in key) and
+ *  runReschedule() cancels-and-returns anyway.
+ *
+ *  No-op on web. Never throws — it runs on the path that declares the user
+ *  signed out. */
+export function cancelAllScheduledNotifications(): Promise<void> {
+  if (!isNativeRuntime()) return Promise.resolve();
+  lastRun = Date.now();
+  chain = chain
+    .then(() => cancelPending())
+    .catch((err) => {
+      console.error('[notifications] sign-out cancel failed (non-fatal)', err);
     });
   return chain;
 }

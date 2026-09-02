@@ -1357,6 +1357,59 @@ const S = {
     en: "Data restored successfully!",
   },
   settings_import_fail: { ur: "Import fail ho gaya", en: "Import failed" },
+  // Audit M8: the import now validates the whole file BEFORE it deletes
+  // anything, so every rejection has a specific, honest reason instead of a
+  // raw Postgres string in a toast.
+  import_err_not_json: {
+    ur: "Yeh Hisaab ki backup file nahi lagti. Koi data delete nahi hua.",
+    en: "That doesn't look like a Hisaab backup file. Nothing was deleted.",
+  },
+  import_err_shape: {
+    ur: "Backup file adhoori ya kharab hai. Koi data delete nahi hua.",
+    en: "The backup file is incomplete or damaged. Nothing was deleted.",
+  },
+  import_err_version: {
+    ur: "Yeh backup Hisaab ke naye version ka hai. Pehle app update karein.",
+    en: "This backup was made by a newer version of Hisaab. Update the app first.",
+  },
+  import_err_bad_collection: {
+    ur: "Backup file ka ek hissa kharab hai. Koi data delete nahi hua.",
+    en: "One section of the backup file is damaged. Nothing was deleted.",
+  },
+  import_err_bad_row: {
+    ur: "Backup file mein kuch records ki ID nahi hai. Koi data delete nahi hua.",
+    en: "Some records in the backup file are missing their ID. Nothing was deleted.",
+  },
+  import_err_auth: {
+    ur: "Restore karne ke liye sign in karna zaroori hai.",
+    en: "You need to be signed in to restore a backup.",
+  },
+  import_err_rolled_back: {
+    ur: "Restore mukammal nahi hua. Aap ka purana data wapas laga diya gaya hai.",
+    en: "The restore didn't finish. Your previous data has been put back.",
+  },
+  import_err_rollback_failed: {
+    ur: "Restore fail hua aur purana data poori tarah wapas nahi aa saka. App band karke dobara kholein — agar data ab bhi adhoora lage to support se rabta karein.",
+    en: "The restore failed and your previous data could not be fully put back. Close and reopen the app — if anything still looks missing, contact support.",
+  },
+  // Audit UX-09: the Sync Status card is hidden behind VITE_ENABLE_OUTBOX, but
+  // its copy was hardcoded English while it was reachable. Localised so the
+  // card is shippable the day the outbox actually ships.
+  sync_title: { ur: "Sync ki halat", en: "Sync Status" },
+  sync_checking: { ur: "Local mirror check ho raha hai…", en: "Checking local mirror…" },
+  sync_ready: { ur: "Local mirror tayar hai", en: "Local mirror is ready" },
+  sync_queued_n: { ur: "{n} tabdeeliyan sync hone ka intezar kar rahi hain", en: "{n} queued changes waiting to sync" },
+  sync_queued_one: { ur: "1 tabdeeli sync hone ka intezar kar rahi hai", en: "1 queued change waiting to sync" },
+  sync_queued_label: { ur: "Queue mein offline tabdeeliyan", en: "Queued offline changes" },
+  sync_refresh_aria: { ur: "Sync ki halat refresh karo", en: "Refresh sync status" },
+  sync_empty: { ur: "Is device par pehli kamyab refresh ke baad sync ki tafseel yahan aayegi.", en: "Sync details will appear after the first successful data refresh on this device." },
+  sync_full_refresh: { ur: "Poora refresh", en: "Full refresh" },
+  sync_never: { ur: "Abhi tak sync nahi hua", en: "Not synced yet" },
+  sync_unknown: { ur: "Maloom nahi", en: "Unknown" },
+  sync_tbl_accounts: { ur: "Accounts", en: "Accounts" },
+  sync_tbl_transactions: { ur: "Lenden", en: "Transactions" },
+  sync_tbl_loans: { ur: "Qarz", en: "Loans" },
+  sync_tbl_budgets: { ur: "Budgets", en: "Budgets" },
   settings_security: { ur: "Security", en: "Security" },
   settings_set_pin: { ur: "PIN Set Karo", en: "Set PIN" },
   settings_change_pin: { ur: "PIN Badlo", en: "Change PIN" },
@@ -1863,6 +1916,22 @@ const S = {
     ur: "Loan page par settle karein",
     en: "Settle on loan page",
   },
+  // Audit UX-12: the qist/EMI plan cannot ride along on a linked request —
+  // the loan rows are created on both sides only when the other person
+  // confirms, and the request table has no instalment columns. Say this
+  // instead of rendering the section and quietly discarding it.
+  ltr_emi_unavailable_title: {
+    ur: "Qist plan yahan set nahi ho sakta",
+    en: "Instalment plan isn't available here",
+  },
+  ltr_emi_unavailable_body: {
+    ur: "Yeh entry request ke taur par ja rahi hai. Loan dono taraf tab banega jab doosra shaks confirm karega — is liye qist ka schedule abhi attach nahi ho sakta. Qist chahiye to yeh loan kisi aise contact par likhein jo Hisaab se linked na ho.",
+    en: "This entry is going out as a request. The loan is only created on both sides once the other person confirms, so an instalment schedule can't be attached yet. If you need instalments, record this loan against a contact who isn't linked on Hisaab.",
+  },
+  ltr_emi_kept_warning: {
+    ur: "Aap ka qist plan bheja nahi jayega. Aap ne jo values likhi hain woh yahin mehfooz hain — koi non-linked contact chunte hi wapas aa jayengi.",
+    en: "Your instalment plan won't be sent. The values you typed are still saved here and come back the moment you pick a contact who isn't linked.",
+  },
 
   // Toasts
   ltr_sent_title: {
@@ -2290,6 +2359,30 @@ const S = {
   err_repayment_amount_invalid: {
     ur: "Payment ki raqam sahi nahi. Zero se zyada amount likhein.",
     en: "That payment amount isn't valid. Enter an amount greater than zero.",
+  },
+  // Store-level money bounds (audit 12-qa-review V-1/F-9). These fire BEFORE
+  // any balance moves, in both app modes, for amounts the per-form guards
+  // missed — a NaN from a parse, a pasted negative, an absurd magnitude.
+  err_money_amount_invalid: {
+    ur: "Raqam sahi nahi. Sirf number likhein.",
+    en: "That amount isn't valid. Enter a number.",
+  },
+  err_money_amount_not_positive: {
+    ur: "Raqam zero se zyada honi chahiye.",
+    en: "The amount must be greater than zero.",
+  },
+  err_money_amount_negative: {
+    ur: "Raqam minus mein nahi ho sakti.",
+    en: "The amount can't be negative.",
+  },
+  err_money_amount_too_large: {
+    ur: "Yeh raqam bohot zyada hai — dobara check karein.",
+    en: "That amount is too large — please double-check it.",
+  },
+  // Client-side mirror of the server's GROUP_SPLITS_DO_NOT_SUM trigger.
+  err_group_splits_mismatch: {
+    ur: "Hisson ka total {splits} ban raha hai, magar kharcha {amount} hai. Dono barabar hone chahiye.",
+    en: "The shares add up to {splits} but the expense is {amount}. They have to match.",
   },
   err_rate_too_low: {
     ur: "Conversion rate bohot kam hai. Phir se check karein.",
@@ -2806,6 +2899,19 @@ const S = {
   join_ready: { ur: "Join karne ke liye taiyar", en: "Ready to join" },
   join_double_check: { ur: "Ek dafa check karo ke code sahi hai, phir neeche “Join this group” dabao. Join hote hi aap group ke kharchay aur members dekh paoge.", en: "Double-check this is the right code, then tap “Join this group” below. You'll see the group's expenses and members once you're in." },
   join_use_different: { ur: "Doosra code istemal karo", en: "Use a different code" },
+  // Audit UX-18: the confirm step now shows the actual group, not an echo of
+  // the code the user just typed. Copy for the preview card.
+  join_finding: { ur: "Group dhoonda ja raha hai…", en: "Looking up group…" },
+  join_preview_label: { ur: "Aap yeh group join kar rahe hain", en: "You're about to join" },
+  join_preview_owner: { ur: "{name} ne yeh group banaya hai", en: "Created by {name}" },
+  join_preview_members: { ur: "{n} log pehle se shamil hain", en: "{n} people already in" },
+  join_preview_members_one: { ur: "1 shaks pehle se shamil hai", en: "1 person already in" },
+  join_preview_double_check: { ur: "Sahi group hai? Join karte hi aap ka naam sab members ko nazar aayega, aur nikalne se pehle hisaab barabar karna hoga.", en: "Right group? Once you join, your name is visible to every member, and you'll need to settle up before you can leave." },
+  join_preview_archived_label: { ur: "Yeh group band ho chuka hai", en: "This group is closed" },
+  join_preview_archived_body: { ur: "Owner ne ise archive kar diya hai — is mein naye members shamil nahi ho sakte.", en: "The owner archived it — no new members can join." },
+  join_preview_archived_help: { ur: "Agar aap ko lagta hai yeh ghalti hai to group ke owner se kehein ke ise dobara khol dein.", en: "If you think that's a mistake, ask the group's owner to reopen it." },
+  join_preview_unavailable: { ur: "Is code ki tafseel abhi nahi dikhayi ja sakti — join karne ke baad group ka naam aur members nazar aayenge.", en: "Details for this code aren't available right now — you'll see the group's name and members after joining." },
+  join_error_archived: { ur: "Yeh group band ho chuka hai. Naye members shamil nahi ho sakte.", en: "This group is closed. New members can't join." },
   // Loan detail — cancel settlement
   loan_cancel_settle_title: { ur: "Yeh settlement request cancel karein?", en: "Cancel this settlement request?" },
   loan_cancel_settle_body: { ur: "Pending {amount} settlement dono taraf apply nahin hogi.", en: "The pending {amount} settlement won't be applied on either side." },
@@ -3163,6 +3269,18 @@ const S = {
     ur: "Notification ki ijazat nahi mili — phone ki settings se allow karein.",
     en: "Notification permission was denied — allow it in your phone settings.",
   },
+  // Contextual notification-permission ask (NotificationPermissionPrompt),
+  // shown at high-intent moments instead of only the buried Settings toggle.
+  notif_prompt_title: {
+    ur: "Is qarz ki yaad-dahani chahiye?",
+    en: "Want a reminder for this loan?",
+  },
+  notif_prompt_body: {
+    ur: "Hisaab aapko due date se pehle yaad dila sakta hai — sirf jab kuch sach mein due ho.",
+    en: "Hisaab can nudge you before this is due — only when something's actually due.",
+  },
+  notif_prompt_allow: { ur: "Reminders On Karein", en: "Turn On Reminders" },
+  notif_prompt_not_now: { ur: "Abhi Nahi", en: "Not Now" },
   notif_bill_in: { ur: "Bill {d} din mein due — {amount}", en: "Bill due in {d} days — {amount}" },
   notif_bill_tomorrow: { ur: "Bill kal due hai — {amount}", en: "Bill due tomorrow — {amount}" },
   notif_bill_today: { ur: "Bill aaj due hai — {amount}", en: "Bill due today — {amount}" },
@@ -3429,6 +3547,100 @@ const S = {
     ur: "Aap is group se nikal chuke hain — yahan ke record ab sirf dekhne ke liye hain.",
     en: "You left this group, so its records are read-only for you.",
   },
+
+  // ── Force-update gate (audit H9 / MF-12) ──────────────────────────────────
+  // Shown by UpdateRequiredScreen when app_config.min_supported_version(_code)
+  // is above this build. The server can override the body copy via
+  // app_config.message_ur / message_en; these are the always-translated
+  // fallback, so an operator raising the floor mid-incident never has to write
+  // Roman Urdu under pressure. See src/lib/versionGate.ts.
+  upd_required_title: { ur: "App Update Karein", en: "Update Hisaab" },
+  upd_required_body: {
+    ur: "Hisaab ka yeh version purana ho chuka hai aur ab server ke sath theek kaam nahi karega. Aage barhne ke liye update karein.",
+    en: "This version of Hisaab is too old to work safely with the server. Update to continue.",
+  },
+  upd_required_safe: {
+    ur: "Aap ka saara data mehfooz hai — update ke baad sab wahin milega.",
+    en: "All your data is safe — it's all there after the update.",
+  },
+  upd_required_store: { ur: "Play Store se update karein", en: "Update from Play Store" },
+  upd_required_reload: { ur: "App refresh karein", en: "Refresh the app" },
+  upd_required_reload_hint: {
+    ur: "Refresh ke baad bhi yehi screen aaye to browser band kar ke dobara kholein.",
+    en: "If this screen comes back after refreshing, close the browser tab and reopen it.",
+  },
+  upd_required_version: { ur: "Aap ka version: {version}", en: "Your version: {version}" },
+
+  // ── Privacy: anonymous usage stats (opt-in telemetry) + feedback ──────────
+  // The consent copy must stay literally true: it is the user-facing half of
+  // the PII policy enforced in src/lib/telemetryEvents.ts. If the event catalog
+  // ever starts carrying something new, these strings change in the same PR.
+  tlm_consent_title: { ur: "Hisaab behtar banane mein madad", en: "Help improve Hisaab" },
+  tlm_consent_sub: {
+    ur: "Gumnaam usage stats — default off",
+    en: "Anonymous usage stats — off by default",
+  },
+  tlm_consent_body: {
+    ur: "On karne par hamein sirf yeh pata chalta hai ke kaun se feature kitne log use karte hain, taake kharaab hisson ko theek kar sakein.",
+    en: "Turning this on tells us only which features people actually use, so we can fix the parts that don't work.",
+  },
+  tlm_consent_collected_title: { ur: "Kya bheja jata hai", en: "What is sent" },
+  tlm_consent_collected_1: {
+    ur: "Kaun sa screen ya action hua (misal: “group banaya”)",
+    en: "Which screen or action happened (e.g. \"created a group\")",
+  },
+  tlm_consent_collected_2: {
+    ur: "App mode, zuban, aur currency ka code (PKR, AED)",
+    en: "App mode, language, and the currency code (PKR, AED)",
+  },
+  tlm_consent_collected_3: {
+    ur: "Aap ka gumnaam account ID — na naam, na email",
+    en: "Your opaque account ID — no name, no email",
+  },
+  tlm_consent_never_title: { ur: "Kabhi nahi bheja jata", en: "Never sent" },
+  tlm_consent_never_1: {
+    ur: "Koi raqam, balance ya hisaab ka number",
+    en: "No amounts, balances or figures",
+  },
+  tlm_consent_never_2: {
+    ur: "Koi naam, phone number, note ya group/kameti ka naam",
+    en: "No names, phone numbers, notes, or group/kameti names",
+  },
+  tlm_consent_never_3: {
+    ur: "Na screen recording, na koi ad tracking. Data kabhi becha nahi jayega.",
+    en: "No screen recording, no ad tracking. Your data is never sold.",
+  },
+  tlm_consent_off_note: {
+    ur: "Band karte hi bhejna ruk jata hai aur is phone par jama shuda telemetry data mit jata hai.",
+    en: "Turning it off stops sending immediately and clears the telemetry data stored on this device.",
+  },
+  tlm_consent_unavailable: {
+    ur: "Is build mein usage stats bilkul band hain.",
+    en: "Usage stats are fully disabled in this build.",
+  },
+
+  fbk_title: { ur: "Feedback bhejein", en: "Send feedback" },
+  fbk_sub: {
+    ur: "Kuch toota hua hai ya kuch chahiye? Seedha batayein.",
+    en: "Something broken, or something missing? Tell us directly.",
+  },
+  fbk_whatsapp: { ur: "WhatsApp par bhejein", en: "Send on WhatsApp" },
+  fbk_email: { ur: "Email karein", en: "Email us" },
+  fbk_note_label: { ur: "Ya yahan likh lein", en: "Or jot it down here" },
+  fbk_note_ph: {
+    ur: "Kya behtar ho sakta hai?",
+    en: "What could be better?",
+  },
+  fbk_note_local_only: {
+    ur: "Yeh sirf is phone par mehfooz hai — bhejne ke liye upar WhatsApp ya email chunein.",
+    en: "This is saved on this device only — use WhatsApp or email above to actually send it.",
+  },
+  fbk_note_saved: { ur: "Draft save ho gaya", en: "Draft saved" },
+  fbk_prefill: {
+    ur: "Salaam! Hisaab ke baare mein feedback:",
+    en: "Hi! Feedback about Hisaab:",
+  },
+  fbk_email_subject: { ur: "Hisaab feedback", en: "Hisaab feedback" },
 } as const;
 
 type Key = keyof typeof S;

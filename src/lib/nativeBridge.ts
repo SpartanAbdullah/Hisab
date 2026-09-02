@@ -12,6 +12,7 @@
 // hot-reload — every listener registration tracks its handle and re-uses it.
 
 import { isNativeRuntime } from './runtime';
+import { extractDeepLinkPath } from './deepLinkRoute';
 import { rescheduleNotifications } from './notificationScheduler';
 import { resumeGlobalRealtime } from './realtime';
 import { useUIStore } from '../stores/uiStore';
@@ -60,18 +61,47 @@ export async function initNativeBridge(opts: {
       }
     });
 
-    // Deep links — fired when the OS hands the app an https://usehisaab.com/join/XYZ
-    // (or capacitor://) URL. We extract the path and route the router.
-    CapApp.addListener('appUrlOpen', ({ url }) => {
-      try {
-        const parsed = new URL(url);
-        const path = parsed.pathname + parsed.search;
-        if (path && path !== '/') opts.navigate(path, { replace: true });
-      } catch {
-        // Malformed URL — ignore. The OS already handed us a sanitised URL,
-        // so this is mostly a defensive guard against custom-scheme oddities.
-      }
-    });
+    // Deep links — two delivery paths for the SAME https://usehisaab.com/join/XYZ
+    // (or capacitor://) URL, and both must be wired or one class of tap is
+    // silently dropped (MF-03, docs/audit-2026-09/07-mobile-first.md):
+    //   - `appUrlOpen` fires from Capacitor's App plugin only when the
+    //     singleTask MainActivity is already running (`onNewIntent`) — a
+    //     WARM start.
+    //   - `getLaunchUrl()` below is the only way to see the VIEW intent that
+    //     CREATED the activity — a COLD start (app was killed, user tapped
+    //     an invite/witness link). This is the common case for the
+    //     receiving side of a WhatsApp invite, the app's primary
+    //     acquisition loop.
+    // On some OS/Capacitor combinations a cold start can ALSO fire
+    // `appUrlOpen` once in addition to being visible via `getLaunchUrl()`;
+    // the time-boxed dedupe below collapses that into a single navigate().
+    let lastDeepLinkUrl: string | null = null;
+    let lastDeepLinkAt = 0;
+    const DEEP_LINK_DEDUPE_MS = 2000;
+    const handleDeepLink = (url: string) => {
+      const now = Date.now();
+      if (url === lastDeepLinkUrl && now - lastDeepLinkAt < DEEP_LINK_DEDUPE_MS) return;
+      lastDeepLinkUrl = url;
+      lastDeepLinkAt = now;
+      const path = extractDeepLinkPath(url);
+      if (path) opts.navigate(path, { replace: true });
+    };
+
+    CapApp.addListener('appUrlOpen', ({ url }) => handleDeepLink(url));
+
+    // Cold start: read whatever VIEW intent launched the activity, if any.
+    // Called after the listener above is attached — not before — so a race
+    // where the OS also fires `appUrlOpen` immediately doesn't slip past an
+    // unregistered listener; the dedupe above then collapses the two into a
+    // single navigate() either way.
+    CapApp.getLaunchUrl()
+      .then((result) => {
+        if (result?.url) handleDeepLink(result.url);
+      })
+      .catch(() => {
+        // No launch URL, or the plugin doesn't support it on this OS
+        // version — a plain app launch, nothing to route.
+      });
 
     // App resume — fired when the user brings Hisaab back to the
     // foreground after backgrounding it. Supabase's JS client refreshes

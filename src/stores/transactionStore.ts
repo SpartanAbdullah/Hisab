@@ -22,6 +22,7 @@ import { localIso } from '../lib/thisWeek';
 import { assertLinkedLoanDeleteAllowed } from '../lib/linkedLoanGuards';
 import { simulateTimeline, validateTradeInput } from '../lib/investmentMath';
 import { rateIsSane } from '../lib/conversionMath';
+import { MAX_MONEY_MAGNITUDE, checkMoneyAmount, type MoneyAmountProblem } from '../lib/currencyValidation';
 import { MutationScope, runSafeMutation } from '../lib/mutationSafety';
 import { applyLoanRemainingDelta, round2 } from '../lib/loanRemainingDelta';
 
@@ -762,6 +763,120 @@ function cardCreditedAmountOf(transaction: Transaction): number {
   return Number.isFinite(stamped) ? stamped : transaction.amount;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Money bounds — the client's server of last resort
+//
+// Audit docs/audit-2026-09/12-qa-review.md V-1 / F-9 (HIGH): "Store-level
+// money mutations accept unvalidated amounts for several types (income,
+// opening_balance) — the single validation layer is per-form and
+// inconsistent; any new caller (AI flows, future outbox replay) can post
+// negative/NaN money."
+//
+// Every guard that existed was in a FORM. QuickEntry, RepaymentModal,
+// AddAccountStepper and the AI split confirm each validate well; nothing
+// validated at the seam they all funnel through. These run BEFORE
+// runSafeMutation opens a scope, so a rejected amount never moves a balance,
+// never creates a loan, never writes a trade, and needs no compensation.
+//
+// The magnitude ceiling and the finiteness rule are shared verbatim with
+// supabase-migration-p1-money-bounds.sql, so the client and the DB agree on
+// what "absurd" means instead of drifting.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Bilingual via tStatic, like checkBalance above — these surface as toasts on
+// every money surface, in both languages.
+function moneyProblemMessage(problem: MoneyAmountProblem, allowZero: boolean): string {
+  if (problem === 'not_a_number') return tStatic('err_money_amount_invalid');
+  if (problem === 'too_large') return tStatic('err_money_amount_too_large');
+  return tStatic(allowZero ? 'err_money_amount_negative' : 'err_money_amount_not_positive');
+}
+
+function assertMoneyAmount(amount: number, options: { allowZero?: boolean } = {}): void {
+  const problem = checkMoneyAmount(amount, options);
+  if (problem) throw new Error(moneyProblemMessage(problem, options.allowZero === true));
+}
+
+/**
+ * Validate every money value a TransactionInput carries, per type.
+ *
+ * Traced across all twelve cases of the switch below; the table records who
+ * validated what BEFORE this function existed, so the next reader can see
+ * which guards are new and which are belt-and-braces:
+ *
+ *   income            input.amount   — NOTHING validated it. NEW. (F-9)
+ *   opening_balance   input.amount   — NOTHING validated it. NEW. (F-9)
+ *   expense           input.amount   — only checkBalanceForTransaction, which
+ *                                      compares against the balance and is
+ *                                      BYPASSED entirely in splits_only mode
+ *                                      (isSimpleModeBalanceBypassAllowed), so
+ *                                      ledger mode had no amount guard at all.
+ *   transfer          input.amount   — only checkBalance (same gap, plus a
+ *                                      negative amount would CREDIT the source).
+ *   loan_given        input.amount   — checkBalanceForTransaction; bypassed in
+ *                                      ledger mode. Also the ad-hoc-split entry
+ *                                      point (the 2026-09 "split without a
+ *                                      group" feature posts loan_given rows).
+ *   loan_taken        input.amount   — nothing on the destination leg; the
+ *                                      cash-advance source leg had a balance
+ *                                      check only.
+ *   repayment         input.amount   — RepaymentModal validates, and
+ *                                      loanStore.applyRepayment clamps; but a
+ *                                      NaN reached trackedApplyRepayment first.
+ *   goal_contribution input.amount   — nothing beyond checkBalance.
+ *   adjustment        targetBalance  — nothing. `amount` is ignored by design
+ *                                      (the engine derives |delta|), so this
+ *                                      bounds the TARGET, which may legitimately
+ *                                      be negative (credit cards) — magnitude
+ *                                      only, and NaN is rejected because
+ *                                      `targetBalance - balance` would be NaN
+ *                                      and slip past the `< 0.005` no-op test.
+ *   investment_buy    qty/price/fees — validateTradeInput already covers
+ *   investment_sell                    finiteness and sign inside the branch;
+ *   investment_dividend gross/fees     the magnitude ceiling is what is new.
+ *
+ * BOTH APP MODES: not one check here reads an account, a balance, or the app
+ * mode. A splits_only (ledger-only) entry — where both account ids end up null
+ * — is validated identically to a full-tracker one. That is deliberate: the
+ * balance-based guards are exactly the ones ledger mode switches off, which is
+ * why ledger mode had no amount protection before this.
+ */
+function assertInputAmountsInBounds(input: TransactionInput): void {
+  switch (input.type) {
+    case 'adjustment':
+      // Not an amount that moves — a target the balance is set TO. Negative is
+      // correct for a credit card carrying debt, so only magnitude and
+      // finiteness are asserted.
+      if (!Number.isFinite(input.targetBalance)) {
+        throw new Error(tStatic('err_money_amount_invalid'));
+      }
+      if (Math.abs(input.targetBalance) >= MAX_MONEY_MAGNITUDE) {
+        throw new Error(tStatic('err_money_amount_too_large'));
+      }
+      return;
+
+    case 'investment_buy':
+    case 'investment_sell':
+      // Sign and finiteness: validateTradeInput, inside the branch.
+      // Magnitude: here, so a 1e300 price can't overflow the derived cash
+      // amount before that branch ever runs.
+      assertMoneyAmount(input.quantity, { allowZero: true });
+      assertMoneyAmount(input.pricePerUnit, { allowZero: true });
+      assertMoneyAmount(input.fees, { allowZero: true });
+      return;
+
+    case 'investment_dividend':
+      assertMoneyAmount(input.grossAmount);
+      assertMoneyAmount(input.fees, { allowZero: true });
+      return;
+
+    default:
+      // The nine value-carrying types. Strictly positive: an income, expense,
+      // loan, repayment, transfer, goal contribution or opening balance of
+      // exactly 0 is not a record, it is a no-op that still writes a row and
+      // an activity entry.
+      assertMoneyAmount(input.amount);
+  }
+}
 
 export const useTransactionStore = create<TransactionState>((set, get) => ({
   ...INITIAL_TRANSACTION_STATE,
@@ -774,11 +889,16 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       const { rows: transactions } = await loadCacheFirst({
         key: 'transactions',
         table: db.transactions,
-        fetchRemote: transactionsDb.getAll,
+        // Paged variant: it reports whether PostgREST truncated the result, so
+        // the mirror merges instead of clearing away history it never saw.
+        fetchRemote: transactionsDb.getAllPaged,
         fetchUpdatedSince: transactionsDb.getUpdatedSince,
         fetchDeletedSince: transactionsDb.getDeletedSince,
         getUpdatedAt: (transaction) => transaction.updatedAt ?? transaction.createdAt,
         sort: (a, b) => b.createdAt.localeCompare(a.createdAt),
+        // A background refresh used to land in Dexie only, leaving the list
+        // rendering the pre-refresh snapshot (audit 04-supabase F-RT1).
+        onRefreshed: (rows) => set({ transactions: rows }),
       });
       set({ transactions });
     } finally {
@@ -787,6 +907,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   },
 
   processTransaction: async (input) => {
+    // FIRST line, before any store load and before runSafeMutation opens a
+    // scope: a bad amount must fail with nothing to compensate. See
+    // assertInputAmountsInBounds for the per-type trace (audit V-1/F-9).
+    assertInputAmountsInBounds(input);
+
     await ensureSupportingStoresLoaded();
     // Investment branches need markets/trades; loaded lazily so non-investment
     // users never pay a fetch for permanently-empty tables.
@@ -823,6 +948,10 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
         switch (input.type) {
           case 'income': {
+            // input.amount is already bounded (finite, > 0, < 1e12) by
+            // assertInputAmountsInBounds at the top of processTransaction —
+            // this branch used to be the one with NO amount guard at all
+            // (audit V-1/F-9). Nothing else here may assume it.
             const destAccount = accountStore.getAccount(input.destinationAccountId);
             if (!destAccount) throw new Error('Destination account not found');
             currency = destAccount.currency;
@@ -1212,6 +1341,15 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           }
 
           case 'opening_balance': {
+            // Bounded (finite, > 0, < 1e12) by assertInputAmountsInBounds —
+            // the second branch the audit found unguarded (V-1/F-9). Note the
+            // rule is `> 0`, not `>= 0`, and that is correct: an opening
+            // balance of ZERO writes no row at all. accountStore.createAccount
+            // only logs the opening entry `if (input.balance > 0)`, so a
+            // zero-opening account never reaches here — asking for one is
+            // asking for an empty record, and the DB CHECK (`amount >= 0`) is
+            // deliberately the looser of the two so an existing zero row from
+            // any other writer still validates.
             const destAccount = accountStore.getAccount(input.destinationAccountId);
             if (!destAccount) throw new Error('Destination account not found');
             currency = destAccount.currency;

@@ -4,6 +4,8 @@ import type { User, Session } from '@supabase/supabase-js';
 import { generatePublicCodeCandidate, normalizePublicCode } from '../lib/collaboration';
 import { resetAllUserStores } from './resetAllStores';
 import { accountDeletionDb } from '../lib/supabaseDb';
+import { stopPushRegistration } from '../lib/pushRegistration';
+import { cancelAllScheduledNotifications } from '../lib/notificationScheduler';
 
 interface SupabaseAuthState {
   user: User | null;
@@ -69,6 +71,58 @@ async function clearLocalAuthSession(): Promise<void> {
   }
 }
 
+// Budget for the device-side notification teardown below. A dead network must
+// never be able to trap someone in a session they explicitly asked to end
+// (the whole point of H8), so every step is raced against this timeout and
+// sign-out continues regardless. 3s is ample for a single PostgREST DELETE on
+// a warm connection and short enough to feel instant when there is no
+// connection at all.
+const DEVICE_TEARDOWN_TIMEOUT_MS = 3000;
+
+function withTeardownTimeout(label: string, work: Promise<unknown>): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      console.error(`[signOut] ${label} timed out after ${DEVICE_TEARDOWN_TIMEOUT_MS}ms (continuing)`);
+      resolve();
+    }, DEVICE_TEARDOWN_TIMEOUT_MS);
+    void work
+      .catch((err) => {
+        console.error(`[signOut] ${label} failed (continuing)`, err);
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+  });
+}
+
+// Everything that must happen while the session is STILL VALID.
+//
+// Audit 2026-09 M5 / L5: both of these used to run after the session was
+// already gone (App.tsx's user-became-null effect), or not at all.
+//
+//   - The FCM token row is deleted by an authenticated, RLS-scoped DELETE.
+//     After `supabase.auth.signOut()` there is no JWT to sign it with, so the
+//     row survives and the departing account's loan/settlement pushes keep
+//     landing on a phone it no longer controls.
+//   - Local reminders live with the OS, not with us. They outlive sign-out,
+//     app kill and reboot, and their text names real people and amounts.
+//     (This half needs no session — it is bundled here so there is exactly
+//     one "device teardown" step to keep in the right place.)
+//
+// Never throws; both callees already swallow their own failures and the
+// timeout wrapper is the second belt.
+//
+// Mode-agnostic by construction: neither push tokens nor local reminders are
+// gated on full_tracker vs splits_only, and nothing on this path reads
+// appModeStore.
+async function teardownDeviceNotifications(): Promise<void> {
+  await Promise.all([
+    withTeardownTimeout('push token unregister', stopPushRegistration()),
+    withTeardownTimeout('scheduled reminder cancel', cancelAllScheduledNotifications()),
+  ]);
+}
+
 async function isDeletedProfile(userId: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('profiles')
@@ -81,6 +135,9 @@ async function isDeletedProfile(userId: string): Promise<boolean> {
 
 async function blockDeletedSession(set: (state: Partial<SupabaseAuthState>) => void) {
   const userId = localStorage.getItem('hisaab_supabase_uid');
+  // Same ordering rule as signOut(): the push-token DELETE needs the session
+  // that is about to be revoked.
+  await teardownDeviceNotifications();
   try {
     await supabase.auth.signOut();
   } finally {
@@ -219,6 +276,11 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     // signOut fails. Intent is explicit; we must not leave the previous
     // user's accounts/loans/groups visible for a second user on this device.
     const userId = localStorage.getItem('hisaab_supabase_uid');
+    // FIRST, and before the session is revoked: unregister this device's push
+    // token (needs a live JWT) and cancel every pending local reminder.
+    // Bounded by DEVICE_TEARDOWN_TIMEOUT_MS so an offline device still signs
+    // out immediately.
+    await teardownDeviceNotifications();
     try {
       // Best effort at REVOKING the refresh token server-side. This is the
       // half that needs the network; it is allowed to fail.
@@ -247,6 +309,12 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
   },
 
   deleteAccount: async () => {
+    // Before the user row is destroyed: the push-token DELETE needs both a
+    // live session AND a live profile row to satisfy RLS, and the pending
+    // local reminders must die whether or not the server call succeeds.
+    // signOut() runs this again below; it is idempotent (no token to drop,
+    // nothing left pending) and costs one no-op bridge call on native.
+    await teardownDeviceNotifications();
     await accountDeletionDb.deleteCurrentUser();
     await get().signOut();
   },

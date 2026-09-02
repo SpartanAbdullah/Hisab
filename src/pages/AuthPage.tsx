@@ -9,6 +9,7 @@ import { Globe } from 'lucide-react';
 import { validatePassword, passwordChecks } from '../lib/passwordPolicy';
 import { isValidEmail, suggestEmailFix } from '../lib/validateEmail';
 import { mapAuthError, type Detour } from '../lib/authErrorMap';
+import { track } from '../lib/telemetry';
 
 // ── Rotating feature word ──────────────────────────────────────────────
 // One colored word per real app feature. Colors are the app's own semantic
@@ -81,6 +82,10 @@ export function AuthPage() {
 
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  // Activation funnel step 1 (telemetry catalog `signup_started`). Fired the
+  // first time the user lands on the Sign Up form, so the gap to
+  // `auth_completed` measures form abandonment, not submit failures.
+  const signupStartedRef = useRef(false);
 
   const checks = passwordChecks(password);
   const pwStrong = mode === 'signup' && checks.length && checks.letter && checks.number;
@@ -146,6 +151,10 @@ export function AuthPage() {
   };
 
   const switchMode = (next: 'login' | 'signup' | 'reset') => {
+    if (next === 'signup' && !signupStartedRef.current) {
+      signupStartedRef.current = true;
+      track('signup_started', { method: 'email' });
+    }
     setMode(next);
     setDetour(null);
     setResetMsg('');
@@ -175,6 +184,10 @@ export function AuthPage() {
     if (mode === 'signup') {
       const result = await signUp(email, password);
       if (result.success) {
+        // Catalog #3. The account exists at this point; email verification is
+        // the next gate, which the drop-off between this and `app_opened`
+        // (is_logged_in) will show.
+        track('auth_completed', { method: 'email', is_new_user: true });
         setSentEmail(email);
         setSignupSent(true);
       } else {
@@ -186,7 +199,8 @@ export function AuthPage() {
       else setDetour(mapAuthError(result.message));
     } else {
       const result = await signIn(email, password);
-      if (!result.success) setDetour(mapAuthError(result.message));
+      if (result.success) track('auth_completed', { method: 'email', is_new_user: false });
+      else setDetour(mapAuthError(result.message));
     }
     setLoading(false);
   };

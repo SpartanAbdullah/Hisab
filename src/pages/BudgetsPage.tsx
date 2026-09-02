@@ -322,19 +322,25 @@ function writeFlexIncome(currency: string, value: number | null): void {
   }
 }
 
-function FlexIncomeModal({ open, currency, current, onSave, onClose }: {
+interface FlexIncomeModalProps {
   open: boolean;
   currency: Currency | string;
   current: number | null;
   onSave: (value: number | null) => void;
   onClose: () => void;
-}) {
-  const t = useT();
-  const [draft, setDraft] = useState('');
+}
 
-  useEffect(() => {
-    if (open) setDraft(current !== null ? String(current) : '');
-  }, [open, current]);
+function FlexIncomeModal(props: FlexIncomeModalProps) {
+  // Fresh draft every open: remount the inner form (via `key`) instead of
+  // resetting state in an effect. Keying on the open/closed boundary forces
+  // a new FlexIncomeForm instance — and a fresh lazy-initialized `draft` —
+  // on every transition, seeded from whatever `current` is at that moment.
+  return <FlexIncomeForm key={props.open ? 'open' : 'closed'} {...props} />;
+}
+
+function FlexIncomeForm({ open, currency, current, onSave, onClose }: FlexIncomeModalProps) {
+  const t = useT();
+  const [draft, setDraft] = useState(() => (current !== null ? String(current) : ''));
 
   const numeric = Number(draft);
   const valid = Number.isFinite(numeric) && numeric > 0;

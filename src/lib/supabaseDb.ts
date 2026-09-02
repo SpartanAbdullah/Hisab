@@ -8,6 +8,11 @@ import {
   type JoinCodeResult,
   type InviteAcceptResult,
 } from './joinCodeStatus';
+import {
+  parseGroupPreviewResponse,
+  previewStatusFromThrown,
+  type GroupPreviewResult,
+} from './groupPreview';
 import { isMemberAlreadyExistsError } from './groupGuardErrors';
 import {
   isMissingFunctionError,
@@ -17,6 +22,7 @@ import {
   type ContactLinkResult,
   type ContactUnlinkResult,
 } from './contactLinkStatus';
+import { fetchAllPages, type PagedFetchResult } from './pagedFetch';
 import type { RecordSettlementResult } from './groupSettlementResult';
 import type {
   Account, Transaction, Loan, EmiSchedule, Goal,
@@ -135,6 +141,10 @@ export const accountsDb = {
 // ══════════════════════════════════════
 // TRANSACTIONS
 // ══════════════════════════════════════
+// Well under the PostgREST max-rows cap (hosted default 1000) so a short page
+// genuinely means "end of table" rather than "the server stopped early".
+const TRANSACTION_PAGE_SIZE = 500;
+
 export const transactionsDb = {
   async get(id: string): Promise<Transaction | null> {
     const { data, error } = await supabase
@@ -143,33 +153,89 @@ export const transactionsDb = {
     if (error) return null;
     return data ? mapTransaction(data) : null;
   },
+  /**
+   * Complete transaction history. Keyset-paged: an unbounded `select('*')` is
+   * silently truncated by PostgREST at its max-rows cap (~1000), and the mirror
+   * then deleted the overflow locally — invisible history loss about a year in
+   * (audit 04-supabase F-FE1). Use `getAllPaged` when you need to know whether
+   * the result is complete before overwriting a local copy.
+   */
   async getAll(): Promise<Transaction[]> {
-    const { data, error } = await supabase
-      .from('transactions').select('*')
-      .eq('user_id', getUserId())
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map(mapTransaction);
+    return (await transactionsDb.getAllPaged()).rows;
+  },
+  async getAllPaged(): Promise<PagedFetchResult<Transaction>> {
+    const userId = getUserId();
+    return fetchAllPages<Transaction>({
+      label: 'transactions.getAll',
+      pageSize: TRANSACTION_PAGE_SIZE,
+      idOf: (t) => t.id,
+      cursorOf: (t) => t.createdAt,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('transactions').select('*')
+          .eq('user_id', userId)
+          .is('deleted_at', null);
+        // Inclusive bound — rows sharing a created_at can straddle a page
+        // boundary; fetchAllPages de-duplicates the overlap by id.
+        if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapTransaction);
+      },
+    });
   },
   async getUpdatedSince(updatedAfter: string): Promise<Transaction[]> {
-    const { data, error } = await supabase
-      .from('transactions').select('*')
-      .eq('user_id', getUserId())
-      .is('deleted_at', null)
-      .gt('updated_at', updatedAfter)
-      .order('updated_at', { ascending: true });
-    if (error) throw error;
-    return (data ?? []).map(mapTransaction);
+    const userId = getUserId();
+    const { rows } = await fetchAllPages<Transaction>({
+      label: 'transactions.getUpdatedSince',
+      pageSize: TRANSACTION_PAGE_SIZE,
+      idOf: (t) => t.id,
+      // mapTransaction falls back to created_at, so this is never null.
+      cursorOf: (t) => t.updatedAt ?? null,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('transactions').select('*')
+          .eq('user_id', userId)
+          .is('deleted_at', null);
+        query = cursor
+          ? query.gte('updated_at', cursor)
+          : query.gt('updated_at', updatedAfter);
+        const { data, error } = await query
+          .order('updated_at', { ascending: true })
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapTransaction);
+      },
+    });
+    return rows;
   },
   async getDeletedSince(deletedAfter: string): Promise<DeletedRow[]> {
-    const { data, error } = await supabase
-      .from('transactions').select('id, deleted_at')
-      .eq('user_id', getUserId())
-      .gt('deleted_at', deletedAfter)
-      .order('deleted_at', { ascending: true });
-    if (error) throw error;
-    return (data ?? []).map(mapDeletedRow);
+    const userId = getUserId();
+    const { rows } = await fetchAllPages<DeletedRow>({
+      label: 'transactions.getDeletedSince',
+      pageSize: TRANSACTION_PAGE_SIZE,
+      idOf: (r) => r.id,
+      cursorOf: (r) => r.deletedAt ?? null,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('transactions').select('id, deleted_at')
+          .eq('user_id', userId);
+        query = cursor
+          ? query.gte('deleted_at', cursor)
+          : query.gt('deleted_at', deletedAfter);
+        const { data, error } = await query
+          .order('deleted_at', { ascending: true })
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapDeletedRow);
+      },
+    });
+    return rows;
   },
   async add(t: Transaction) {
     const { error } = await supabase.from('transactions').upsert({
@@ -242,14 +308,36 @@ export const loansDb = {
     if (error) throw error;
     return data ? mapLoan(data) : null;
   },
+  /**
+   * Keyset-paged (audit 04-supabase F-FE1 / 05-security M12): an unbounded
+   * `select('*')` is silently truncated by PostgREST at its max-rows cap
+   * (~1000), and the mirror would then delete the overflow locally — the same
+   * invisible history loss transactionsDb.getAll used to cause.
+   */
   async getAll(): Promise<Loan[]> {
-    const { data, error } = await supabase
-      .from('loans').select('*')
-      .eq('user_id', getUserId())
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map(mapLoan);
+    const userId = getUserId();
+    const { rows } = await fetchAllPages<Loan>({
+      label: 'loans.getAll',
+      pageSize: 500,
+      idOf: (l) => l.id,
+      cursorOf: (l) => l.createdAt,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('loans').select('*')
+          .eq('user_id', userId)
+          .is('deleted_at', null);
+        // Inclusive bound — rows sharing a created_at can straddle a page
+        // boundary; fetchAllPages de-duplicates the overlap by id.
+        if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapLoan);
+      },
+    });
+    return rows;
   },
   async getUpdatedSince(updatedAfter: string): Promise<Loan[]> {
     const { data, error } = await supabase
@@ -678,15 +766,33 @@ export const pushTokensDb = {
 // (accept / reject / cancel). No Dexie mirror.
 // ══════════════════════════════════════
 export const linkedRequestsDb = {
+  // Keyset-paged (audit 04-supabase F-FE1 / 05-security M12): a long-lived
+  // pair of connected users can accumulate an unbounded request history the
+  // same way transactions did.
   async getAll(): Promise<LinkedRequest[]> {
     const me = getUserId();
-    const { data, error } = await supabase
-      .from('linked_transaction_requests')
-      .select('*')
-      .or(`from_user_id.eq.${me},to_user_id.eq.${me}`)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map(mapLinkedRequest);
+    const { rows } = await fetchAllPages<LinkedRequest>({
+      label: 'linkedRequests.getAll',
+      pageSize: 500,
+      idOf: (r) => r.id,
+      cursorOf: (r) => r.createdAt,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('linked_transaction_requests')
+          .select('*')
+          .or(`from_user_id.eq.${me},to_user_id.eq.${me}`);
+        // Inclusive bound — rows sharing a created_at can straddle a page
+        // boundary; fetchAllPages de-duplicates the overlap by id.
+        if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapLinkedRequest);
+      },
+    });
+    return rows;
   },
   async insert(input: {
     id: string;
@@ -806,15 +912,32 @@ function mapSettlementRequest(r: Record<string, unknown>): SettlementRequest {
 // ledger-only.
 // ══════════════════════════════════════
 export const settlementRequestsDb = {
+  // Keyset-paged (audit 04-supabase F-FE1 / 05-security M12) — same unbounded
+  // history risk as linkedRequestsDb.getAll.
   async getAll(): Promise<SettlementRequest[]> {
     const me = getUserId();
-    const { data, error } = await supabase
-      .from('linked_settlement_requests')
-      .select('*')
-      .or(`from_user_id.eq.${me},to_user_id.eq.${me}`)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map(mapSettlementRequest);
+    const { rows } = await fetchAllPages<SettlementRequest>({
+      label: 'settlementRequests.getAll',
+      pageSize: 500,
+      idOf: (r) => r.id,
+      cursorOf: (r) => r.createdAt,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('linked_settlement_requests')
+          .select('*')
+          .or(`from_user_id.eq.${me},to_user_id.eq.${me}`);
+        // Inclusive bound — rows sharing a created_at can straddle a page
+        // boundary; fetchAllPages de-duplicates the overlap by id.
+        if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapSettlementRequest);
+      },
+    });
+    return rows;
   },
   async insert(input: {
     id: string;
@@ -874,13 +997,38 @@ export const settlementRequestsDb = {
 // EMI SCHEDULES
 // ══════════════════════════════════════
 export const emiSchedulesDb = {
+  /**
+   * Keyset-paged (audit 04-supabase F-FE1 / 05-security M12) — same unbounded
+   * `select('*')` risk as loansDb.getAll. installment_number is NOT unique
+   * across loans (every loan starts at 1), so it is not itself a valid
+   * keyset cursor on its own — the `id` order-by tiebreak is what keeps the
+   * (installment_number, id) pair a stable total order; fetchAllPages only
+   * ever compares the installment_number cursor value.
+   */
   async getAll(): Promise<EmiSchedule[]> {
-    const { data, error } = await supabase
-      .from('emi_schedules').select('*')
-      .eq('user_id', getUserId())
-      .order('installment_number', { ascending: true });
-    if (error) throw error;
-    return (data ?? []).map(mapEmi);
+    const userId = getUserId();
+    const { rows } = await fetchAllPages<EmiSchedule>({
+      label: 'emiSchedules.getAll',
+      pageSize: 500,
+      idOf: (e) => e.id,
+      cursorOf: (e) => String(e.installmentNumber),
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('emi_schedules').select('*')
+          .eq('user_id', userId);
+        // Inclusive bound — rows sharing an installment_number (across
+        // different loans) can straddle a page boundary; fetchAllPages
+        // de-duplicates the overlap by id.
+        if (cursor) query = query.gte('installment_number', Number(cursor));
+        const { data, error } = await query
+          .order('installment_number', { ascending: true })
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapEmi);
+      },
+    });
+    return rows;
   },
   async bulkAdd(entries: EmiSchedule[]) {
     const rows = entries.map(e => ({
@@ -1125,13 +1273,32 @@ export const groupExpensesDb = {
   // group_expenses already limits this to groups the user is a member of,
   // so this is the batched counterpart to getByGroup — two queries for
   // the whole Groups tab instead of 2N.
+  //
+  // Keyset-paged (audit 04-supabase F-FE1 / 05-security M12): a heavy
+  // splitter's all-groups expense feed is exactly the unbounded-select shape
+  // that used to silently truncate at PostgREST's max-rows cap.
   async getAllVisible(): Promise<GroupExpense[]> {
-    const { data, error } = await supabase
-      .from('group_expenses').select('*')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map(mapGroupExpense);
+    const { rows } = await fetchAllPages<GroupExpense>({
+      label: 'groupExpenses.getAllVisible',
+      pageSize: 500,
+      idOf: (e) => e.id,
+      cursorOf: (e) => e.createdAt,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('group_expenses').select('*')
+          .is('deleted_at', null);
+        // Inclusive bound — rows sharing a created_at can straddle a page
+        // boundary; fetchAllPages de-duplicates the overlap by id.
+        if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapGroupExpense);
+      },
+    });
+    return rows;
   },
   // Same shape as getAllVisible but only the columns the dashboard balance +
   // unreconciled-flag passes consume. The splits JSONB is still selected
@@ -1268,13 +1435,31 @@ export const groupSettlementsDb = {
     return (data ?? []).map(mapGroupSettlement);
   },
   // Batched counterpart — RLS scopes to groups the user can see.
+  //
+  // Keyset-paged (audit 04-supabase F-FE1 / 05-security M12) — same
+  // unbounded-select truncation risk as groupExpensesDb.getAllVisible.
   async getAllVisible(): Promise<GroupSettlement[]> {
-    const { data, error } = await supabase
-      .from('group_settlements').select('*')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map(mapGroupSettlement);
+    const { rows } = await fetchAllPages<GroupSettlement>({
+      label: 'groupSettlements.getAllVisible',
+      pageSize: 500,
+      idOf: (s) => s.id,
+      cursorOf: (s) => s.createdAt,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('group_settlements').select('*')
+          .is('deleted_at', null);
+        // Inclusive bound — rows sharing a created_at can straddle a page
+        // boundary; fetchAllPages de-duplicates the overlap by id.
+        if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapGroupSettlement);
+      },
+    });
+    return rows;
   },
   // Narrow projection for the dashboard balance pass — only the four columns
   // the running-sum needs. Roughly halves payload on heavy splitters.
@@ -1470,13 +1655,30 @@ export const groupInvitesDb = {
 };
 
 export const groupEventsDb = {
+  // Keyset-paged (audit 04-supabase F-FE1 / 05-security M12): a long-lived
+  // group's activity feed is unbounded the same way the all-groups reads are.
   async getByGroup(groupId: string): Promise<GroupEvent[]> {
-    const { data, error } = await supabase
-      .from('group_events').select('*')
-      .eq('group_id', groupId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data ?? []).map(mapGroupEvent);
+    const { rows } = await fetchAllPages<GroupEvent>({
+      label: 'groupEvents.getByGroup',
+      pageSize: 500,
+      idOf: (e) => e.id,
+      cursorOf: (e) => e.createdAt,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('group_events').select('*')
+          .eq('group_id', groupId);
+        // Inclusive bound — rows sharing a created_at can straddle a page
+        // boundary; fetchAllPages de-duplicates the overlap by id.
+        if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapGroupEvent);
+      },
+    });
+    return rows;
   },
   // NOTE: there is deliberately no add(). Group activity rows are written by
   // the fan-out triggers in supabase-migration-audit-p0-notifications.sql, in
@@ -1714,6 +1916,34 @@ export const groupsLookupDb = {
   async findByJoinCode(normalizedCode: string): Promise<{ id: string; name: string; emoji: string; currency: string } | null> {
     void normalizedCode;
     throw new Error('Direct group-code lookup is disabled. Join through joinByCode().');
+  },
+
+  // Sighted join (audit 2026-09, UX-18). findByJoinCode above stays disabled —
+  // a non-member genuinely cannot SELECT split_groups — so the preview goes
+  // through a SECURITY DEFINER RPC with a FIXED, minimal projection:
+  // {name, emoji, member_count, currency, owner_display_name, is_archived}.
+  // No group id, no member list, no money. See
+  // supabase-migration-p1-group-preview.sql.
+  //
+  // Like joinByCode, this never throws for a business outcome — the RPC
+  // RETURNs a status object rather than raising, because a RAISE would roll
+  // back the join_code_attempts row that charges the miss (audit H1's root
+  // cause). Misses share join_group_by_code's own 5-per-5-minute window, so
+  // previewing cannot double an attacker's guess rate.
+  //
+  // A thrown error is mapped, not propagated: an un-migrated database yields
+  // 'UNAVAILABLE', which callers treat as a soft failure and fall back to the
+  // legacy code-echo confirm. A missing preview must never block a real join.
+  async previewByCode(normalizedCode: string): Promise<GroupPreviewResult> {
+    try {
+      const { data, error } = await supabase.rpc('preview_group_by_code', {
+        p_code_normalized: normalizedCode,
+      });
+      if (error) return { status: previewStatusFromThrown(error) };
+      return parseGroupPreviewResponse(data);
+    } catch (err) {
+      return { status: previewStatusFromThrown(err) };
+    }
   },
 
   // Atomic join: SECURITY DEFINER RPC resolves the code and upserts the
@@ -2654,3 +2884,54 @@ function mapInvestmentPrice(r: Record<string, unknown>): InvestmentPrice {
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APP CONFIG (audit H9 / MF-12) — remote kill switch, read before login
+// ─────────────────────────────────────────────────────────────────────────────
+// The one row in this gateway that is NOT user-scoped. `app_config` is a
+// singleton, world-readable row (`id = 'default'`) holding the minimum client
+// version the backend still supports — see supabase-migration-p1-app-config.sql
+// for the schema, the RLS (SELECT to anon AND authenticated, no client writes)
+// and the release policy for raising the floor.
+//
+// Deliberately does NOT call getUserId(): the version gate runs BEFORE the auth
+// gate in src/App.tsx, so this must work with no session at all. A client too
+// old to authenticate correctly against a changed schema is exactly the one we
+// need to stop.
+
+/** The `app_config` singleton, camel-cased. All fields may be null. */
+export interface AppConfigRecord {
+  minSupportedVersion: string | null;
+  minSupportedVersionCode: number | null;
+  messageEn: string | null;
+  messageUr: string | null;
+  updatedAt: string | null;
+}
+
+export const appConfigDb = {
+  /**
+   * Read the singleton config row. Returns null when the row is absent —
+   * including when the migration has not been applied yet, since PostgREST
+   * reports a missing table as an error the caller treats the same way
+   * (fail open). Callers MUST treat both null and a thrown error as "allowed";
+   * `isSupported()` in src/lib/versionGate.ts does exactly that.
+   */
+  async get(): Promise<AppConfigRecord | null> {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('min_supported_version, min_supported_version_code, message_en, message_ur, updated_at')
+      .eq('id', 'default')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const r = data as Record<string, unknown>;
+    const code = Number(r.min_supported_version_code);
+    return {
+      minSupportedVersion: typeof r.min_supported_version === 'string' ? r.min_supported_version : null,
+      minSupportedVersionCode: Number.isFinite(code) ? code : null,
+      messageEn: typeof r.message_en === 'string' ? r.message_en : null,
+      messageUr: typeof r.message_ur === 'string' ? r.message_ur : null,
+      updatedAt: typeof r.updated_at === 'string' ? r.updated_at : null,
+    };
+  },
+};

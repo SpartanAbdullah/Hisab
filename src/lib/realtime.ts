@@ -8,6 +8,7 @@ import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
 import { usePersonStore } from '../stores/personStore';
 import { useContactLinkStore } from '../stores/contactLinkStore';
+import { markMirrorStale } from './mirrorCache';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Single long-lived channel per session. Re-initialised when the user changes.
@@ -15,6 +16,9 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 // profile_id server-side to avoid getting events we'd have to ignore anyway.
 let globalChannel: RealtimeChannel | null = null;
 let globalUserId: string | null = null;
+// Timestamp of the last refreshLiveData() actually issued from a resume. See
+// resumeGlobalRealtime for why. Reset on teardown so a new user starts clean.
+let lastResumeAt = 0;
 
 // Per-table debounce timers. Each table reload triggers a refetch — multiple
 // rapid changes (e.g. a multi-step balance update from the local client itself)
@@ -68,10 +72,18 @@ export function startGlobalRealtime(userId: string) {
     // Money tables — sync across devices/tabs. Reloads are debounced because
     // every local write also triggers a self-echo postgres_changes event; we
     // don't want N transactions in 100ms to produce N reloads.
+    //
+    // markMirrorStale first: the event may come from ANOTHER device, or from a
+    // cross-user SECURITY DEFINER RPC moving this user's balance from the other
+    // side. Without the flag the reload hits the mirror's 2-minute freshness
+    // window and renders pre-change numbers (audit 04-supabase F-RT1). The flag
+    // now preserves the sync cursor, so this costs an incremental diff, not a
+    // full-table pull.
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'accounts', filter: `user_id=eq.${userId}` },
       () => {
+        markMirrorStale('accounts');
         scheduleReload('accounts', () => useAccountStore.getState().loadAccounts());
       },
     )
@@ -79,6 +91,7 @@ export function startGlobalRealtime(userId: string) {
       'postgres_changes',
       { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${userId}` },
       () => {
+        markMirrorStale('transactions');
         scheduleReload('transactions', () => useTransactionStore.getState().loadTransactions());
       },
     )
@@ -86,6 +99,7 @@ export function startGlobalRealtime(userId: string) {
       'postgres_changes',
       { event: '*', schema: 'public', table: 'loans', filter: `user_id=eq.${userId}` },
       () => {
+        markMirrorStale('loans');
         scheduleReload('loans', () => useLoanStore.getState().loadLoans());
       },
     )
@@ -156,6 +170,7 @@ export function startGlobalRealtime(userId: string) {
 
 export function stopGlobalRealtime() {
   clearReloadTimers();
+  lastResumeAt = 0;
   if (globalChannel) {
     void supabase.removeChannel(globalChannel);
     globalChannel = null;
@@ -182,6 +197,14 @@ function channelIsHealthy(): boolean {
 /** Refetch everything a missed realtime event could have changed. Each
  *  failure is isolated — a single cold store must not block the rest. */
 export async function refreshLiveData(): Promise<void> {
+  // The money tables are the ones whose missed events are UNRECOVERABLE: the
+  // inbox refreshed but balances didn't, so the user saw "accepted" beside
+  // stale numbers (audit 04-supabase F-RT2). They were left out because a
+  // refresh used to mean a full-table re-download; markMirrorStale now keeps
+  // the incremental cursor, so each of these is a small diff.
+  markMirrorStale('accounts');
+  markMirrorStale('transactions');
+  markMirrorStale('loans');
   await Promise.all([
     useNotificationStore.getState().loadNotifications().catch(() => {}),
     useLinkedRequestStore.getState().loadRequests().catch(() => {}),
@@ -189,20 +212,49 @@ export async function refreshLiveData(): Promise<void> {
     useContactLinkStore.getState().loadRequests().catch(() => {}),
     usePersonStore.getState().loadPersons().catch(() => {}),
     useSplitStore.getState().loadGroups().catch(() => {}),
+    useAccountStore.getState().loadAccounts().catch(() => {}),
+    useTransactionStore.getState().loadTransactions().catch(() => {}),
+    useLoanStore.getState().loadLoans().catch(() => {}),
   ]);
 }
 
+// The core workflow is flicking between WhatsApp and Hisaab, and every switch
+// used to fire refreshLiveData two or three times over (visibilitychange +
+// focus on web, plus Capacitor's appStateChange on Android) with no throttle at
+// all — ~14-21 queries per app switch (audit 03-performance H4). A cooldown on
+// the last ACTUAL refresh keeps the rapid re-entries free while still refreshing
+// promptly the first time the user comes back after a real absence.
+const RESUME_COOLDOWN_MS = 20_000;
+
 /** Call when the app returns to the foreground (or regains connectivity).
- *  Cheap when the socket survived — one state check plus a refetch. */
+ *  Cheap when the socket survived — one state check plus a throttled refetch. */
 export function resumeGlobalRealtime(): void {
   const userId = globalUserId;
   if (!userId) return;
+
+  // Re-establish the socket whenever it isn't delivering. This is free in REST
+  // terms (a websocket join, no queries), so it is NOT throttled.
   if (!channelIsHealthy()) {
     // removeChannel + resubscribe under the same name. startGlobalRealtime
     // early-returns when the ids match, so clear the marker first.
+    // stopGlobalRealtime resets the cooldown because it also runs on signout;
+    // a resubscribe of the SAME user is not a new session, so carry it across.
+    // Without this, Android would never throttle: the WebView kills the socket
+    // on every background, and the duplicate visibilitychange/focus/
+    // appStateChange triggers all arrive while the new channel is still
+    // 'joining' — i.e. still "unhealthy" — so each one would refetch.
+    const preserved = lastResumeAt;
     stopGlobalRealtime();
     startGlobalRealtime(userId);
+    lastResumeAt = preserved;
   }
+
+  // The refetch is the expensive half, so the cooldown gates only that. A
+  // background long enough to kill the socket is also long enough to clear a
+  // 20 s window, so a real resume still reconciles immediately.
+  const now = Date.now();
+  if (now - lastResumeAt < RESUME_COOLDOWN_MS) return;
+  lastResumeAt = now;
   void refreshLiveData();
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Link2, Users } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
@@ -11,6 +11,7 @@ import {
   inviteStatusTitleKey,
   type InviteAcceptFailureStatus,
 } from '../lib/joinCodeStatus';
+import { track } from '../lib/telemetry';
 
 interface InviteFailure {
   status: InviteAcceptFailureStatus;
@@ -40,6 +41,14 @@ export function JoinGroupPage() {
   const failureTitle = failure ? t(inviteStatusTitleKey(failure.status)) : '';
   const failureMessage = failure ? t(inviteStatusMessageKey(failure.status)) : '';
 
+  // Catalog #17. The middle step of the group viral loop (report 10 funnel 3:
+  // invite shared → invite opened → auth → joined). `is_authed` splits the
+  // people who must sign up first from returning users, which is the whole
+  // point of a k-factor measurement.
+  useEffect(() => {
+    track('group_invite_opened', { is_authed: Boolean(localStorage.getItem('hisaab_supabase_uid')) });
+  }, []);
+
   const handleJoin = async () => {
     if (!token) return;
     setLoading(true);
@@ -62,6 +71,8 @@ export function JoinGroupPage() {
         return;
       }
       clearPendingInvite(token);
+      // Catalog #18 — the loop closes here.
+      track('group_joined', { via: 'link', surface: 'invite_page' });
       setJoined(true);
       toast.show({ type: 'success', title: t('join_success_title'), subtitle: t('join_success_subtitle') });
       setTimeout(() => navigate(`/group/${result.groupId}`, { replace: true }), 450);

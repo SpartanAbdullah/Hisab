@@ -1,9 +1,14 @@
 import type { Table } from 'dexie';
 import { db } from '../db';
 import { getCurrentDatabaseUserId } from '../db/database';
+import {
+  DEFAULT_FRESH_MS,
+  DEFAULT_FULL_REFRESH_MS,
+  planMirrorRefresh,
+  type MirrorCursor,
+} from './mirrorSyncPolicy';
 
-const DEFAULT_FRESH_MS = 2 * 60 * 1000;
-const DEFAULT_FULL_REFRESH_MS = 24 * 60 * 60 * 1000;
+export { DEFAULT_FRESH_MS, DEFAULT_FULL_REFRESH_MS };
 export const CORE_MIRROR_KEYS = ['accounts', 'transactions', 'loans', 'budgets'] as const;
 export type CoreMirrorKey = typeof CORE_MIRROR_KEYS[number];
 
@@ -11,18 +16,35 @@ export interface MirrorSyncSnapshot {
   key: CoreMirrorKey;
   lastSyncedAt: string | null;
   lastFullRefreshAt: string | null;
+  dirtyAt: string | null;
+}
+
+/**
+ * A collection fetcher may report that the server did not return everything
+ * (PostgREST max-rows). Returning the bare array keeps every existing caller
+ * working and means "this is the complete set".
+ */
+export interface RemoteFetchResult<T> {
+  rows: T[];
+  truncated?: boolean;
 }
 
 interface CacheFirstOptions<T> {
   key: string;
   table: Table<T, string>;
-  fetchRemote: () => Promise<T[]>;
+  fetchRemote: () => Promise<T[] | RemoteFetchResult<T>>;
   fetchUpdatedSince?: (lastSyncedAt: string) => Promise<T[]>;
   fetchDeletedSince?: (lastSyncedAt: string) => Promise<{ id: string; deletedAt: string }[]>;
   getUpdatedAt?: (row: T) => string | null | undefined;
   sort?: (a: T, b: T) => number;
   freshMs?: number;
   fullRefreshMs?: number;
+  /**
+   * Called when a BACKGROUND refresh lands with rows the caller has not seen.
+   * Without this the fresh rows reach Dexie only and the Zustand store keeps
+   * rendering the pre-refresh snapshot (audit 04-supabase F-RT1, low-finding 3).
+   */
+  onRefreshed?: (rows: T[]) => void;
 }
 
 export function mirrorSyncKey(key: string, userId = getCurrentDatabaseUserId()): string {
@@ -33,16 +55,34 @@ export function cacheKey(key: string, userId = getCurrentDatabaseUserId()): stri
   return `hisaab:mirror:${userId}:${key}:syncedAt`;
 }
 
-async function readSyncState(key: string): Promise<{
-  lastSyncedAt: string | null;
-  lastFullRefreshAt: string | null;
-}> {
+// ── Dirty marks ───────────────────────────────────────────────────────────
+// `markMirrorStale` is synchronous and fire-and-forget, but the Dexie write it
+// schedules is not — a load issued in the same tick would otherwise read a
+// stale row. These in-memory counters make the flag visible immediately, and
+// the monotonic marks let a refresh clear ONLY the changes it actually saw:
+// a realtime event that lands mid-refresh keeps the mirror dirty instead of
+// being swallowed.
+const staleMarks = new Map<string, number>();
+const clearedMarks = new Map<string, number>();
+
+function currentMark(scopedKey: string): number {
+  return staleMarks.get(scopedKey) ?? 0;
+}
+
+function isDirtyInMemory(scopedKey: string): boolean {
+  return currentMark(scopedKey) > (clearedMarks.get(scopedKey) ?? 0);
+}
+
+async function readSyncState(key: string): Promise<MirrorCursor> {
+  const scopedKey = mirrorSyncKey(key);
+  const memoryDirtyAt = isDirtyInMemory(scopedKey) ? new Date().toISOString() : null;
   try {
-    const state = await db.mirrorSync.get(mirrorSyncKey(key));
+    const state = await db.mirrorSync.get(scopedKey);
     if (state) {
       return {
         lastSyncedAt: state.lastSyncedAt,
         lastFullRefreshAt: state.lastFullRefreshAt,
+        dirtyAt: memoryDirtyAt ?? state.dirtyAt ?? null,
       };
     }
   } catch (error) {
@@ -54,21 +94,40 @@ async function readSyncState(key: string): Promise<{
   const legacySyncedAt = Number.isFinite(parsed) && parsed > 0
     ? new Date(parsed).toISOString()
     : null;
-  return { lastSyncedAt: legacySyncedAt, lastFullRefreshAt: legacySyncedAt };
+  return {
+    lastSyncedAt: legacySyncedAt,
+    lastFullRefreshAt: legacySyncedAt,
+    dirtyAt: memoryDirtyAt,
+  };
+}
+
+interface WriteSyncStateOptions {
+  lastFullRefreshAt?: string | null;
+  /**
+   * `currentMark()` captured BEFORE the refresh started. Anything marked after
+   * that has not been fetched, so the dirty flag survives.
+   */
+  markSnapshot?: number;
 }
 
 async function writeSyncState(
   key: string,
   lastSyncedAt: string,
-  lastFullRefreshAt?: string | null,
+  options: WriteSyncStateOptions = {},
 ) {
+  const scopedKey = mirrorSyncKey(key);
+  const snapshot = options.markSnapshot ?? currentMark(scopedKey);
+  const stillDirty = currentMark(scopedKey) > snapshot;
+  if (!stillDirty) {
+    clearedMarks.set(scopedKey, Math.max(clearedMarks.get(scopedKey) ?? 0, snapshot));
+  }
   try {
-    const scopedKey = mirrorSyncKey(key);
     const previous = await db.mirrorSync.get(scopedKey);
     await db.mirrorSync.put({
       key: scopedKey,
       lastSyncedAt,
-      lastFullRefreshAt: lastFullRefreshAt ?? previous?.lastFullRefreshAt ?? null,
+      lastFullRefreshAt: options.lastFullRefreshAt ?? previous?.lastFullRefreshAt ?? null,
+      dirtyAt: stillDirty ? (previous?.dirtyAt ?? new Date().toISOString()) : null,
     });
   } catch (error) {
     reportMirrorError('sync-state write', error);
@@ -78,6 +137,11 @@ async function writeSyncState(
 
 function sortRows<T>(rows: T[], sort?: (a: T, b: T) => number): T[] {
   return sort ? [...rows].sort(sort) : rows;
+}
+
+function normalizeRemote<T>(value: T[] | RemoteFetchResult<T>): { rows: T[]; truncated: boolean } {
+  if (Array.isArray(value)) return { rows: value, truncated: false };
+  return { rows: value.rows, truncated: value.truncated === true };
 }
 
 function isStorageUnavailable(error: unknown): boolean {
@@ -135,13 +199,32 @@ async function refreshMirror<T>({
   sort,
   getUpdatedAt,
 }: CacheFirstOptions<T>): Promise<T[]> {
-  const remote = sortRows(await fetchRemote(), sort);
-  await replaceMirror(table, remote);
+  const markSnapshot = currentMark(mirrorSyncKey(key));
+  const result = normalizeRemote(await fetchRemote());
+  const remote = sortRows(result.rows, sort);
+
+  if (result.truncated) {
+    // The server did not hand us the whole table. Clearing here is exactly how
+    // a year of history used to disappear from the local mirror (F-FE1), so
+    // merge instead: rows we didn't see stay put.
+    try {
+      if (remote.length > 0) await table.bulkPut(remote);
+    } catch (error) {
+      reportMirrorError('merge', error);
+    }
+  } else {
+    await replaceMirror(table, remote);
+  }
+
   const syncedAt = maxSyncedAt(remote, getUpdatedAt);
-  await writeSyncState(key, syncedAt, new Date().toISOString());
-  return remote;
+  await writeSyncState(key, syncedAt, {
+    lastFullRefreshAt: new Date().toISOString(),
+    markSnapshot,
+  });
+  return result.truncated ? await readMirror(table, sort) : remote;
 }
 
+/** Returns the refreshed rows, or `null` when nothing changed since the cursor. */
 async function refreshMirrorIncremental<T>({
   key,
   table,
@@ -149,61 +232,81 @@ async function refreshMirrorIncremental<T>({
   fetchDeletedSince,
   sort,
   getUpdatedAt,
-}: CacheFirstOptions<T> & { fetchUpdatedSince: (lastSyncedAt: string) => Promise<T[]> }): Promise<T[]> {
+}: CacheFirstOptions<T> & { fetchUpdatedSince: (lastSyncedAt: string) => Promise<T[]> }): Promise<T[] | null> {
   const state = await readSyncState(key);
-  if (!state.lastSyncedAt) return [];
+  if (!state.lastSyncedAt) return null;
+  const markSnapshot = currentMark(mirrorSyncKey(key));
   const syncStartedAt = new Date().toISOString();
   const [changed, deleted] = await Promise.all([
     fetchUpdatedSince(state.lastSyncedAt),
     fetchDeletedSince ? fetchDeletedSince(state.lastSyncedAt) : Promise.resolve([]),
   ]);
   if (changed.length === 0 && deleted.length === 0) {
-    await writeSyncState(key, syncStartedAt);
-    return [];
+    await writeSyncState(key, syncStartedAt, { markSnapshot });
+    return null;
   }
   await mirrorBulkPut(table, changed);
   await Promise.all(deleted.map((row) => mirrorDelete(table, row.id)));
-  await writeSyncState(key, maxSyncedAt(changed, getUpdatedAt, deleted));
+  await writeSyncState(key, maxSyncedAt(changed, getUpdatedAt, deleted), { markSnapshot });
   return sortRows(await readMirror(table), sort);
 }
 
-export async function loadCacheFirst<T>({
-  key,
-  table,
-  fetchRemote,
-  fetchUpdatedSince,
-  fetchDeletedSince,
-  getUpdatedAt,
-  sort,
-  freshMs = DEFAULT_FRESH_MS,
-  fullRefreshMs = DEFAULT_FULL_REFRESH_MS,
-}: CacheFirstOptions<T>): Promise<{ rows: T[]; fromCache: boolean }> {
+export async function loadCacheFirst<T>(
+  options: CacheFirstOptions<T>,
+): Promise<{ rows: T[]; fromCache: boolean }> {
+  const { key, table, fetchUpdatedSince, sort, onRefreshed, freshMs, fullRefreshMs } = options;
   const cached = await readMirror(table, sort);
-  const hasCache = cached.length > 0;
-  const state = await readSyncState(key);
-  const lastSyncedMs = state.lastSyncedAt ? new Date(state.lastSyncedAt).getTime() : 0;
-  const lastFullRefreshMs = state.lastFullRefreshAt ? new Date(state.lastFullRefreshAt).getTime() : 0;
-  const isFresh = Date.now() - lastSyncedMs < freshMs;
-  const needsFullRefresh = Date.now() - lastFullRefreshMs > fullRefreshMs;
+  const cursor = await readSyncState(key);
+  const plan = planMirrorRefresh({
+    cursor,
+    hasCache: cached.length > 0,
+    canIncremental: Boolean(fetchUpdatedSince),
+    freshMs,
+    fullRefreshMs,
+  });
 
-  if (hasCache && isFresh) {
+  if (plan === 'cache') {
     return { rows: cached, fromCache: true };
   }
 
-  if (hasCache) {
-    if (fetchUpdatedSince && !needsFullRefresh) {
-      void refreshMirrorIncremental({ key, table, fetchRemote, fetchUpdatedSince, fetchDeletedSince, getUpdatedAt, sort }).catch((err) => {
-        console.error(`[mirrorCache] background incremental refresh failed for ${key}`, err);
-      });
-    } else {
-      void refreshMirror({ key, table, fetchRemote, getUpdatedAt, sort }).catch((err) => {
-        console.error(`[mirrorCache] background refresh failed for ${key}`, err);
-      });
+  if (plan === 'incremental-blocking' && fetchUpdatedSince) {
+    // Something is known to have changed (local write, or a realtime event from
+    // another device / the other side of a cross-user RPC). Awaiting a small
+    // diff is what lets the caller re-set its store with correct balances.
+    try {
+      const rows = await refreshMirrorIncremental({ ...options, fetchUpdatedSince });
+      if (rows) return { rows, fromCache: false };
+    } catch (error) {
+      // Offline or a flaky hop must never blank the screen: fall back to cache.
+      console.error(`[mirrorCache] incremental refresh failed for ${key}`, error);
     }
     return { rows: cached, fromCache: true };
   }
 
-  return { rows: await refreshMirror({ key, table, fetchRemote, getUpdatedAt, sort }), fromCache: false };
+  if (plan === 'incremental-background' && fetchUpdatedSince) {
+    void refreshMirrorIncremental({ ...options, fetchUpdatedSince })
+      .then((rows) => {
+        if (rows && onRefreshed) onRefreshed(rows);
+      })
+      .catch((err) => {
+        console.error(`[mirrorCache] background incremental refresh failed for ${key}`, err);
+      });
+    return { rows: cached, fromCache: true };
+  }
+
+  // 'full' — and the incremental fallbacks above when no fetcher is wired.
+  if (cached.length > 0) {
+    void refreshMirror(options)
+      .then((rows) => {
+        if (onRefreshed) onRefreshed(rows);
+      })
+      .catch((err) => {
+        console.error(`[mirrorCache] background refresh failed for ${key}`, err);
+      });
+    return { rows: cached, fromCache: true };
+  }
+
+  return { rows: await refreshMirror(options), fromCache: false };
 }
 
 export async function mirrorPut<T>(table: Table<T, string>, row: T) {
@@ -230,9 +333,30 @@ export async function mirrorDelete<T>(table: Table<T, string>, id: string) {
   }
 }
 
+/**
+ * Mark a mirror as having unseen changes.
+ *
+ * This used to DELETE the sync row, which threw away the incremental cursor and
+ * the daily-full-refresh stamp — so every money write forced a full unbounded
+ * re-download of the table (audit 03-performance H2). The mirror is already
+ * correct at this point (`mirrorPut` runs first), so all we need is a flag that
+ * says "run the diff on the next load". Both cursors are preserved.
+ */
 export function markMirrorStale(key: string) {
-  localStorage.removeItem(cacheKey(key));
-  void db.mirrorSync.delete(mirrorSyncKey(key)).catch((error) => reportMirrorError('sync-state delete', error));
+  const scopedKey = mirrorSyncKey(key);
+  staleMarks.set(scopedKey, currentMark(scopedKey) + 1);
+  const dirtyAt = new Date().toISOString();
+  void (async () => {
+    try {
+      const previous = await db.mirrorSync.get(scopedKey);
+      // No persisted cursor yet — the in-memory mark carries this session, and
+      // a cold start with no cursor full-refreshes anyway.
+      if (!previous || previous.dirtyAt) return;
+      await db.mirrorSync.put({ ...previous, dirtyAt });
+    } catch (error) {
+      reportMirrorError('sync-state dirty', error);
+    }
+  })();
 }
 
 export async function getCoreMirrorSyncSnapshots(): Promise<MirrorSyncSnapshot[]> {

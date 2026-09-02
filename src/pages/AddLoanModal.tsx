@@ -17,6 +17,7 @@ import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { SUPPORTED_CURRENCIES, type Currency, type LoanType } from '../db';
 
 interface Props { open: boolean; onClose: () => void; }
@@ -37,7 +38,8 @@ export function AddLoanModal({ open, onClose }: Props) {
   const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
-  const [ledgerCurrency, setLedgerCurrency] = useState<Currency>((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
+  // UX-34: one helper, one fallback. See src/lib/primaryCurrency.ts.
+  const [ledgerCurrency, setLedgerCurrency] = useState<Currency>(getPrimaryCurrency);
   const [cashAdvanceSourceId, setCashAdvanceSourceId] = useState('');
   const [notes, setNotes] = useState('');
   const [hasEmi, setHasEmi] = useState(false);
@@ -72,12 +74,26 @@ export function AddLoanModal({ open, onClose }: Props) {
     requestCurrency
   );
 
+  // UX-12 (audit 2026-09): the EMI section is NOT available on the linked
+  // branch. That branch creates no loan on this device — accept_linked_request
+  // mints the loan rows on both sides only when the counterparty confirms — so
+  // there is nothing for generateSchedule() to attach a schedule to, and
+  // linked_transaction_requests has no instalment columns to carry one across
+  // (supabase-migration-phase2b-linked-requests.sql:7-26). The old code left
+  // the section visible AND required here and then `return`ed before any
+  // schedule generation: a user could configure 12 instalments, tap send, and
+  // end up with no schedule on either side and no warning. We hide it and say
+  // why instead. The typed values are parked, not cleared, so flipping back to
+  // an unlinked contact restores them.
+  const emiAvailable = !wouldBranchToLinked;
+  const emiActive = hasEmi && emiAvailable;
+
   // Disable-until-valid: a positive amount, a name, an account (when tracking),
-  // and — if an EMI plan is toggled on — both EMI fields, so the user can't
-  // think they set up instalments and silently get none.
+  // and — if an EMI plan is toggled on AND reachable — both EMI fields, so the
+  // user can't think they set up instalments and silently get none.
   const parsedAmount = parseFloat(amount);
   const amountValid = Number.isFinite(parsedAmount) && parsedAmount > 0;
-  const emiConfigured = !hasEmi || (parseInt(installments) > 0 && !!startDate);
+  const emiConfigured = !emiActive || (parseInt(installments) > 0 && !!startDate);
   const canSubmit = !!contact.name.trim() && amountValid && (isLedgerOnlyMode || !!accountId) && emiConfigured;
   const isDirty = !!contact.name.trim() || !!amount.trim() || !!notes.trim() || hasEmi;
 
@@ -118,6 +134,13 @@ export function AddLoanModal({ open, onClose }: Props) {
       });
 
       if (branch.branch === true) {
+        // Backstop for UX-12. `wouldBranchToLinked` (which drives whether the
+        // EMI section renders) is a UI-level approximation of this decision:
+        // it reads only the person already in the store and ignores
+        // archivedAt, so a typed name that resolves to a linked person can
+        // land here with hasEmi still true. Refuse loudly rather than drop the
+        // plan — the same rule as the section-level hide above.
+        if (hasEmi) { setError(t('ltr_emi_unavailable_body')); return; }
         // Deliberate confirm before mirroring a currency-locked record to them.
         const guard = await confirmCrossUserRequest({ amount: amt, currency: branch.currency, personName: person.name });
         if (guard.blockedReason) { setError(guard.blockedReason); return; }
@@ -147,7 +170,7 @@ export function AddLoanModal({ open, onClose }: Props) {
           currency: ledgerCurrency,
           notes,
         });
-        if (hasEmi && installments && startDate) {
+        if (emiActive && installments && startDate) {
           await generateSchedule({ loanId: loan.id, totalAmount: amt, installments: parseInt(installments), startDate });
         }
         setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
@@ -169,7 +192,7 @@ export function AddLoanModal({ open, onClose }: Props) {
               notes,
             }
       );
-      if (hasEmi && tx.relatedLoanId && installments && startDate) {
+      if (emiActive && tx.relatedLoanId && installments && startDate) {
         await generateSchedule({ loanId: tx.relatedLoanId, totalAmount: amt, installments: parseInt(installments), startDate });
       }
       setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
@@ -289,25 +312,44 @@ export function AddLoanModal({ open, onClose }: Props) {
           {t('money_not_moved_notice')}
         </p>
 
-        <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-cream-soft/80 border border-cream-hairline">
-          <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-accent-600 accent-indigo-600" />
-          <span className="text-[13px] text-ink-700 font-medium">{t('loan_set_emi')}</span>
-        </label>
+        {/* UX-12: the qist/EMI section only exists on the paths that actually
+            create a loan row here. On the linked branch it is replaced by an
+            explanation — never rendered-then-ignored. */}
+        {emiAvailable ? (
+          <>
+            <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-2xl bg-cream-soft/80 border border-cream-hairline">
+              <input type="checkbox" checked={hasEmi} onChange={e => setHasEmi(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-accent-600 accent-indigo-600" />
+              <span className="text-[13px] text-ink-700 font-medium">{t('loan_set_emi')}</span>
+            </label>
 
-        {hasEmi && (
-          <div className="grid grid-cols-2 gap-3 animate-fade-in">
-            <div>
-              <label className="form-label">{t('loan_installments')}</label>
-              <input type="number" value={installments} onChange={e => setInstallments(e.target.value)} placeholder="12" className="input-field" required />
-            </div>
-            <div>
-              <label className="form-label">{t('kameti_start_date')}</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-field" required />
-            </div>
+            {hasEmi && (
+              <div className="grid grid-cols-2 gap-3 animate-fade-in">
+                <div>
+                  <label className="form-label">{t('loan_installments')}</label>
+                  <input type="number" value={installments} onChange={e => setInstallments(e.target.value)} placeholder="12" className="input-field" required />
+                </div>
+                <div>
+                  <label className="form-label">{t('kameti_start_date')}</label>
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-field" required />
+                </div>
+              </div>
+            )}
+            {hasEmi && !emiConfigured && (
+              <p className="text-[11px] text-warn-700 -mt-1.5">{t('val_emi_incomplete')}</p>
+            )}
+          </>
+        ) : (
+          <div className="rounded-2xl bg-cream-soft/80 border border-cream-hairline p-3">
+            <p className="text-[12px] font-semibold text-ink-700 leading-snug">{t('ltr_emi_unavailable_title')}</p>
+            <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">{t('ltr_emi_unavailable_body')}</p>
+            {hasEmi && (
+              // The user HAD configured a plan before the contact turned out to
+              // be linked. Say so — the values are kept, not thrown away.
+              <p className="text-[11px] text-warn-700 font-semibold mt-2 leading-relaxed">
+                {t('ltr_emi_kept_warning')}
+              </p>
+            )}
           </div>
-        )}
-        {hasEmi && !emiConfigured && (
-          <p className="text-[11px] text-warn-700 -mt-1.5">{t('val_emi_incomplete')}</p>
         )}
 
         {/* Glanceable confirm/private chip near the Save CTA — mirrors

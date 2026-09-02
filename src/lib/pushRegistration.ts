@@ -21,9 +21,35 @@ type NavigateFn = (to: string) => void;
 
 // Kept so sign-out can delete the row — otherwise the next person to sign
 // in on this phone would keep receiving the previous user's notifications.
+//
+// Audit 2026-09 M5: the in-memory copy alone is not enough. FCM only re-fires
+// `registration` after a successful register() round-trip, so a user who
+// launches the app offline (or never grants notification permission again)
+// and signs out has `currentToken === null` and the device_push_tokens row
+// survives forever. Mirroring the token into localStorage makes the cleanup
+// survive an app restart. The key is user-scoped and is swept by
+// resetAllUserStores(); we also delete it ourselves once unregistered.
+export const PUSH_TOKEN_KEY = 'hisaab_push_token';
 let currentToken: string | null = null;
 let listenersAttached = false;
 let starting = false;
+
+function rememberToken(token: string): void {
+  currentToken = token;
+  try {
+    localStorage.setItem(PUSH_TOKEN_KEY, token);
+  } catch { /* storage disabled — in-memory copy still covers this session */ }
+}
+
+function forgetToken(): string | null {
+  let token = currentToken;
+  currentToken = null;
+  try {
+    token = token ?? localStorage.getItem(PUSH_TOKEN_KEY);
+    localStorage.removeItem(PUSH_TOKEN_KEY);
+  } catch { /* storage disabled — fall back to whatever memory held */ }
+  return token;
+}
 
 /** Where a push payload should land. The Edge Function forwards the
  *  notification `type`; anything unrecognised goes to the Inbox, which is
@@ -59,7 +85,7 @@ export async function startPushRegistration(navigate: NavigateFn): Promise<void>
       listenersAttached = true;
 
       await PushNotifications.addListener('registration', (token) => {
-        currentToken = token.value;
+        rememberToken(token.value);
         void pushTokensDb.register(token.value, 'android').catch((err) => {
           console.error('[push] token registration failed (non-fatal)', err);
         });
@@ -95,11 +121,22 @@ export async function startPushRegistration(navigate: NavigateFn): Promise<void>
 }
 
 /** Sign-out: drop this device's token so the account that just left stops
- *  receiving pushes here. Best-effort — a failure only means one stale row. */
+ *  receiving pushes here.
+ *
+ *  ORDERING CONTRACT: this must be awaited BEFORE `supabase.auth.signOut()`.
+ *  `pushTokensDb.unregister` is an authenticated DELETE scoped by RLS to the
+ *  signed-in user — once the session is gone it can only fail silently, which
+ *  is exactly the M5 leak (the row survives and the previous account's loan
+ *  and settlement pushes keep landing on a phone they no longer control).
+ *  supabaseAuthStore.signOut() owns that ordering; App.tsx's user-became-null
+ *  effect is only a backstop.
+ *
+ *  Best-effort and never throws — a failure costs one stale row, and the local
+ *  token record is dropped either way so we do not retry against a dead
+ *  session forever. */
 export async function stopPushRegistration(): Promise<void> {
   if (!isNativeRuntime()) return;
-  const token = currentToken;
-  currentToken = null;
+  const token = forgetToken();
   if (!token) return;
   try {
     await pushTokensDb.unregister(token);

@@ -11,6 +11,8 @@ import { SUPPORTED_CURRENCIES, type Currency, type SplitGroup } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
 import { profilesDb } from '../lib/supabaseDb';
 import { normalizePublicCode } from '../lib/collaboration';
+import { track } from '../lib/telemetry';
+import { bucketCount } from '../lib/telemetryEvents';
 
 const EMOJIS = ['✈️', '🍕', '🏠', '🎉', '🛒', '💼', '🎓', '🏖️', '⚽', '🎮', '🍔', '☕', '🎬', '🚗', '💊', '🎁', '👨‍👩‍👧‍👦', '🏋️', '📱', '🎵', '🍳', '🧳', '🎃', '❤️'];
 
@@ -88,6 +90,13 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
     setSaving(true);
     try {
       const created = await createGroup(name.trim(), emoji, members, currency);
+      // Catalog #15. Size travels as a BUCKET and the group name never leaves
+      // the device — a group created with 1 member is the "empty shell" signal
+      // report 10 wants, and that needs no identifying detail.
+      track('group_created', {
+        member_count_bucket: bucketCount(members.length + 1),
+        currency,
+      });
       // Guide the user straight into the activation loop: created → add
       // first expense or share code. Longer duration so the nudge outlives
       // the page transition.

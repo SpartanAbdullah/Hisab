@@ -13,6 +13,7 @@ import { JoinGroupModal } from './JoinGroupModal';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useT } from '../lib/i18n';
+import { track } from '../lib/telemetry';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 
@@ -217,6 +218,19 @@ export function SplitsPage() {
   const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
   const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
 
+  // Funnel-top steps for the group loop: opening the sheet vs. actually
+  // creating/joining. The gap between these and `group_created`/`group_joined`
+  // is the sheet-abandonment rate, which report 10's funnel 3 needs to tell
+  // "nobody tries" apart from "everybody tries and fails".
+  const openCreate = () => {
+    track('group_create_started', { source: 'groups_page' });
+    setShowCreate(true);
+  };
+  const openJoin = () => {
+    track('group_join_started', { source: 'groups_page' });
+    setShowJoin(true);
+  };
+
   const load = useCallback(async () => {
     await Promise.all([loadGroups(), loadNotifications()]);
     void loadBalances();
@@ -291,7 +305,7 @@ export function SplitsPage() {
                 <Search size={15} className="text-white" />
               </button>
               <button
-                onClick={() => setShowJoin(true)}
+                onClick={openJoin}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
                 aria-label="Join with code"
                 title="Join with code"
@@ -299,7 +313,7 @@ export function SplitsPage() {
                 <KeyRound size={14} className="text-white" strokeWidth={2.2} />
               </button>
               <button
-                onClick={() => setShowCreate(true)}
+                onClick={openCreate}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
                 aria-label="Create group"
               >
@@ -381,13 +395,13 @@ export function SplitsPage() {
         {hasGroups && (
           <div className="grid grid-cols-2 gap-2.5">
             <button
-              onClick={() => setShowCreate(true)}
+              onClick={openCreate}
               className="rounded-[14px] bg-ink-900 text-white px-4 py-3 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold press"
             >
               <Plus size={13} strokeWidth={2.4} /> {t('groups_action_create_title')}
             </button>
             <button
-              onClick={() => setShowJoin(true)}
+              onClick={openJoin}
               className="rounded-[14px] bg-cream-card border border-cream-border text-ink-800 px-4 py-3 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold press"
             >
               <LogIn size={13} strokeWidth={2.4} /> {t('groups_action_join_title')}

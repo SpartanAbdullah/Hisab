@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChevronRight, TrendingUp, TrendingDown } from 'lucide-react';
@@ -7,8 +7,12 @@ import { useSplitStore } from '../stores/splitStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { ListSkeleton } from '../components/ListSkeleton';
+import { PageErrorState } from '../components/PageErrorState';
+import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { groupByCategory, monthlyTrend, dailySpending, topExpenses } from '../lib/analytics';
 import { parseInternalNote } from '../lib/internalNotes';
 import type { Currency, Transaction } from '../db';
@@ -84,7 +88,17 @@ export function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>('this_month');
   const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
 
-  useEffect(() => { loadTransactions(); loadGroups(); }, [loadTransactions, loadGroups]);
+  // Audit UX-09: Analytics was the sole core page still firing a
+  // fire-and-forget effect. It had no error state (a failed fetch was
+  // indistinguishable from "you have no spending data" — a lie in a finance
+  // app) and it rendered the empty state on the very first frame, before the
+  // store's Supabase fetch had returned. Same useAsyncLoad + skeleton +
+  // PageErrorState contract as HomePage/TransactionsPage/AccountsPage.
+  const loadEverything = useCallback(async () => {
+    await Promise.all([loadTransactions(), loadGroups()]);
+  }, [loadTransactions, loadGroups]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(loadEverything);
+  const isInitialLoading = loadStatus === 'loading' && transactions.length === 0;
 
   const [start, end] = useMemo(() => getDateRange(period), [period]);
 
@@ -99,7 +113,9 @@ export function AnalyticsPage() {
       .forEach(tx => activeCurrencies.add(tx.currency));
     return Array.from(activeCurrencies).sort();
   }, [periodTransactions]);
-  const primaryCurrency = (localStorage.getItem('hisaab_primary_currency') || 'PKR') as Currency;
+  // UX-34: was the PKR-fallback outlier while ~19 other screens fell back to
+  // AED. One helper, one fallback — see src/lib/primaryCurrency.ts.
+  const primaryCurrency = getPrimaryCurrency();
   const chartCurrency = selectedCurrency && currencies.includes(selectedCurrency)
     ? selectedCurrency
     : currencies.includes(primaryCurrency)
@@ -254,15 +270,31 @@ export function AnalyticsPage() {
         </div>
       )}
 
-      {!hasAnyData ? (
-        <EmptyState
-          icon={TrendingUp}
-          tone="accent"
-          title={t('analytics_no_data')}
-          description={t('analytics_empty_desc')}
-          actionLabel={t('analytics_empty_cta')}
-          onAction={() => navigate('/transactions')}
-        />
+      {loadStatus === 'error' ? (
+        // A failed fetch must never masquerade as "no spending data".
+        <div className="px-5 pt-6">
+          <PageErrorState
+            variant="inline"
+            message={loadError ?? undefined}
+            onRetry={retryLoad}
+          />
+        </div>
+      ) : isInitialLoading ? (
+        <div className="px-5 pt-6">
+          <ListSkeleton rows={4} withAvatar={false} />
+        </div>
+      ) : !hasAnyData ? (
+        // Only once the first load has RESOLVED — every store starts at [].
+        loadStatus === 'ready' ? (
+          <EmptyState
+            icon={TrendingUp}
+            tone="accent"
+            title={t('analytics_no_data')}
+            description={t('analytics_empty_desc')}
+            actionLabel={t('analytics_empty_cta')}
+            onAction={() => navigate('/transactions')}
+          />
+        ) : null
       ) : (
         <>
           {/* Category Pie Chart */}

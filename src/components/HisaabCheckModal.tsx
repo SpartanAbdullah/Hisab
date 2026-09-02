@@ -5,7 +5,7 @@
 // Math lives in src/lib/hisaabCheck.ts (pure + tested); this file is only the
 // stepped sheet. Completing the walk stamps CHECK_STAMP_KEY so Home can show
 // "last done Nd ago" — the ritual's memory.
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, BellRing, CalendarClock, CheckCircle2 } from 'lucide-react';
 import { CelebrationMark } from './CelebrationMark';
 import { Modal } from './Modal';
@@ -51,27 +51,27 @@ function readStamp(): CheckStamp | null {
   }
 }
 
-export function HisaabCheckModal({ open, onClose, currency, receivable, payable, thisWeekRows, onStamped }: Props) {
+export function HisaabCheckModal(props: Props) {
+  // Fresh walk every open: remount the inner walk (via `key`) each time the
+  // sheet opens, rather than resetting state in an effect. Keying on the
+  // open/closed boundary itself forces a brand new CheckModalWalk instance
+  // on every transition — step/now/stamp/reminderOpen all restart from their
+  // lazy initializers — with no ref or effect needed.
+  return <CheckModalWalk key={props.open ? 'open' : 'closed'} {...props} />;
+}
+
+function CheckModalWalk({ open, onClose, currency, receivable, payable, thisWeekRows, onStamped }: Props) {
   const t = useT();
   const transactions = useTransactionStore((s) => s.transactions);
   const loans = useLoanStore((s) => s.loans);
   const persons = usePersonStore((s) => s.persons);
 
   const [step, setStep] = useState(0);
-  const [now, setNow] = useState(() => new Date());
-  const [stamp, setStamp] = useState<CheckStamp | null>(null);
+  const [now] = useState(() => new Date());
+  // Re-read the previous stamp at mount time, BEFORE this session's
+  // finishCheck() overwrites it (the delta pane compares against it).
+  const [stamp] = useState<CheckStamp | null>(() => readStamp());
   const [reminderOpen, setReminderOpen] = useState(false);
-
-  // Fresh walk every open: restart at step 0, re-read the previous stamp
-  // BEFORE this session overwrites it (the delta pane compares against it).
-  useEffect(() => {
-    if (open) {
-      setStep(0);
-      setNow(new Date());
-      setStamp(readStamp());
-      setReminderOpen(false);
-    }
-  }, [open]);
 
   const flow = useMemo(() => weekFlow(transactions, currency, now), [transactions, currency, now]);
   const delta = useMemo(

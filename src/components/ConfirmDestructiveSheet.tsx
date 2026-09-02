@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from './Button';
 import { useT } from '../lib/i18n';
+import { useBackStackLayer } from '../hooks/useBackStackLayer';
 
 // Imperative replacement for window.confirm() for destructive actions.
 // Native confirm() does not render reliably inside iOS standalone PWA / Capacitor
@@ -110,6 +111,10 @@ export function ConfirmDestructiveSheet() {
       setShow(false);
     }
   }, [open]);
+
+  // Audit MF-08: a back press with this sheet open used to fall through to
+  // the route underneath. Treat back as Cancel.
+  useBackStackLayer(open, () => answer(false), 'confirm-sheet');
 
   if (!open || !options) return null;
 

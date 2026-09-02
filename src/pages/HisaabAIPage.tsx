@@ -28,6 +28,7 @@ import { spendAnchor } from '../lib/spendAnchor';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useSplitStore } from '../stores/splitStore';
 import { getActiveGroupMembers } from '../lib/groupActiveMembers';
+import { useVisualViewportInset } from '../hooks/useVisualViewportInset';
 import type { Account, SplitGroup } from '../db';
 
 const NAVY_BLOOM =
@@ -98,6 +99,13 @@ export function HisaabAIPage() {
   const mode = useAppModeStore((s) => s.mode);
   const isFull = mode === 'full_tracker';
   const greetName = firstName();
+  // Audit MF-02: the composer is `position: fixed` with a hard-coded
+  // `bottom`, pinned to the (keyboard-unaware) layout viewport on iOS
+  // Safari / standalone PWA. Add the covered height on top of that offset
+  // so it stays above the keyboard. No-op on Chrome/Android (index.html's
+  // `interactive-widget=resizes-content` already handles it there) and on
+  // native (hook returns 0).
+  const keyboardInset = useVisualViewportInset();
   const [persona, setPersonaState] = useState<Persona>(getPersona());
   const changePersona = (p: Persona) => {
     setPersonaState(p);
@@ -867,7 +875,7 @@ export function HisaabAIPage() {
       {/* ── Pinned ask bar (above the bottom nav) ── */}
       <div
         className="fixed left-1/2 -translate-x-1/2 w-full max-w-[480px] px-5 z-30"
-        style={{ bottom: 'calc(70px + env(safe-area-inset-bottom))' }}
+        style={{ bottom: `calc(70px + env(safe-area-inset-bottom) + ${keyboardInset}px)` }}
       >
         {livePreview && (
           <div className="mb-2 flex items-center gap-2 rounded-2xl bg-accent-50 border border-accent-100 px-3 py-2 animate-fade-in">

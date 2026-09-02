@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Link2, Info, AlertTriangle, Search, KeyRound, ArrowLeft } from 'lucide-react';
+import { Link2, Info, AlertTriangle, Search, KeyRound, ArrowLeft, Users, Archive } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
@@ -11,6 +11,14 @@ import {
   inviteStatusMessageKey,
   joinStatusMessageKey,
 } from '../lib/joinCodeStatus';
+import { track } from '../lib/telemetry';
+import { groupsLookupDb } from '../lib/supabaseDb';
+import { normalizeGroupCode } from '../lib/collaboration';
+import {
+  groupPreviewMessageKey,
+  previewIsSoftFailure,
+  type GroupPreview,
+} from '../lib/groupPreview';
 
 interface Props {
   open: boolean;
@@ -60,30 +68,100 @@ export function JoinGroupModal({ open, onClose }: Props) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // Two-step flow: first "Find group" validates + parses the code into a
-  // confirmation, then a second deliberate "Join this group" tap actually
-  // joins. Group metadata (emoji/name/members) can't be previewed before
-  // joining — strict RLS blocks reading a group you're not yet a member of —
-  // so the confirm step echoes the verified code + its kind instead.
+  // Two-step flow: first "Find group" resolves the input, then a second
+  // deliberate "Join this group" tap actually joins.
+  //
+  // Audit 2026-09 UX-18: the confirm step used to echo back the code the user
+  // had just typed — zero new information — because strict RLS blocks reading
+  // a split_groups row you are not yet a member of. It now calls the
+  // SECURITY DEFINER preview RPC (supabase-migration-p1-group-preview.sql)
+  // and shows the group's name, emoji, member count, currency and owner
+  // BEFORE the user broadcasts their profile name to strangers.
   const [confirming, setConfirming] = useState<ParsedInput | null>(null);
+  const [preview, setPreview] = useState<GroupPreview | null>(null);
+  // Set when the preview came back with a reason the join cannot succeed
+  // (archived group). The confirm card still renders — the user should see
+  // WHICH group it was — but the Join button is withheld.
+  const [previewBlocked, setPreviewBlocked] = useState(false);
+  const [finding, setFinding] = useState(false);
   const joinGuard = useSubmitGuard();
+  const findGuard = useSubmitGuard();
+
+  const resetConfirm = () => {
+    setConfirming(null);
+    setPreview(null);
+    setPreviewBlocked(false);
+  };
 
   const handleClose = () => {
     setInput('');
     setSubmitError(null);
-    setConfirming(null);
+    resetConfirm();
     onClose();
   };
 
-  // Step 1 — resolve/validate the input into a confirmable target.
-  const handleFind = () => {
+  // Step 1 — resolve/validate the input into a confirmable target, and (for a
+  // group code) fetch the preview. Guarded like the join step: each preview
+  // MISS is charged to join_group_by_code's own rate window, so a double tap
+  // must not spend two attempts.
+  const handleFind = () => findGuard.run(runFind);
+  const runFind = async () => {
     setSubmitError(null);
     const parsed = parseInput(input);
     if (parsed.kind === 'invalid') {
       setSubmitError(t('join_error_invalid'));
       return;
     }
-    setConfirming(parsed);
+
+    // Invite links have no preview RPC of their own — they resolve a token,
+    // not a code — so they keep the legacy echo confirm.
+    if (parsed.kind !== 'group_code') {
+      setPreview(null);
+      setPreviewBlocked(false);
+      setConfirming(parsed);
+      return;
+    }
+
+    setFinding(true);
+    try {
+      const result = await groupsLookupDb.previewByCode(normalizeGroupCode(parsed.code));
+
+      if (result.status === 'ok') {
+        setPreview(result.preview);
+        setPreviewBlocked(false);
+        setConfirming(parsed);
+        return;
+      }
+
+      if (result.status === 'GROUP_ARCHIVED') {
+        // Real group, real code — but joins are closed. Show what it is and
+        // why, and withhold the Join button rather than letting the join RPC
+        // fail with a raw error.
+        setPreview('preview' in result ? result.preview : null);
+        setPreviewBlocked(true);
+        setConfirming(parsed);
+        setSubmitError(t(groupPreviewMessageKey(result.status)));
+        return;
+      }
+
+      if (previewIsSoftFailure(result.status)) {
+        // An un-migrated database or a flaky network must never stop someone
+        // joining a group whose code they legitimately hold: fall back to the
+        // pre-UX-18 blind confirm rather than blocking.
+        setPreview(null);
+        setPreviewBlocked(false);
+        setConfirming(parsed);
+        return;
+      }
+
+      // A real answer about the code (not found / expired / rate limited /
+      // your own group). Stay on the lookup step so the user can fix it —
+      // and never advance to a confirm card for a code that cannot work.
+      setSubmitError(t(groupPreviewMessageKey(result.status)));
+      resetConfirm();
+    } finally {
+      setFinding(false);
+    }
   };
 
   // Step 2 — commit the join for the already-confirmed target. Guarded so a
@@ -101,7 +179,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
         const outcome = await joinGroupByCode(confirming.code);
         if (outcome.status !== 'ok') {
           setSubmitError(t(joinStatusMessageKey(outcome.status)));
-          setConfirming(null);
+          resetConfirm();
           return;
         }
         groupId = outcome.groupId;
@@ -112,11 +190,17 @@ export function JoinGroupModal({ open, onClose }: Props) {
         const outcome = await acceptInvite(confirming.token);
         if (outcome.status !== 'ok') {
           setSubmitError(t(inviteStatusMessageKey(outcome.status)));
-          setConfirming(null);
+          resetConfirm();
           return;
         }
         groupId = outcome.groupId;
       }
+      // Catalog #18. `via` distinguishes the two redemption paths (they have
+      // separate rate windows and, we suspect, very different conversion).
+      track('group_joined', {
+        via: confirming.kind === 'group_code' ? 'code' : 'link',
+        surface: 'join_modal',
+      });
       toast.show({
         type: 'success',
         title: t('join_success_title'),
@@ -125,13 +209,13 @@ export function JoinGroupModal({ open, onClose }: Props) {
       });
       setInput('');
       setSubmitError(null);
-      setConfirming(null);
+      resetConfirm();
       onClose();
       navigate(`/group/${groupId}`);
     } catch (error) {
       setSubmitError(t(inviteStatusMessageKey(inviteStatusFromThrown(error))));
       // Drop back to the lookup step so the user can fix the code.
-      setConfirming(null);
+      resetConfirm();
     } finally {
       setLoading(false);
     }
@@ -163,50 +247,99 @@ export function JoinGroupModal({ open, onClose }: Props) {
             </div>
           )}
           {confirming ? (
-            <button
-              onClick={handleJoin}
-              disabled={loading}
-              className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 min-h-[44px]"
-            >
-              <Link2 size={16} />
-              {loading ? t('join_modal_joining') : t('join_confirm_cta')}
-            </button>
+            // No Join button for a group that cannot accept one (archived):
+            // the only honest action left is to go back and use another code.
+            previewBlocked ? null : (
+              <button
+                onClick={handleJoin}
+                disabled={loading}
+                className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 min-h-[44px]"
+              >
+                <Link2 size={16} />
+                {loading ? t('join_modal_joining') : t('join_confirm_cta')}
+              </button>
+            )
           ) : (
             <button
               onClick={handleFind}
-              disabled={loading || !input.trim()}
+              disabled={loading || finding || !input.trim()}
               className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 min-h-[44px]"
             >
               <Search size={16} />
-              {t('join_find_cta')}
+              {finding ? t('join_finding') : t('join_find_cta')}
             </button>
           )}
         </div>
       )}
     >
       {confirming ? (
-        // Step 2 — confirm card. Echoes the verified code/kind so the user
-        // takes a deliberate second tap before actually joining.
+        // Step 2 — confirm card. UX-18: when the preview RPC answered, this
+        // shows the actual group (name, emoji, members, currency, owner)
+        // instead of echoing back the code the user just typed.
         <div className="space-y-4">
-          <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-cream-card flex items-center justify-center shrink-0">
-              {confirming.kind === 'group_code'
-                ? <KeyRound size={18} className="text-accent-600" />
-                : <Link2 size={18} className="text-accent-600" />}
+          {preview ? (
+            <div className={`rounded-2xl border p-4 ${preview.isArchived ? 'bg-cream-soft border-cream-border' : 'bg-accent-50 border-accent-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-cream-card flex items-center justify-center shrink-0 text-[20px] leading-none">
+                  {preview.emoji || <Users size={18} className="text-accent-600" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-ink-500 uppercase tracking-widest">
+                    {preview.isArchived ? t('join_preview_archived_label') : t('join_preview_label')}
+                  </p>
+                  <p className="text-[16px] font-bold text-ink-900 tracking-tight truncate mt-0.5">
+                    {preview.name}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-cream-hairline space-y-1.5">
+                <p className="text-[12px] text-ink-600 leading-snug">
+                  {t('join_preview_owner').replace('{name}', preview.ownerDisplayName)}
+                </p>
+                <p className="text-[12px] text-ink-600 leading-snug">
+                  {(preview.memberCount === 1 ? t('join_preview_members_one') : t('join_preview_members'))
+                    .replace('{n}', String(preview.memberCount))}
+                  {preview.currency ? ` · ${preview.currency}` : ''}
+                </p>
+              </div>
+              {preview.isArchived && (
+                <p className="mt-3 flex items-start gap-1.5 text-[11.5px] font-semibold text-ink-600 leading-snug">
+                  <Archive size={13} className="shrink-0 mt-0.5" />
+                  {t('join_preview_archived_body')}
+                </p>
+              )}
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold text-ink-500 uppercase tracking-widest">{t('join_ready')}</p>
-              <p className="text-[15px] font-bold text-ink-900 font-mono tracking-tight truncate mt-0.5">
-                {confirmTarget}
-              </p>
+          ) : (
+            // Fallback for invite links (no preview RPC) and for a database
+            // where supabase-migration-p1-group-preview.sql hasn't been applied
+            // yet: the pre-UX-18 echo, plus an honest line saying so.
+            <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4 flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-cream-card flex items-center justify-center shrink-0">
+                {confirming.kind === 'group_code'
+                  ? <KeyRound size={18} className="text-accent-600" />
+                  : <Link2 size={18} className="text-accent-600" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold text-ink-500 uppercase tracking-widest">{t('join_ready')}</p>
+                <p className="text-[15px] font-bold text-ink-900 font-mono tracking-tight truncate mt-0.5">
+                  {confirmTarget}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
           <p className="text-[12px] text-ink-500 leading-relaxed px-1">
-            {t('join_double_check')}
+            {preview
+              ? preview.isArchived ? t('join_preview_archived_help') : t('join_preview_double_check')
+              : t('join_double_check')}
           </p>
+          {!preview && confirming.kind === 'group_code' && (
+            <p className="text-[11px] text-ink-400 leading-relaxed px-1">
+              {t('join_preview_unavailable')}
+            </p>
+          )}
           <button
             type="button"
-            onClick={() => { setConfirming(null); setSubmitError(null); }}
+            onClick={() => { resetConfirm(); setSubmitError(null); }}
             disabled={loading}
             className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-ink-500 active:opacity-60 disabled:opacity-40 min-h-[44px]"
           >

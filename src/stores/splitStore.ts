@@ -64,6 +64,7 @@ import {
   validateNewGroupExpenseParticipants,
   validateNewSettlementParticipants,
 } from '../lib/groupActiveMembers';
+import { MAX_MONEY_MAGNITUDE } from '../lib/currencyValidation';
 
 interface SimplifiedDebt {
   from: string;
@@ -719,6 +720,32 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     if (!group) throw new Error('Group not found');
     if (!Number.isFinite(input.amount) || input.amount <= 0) {
       throw new Error('Expense amount must be greater than zero');
+    }
+    if (input.amount >= MAX_MONEY_MAGNITUDE) {
+      throw new Error(tStatic('err_money_amount_too_large'));
+    }
+    // Client mirror of the server's GROUP_SPLITS_DO_NOT_SUM trigger
+    // (supabase-migration-p1-money-bounds.sql, audit 05-security M12). The
+    // shares are what EVERY member's client computes balances from
+    // (src/lib/groupDebts.ts), so a row whose shares don't reconcile with its
+    // amount silently moves everyone else's numbers — and in splits_only mode
+    // these rows are the entire money record.
+    //
+    // Tolerance is 0.01, NOT splitMath's `splitsSumToTotal` (0.005): the
+    // 'exact' method in computeShares deliberately accepts a mismatch up to
+    // 0.01 (splitMath.ts: `if (Math.abs(total - amount) > 0.01)`), so the
+    // tighter helper would reject splits the form itself considers valid.
+    // 0.01 is also exactly the server trigger's tolerance, so the two agree.
+    if (input.splits.some((split) => !Number.isFinite(split.amount) || split.amount < 0)) {
+      throw new Error(tStatic('err_money_amount_negative'));
+    }
+    const splitsTotal = input.splits.reduce((sum, split) => sum + split.amount, 0);
+    if (Math.abs(splitsTotal - input.amount) > 0.01) {
+      throw new Error(
+        tStatic('err_group_splits_mismatch')
+          .replace('{splits}', String(Math.round(splitsTotal * 100) / 100))
+          .replace('{amount}', String(input.amount)),
+      );
     }
 
     const currentUserId = getCurrentUserId();

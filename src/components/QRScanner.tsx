@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { X, CameraOff, Keyboard, ScanLine } from 'lucide-react';
 import { extractConnectCode } from '../lib/connectQr';
 import { useT } from '../lib/i18n';
+import { useBackStackLayer } from '../hooks/useBackStackLayer';
 
 type JsQrFn = typeof import('jsqr')['default'];
 
@@ -65,6 +66,13 @@ function ActiveScanner({ onClose, onCode, onManualEntry }: Omit<Props, 'open'>) 
   // A QR that decoded fine but isn't ours. Told apart from "nothing seen yet"
   // so the user isn't left waving a valid-but-wrong code at a silent screen.
   const [wrongCode, setWrongCode] = useState(false);
+
+  // Audit MF-08: a back press with the scanner open used to strand the
+  // camera flow (fall through to the route underneath, camera left running
+  // until the mount-gated wrapper unmounted for some other reason).
+  // ActiveScanner only ever mounts while open, so the layer is "always open"
+  // for its lifetime.
+  useBackStackLayer(true, onClose, 'qr-scanner');
 
   const stop = useCallback(() => {
     if (timerRef.current !== null) {

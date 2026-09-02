@@ -22,40 +22,106 @@ cd android
 The local release bundle is written to
 `android/app/build/outputs/bundle/release/app-release.aab`.
 
-## Optional App Links patch
+## App Links (deep links) — assetlinks.json
 
-Add this only after `https://usehisaab.com/.well-known/assetlinks.json` is
-published as JSON without redirects. App Links are not required for the base
-Capacitor wrapper to build.
+The App Links intent filter is **already live** in
+`android/app/src/main/AndroidManifest.xml` (`android:autoVerify="true"`,
+covering `https://usehisaab.com/join/*`, `/u/*`, and `/kameti/witness/*` —
+these three match the app's actual public-link routes in `src/App.tsx`).
+`capacitor.config.ts` + `src/lib/nativeBridge.ts` already wire both
+`appUrlOpen` (warm start) and `App.getLaunchUrl()` (cold start) through to
+react-router, so once verification passes, tapping any of those links —
+killed app or not — opens straight into Hisaab.
 
-### Inside the `<application>` tag — set the launch background
-```xml
-<application
-    android:allowBackup="true"
-    android:icon="@mipmap/ic_launcher"
-    android:label="@string/app_name"
-    android:roundIcon="@mipmap/ic_launcher_round"
-    android:supportsRtl="true"
-    android:theme="@style/AppTheme">
+What's still missing is the file Android checks to verify the app is allowed
+to claim those URLs: **`public/.well-known/assetlinks.json`**. It's checked
+into the repo with placeholder fingerprints (`REPLACE_WITH_UPLOAD_KEY_SHA256`,
+`REPLACE_WITH_PLAY_SIGNING_KEY_SHA256`) — until both are filled in with real
+values, every one of these links keeps falling back to opening in the browser
+(graceful, but not the real experience).
+
+### 1. Get the upload-key fingerprint
+
+This is the key you sign the AAB with locally (`android/app/hisaab-upload.jks`,
+gitignored — see `RELEASE.md` §§1-2 if it doesn't exist yet):
+
+```bash
+keytool -list -v -keystore android/app/hisaab-upload.jks -alias hisaab-upload
 ```
 
-### Inside the `MainActivity` `<activity>` tag — add deep links
-Add this `<intent-filter>` immediately after the launcher one:
+Copy the `SHA256:` line (the colon-separated hex string) into
+`sha256_cert_fingerprints[0]` in `public/.well-known/assetlinks.json`, in
+place of `REPLACE_WITH_UPLOAD_KEY_SHA256`.
 
-```xml
-<intent-filter android:autoVerify="true">
-    <action android:name="android.intent.action.VIEW" />
-    <category android:name="android.intent.category.DEFAULT" />
-    <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="https" android:host="usehisaab.com" />
-    <data android:pathPrefix="/join/" />
-</intent-filter>
+### 2. Get the Play App Signing fingerprint
+
+Play re-signs the app with its own key before distributing it, so the
+upload-key fingerprint alone is not enough once the app is live — Play's key
+must be listed too, or every device that installed from the Play Store (as
+opposed to a sideloaded AAB) fails verification.
+
+1. Play Console → your app → **Setup → App integrity → App signing**.
+2. Copy the **"App signing key certificate" → SHA-256 certificate fingerprint**.
+3. Paste it into `sha256_cert_fingerprints[1]`, in place of
+   `REPLACE_WITH_PLAY_SIGNING_KEY_SHA256`.
+
+This value doesn't exist until the app has been uploaded to Play at least
+once and Play App Signing is enrolled — until then, the upload-key
+fingerprint alone verifies sideloaded/local-signed AABs, and the Play-key
+slot stays a placeholder (invalid values in the array are simply ignored by
+the verifier, so a leftover placeholder doesn't break verification of the
+other entry).
+
+### 3. Deploy and confirm it's served correctly
+
+`public/` deploys as-is to `usehisaab.com` on Vercel (no build step needed
+for static files), so pushing the updated JSON to `main` is enough. **Confirm
+after deploy** that Vercel is serving it as a static file, not falling
+through the SPA catch-all rewrite in `vercel.json`
+(`{ "source": "/(.*)", "destination": "/index.html" }`) — Vercel's static
+filesystem match normally wins over rewrites, but this has not been verified
+in production for this project:
+
+```bash
+curl -sI https://usehisaab.com/.well-known/assetlinks.json
 ```
 
-The capacitor.config.ts already wires `appUrlOpen` → react-router so `/join/:token` resolves automatically.
+Expect `HTTP/2 200` and `content-type: application/json` (or
+`application/json; charset=utf-8`) — **not** `text/html`. If it comes back as
+HTML, the rewrite is winning and needs an explicit exception added to
+`vercel.json`'s `rewrites` (e.g. exclude `/.well-known/*`) or a `routes`
+override.
+
+### 4. Verify with Google's tool ("Statement List" tester)
+
+```
+https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://usehisaab.com&relation=delegate_permission/common.handle_all_urls
+```
+
+This is the same endpoint Android itself calls to verify the link on
+install. It should return a JSON `statements` array listing
+`com.usehisaab.app` with the fingerprints from the file. If it's empty or
+errors, fix the file before testing on-device — verification will silently
+keep failing and links will keep opening the browser.
+
+### 5. Verify on a real device
+
+1. Install a release-signed build (App Links verification is skipped for
+   debug-signed builds on some OS versions).
+2. Send yourself an invite link (`/join/...`) via WhatsApp — or a kameti
+   witness link (`/kameti/witness/...`) — and tap it **with the app fully
+   killed** (swipe it away first; this is the cold-start path fixed by
+   `App.getLaunchUrl()` in `nativeBridge.ts`, not just the warm-start
+   `appUrlOpen` path).
+3. It should open directly into Hisaab at that route, no chooser dialog, no
+   browser. If it still opens the browser, re-run step 4's query — Android
+   caches a failed verification and can take a reboot or
+   `adb shell pm verify-app-links --re-verify com.usehisaab.app` to retry.
 
 ### `android/app/src/main/res/values/colors.xml`
-Set the splash/background colour to Sukoon navy:
+Splash/background colour, Sukoon navy — already set in the checked-in
+resources; only relevant if you're regenerating this file from a fresh
+`cap add android`:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -67,14 +133,11 @@ Set the splash/background colour to Sukoon navy:
 </resources>
 ```
 
-### Verify Site URL on Play Store (Digital Asset Links)
-When you publish to Play Store, the `android:autoVerify="true"` on the deep-link filter only works if your domain hosts an `assetlinks.json` file at `https://usehisaab.com/.well-known/assetlinks.json`. Use the [Asset Links Tool](https://developers.google.com/digital-asset-links/tools/generator) to generate it. Without this, deep links open in a chooser rather than directly in the app.
-
 ## Native plugins already wired
 
 All initialised by `src/lib/nativeBridge.ts` (no-op on web):
 
-- **`@capacitor/app`** — hardware back-button handler. Without this, every Android back press exits the app immediately.
+- **`@capacitor/app`** — hardware back-button handler, plus deep-link routing: `appUrlOpen` (warm start) AND `App.getLaunchUrl()` (cold start — app was killed) both route into react-router, deduped. Without this, every Android back press exits the app immediately, and (before the cold-start fix) a killed-app invite tap silently dropped the token.
 - **`@capacitor/status-bar`** — status bar colour locked to Sukoon navy with light icons.
 - **`@capacitor/splash-screen`** — auto-hides after React first paint.
 - **`@capacitor/keyboard`** — `native` resize mode (WebView resizes when keyboard opens).

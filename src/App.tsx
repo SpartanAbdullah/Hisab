@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
 import { ToastContainer } from './components/Toast';
 import { ConfirmDestructiveSheet } from './components/ConfirmDestructiveSheet';
@@ -31,6 +31,18 @@ import { PIN_RELOCK_AFTER_MS } from './lib/pinCrypto';
 // Statically imported on purpose: a lazy chunk that fails to load (offline, or
 // a stale deploy) must never be the reason the PIN gate silently doesn't render.
 import { PinLockScreen } from './pages/PinLockScreen';
+// Same reasoning as PinLockScreen: the version gate exists precisely for stale
+// builds, so its screen must not depend on fetching a chunk from a deploy the
+// running bundle may no longer match.
+import { UpdateRequiredScreen } from './components/UpdateRequiredScreen';
+import { appConfigDb } from './lib/supabaseDb';
+import {
+  getCurrentAppVersion,
+  isSupported,
+  resolveVersionIdentity,
+  type AppVersionConfig,
+  type AppVersionIdentity,
+} from './lib/versionGate';
 import { useT, useI18nStore } from './lib/i18n';
 import { Globe } from 'lucide-react';
 
@@ -163,6 +175,83 @@ function UnverifiedEmailScreen({ email }: { email: string }) {
   );
 }
 
+// ── Minimum-supported-version gate (audit H9 / MF-12) ───────────────────────
+// Hisaab's three release tracks (Vercel-on-push web, hand-built Play AAB,
+// hand-applied SQL) are unsynchronised by construction, so an installed binary
+// can be weeks behind the schema it is calling. This hook fetches the
+// `app_config` singleton once at boot and hands AppContent a hard block when
+// this build is below the floor. See src/lib/versionGate.ts for the release
+// policy and supabase-migration-p1-app-config.sql for the row.
+//
+// FAILS OPEN, always: no config row, an unapplied migration, a thrown fetch, a
+// dead network — every one of those resolves to "allowed". Locking a working
+// client out because a request timed out on 3G would be a far worse bug than
+// the skew this defends against, and is only undoable from Supabase Studio.
+//
+// Mode-agnostic: nothing here reads appModeStore.
+const VERSION_RECHECK_MS = 10 * 60 * 1000;
+
+function useVersionGate(): {
+  blocked: boolean;
+  config: AppVersionConfig | null;
+  version: string;
+} {
+  const [config, setConfig] = useState<AppVersionConfig | null>(null);
+  const [identity, setIdentity] = useState<AppVersionIdentity | null>(null);
+  const lastCheckedAt = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const check = async () => {
+      // Throttle: boot always checks (lastCheckedAt = 0); resumes re-check at
+      // most every 10 minutes, so an operator lowering a mistaken floor is
+      // picked up without a reinstall, and a raised floor reaches a
+      // long-running session without a cold start.
+      const now = Date.now();
+      if (now - lastCheckedAt.current < VERSION_RECHECK_MS) return;
+      lastCheckedAt.current = now;
+      try {
+        const [resolved, row] = await Promise.all([
+          resolveVersionIdentity(),
+          appConfigDb.get(),
+        ]);
+        if (cancelled) return;
+        setIdentity(resolved);
+        setConfig(row);
+      } catch (err) {
+        // Deliberately does NOT clear a previously fetched config: a failed
+        // re-check must not un-block a client we already know is too old.
+        // Allow a retry sooner than the full interval.
+        lastCheckedAt.current = 0;
+        console.error('appConfig check failed (non-fatal, failing open)', err);
+      }
+    };
+
+    void check();
+
+    // Resume re-check. Covers web/PWA tab returns and — because the Capacitor
+    // WebView fires visibilitychange on foreground too — the native app.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void check();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onVisible);
+    };
+  }, []);
+
+  return {
+    // `identity === null` means we have not completed a check yet → allowed.
+    blocked: identity !== null && !isSupported(identity, config),
+    config,
+    version: identity?.current ?? getCurrentAppVersion(),
+  };
+}
+
 function AppContent() {
   const { completed, loading: onboardingLoading, checkOnboarding } = useOnboardingStore();
   const mode = useAppModeStore(s => s.mode);
@@ -180,6 +269,11 @@ function AppContent() {
     useState<{ group: SplitGroup; amount: string } | null>(null);
   const [createGroupForExpense, setCreateGroupForExpense] =
     useState<{ amount: string } | null>(null);
+
+  // Version compatibility. Runs unconditionally (hook rules); the block it
+  // produces is rendered down with the other gates. Fails open — see
+  // useVersionGate above.
+  const versionGate = useVersionGate();
 
   useEffect(() => {
     initialize();
@@ -206,9 +300,17 @@ function AppContent() {
       navigate: (to, opts) => navigate(to, opts),
       // We never want to "exit" while a modal/sheet is open — but Capacitor's
       // back-button only fires when the system gesture wasn't handled, and
-      // modals are click-outside-to-close already. So canGoBack just checks
-      // router history depth.
-      canGoBack: () => window.history.length > 1,
+      // modals are click-outside-to-close already.
+      //
+      // Audit MF-07: `history.length` counts every session entry and never
+      // decreases on back-navigation, so after the first in-app navigation
+      // it's permanently > 1 — back on the home screen called
+      // `window.history.back()` (a no-op at the start of history) instead of
+      // `CapApp.exitApp()`, which read as a hang. React Router 7 stamps
+      // `{ idx }` into `history.state` for every entry it creates (0 at the
+      // initial entry), so `idx > 0` is the correct "is there somewhere to
+      // go back to" check.
+      canGoBack: () => ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0,
     });
   }, [navigate]);
 
@@ -441,11 +543,42 @@ function AppContent() {
     if (resumePath) navigate(resumePath, { replace: true });
   }, [completed, location.pathname, navigate, user]);
 
-  // Scroll back to the top on every route change so returning to a page never
-  // lands you halfway down where you left the previous one.
+  // Scroll restoration (audit MF-18). The browser's own automatic
+  // restoration races the logic below and can flash the wrong position
+  // before we correct it, so take manual control once up front.
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [location.pathname]);
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+  }, []);
+
+  // Continuously record the current entry's scroll offset, keyed by
+  // `location.key` (a unique id React Router assigns per history entry), so
+  // a POP navigation back to it can restore where the user left off. Before
+  // this, EVERY route change — including back — reset to the top, which
+  // turned the core review loop (open TransactionsPage/LoansPage/
+  // GroupDetailPage, open a detail route, come back) into O(n^2) scrolling.
+  const scrollPositions = useRef(new Map<string, number>()).current;
+  useEffect(() => {
+    const key = location.key;
+    const onScroll = () => {
+      scrollPositions.set(key, window.scrollY);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [location.key, scrollPositions]);
+
+  // POP (back/forward, including the hardware-back path above and
+  // GlobalSearch/QuickEntry navigations) restores the recorded offset for
+  // that entry; PUSH/REPLACE (opening a new screen) scrolls to top like any
+  // freshly-opened page. Always instant (no `behavior: 'smooth'`) — this is
+  // scroll RESTORATION, not a scroll animation, so there is no smooth-scroll
+  // code path to gate behind `prefers-reduced-motion` in the first place.
+  const navigationType = useNavigationType();
+  useEffect(() => {
+    const target = navigationType === 'POP' ? (scrollPositions.get(location.key) ?? 0) : 0;
+    window.scrollTo(0, target);
+  }, [location.pathname, location.key, navigationType, scrollPositions]);
 
   // On logout, reset the URL to Home so the next login lands on Home — not the
   // page the user was on when they signed out (e.g. Settings).
@@ -474,6 +607,22 @@ function AppContent() {
 
   if (authLoading || onboardingLoading) {
     return <AppLoadingScreen />;
+  }
+
+  // ── Gate block ────────────────────────────────────────────────────────────
+  // Version → auth → email verification → onboarding → PIN. Every one of these
+  // renders BELOW the public routes: /privacy, /terms, /contact, /support and
+  // /delete-account never reach AppContent (PublicRouteSwitch returns first),
+  // and /kameti/witness/* returns above this block — so a shared witness link
+  // still opens in any browser even while the app is version-blocked.
+
+  // Version gate (audit H9 / MF-12). FIRST, and deliberately above the auth
+  // gate: a binary too old to talk to the current schema must be stopped before
+  // it signs in and starts issuing writes against contracts that moved. Fails
+  // open on any fetch error, so this can only block when the server actively
+  // said so. Mode-agnostic — full_tracker and splits_only are blocked alike.
+  if (versionGate.blocked) {
+    return <UpdateRequiredScreen config={versionGate.config} version={versionGate.version} />;
   }
 
   // Auth gate — must be logged in

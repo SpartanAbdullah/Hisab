@@ -19,6 +19,7 @@ import { LanguageToggle } from '../components/LanguageToggle';
 import { TransactionItem } from '../components/TransactionItem';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
+import { NotificationPermissionPrompt } from '../components/NotificationPermissionPrompt';
 import { SendStatementModal } from '../components/SendStatementModal';
 import { PageErrorState } from '../components/PageErrorState';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
@@ -62,6 +63,11 @@ export function LoanDetailPage() {
   const [showRepayment, setShowRepayment] = useState(false);
   const [showSettleLinked, setShowSettleLinked] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
+  // MF-06: high-intent moment for the contextual notification-permission ask
+  // — bumped every time the payment-reminder sheet closes (the user just
+  // acted on reminding this person, a natural moment to offer reminding
+  // them too). Starts at 0, which NotificationPermissionPrompt ignores.
+  const [notifPromptTrigger, setNotifPromptTrigger] = useState(0);
   const [showStatement, setShowStatement] = useState(false);
   const [statementIntro, setStatementIntro] = useState<string | undefined>(undefined);
   const [receiptData, setReceiptData] = useState<{ receivedAmount: number; currency: string; remaining: number | null; date: string } | undefined>(undefined);
@@ -847,7 +853,10 @@ export function LoanDetailPage() {
       />
       <PaymentReminderModal
         open={showReminder}
-        onClose={() => setShowReminder(false)}
+        onClose={() => {
+          setShowReminder(false);
+          setNotifPromptTrigger((n) => n + 1);
+        }}
         personName={displayName || loan.personName}
         amount={loan.remainingAmount}
         currency={loan.currency}
@@ -856,6 +865,7 @@ export function LoanDetailPage() {
         hasDueDate={totalCount > 0}
         phone={(loan.personId ? persons.find((x) => x.id === loan.personId)?.phone : null) ?? null}
       />
+      <NotificationPermissionPrompt trigger={notifPromptTrigger} />
       <SendStatementModal
         open={showStatement}
         onClose={() => { setShowStatement(false); setStatementIntro(undefined); setReceiptData(undefined); }}

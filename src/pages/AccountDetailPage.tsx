@@ -163,6 +163,36 @@ export function AccountDetailPage() {
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const account = accounts.find((a) => a.id === id);
+  const isCreditCard = account?.type === 'credit_card';
+
+  // Statement-native view: a card financing a cash advance bills purchases +
+  // this cycle's instalment (not the whole balance), and its instalment plans
+  // live INSIDE the card. Also detect advances still on their old (non-
+  // statement) dates so we can offer the per-card re-anchor.
+  // Hook must run unconditionally on every render (rules-of-hooks) — kept
+  // above the `!account` early return below, with a null-safe body.
+  const cardAdvances = useMemo(() => {
+    if (!isCreditCard || !account) return { statement: null, advanceLoans: [], misaligned: [] as typeof loans };
+    const isOnStatementDay = (iso: string, dd: number): boolean => {
+      const d = new Date(`${iso}T00:00:00`);
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      return d.getDate() === Math.min(dd, lastDay);
+    };
+    const map = new Map<string, string>();
+    for (const txn of transactions) {
+      if (txn.type === 'loan_taken' && txn.relatedLoanId && txn.sourceAccountId) map.set(txn.relatedLoanId, txn.sourceAccountId);
+    }
+    const advanceLoans = loans.filter((l) => l.status === 'active' && map.get(l.id) === account.id);
+    const statement = buildCardStatement({ card: account, advanceLoans, schedules: emiSchedules, today: new Date() });
+    const dd = parseInt(account.metadata.dueDay ?? '', 10);
+    const validDueDay = Number.isFinite(dd) && dd >= 1 && dd <= 31;
+    const misaligned = validDueDay
+      ? advanceLoans.filter((l) =>
+          emiSchedules.some((s) => s.loanId === l.id && s.status !== 'paid' && !isOnStatementDay(s.dueDate, dd)),
+        )
+      : [];
+    return { statement, advanceLoans, misaligned };
+  }, [isCreditCard, account, loans, emiSchedules, transactions]);
 
   // Don't render "account not found" until the accounts list has actually
   // finished loading — otherwise a deep-link to /account/:id flashes the
@@ -197,36 +227,8 @@ export function AccountDetailPage() {
   const accountTxns = getByAccount(account.id);
   const Icon = iconMap[account.type] ?? Wallet;
   const meta = currencyMeta[account.currency];
-  const isCreditCard = account.type === 'credit_card';
   const creditLimit = isCreditCard ? parseFloat(account.metadata.creditLimit || '0') : 0;
   const used = isCreditCard ? creditLimit - account.balance : 0;
-
-  // Statement-native view: a card financing a cash advance bills purchases +
-  // this cycle's instalment (not the whole balance), and its instalment plans
-  // live INSIDE the card. Also detect advances still on their old (non-
-  // statement) dates so we can offer the per-card re-anchor.
-  const isOnStatementDay = (iso: string, dd: number): boolean => {
-    const d = new Date(`${iso}T00:00:00`);
-    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    return d.getDate() === Math.min(dd, lastDay);
-  };
-  const cardAdvances = useMemo(() => {
-    if (!isCreditCard) return { statement: null, advanceLoans: [], misaligned: [] as typeof loans };
-    const map = new Map<string, string>();
-    for (const txn of transactions) {
-      if (txn.type === 'loan_taken' && txn.relatedLoanId && txn.sourceAccountId) map.set(txn.relatedLoanId, txn.sourceAccountId);
-    }
-    const advanceLoans = loans.filter((l) => l.status === 'active' && map.get(l.id) === account.id);
-    const statement = buildCardStatement({ card: account, advanceLoans, schedules: emiSchedules, today: new Date() });
-    const dd = parseInt(account.metadata.dueDay ?? '', 10);
-    const validDueDay = Number.isFinite(dd) && dd >= 1 && dd <= 31;
-    const misaligned = validDueDay
-      ? advanceLoans.filter((l) =>
-          emiSchedules.some((s) => s.loanId === l.id && s.status !== 'paid' && !isOnStatementDay(s.dueDate, dd)),
-        )
-      : [];
-    return { statement, advanceLoans, misaligned };
-  }, [isCreditCard, account, loans, emiSchedules, transactions]);
 
   const handleReanchor = () => submitGuard.run(runReanchor);
 

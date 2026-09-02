@@ -130,6 +130,9 @@ export const useLoanStore = create<LoanState>((set, get) => ({
         fetchDeletedSince: loansDb.getDeletedSince,
         getUpdatedAt: (loan) => loan.updatedAt ?? loan.createdAt,
         sort: (a, b) => b.createdAt.localeCompare(a.createdAt),
+        // A background refresh used to land in Dexie only, leaving the store
+        // rendering the pre-refresh snapshot (audit 04-supabase F-RT1).
+        onRefreshed: (rows) => set({ loans: rows }),
       });
       set({ loans });
     } finally {
