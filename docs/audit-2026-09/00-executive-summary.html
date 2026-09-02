@@ -1,0 +1,467 @@
+<title>Hisaab Audit 2026</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;600;700;900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #FAFAF7;
+    --card: #FFFFFF;
+    --ink: #1C2321;
+    --muted: #5C6662;
+    --faint: #8A938F;
+    --line: #E2E5E1;
+    --accent: #0E6E5C;
+    --accent-soft: #E3EFEB;
+    --crit: #B3261E;
+    --crit-soft: #F9E9E7;
+    --high: #9A5B0B;
+    --high-soft: #F7EEDE;
+    --med: #4A5568;
+    --med-soft: #EAEDF1;
+    --good: #0E6E5C;
+    --shadow: 0 1px 3px rgba(28,35,33,.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #101614;
+      --card: #18201D;
+      --ink: #E7ECE9;
+      --muted: #A3ADA8;
+      --faint: #6E7873;
+      --line: #2A332F;
+      --accent: #3FA98F;
+      --accent-soft: #1B2E29;
+      --crit: #E5766D;
+      --crit-soft: #33201E;
+      --high: #E0A054;
+      --high-soft: #322818;
+      --med: #9BA7B8;
+      --med-soft: #232A33;
+      --good: #3FA98F;
+      --shadow: 0 1px 3px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #101614;
+    --card: #18201D;
+    --ink: #E7ECE9;
+    --muted: #A3ADA8;
+    --faint: #6E7873;
+    --line: #2A332F;
+    --accent: #3FA98F;
+    --accent-soft: #1B2E29;
+    --crit: #E5766D;
+    --crit-soft: #33201E;
+    --high: #E0A054;
+    --high-soft: #322818;
+    --med: #9BA7B8;
+    --med-soft: #232A33;
+    --good: #3FA98F;
+    --shadow: 0 1px 3px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 16.5px;
+    line-height: 1.6;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px 96px; }
+
+  h1, h2, h3, .sans { font-family: "Libre Franklin", "Helvetica Neue", Arial, sans-serif; }
+  .mono { font-family: "IBM Plex Mono", Consolas, monospace; }
+
+  /* Masthead */
+  .masthead { padding: 56px 0 28px; border-bottom: 3px solid var(--ink); }
+  .eyebrow {
+    font-family: "Libre Franklin", sans-serif;
+    font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(34px, 6vw, 54px); font-weight: 900; line-height: 1.02;
+    letter-spacing: -.015em; margin: 0 0 18px; text-wrap: balance;
+  }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--muted);
+  }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  /* Verdict */
+  .verdict {
+    margin: 30px 0 0; padding: 22px 24px; border-left: 5px solid var(--crit);
+    background: var(--crit-soft); border-radius: 0 6px 6px 0;
+  }
+  .verdict h2 { margin: 0 0 8px; font-size: 20px; font-weight: 800; color: var(--crit); letter-spacing: -.01em; }
+  .verdict p { margin: 0; font-size: 16px; }
+
+  /* Sections */
+  section { margin-top: 60px; }
+  h2.sec {
+    font-size: 15px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+    margin: 0 0 6px; color: var(--ink);
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  h2.sec::after { content: ""; flex: 1; border-top: 1px solid var(--line); transform: translateY(-4px); }
+  .sec-note { color: var(--muted); font-size: 14.5px; margin: 0 0 22px; }
+
+  /* Blocker cards */
+  .blockers { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 22px; }
+  .blocker {
+    background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--crit);
+    border-radius: 6px; padding: 18px 18px 16px; box-shadow: var(--shadow);
+  }
+  .blocker h3 { margin: 0 0 8px; font-size: 15.5px; font-weight: 700; line-height: 1.3; }
+  .blocker p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.55; }
+  .blocker .mono { font-size: 12px; color: var(--faint); display: block; margin-top: 10px; }
+
+  /* Scorecard */
+  .scores { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-top: 22px; }
+  .score {
+    background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+    padding: 14px 16px 15px; box-shadow: var(--shadow);
+  }
+  .score .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .score .name { font-family: "Libre Franklin", sans-serif; font-size: 13px; font-weight: 700; }
+  .score .num { font-family: "IBM Plex Mono", monospace; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .score .bar { height: 5px; background: var(--line); border-radius: 3px; margin: 9px 0 8px; overflow: hidden; }
+  .score .bar i { display: block; height: 100%; border-radius: 3px; }
+  .score p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+  .s-crit .num { color: var(--crit); } .s-crit .bar i { background: var(--crit); }
+  .s-warn .num { color: var(--high); } .s-warn .bar i { background: var(--high); }
+  .s-ok .num { color: var(--good); } .s-ok .bar i { background: var(--good); }
+
+  /* Findings */
+  .finding {
+    display: grid; grid-template-columns: 34px 86px 1fr; gap: 0 16px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+    padding: 15px 18px 14px; margin-top: 10px; box-shadow: var(--shadow);
+    border-left-width: 4px;
+  }
+  .finding.f-crit { border-left-color: var(--crit); }
+  .finding.f-high { border-left-color: var(--high); }
+  .finding .n { font-family: "IBM Plex Mono", monospace; font-size: 15px; font-weight: 600; color: var(--faint); padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .pill {
+    align-self: start; margin-top: 2px; text-align: center;
+    font-family: "Libre Franklin", sans-serif; font-size: 10.5px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+    padding: 3px 0 2px; border-radius: 3px;
+  }
+  .pill.crit { background: var(--crit-soft); color: var(--crit); }
+  .pill.high { background: var(--high-soft); color: var(--high); }
+  .finding h3 { margin: 0 0 5px; font-size: 15.5px; font-weight: 700; line-height: 1.35; }
+  .finding p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.55; }
+  .finding .ev { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--faint); margin-top: 8px; word-break: break-word; }
+
+  /* Risk / opportunity lists */
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 22px; }
+  .duo h3 { font-size: 13px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 12px; }
+  .duo .risks h3 { color: var(--crit); }
+  .duo .opps h3 { color: var(--accent); }
+  .duo ol { margin: 0; padding: 0 0 0 22px; }
+  .duo li { font-size: 14px; line-height: 1.5; color: var(--muted); margin-bottom: 10px; padding-left: 4px; }
+  .duo li b { color: var(--ink); font-weight: 600; }
+
+  /* Roadmap */
+  details.phase {
+    background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+    margin-top: 12px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  details.phase summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 14px;
+    padding: 15px 18px; font-family: "Libre Franklin", sans-serif; font-weight: 700; font-size: 15px;
+  }
+  details.phase summary::-webkit-details-marker { display: none; }
+  details.phase summary::after { content: "+"; margin-left: auto; font-size: 20px; font-weight: 400; color: var(--faint); }
+  details.phase[open] summary::after { content: "–"; }
+  details.phase summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .ptag {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600;
+    padding: 3px 8px 2px; border-radius: 3px; letter-spacing: .04em;
+  }
+  .ptag.p0 { background: var(--crit-soft); color: var(--crit); }
+  .ptag.p1 { background: var(--high-soft); color: var(--high); }
+  .ptag.p2 { background: var(--med-soft); color: var(--med); }
+  .ptag.p3 { background: var(--accent-soft); color: var(--accent); }
+  .phase .items { border-top: 1px solid var(--line); padding: 6px 18px 14px; }
+  .item { display: grid; grid-template-columns: 44px 1fr 44px; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .item:last-child { border-bottom: none; }
+  .item .id { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-weight: 600; color: var(--accent); }
+  .item .tx { font-size: 14px; line-height: 1.5; color: var(--muted); }
+  .item .tx b { color: var(--ink); font-weight: 600; }
+  .item .ef { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--faint); text-align: right; }
+
+  /* Unverified */
+  .unv { background: var(--card); border: 1px dashed var(--line); border-radius: 6px; padding: 20px 22px; margin-top: 22px; }
+  .unv ul { margin: 0; padding-left: 20px; }
+  .unv li { font-size: 14px; color: var(--muted); line-height: 1.55; margin-bottom: 8px; }
+  .unv li b { color: var(--ink); font-weight: 600; }
+
+  /* Footer */
+  .foot { margin-top: 64px; padding-top: 20px; border-top: 3px solid var(--ink); font-size: 13.5px; color: var(--muted); }
+  .foot .mono { font-size: 12px; }
+  .reports { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 18px; }
+  .rep {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--accent);
+    background: var(--accent-soft); border-radius: 3px; padding: 3px 8px 2px;
+  }
+
+  @media (max-width: 640px) {
+    .duo { grid-template-columns: 1fr; }
+    .finding { grid-template-columns: 1fr; gap: 6px; }
+    .finding .n { display: none; }
+    .pill { width: 76px; }
+    .item { grid-template-columns: 40px 1fr; }
+    .item .ef { grid-column: 2; text-align: left; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Independent Product &amp; Engineering Audit</p>
+    <h1>Hisaab — Audit 2026&#8209;09</h1>
+    <div class="meta">
+      <span>Commit <b>2248327</b> (main)</span>
+      <span>Dated <b>2026-09-02</b></span>
+      <span><b>13</b> reports · <b>97</b> agents</span>
+      <span>Crit/high claims <b>adversarially verified</b></span>
+    </div>
+  </header>
+
+  <div class="verdict">
+    <h2>Do not launch publicly in the current state</h2>
+    <p>A genuinely differentiated product on an unusually disciplined codebase, sitting on an unlaunchable operational and security foundation. The wedge is real — nobody else combines consent-based udhaar, provably-fair kameti, roman-Urdu-first framing, and free AI entry. The craft is real — strict TypeScript, one data-access layer, ~90 test files over the money math. But the audit confirmed <b>1 systemic critical, 2 money-corruption criticals, 1 false-claims cluster, and ~20 confirmed highs</b>. Most fixes are small-to-medium effort: roughly 3–5 focused weeks, plus one afternoon action that gates everything else.</p>
+  </div>
+
+  <section>
+    <h2 class="sec">Three Things Make It Unlaunchable</h2>
+    <div class="blockers">
+      <div class="blocker">
+        <h3>The production security state is unprovable</h3>
+        <p>The entire trust boundary lives in 40 hand-applied SQL migration files with no runner, ledger, or drift detection. Under the baseline schema, any user can self-insert into any group; the fix exists only in an unverified migration, and the prod verification SQL has never been run.</p>
+        <span class="mono">05-security · 04-supabase · 02-repository</span>
+      </div>
+      <div class="blocker">
+        <h3>Confirmed cross-user money corruption</h3>
+        <p>Account deletion hard-deletes a user's expenses inside shared groups — an owner's deletion destroys the whole group ledger. Ex-members can rewrite settlement history. Two-device edits lose loan repayments. Flaky networks can leave money half-moved with no repair queue.</p>
+        <span class="mono">03-performance C1 · 05-security H4 · 12-qa</span>
+      </div>
+      <div class="blocker">
+        <h3>The trust marketing is falsifiable in week one</h3>
+        <p>The Play listing claims a PIN lock (dead code — zero importers), offline-first entry (all offline writes throw), and USD/EUR/GBP (unsupported). For a product whose moat is honesty, discoverable false security claims are the fastest kill-shot.</p>
+        <span class="mono">12-qa F-1 · 11-competitive · 06-ux</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Scorecard</h2>
+    <p class="sec-note">1–10, adjudicated across all thirteen reports. Where the summary score differs from a report's self-score, the full document states why.</p>
+    <div class="scores">
+      <div class="score s-crit"><div class="row"><span class="name">Analytics</span><span class="num">1</span></div><div class="bar"><i style="width:10%"></i></div><p>Zero product analytics, no feedback channel; the mode fork and invite loop are unfalsifiable at launch.</p></div>
+      <div class="score s-crit"><div class="row"><span class="name">Security</span><span class="num">3</span></div><div class="bar"><i style="width:30%"></i></div><p>1 critical + 10 highs, all confirmed; client-writable trust predicates atop unprovable policy state.</p></div>
+      <div class="score s-crit"><div class="row"><span class="name">Scalability</span><span class="num">3</span></div><div class="bar"><i style="width:30%"></i></div><p>Unbounded fetches, refetch amplification, hottest tables on postgres_changes — binds before real MAU.</p></div>
+      <div class="score s-warn"><div class="row"><span class="name">Performance</span><span class="num">4</span></div><div class="bar"><i style="width:40%"></i></div><p>Real engineering (mirror, route-splitting) each defeated by an adjacent decision; 1.15&nbsp;MB entry on 3G.</p></div>
+      <div class="score s-warn"><div class="row"><span class="name">Mobile Experience</span><span class="num">4</span></div><div class="bar"><i style="width:40%"></i></div><p>Real chrome craft undermined by keyboard occlusion, dropped deep links, and zero-FCM checkout builds.</p></div>
+      <div class="score s-warn"><div class="row"><span class="name">Accessibility</span><span class="num">4</span></div><div class="bar"><i style="width:40%"></i></div><p>Exemplary reduced-motion, but systemic small-text contrast failures and an untrappable shared modal.</p></div>
+      <div class="score s-warn"><div class="row"><span class="name">UX</span><span class="num">5</span></div><div class="bar"><i style="width:50%"></i></div><p>High polish ceiling with localized betrayals: broken-language high-stakes sentences, silent data drops.</p></div>
+      <div class="score s-ok"><div class="row"><span class="name">Architecture</span><span class="num">6</span></div><div class="bar"><i style="width:60%"></i></div><p>Enforced layering and one DAL; docked for the unverifiable backend estate and client-resident money engine.</p></div>
+      <div class="score s-ok"><div class="row"><span class="name">Product Design</span><span class="num">6</span></div><div class="bar"><i style="width:60%"></i></div><p>Two-mode concept, consent udhaar, and kameti witness are original; record-vs-move ambiguity taxes it.</p></div>
+      <div class="score s-ok"><div class="row"><span class="name">Maintainability</span><span class="num">6</span></div><div class="bar"><i style="width:60%"></i></div><p>Diligence-ready documentation culture vs the migration junk drawer and a 3,089-line i18n monolith.</p></div>
+      <div class="score s-ok"><div class="row"><span class="name">Code Quality</span><span class="num">7</span></div><div class="bar"><i style="width:70%"></i></div><p>Zero real <span class="mono">any</span> in 69k strict lines, tested money math; held back by god-store and 1,000-line pages.</p></div>
+      <div class="score s-ok"><div class="row"><span class="name">Competitive Position</span><span class="num">7</span></div><div class="bar"><i style="width:70%"></i></div><p>The wedge is real and unoccupied — execution-gated by false claims and worst-in-set onboarding.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Top 10 Findings</h2>
+    <p class="sec-note">Deduplicated across all reports (the PIN no-op appeared in seven, the migration estate in eight). Worst first. Full evidence and exploit scenarios live in the source reports.</p>
+
+    <div class="finding f-crit"><span class="n">1</span><span class="pill crit">Critical</span><div>
+      <h3>Unprovable production schema — 40 hand-applied migrations, no runner or ledger</h3>
+      <p>Baseline RLS lets any authenticated user self-insert into any group as a connected member; the fix exists only in an unverified migration. Functions redefined in up to five files, an alphabetical-order apply trap, and the client calls an RPC a later migration drops. Every security claim is conditional on unknowable Studio state.</p>
+      <div class="ev">supabase-schema.sql:364-384 · docs/play-store-launch-tracker.md:30 → 05, 04, 02, 13</div>
+    </div></div>
+
+    <div class="finding f-crit"><span class="n">2</span><span class="pill crit">Critical</span><div>
+      <h3>Account deletion destroys shared-group ledgers via FK cascade</h3>
+      <p>A member's deletion hard-deletes their expenses inside shared groups, silently rewriting everyone's balances; a group owner's deletion cascades away the entire group. No tombstone, no notification — while <span class="mono">leave_group</span> carefully blocks unbalanced exits. Confirmed by both adversarial verifiers.</p>
+      <div class="ev">supabase-schema.sql:194,212,237 → 03 C1, 04, 05</div>
+    </div></div>
+
+    <div class="finding f-crit"><span class="n">3</span><span class="pill crit">Critical</span><div>
+      <h3>Three false store-listing claims in a trust-positioned product</h3>
+      <p>PIN lock settable with a success toast but never enforced (<span class="mono">PinLockScreen</span> has zero importers); "offline-first" while every offline write throws behind a disabled flag; USD/EUR/GBP claimed but unsupported. The listing itself asserts "every feature named is a shipped feature."</p>
+      <div class="ev">PinLockScreen.tsx:12 · outboxRunner.ts:26-29 · play-store-listing.md:35,43,50,145 → 12 F-1, 11, 05, 06</div>
+    </div></div>
+
+    <div class="finding f-high"><span class="n">4</span><span class="pill high">High</span><div>
+      <h3>Money can be left permanently half-moved on flaky networks</h3>
+      <p>Multi-leg mutations are sequential client calls; compensation and refetch die in the same outage; no persisted repair queue exists. A mid-transfer drop debits the source and never credits the destination — routine, not exceptional, on the target market's networks. Borderline critical.</p>
+      <div class="ev">mutationSafety.ts:10-13 · transactionStore.ts:630-642 → 07 MF-01, 12 F-4</div>
+    </div></div>
+
+    <div class="finding f-high"><span class="n">5</span><span class="pill high">High</span><div>
+      <h3>Ex-members can fabricate, rewrite, and hard-delete shared group ledger rows</h3>
+      <p>A leftover FOR ALL authorship-only policy on <span class="mono">group_settlements</span> ORs past the membership checks; UPDATE/DELETE policies never check membership; the validation trigger skips amount-only updates. In splits_only mode, this ledger is the entire money record.</p>
+      <div class="ev">prelaunch-hardening.sql:59-61,307-310 → 05 H4, 04 F-RLS1 · CONFIRMED</div>
+    </div></div>
+
+    <div class="finding f-high"><span class="n">6</span><span class="pill high">High</span><div>
+      <h3>Cross-user trust predicates are client-writable</h3>
+      <p>Consent can be forged by one PATCH on <span class="mono">linked_profile_id</span>; owners can conscript any user into a group and wedge the exit shut; the invite token hash is member-readable and is the accepted credential; co-members can push arbitrary app-branded FCM notifications — phishing through the app's own trust chrome.</p>
+      <div class="ev">phase1-persons.sql:26-32 · notifications-rls.sql:35-44 → 05 H2/H6/H3/H5, 08 N-3 · CONFIRMED</div>
+    </div></div>
+
+    <div class="finding f-high"><span class="n">7</span><span class="pill high">High</span><div>
+      <h3>Rate-limit theater, user enumeration, and identity spoofing</h3>
+      <p>The join-code brute-force limiter is a structural no-op (failure rows rolled back by the same RAISE); profile-code lookup is unthrottled — full user-base enumeration; anyone can claim any phone number and the UI decorates it with a VerifiedBadge; sign-out silently fails to end sessions on network failure.</p>
+      <div class="ev">fix-group-invite-join-rpc.sql:46-50 · supabaseAuthStore.ts:171-183 → 05 H1/H8/H9/H10 · CONFIRMED</div>
+    </div></div>
+
+    <div class="finding f-high"><span class="n">8</span><span class="pill high">High</span><div>
+      <h3>Concurrency safety exists only for account balances</h3>
+      <p>Loans are absolute read-then-write (two-device repayments lose updates while payment rows persist); the group-expense version column is stored but never compared; the settlement cap is client-side TOCTOU; double-tap can duplicate a cross-user debt request; the kameti ballot is re-rollable after witnesses saw the draw.</p>
+      <div class="ev">loanStore.ts:87-98 · splitStore.ts:1048-1076 → 12 F-2/6/7/8/13, 05 M10</div>
+    </div></div>
+
+    <div class="finding f-high"><span class="n">9</span><span class="pill high">High</span><div>
+      <h3>The data layer defeats itself: silent history loss, stale balances, linear cost growth</h3>
+      <p>Unbounded selects are silently truncated (~1,000 rows) and the mirror deletes the overflow locally — invisible loss of older history at about a year of use. Every money write voids the sync cursor, triggering a full-table refetch per entry; the resume refresh omits exactly the money tables; 14–21 queries fire per app switch.</p>
+      <div class="ev">mirrorCache.ts:107-143,233-236 · realtime.ts:184-207 → 04, 03 · CONFIRMED</div>
+    </div></div>
+
+    <div class="finding f-high"><span class="n">10</span><span class="pill high">High</span><div>
+      <h3>Cross-user udhaar — the flagship feature — is dead for 6 of 8 currencies</h3>
+      <p>The linked request/settlement tables hard-CHECK <span class="mono">currency IN ('AED','PKR')</span> while the app ships eight. A Saudi, Qatari, or Filipino user — explicitly targeted personas — fills the whole form, hits a raw Postgres error, and no loan is recorded.</p>
+      <div class="ev">phase2b-linked-requests.sql:14 · AddLoanModal.tsx:98-116 → 04 F-MIG2, 03 H6 · CONFIRMED</div>
+    </div></div>
+  </section>
+
+  <section>
+    <h2 class="sec">Risks &amp; Opportunities</h2>
+    <div class="duo">
+      <div class="risks">
+        <h3>Top Risks</h3>
+        <ol>
+          <li><b>Trust collapse at launch</b> — false PIN/offline/currency claims falsifiable by any tester in week one; Play misrepresentation exposure.</li>
+          <li><b>Failed due diligence on schema provenance</b> — no acquirer can verify which of 40 migrations production runs.</li>
+          <li><b>A cross-user money-corruption incident going WhatsApp-viral</b> in the tight-knit communities whose records back real cash settlements.</li>
+          <li><b>Fraud &amp; harassment platform liability</b> — phone impersonation with a verified badge, app-branded phishing pushes, and zero block/mute/report.</li>
+          <li><b>Launching blind</b> — no analytics, no feedback channel, Sentry blind to the money layer; regressions detectable only via one-star reviews.</li>
+          <li><b>Scaling wall at modest MAU</b> — full refetch per write, ~3M+ requests/day at 10k users; the app slows with faithful use.</li>
+          <li><b>Bus factor 1 across the entire ops surface</b> — one human, prod-first SQL, one machine, an unrecoverable keystore.</li>
+          <li><b>Monetization void</b> — a promise string and a mock; the CreditBook precedent shows the free-ledger dead end.</li>
+          <li><b>Market-entry friction</b> — heaviest onboarding in the set vs a phone+OTP-trained market; "Urdu-first" actually defaults to English.</li>
+          <li><b>Android version skew</b> — no OTA path plus prod-first schema changes; deep links, App Links, and FCM broken in the current checkout.</li>
+        </ol>
+      </div>
+      <div class="opps">
+        <h3>Top Opportunities</h3>
+        <ol>
+          <li><b>Make the trust story true, then lead with it</b> — the no-sync positioning is validated by incumbents' top complaint stream.</li>
+          <li><b>Lead ASO with kameti + provably-fair draw + witness link</b> — the only unoccupied category in the research (after making the ballot binding).</li>
+          <li><b>Automatic counterparty loop</b> — WhatsApp share at save + a per-person living balance link; the khata category's proven growth engine.</li>
+          <li><b>Phone/OTP onboarding</b> and collapsing the intent/mode double-decision to match the market's trained entry grammar.</li>
+          <li><b>Guest (non-app) members in groups</b> — every split competitor has it; removes "everyone must install Hisaab."</li>
+          <li><b>Splitwise-refugee capture</b> — the daily-cap churn wave is open now; free-forever positioning plus an importer.</li>
+          <li><b>Ship analytics + feedback before scaling acquisition</b> — the full PostHog design exists in report 10 at ~4–5 dev-days.</li>
+          <li><b>Premium AI tier as first monetization</b> — proven willingness-to-pay, honors the free-tracking promise, avoids the custody trap.</li>
+          <li><b>Debt-minimization settle-up + one unified "who owes me" surface</b> netting the three split mechanisms.</li>
+          <li><b>"Settle outside, record inside" rail chips + per-record edit history</b> — the dispute-resolution layer a two-sided ledger needs.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Prioritized Roadmap</h2>
+    <p class="sec-note">Effort: S = hours–2 days · M = days–2 weeks · L = multi-week. The full roadmap with evidence and reasoning per item is in the executive summary document.</p>
+
+    <details class="phase" open>
+      <summary><span class="ptag p0">P0</span> Critical — fix before any public exposure <span class="mono" style="margin-left:6px;color:var(--faint);font-size:12px">11 items</span></summary>
+      <div class="items">
+        <div class="item"><span class="id">C1</span><span class="tx"><b>Run every verification SQL against production, commit the outputs, adopt CLI-managed migrations.</b> The single highest-leverage action in the audit — converts ~15 conditional findings into known state.</span><span class="ef">S+L</span></div>
+        <div class="item"><span class="id">C2</span><span class="tx"><b>Fix the account-deletion cascade</b> — soft-delete/reassign authored rows in shared groups; ownership transfer before owned-group deletion.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">C3</span><span class="tx"><b>Resolve the three false listing claims</b> — wire the PIN lock (or remove it and the claim), delete the offline-first claim, align the currency list. Claim edits are an afternoon; do them first.</span><span class="ef">S–M</span></div>
+        <div class="item"><span class="id">C4</span><span class="tx"><b>Close ex-member ledger falsification</b> — drop the FOR ALL settlements policy; membership+authorship per-command policies; extend the trigger.</span><span class="ef">S</span></div>
+        <div class="item"><span class="id">C5</span><span class="tx"><b>Fix rate limiting + enumeration</b> — make the join-code limiter actually commit failures; throttle profile-code lookup; expire join codes.</span><span class="ef">S</span></div>
+        <div class="item"><span class="id">C6</span><span class="tx"><b>Protect consent predicates</b> — block direct writes to linked_profile_id; owner-added members start as invited; hide invite token hashes.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">C7</span><span class="tx"><b>Move notification fan-out server-side</b>; restrict client INSERT to self; per-sender rate limit. Kills app-branded phishing and makes group delivery reliable.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">C8</span><span class="tx"><b>Session hygiene</b> — handle signOut failure, re-auth before password change/deletion, drop the VerifiedBadge from unverified phone matches.</span><span class="ef">S</span></div>
+        <div class="item"><span class="id">C9</span><span class="tx"><b>Widen the AED/PKR currency CHECKs</b> to all 8 supported currencies; align client gates. Unblocks the flagship feature for the Gulf personas.</span><span class="ef">S</span></div>
+        <div class="item"><span class="id">C10</span><span class="tx"><b>Concurrency floor</b> — optimistic lock on loans; compare the expense version; server-side settlement cap; idempotency keys; kameti drawn-guard.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">C11</span><span class="tx"><b>Make splits_only repayment records durable</b> — ledger-mode payment rows must not be best-effort; the documented vanished-records incident class recurs today.</span><span class="ef">S–M</span></div>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="ptag p1">P1</span> High priority — 30 days <span class="mono" style="margin-left:6px;color:var(--faint);font-size:12px">10 items</span></summary>
+      <div class="items">
+        <div class="item"><span class="id">H1</span><span class="tx"><b>Wire reportError into every store catch</b> + native crash reporting — the money layer is currently invisible to operators.</span><span class="ef">S</span></div>
+        <div class="item"><span class="id">H2</span><span class="tx"><b>Ship product analytics per report 10's design</b> (PostHog EU, 28 events, 5 funnels, consent) + a feedback channel.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">H3</span><span class="tx"><b>Fix the Android launch chain</b> — cold-start deep links, assetlinks.json, google-services.json with release guard, contextual permission asks.</span><span class="ef">S–M</span></div>
+        <div class="item"><span class="id">H4</span><span class="tx"><b>Data-layer triage</b> — advance (don't delete) the sync cursor; money tables in resume refresh; debounce realtime resume; keyset pagination with truncation detection. ~10x bandwidth cut for ~2 days of work.</span><span class="ef">S–M</span></div>
+        <div class="item"><span class="id">H5</span><span class="tx"><b>i18n integrity</b> — fix the default language, sweep hardcoded English off core screens and who-owes-whom sentences, localize cross-user notifications.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">H6</span><span class="tx"><b>HTTP security headers + logout hygiene</b> — CSP/HSTS via vercel.json; register-based store reset; cancel reminders and push tokens at sign-out.</span><span class="ef">S</span></div>
+        <div class="item"><span class="id">H7</span><span class="tx"><b>PWA input integrity</b> — keyboard occlusion fix, hardware-back handling for sheets, scroll restoration.</span><span class="ef">S</span></div>
+        <div class="item"><span class="id">H8</span><span class="tx"><b>UX honesty fixes</b> — stop discarding the EMI plan on linked loans, transactional backup import, group-preview before join, unify primary-currency fallback.</span><span class="ef">S–M</span></div>
+        <div class="item"><span class="id">H9</span><span class="tx"><b>Version-skew gate</b> — min-supported-version check at boot with an update screen; keep RPC changes additive until OTA exists.</span><span class="ef">S</span></div>
+        <div class="item"><span class="id">H10</span><span class="tx"><b>Server-enforced money bounds</b> — CHECK constraints on amounts/currencies, split-sum validation, store-level positivity guards.</span><span class="ef">M</span></div>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="ptag p2">P2</span> Medium priority — 90 days <span class="mono" style="margin-left:6px;color:var(--faint);font-size:12px">9 items</span></summary>
+      <div class="items">
+        <div class="item"><span class="id">M1</span><span class="tx"><b>Decide the offline story</b> — finish the outbox behind an integration harness or delete the scaffold; long-term, single-RPC atomic money moves.</span><span class="ef">L</span></div>
+        <div class="item"><span class="id">M2</span><span class="tx"><b>Performance program</b> — vendor chunking + CI bundle budget, virtualized lists, SQL-side aggregates, Broadcast realtime, deduped boot loads.</span><span class="ef">M–L</span></div>
+        <div class="item"><span class="id">M3</span><span class="tx"><b>Accessibility floor</b> — dialog semantics + focus trap on the shared Modal, contrast fixes, a11y linting in CI, dark-ramp contrast pass.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">M4</span><span class="tx"><b>Design-system truth</b> — delete or adopt the dead token layers; migrate Button off legacy indigo; fix palette leaks.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">M5</span><span class="tx"><b>Notification maturity</b> — dedicated opt-in, per-group mute, quiet hours, deep links, missing events (kameti draw, budget breach), badge fix.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">M6</span><span class="tx"><b>Trust &amp; safety</b> — blocks table checked by every cross-user RPC, report actions, witness-link expiry, phone-OTP before discoverability.</span><span class="ef">M–L</span></div>
+        <div class="item"><span class="id">M7</span><span class="tx"><b>Test the trust boundary</b> — pgTAP RLS/RPC suite in CI against migrated Postgres; Playwright smoke in both modes; fix the fictitious UTC pin.</span><span class="ef">L</span></div>
+        <div class="item"><span class="id">M8</span><span class="tx"><b>Unify the calendar + close competitive gaps</b> — migrate ~20 UTC date sites to local; guest members; debt-minimization settle-up; edit history.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">M9</span><span class="tx"><b>Ops floor</b> — OTA updates, deploy gating, documented rollback, dependency scanning, typed Supabase client, keystore backup verification.</span><span class="ef">M</span></div>
+      </div>
+    </details>
+
+    <details class="phase">
+      <summary><span class="ptag p3">P3</span> Long-term strategic <span class="mono" style="margin-left:6px;color:var(--faint);font-size:12px">7 items</span></summary>
+      <div class="items">
+        <div class="item"><span class="id">L1</span><span class="tx"><b>Phone/OTP-first auth migration</b> + onboarding collapse — the largest single conversion tax vs the market's trained grammar.</span><span class="ef">L</span></div>
+        <div class="item"><span class="id">L2</span><span class="tx"><b>Counterparty living-balance link + WhatsApp nudge loop</b> as the growth engine.</span><span class="ef">M–L</span></div>
+        <div class="item"><span class="id">L3</span><span class="tx"><b>Monetization mechanism</b> — premium-AI entitlements with real billing, honoring the free-tracking promise.</span><span class="ef">L</span></div>
+        <div class="item"><span class="id">L4</span><span class="tx"><b>Progressive server-side money engine</b> — move processTransaction branches into Postgres RPCs; the durable fix for atomicity and concurrency.</span><span class="ef">L</span></div>
+        <div class="item"><span class="id">L5</span><span class="tx"><b>Staging environment</b> — schema changes land on staging first; previews stop pointing at prod.</span><span class="ef">M</span></div>
+        <div class="item"><span class="id">L6</span><span class="tx"><b>Kameti-led category marketing + Splitwise-refugee campaign + iOS evaluation</b> — sequenced after the trust story is true.</span><span class="ef">M–L</span></div>
+        <div class="item"><span class="id">L7</span><span class="tx"><b>Business-invariant monitoring</b> — a reconciliation alarm for balance drift, RPC error alerting, uptime checks.</span><span class="ef">M</span></div>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <h2 class="sec">What Could Not Be Verified</h2>
+    <div class="unv">
+      <ul>
+        <li><b>Live Supabase state is the #1 unknown</b> — which of the 40 migrations production actually runs gates most security conclusions. Several "fixed" claims are conditional on it.</li>
+        <li><b>Push pipeline liveness</b> — Firebase project, google-services.json in the shipped AAB, edge-function deployment and secrets.</li>
+        <li><b>Two July blockers were verified by no phase</b> — B5 (goals silently losing money) and B7 (AI advice corrupting data); the Hisaab AI implementation itself was never audited.</li>
+        <li><b>Real-device behavior</b> — keyboard occlusion, OEM reminder durability (Xiaomi/Oppo/Vivo), dark-mode rendering, sub-$150-hardware cold start: all code-inferred, none device-tested.</li>
+        <li><b>Contact-discovery privacy reconciliation</b> — every unlinked contact's phone number is auto-submitted to the discovery RPC; nobody reconciled this against the published data-safety text.</li>
+        <li><b>Native-speaker roman-Urdu review</b> and the moderated usability protocol from report 06.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p><b>Full engagement:</b> fourteen documents in <span class="mono">docs/audit-2026-09/</span> — the executive summary plus thirteen phase reports, every claim cited to file:line at commit <span class="mono">2248327</span>. Critical and high security, performance, and Supabase findings survived two independent adversarial refutation attempts each; refuted claims are excluded and listed in per-report appendices.</p>
+    <div class="reports">
+      <span class="rep">00-executive-summary</span><span class="rep">01-product</span><span class="rep">02-repository</span><span class="rep">03-performance</span><span class="rep">04-supabase</span><span class="rep">05-security</span><span class="rep">06-ux</span><span class="rep">07-mobile</span><span class="rep">08-notifications</span><span class="rep">09-ui-quality</span><span class="rep">10-analytics</span><span class="rep">11-competitive</span><span class="rep">12-qa</span><span class="rep">13-standards</span>
+    </div>
+    <p class="mono" style="color:var(--faint)">Independent 13-phase adversarial audit · 97 agents · prepared 2026-09-02. Contains security-sensitive findings — share deliberately.</p>
+  </footer>
+</div>
