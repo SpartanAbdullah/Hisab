@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Plus, Wallet2, Pencil, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
+import { Card3D } from '../components/Card3D';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { Modal } from '../components/Modal';
@@ -174,7 +175,10 @@ export function BudgetsPage() {
             income once; the pencil re-opens the editor. */}
         {loadStatus === 'ready' && (
           flex ? (
-            <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+            // 3D clay tier 2. The tint follows the traffic light the card
+            // already computes, so the surface says the same thing the number
+            // says — never a green card over a red figure.
+            <Card3D tint={flex.state === 'red' ? 'coral' : flex.state === 'yellow' ? 'gold' : 'mint'} padding="sm">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
                   {t('flex_title')}
@@ -208,9 +212,9 @@ export function BudgetsPage() {
                   {flex.state === 'red' ? t('flex_out_hint') : t('flex_low_hint')}
                 </p>
               )}
-            </div>
+            </Card3D>
           ) : (
-            <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+            <Card3D padding="sm">
               <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
                 {t('flex_title')}
               </p>
@@ -220,12 +224,12 @@ export function BudgetsPage() {
               <button onClick={() => setShowIncomeModal(true)} className="mt-3 cta-secondary w-full">
                 {t('flex_set_income')}
               </button>
-            </div>
+            </Card3D>
           )
         )}
 
         {loadStatus === 'ready' && leftSummary.length > 0 && (
-          <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+          <Card3D padding="sm">
             <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
               {t('budget_left_title')}
             </p>
@@ -243,7 +247,7 @@ export function BudgetsPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </Card3D>
         )}
 
         {loadStatus === 'loading' && usages.length === 0 ? (
@@ -252,6 +256,7 @@ export function BudgetsPage() {
           loadStatus === 'ready' ? (
             <EmptyState
               icon={Wallet2}
+              clayIcon="target"
               tone="accent"
               title={t('bud_empty_title')}
               description={t('bud_empty_desc')}

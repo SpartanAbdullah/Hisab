@@ -5,6 +5,17 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   icon?: React.ReactNode;
+  /**
+   * Opt into the 3D clay treatment: a solid bottom lip that shrinks 3px→1px
+   * while the button travels 2px down on press. Off by default — every
+   * existing call site keeps the exact class string it had before.
+   *
+   * Only the four solid variants have a lip (see BUTTON_DEPTH_CLASSES);
+   * `ghost` and `gradient` ignore it, because a lip under a transparent fill
+   * reads as a stray underline and `gradient` already paints its own
+   * pressed-overlay state via `.btn-gradient`.
+   */
+  depth?: boolean;
   children: React.ReactNode;
 }
 
@@ -39,6 +50,24 @@ const sizes = {
   lg: 'px-5 py-4 text-sm rounded-2xl gap-2 w-full justify-center',
 };
 
+// 3D clay lip, per variant (index.css, "3D CLAY" block). Each `.clay-depth-*`
+// class only picks the lip COLOUR — the geometry and the press live on
+// `.clay-depth`. A tint lip is lighter than its surface, which is right for a
+// pale tile and wrong under a saturated fill, so these point at the
+// --clay-solid-*-lip tokens instead of the tint ramps.
+//
+// Empty string = this variant has no lip; `depth` is then a no-op for it.
+// Not exported: it is an implementation detail of the prop, unlike
+// BUTTON_VARIANT_CLASSES which real call sites read.
+const BUTTON_DEPTH_CLASSES: Record<keyof typeof BUTTON_VARIANT_CLASSES, string> = {
+  primary: 'clay-depth clay-depth-primary',
+  secondary: 'clay-depth clay-depth-secondary',
+  danger: 'clay-depth clay-depth-danger',
+  warning: 'clay-depth clay-depth-warning',
+  ghost: '',
+  gradient: '',
+};
+
 export function Button({
   variant = 'primary',
   size = 'md',
@@ -46,15 +75,32 @@ export function Button({
   icon,
   children,
   disabled,
+  depth = false,
   className = '',
   ...props
 }: Props) {
+  const depthClass = depth ? BUTTON_DEPTH_CLASSES[variant] : '';
+
+  // The two press treatments are mutually exclusive. Tailwind 4's scale
+  // utilities set the `scale` property while `.clay-depth` sets `transform`,
+  // so leaving both on would compose into a squeeze AND a drop — two presses
+  // for one tap. When there is no lip, the class list is byte-identical to
+  // what this component emitted before `depth` existed.
+  const classes = [
+    'inline-flex items-center font-semibold transition-all duration-200',
+    depthClass || 'active:scale-[0.97]',
+    'disabled:opacity-60 disabled:cursor-not-allowed',
+    depthClass ? '' : 'disabled:active:scale-100',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 tracking-tight',
+    BUTTON_VARIANT_CLASSES[variant],
+    sizes[size],
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <button
-      {...props}
-      disabled={disabled || loading}
-      className={`inline-flex items-center font-semibold transition-all duration-200 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 tracking-tight ${BUTTON_VARIANT_CLASSES[variant]} ${sizes[size]} ${className}`}
-    >
+    <button {...props} disabled={disabled || loading} className={classes}>
       {loading ? <Loader2 size={16} className="animate-spin" /> : icon}
       {children}
     </button>

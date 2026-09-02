@@ -1357,3 +1357,554 @@ input, select, textarea {
   /* NOTE: .chip-status (a proposed status-badge pill token) was removed
    * here — 0 call sites (docs/design-system.md). */
 }
+
+/* ╔══════════════════════════════════════════════════════════════════════╗
+ * ║  3D CLAY  — start of block. Everything between this banner and the   ║
+ * ║  matching "3D CLAY — end of block" banner belongs to the clay        ║
+ * ║  treatment. Nothing above it was changed; no existing token VALUE    ║
+ * ║  is redefined here, only new --clay-* properties are added.          ║
+ * ╚══════════════════════════════════════════════════════════════════════╝
+ *
+ * WHAT THIS IS
+ * A two-tier tactile surface system: soft, lit-from-above "clay" that a
+ * 3D rendered icon can float over (the JazzCash committee-page feel the
+ * founder asked for), expressed as tokens + utilities so it reads as a
+ * system rather than as decoration on one screen.
+ *
+ * THE TWO TIERS — and they are never collapsed into one:
+ *   .clay-tile  PRESSABLE.     Gradient surface, inset top highlight,
+ *                              ambient + tinted key shadow, and a solid
+ *                              bottom LIP. The lip is the affordance: it
+ *                              shrinks 3px→1px and the tile travels 2px
+ *                              down on :active. rounded 16px.
+ *   .clay-card  INFORMATIONAL. Same highlight and gradient, softer
+ *                              two-layer shadow, NO lip, NO press,
+ *                              rounded 24px. The radius difference is
+ *                              deliberate: the two tiers must be
+ *                              distinguishable at a glance, before the
+ *                              user ever touches one.
+ *
+ * WHY THIS BLOCK IS MOSTLY NON-LAYERED
+ * The surface/shadow rules sit OUTSIDE @layer components on purpose:
+ * `.clay-depth` has to beat the `shadow-sm`/`active:shadow-none` Tailwind
+ * utilities already baked into BUTTON_VARIANT_CLASSES, and a layered rule
+ * always loses to a utility. Same trick the html.dark overrides above use.
+ * GEOMETRY (padding, min-size, radius, type) lives in the @layer components
+ * block at the bottom of this section instead, so page code can still
+ * override it with plain `p-4` / `rounded-none` utilities.
+ *
+ * MOTION CONTRACT
+ * Only `transform` transitions (120ms). The lip change is instantaneous —
+ * box-shadow is never animated, per the MOTION SYSTEM performance contract
+ * further up this file (transform/opacity only; this app ships to low-end
+ * Android WebViews). Under prefers-reduced-motion the transform is dropped
+ * and the instant lip change carries the whole press on its own, so a
+ * reduced-motion user still gets real tap feedback.
+ *
+ * See docs/design-system.md §10 for the do/don't rules and the measured
+ * contrast table behind every value below.
+ */
+
+/* ---- Tier geometry + universal lighting ----------------------------------
+ * Radii are NOT new values: 16px is the canonical card/button radius
+ * (design-system §4 "lg") and 24px is the .sukoon-body corner. The ambient
+ * shadow colour is navy-900 (11 14 42), the same ink every other shadow in
+ * this file is tinted with (.modal-sheet, .sheet-transient, .app-loading-mark).
+ *
+ * The *-alpha properties exist so dark mode can switch a whole shadow layer
+ * off without the box-shadow list changing shape — one list, two themes. */
+:root {
+  --clay-radius-tile: 16px;
+  --clay-radius-card: 24px;
+
+  --clay-lip-depth: 3px;
+  --clay-lip-depth-pressed: 1px;
+  --clay-press-travel: 2px;
+  --clay-press-duration: 120ms;
+  --clay-press-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 1px inset top highlight — the "lit from above" cue that makes a flat
+   * gradient read as a curved surface. */
+  --clay-highlight: rgba(255, 255, 255, 0.6);
+
+  /* Ambient (contact) shadow — navy ink, barely there. */
+  --clay-ambient-rgb: 11 14 42;
+  --clay-ambient-alpha: 0.06;
+
+  /* Key (cast) shadow — tinted with the tile's own colour so the tile looks
+   * like it is made of that material rather than sitting on a grey drop. */
+  --clay-key-alpha: 0.35;
+  --clay-card-key-alpha: 0.3;
+
+  /* Rim light — dark mode only. Transparent here so the same box-shadow list
+   * is valid in both themes. */
+  --clay-rim: 0 0 0 0 rgba(0, 0, 0, 0);
+
+  /* Selection ring. Transparent by default and carried as a slot in the tile's
+   * box-shadow list, so `.clay-tile-selected` can switch it on by remapping
+   * ONE property instead of redeclaring the whole (non-layered) shadow stack
+   * and re-stating four values it does not care about. */
+  --clay-ring: 0 0 0 0 rgba(0, 0, 0, 0);
+
+  /* ---- Tint ramps -------------------------------------------------------
+   * Five tints the founder specified (gold/sky/blush/mint/coral) plus two
+   * additions, each with a stated reason:
+   *
+   *   accent  — Button's `depth` primary. design-system §2 makes accent
+   *             violet the app's real primary-action colour and pay-coral
+   *             the money-OUT semantic; painting every primary CTA coral
+   *             would break the "coral means you owe" read users get dozens
+   *             of times a week. Coral stays available as a tint, it just
+   *             isn't wired to the primary button.
+   *   neutral — Card3D's default. An informational surface with no domain
+   *             meaning must not borrow one; this maps to the existing cream
+   *             card ramp.
+   *
+   * Each tint supplies five properties:
+   *   -top     gradient start (the -100 rung; the darker stop in light mode)
+   *   -bottom  gradient end   (the -50 rung)
+   *   -lip     the solid bottom edge
+   *   -key     an "R G B" triple for the tinted key shadow / icon glow
+   *   -strong  a saturated on-tint colour for a badge dot or icon fallback
+   *
+   * Where the ramp already exists it is REFERENCED, not copied, so it flips
+   * with the rest of the palette in dark mode for free. Only the genuinely
+   * missing rungs are new hex. */
+
+  /* gold — kameti / coins. Extends warn-* (amber ~44°). */
+  --clay-gold-top:    #F8EAC4;
+  --clay-gold-bottom: var(--color-warn-50);
+  --clay-gold-lip:    #E2C068;
+  --clay-gold-key:    218 180 78;
+  --clay-gold-strong: var(--color-warn-700);
+
+  /* sky — splits / chat. Extends info-* (blue ~221°). */
+  --clay-sky-top:    #D4DFF7;
+  --clay-sky-bottom: var(--color-info-50);
+  --clay-sky-lip:    #93AEEA;
+  --clay-sky-key:    104 141 223;
+  --clay-sky-strong: var(--color-info-600);
+
+  /* blush — khata / hands. The one fully new ramp: no pink exists in the
+   * palette. Hue 340° keeps it clearly apart from coral (18°) and from
+   * accent violet (252°), and far enough from red that it never reads as an
+   * error state. */
+  --clay-blush-top:    #F6DAE3;
+  --clay-blush-bottom: #F9EBF0;
+  --clay-blush-lip:    #E594AF;
+  --clay-blush-key:    218 108 145;
+  --clay-blush-strong: #99294E;
+
+  /* mint — savings / money in. Reuses receive-* wholesale. */
+  --clay-mint-top:    var(--color-receive-100);
+  --clay-mint-bottom: var(--color-receive-50);
+  --clay-mint-lip:    #8CCEAC;
+  --clay-mint-key:    107 199 150;
+  --clay-mint-strong: var(--color-receive-700);
+
+  /* coral — money out. Reuses pay-* wholesale. Coral, never red. */
+  --clay-coral-top:    var(--color-pay-100);
+  --clay-coral-bottom: var(--color-pay-50);
+  --clay-coral-lip:    #EBA487;
+  --clay-coral-key:    227 138 99;
+  --clay-coral-strong: var(--color-pay-700);
+
+  /* accent — primary action. Reuses accent-*. */
+  --clay-accent-top:    var(--color-accent-100);
+  --clay-accent-bottom: var(--color-accent-50);
+  --clay-accent-lip:    #AC99F8;
+  --clay-accent-key:    139 113 244;
+  --clay-accent-strong: var(--color-accent-600);
+
+  /* neutral — untinted informational surface. Reuses the cream ramp. */
+  --clay-neutral-top:    var(--color-cream-card);
+  --clay-neutral-bottom: var(--color-cream-soft);
+  --clay-neutral-lip:    #DDD5C2;
+  --clay-neutral-key:    11 14 42;
+  --clay-neutral-strong: var(--color-ink-700);
+
+  /* Lips for SOLID fills (Button `depth`). A tint lip is lighter than its
+   * surface, which is right for a pale tile and wrong under a saturated
+   * 600-level fill — that needs a lip DARKER than the fill. These four are
+   * the only solid fills Button's depth mode supports. */
+  --clay-solid-accent-lip:  #4634C4;
+  --clay-solid-neutral-lip: #CBD5E1;
+  --clay-solid-pay-lip:     var(--color-pay-700);
+  --clay-solid-warn-lip:    #63490D;
+  /* For the app's very common `bg-ink-900 text-white` CTA (design-system §9
+   * lists 11+ files carrying it inline). Near-black rather than pure black,
+   * carrying the navy cast the rest of the ink ramp has.
+   *
+   * The dark value is the interesting one: the ink ramp INVERTS, so in dark
+   * mode `bg-ink-900` is a LIGHT fill (#F5F5F9). A near-black lip under it
+   * would read as a hard drawn line, and a lighter one as a shelf catching
+   * light from below — which is backwards for an edge in shadow. #3A3B47 is
+   * the mid-dark that still reads as "this edge is turned away from the
+   * light". */
+  --clay-solid-ink-lip:     #05060F;
+
+  /* Untinted defaults, so a bare .clay-card / <Icon3D> outside any tint
+   * scope still resolves to a valid (neutral) surface. */
+  --clay-top:    var(--clay-neutral-top);
+  --clay-bottom: var(--clay-neutral-bottom);
+  --clay-lip:    var(--clay-neutral-lip);
+  --clay-key:    var(--clay-neutral-key);
+  --clay-strong: var(--clay-neutral-strong);
+}
+
+/* ---- Dark theme: designed, not inverted ----------------------------------
+ * Three changes, and they are the whole difference:
+ *   1. Coloured shadows go away entirely (both alphas → 0). A cast shadow on
+ *      a dark ground is invisible at best and muddy at worst; the elevation
+ *      cue becomes a 1px rim light along the top instead.
+ *   2. The top highlight drops from 0.6 to 0.08 white — enough to catch the
+ *      edge, not enough to look like a scratch.
+ *   3. Lips become DARKER than their surface instead of lighter, which is
+ *      how a real shadowed under-edge behaves on a dark object.
+ *
+ * Surfaces themselves come from the dark tint ramps (which are dark tinted
+ * card surfaces, never pure black — receive-50 #12271F, pay-50 #2A1611, …).
+ * Note the gradient direction is unchanged (top → bottom) but the ROLES
+ * flip: in dark, the -100 rung is the LIGHTER value, so the surface is
+ * light-at-top / dark-at-bottom — which is exactly the convex read a
+ * surface lit from above should have. Same rule, opposite arithmetic. */
+html.dark {
+  --clay-highlight: rgba(255, 255, 255, 0.08);
+  --clay-ambient-alpha: 0;
+  --clay-key-alpha: 0;
+  --clay-card-key-alpha: 0;
+  --clay-rim: 0 0 0 1px rgba(255, 255, 255, 0.06);
+
+  --clay-gold-top:  #372F15;
+  --clay-gold-lip:  #120F06;
+  --clay-sky-top:   #1C2A4B;
+  --clay-sky-lip:   #080D18;
+
+  --clay-blush-top:    #361621;
+  --clay-blush-bottom: #281018;
+  --clay-blush-lip:    #12070B;
+  --clay-blush-strong: #E56C94;
+
+  --clay-mint-lip:    #07110D;
+  --clay-coral-lip:   #130806;
+  --clay-accent-lip:  #0E0B19;
+  --clay-neutral-lip: #08090C;
+
+  --clay-solid-accent-lip:  #5A42C9;
+  --clay-solid-neutral-lip: #08090C;
+  --clay-solid-warn-lip:    #9C7418;
+  --clay-solid-ink-lip:     #3A3B47;
+}
+
+/* ---- Tint scopes ---------------------------------------------------------
+ * A tint class only remaps the five local properties. It paints nothing, so
+ * it composes onto .clay-tile, .clay-card, .clay-depth, or a bare wrapper
+ * that wants its children to inherit a tint. */
+.clay-gold    { --clay-top: var(--clay-gold-top);    --clay-bottom: var(--clay-gold-bottom);    --clay-lip: var(--clay-gold-lip);    --clay-key: var(--clay-gold-key);    --clay-strong: var(--clay-gold-strong); }
+.clay-sky     { --clay-top: var(--clay-sky-top);     --clay-bottom: var(--clay-sky-bottom);     --clay-lip: var(--clay-sky-lip);     --clay-key: var(--clay-sky-key);     --clay-strong: var(--clay-sky-strong); }
+.clay-blush   { --clay-top: var(--clay-blush-top);   --clay-bottom: var(--clay-blush-bottom);   --clay-lip: var(--clay-blush-lip);   --clay-key: var(--clay-blush-key);   --clay-strong: var(--clay-blush-strong); }
+.clay-mint    { --clay-top: var(--clay-mint-top);    --clay-bottom: var(--clay-mint-bottom);    --clay-lip: var(--clay-mint-lip);    --clay-key: var(--clay-mint-key);    --clay-strong: var(--clay-mint-strong); }
+.clay-coral   { --clay-top: var(--clay-coral-top);   --clay-bottom: var(--clay-coral-bottom);   --clay-lip: var(--clay-coral-lip);   --clay-key: var(--clay-coral-key);   --clay-strong: var(--clay-coral-strong); }
+.clay-accent  { --clay-top: var(--clay-accent-top);  --clay-bottom: var(--clay-accent-bottom);  --clay-lip: var(--clay-accent-lip);  --clay-key: var(--clay-accent-key);  --clay-strong: var(--clay-accent-strong); }
+.clay-neutral { --clay-top: var(--clay-neutral-top); --clay-bottom: var(--clay-neutral-bottom); --clay-lip: var(--clay-neutral-lip); --clay-key: var(--clay-neutral-key); --clay-strong: var(--clay-neutral-strong); }
+
+/* ---- Tier 1: pressable tile ---------------------------------------------
+ * Shadow list, front to back: inset highlight, solid lip, rim light (dark
+ * only), ambient contact shadow offset just past the lip so it is not hidden
+ * by it, tinted key shadow. --clay-lip-depth drives BOTH the lip and the
+ * ambient offset, so the whole stack recomputes from one property on press. */
+.clay-tile {
+  background-image: linear-gradient(to bottom, var(--clay-top), var(--clay-bottom));
+  box-shadow:
+    var(--clay-ring),
+    inset 0 1px 0 0 var(--clay-highlight),
+    0 var(--clay-lip-depth) 0 0 var(--clay-lip),
+    var(--clay-rim),
+    0 calc(var(--clay-lip-depth) + 1px) 2px -1px rgb(var(--clay-ambient-rgb) / var(--clay-ambient-alpha)),
+    0 8px 20px -8px rgb(var(--clay-key) / var(--clay-key-alpha));
+  /* transform ONLY — see the motion contract in this section's header. */
+  transition: transform var(--clay-press-duration) var(--clay-press-ease);
+}
+
+/* ---- Selected state ------------------------------------------------------
+ * ONE selection treatment for the whole app. Four call sites had hand-rolled
+ * their own rings before this existed; they drift the moment anyone touches
+ * one of them.
+ *
+ * An INSET ring, not an outline: an outline would collide visually with the
+ * `:focus-visible` ring (also accent-500, also 2px) and leave a keyboard user
+ * unable to tell "focused" from "selected". Inset vs outset keeps them
+ * legible together — and selection is state, focus is position.
+ *
+ * Semantics come from the component: aria-pressed on a <button>,
+ * aria-current="page" on a <Link>. The ring alone is not an accessible
+ * selected state. */
+.clay-tile-selected {
+  --clay-ring: inset 0 0 0 2px var(--color-accent-500);
+}
+
+/* The press. This is the only motion in the system: no hover lift, no
+ * entrance animation, no glow. */
+.clay-tile:not(:disabled):not([aria-disabled='true']):active {
+  --clay-lip-depth: var(--clay-lip-depth-pressed);
+  transform: translateY(var(--clay-press-travel));
+}
+
+.clay-tile:focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 2px;
+}
+
+.clay-tile:disabled,
+.clay-tile[aria-disabled='true'] {
+  --clay-lip-depth: 1px;
+  --clay-key-alpha: 0;
+  opacity: 0.5;
+}
+
+/* ---- Tier 2: informational card -----------------------------------------
+ * No lip, no press, no focus ring — it is not interactive and must not
+ * pretend to be. Softer two-layer shadow and the larger radius are what
+ * separate it from a tile at a glance. */
+.clay-card {
+  background-image: linear-gradient(to bottom, var(--clay-top), var(--clay-bottom));
+  box-shadow:
+    inset 0 1px 0 0 var(--clay-highlight),
+    var(--clay-rim),
+    0 2px 6px -2px rgb(var(--clay-ambient-rgb) / calc(var(--clay-ambient-alpha) * 1.4)),
+    0 14px 30px -14px rgb(var(--clay-key) / var(--clay-card-key-alpha));
+}
+
+/* ---- Lip-only modifier (Button `depth`) ---------------------------------
+ * Adds the tile's lip + press to an element that already paints its own
+ * fill — Button's solid variants. Non-layered so it beats the `shadow-sm` /
+ * `active:shadow-none` utilities inside BUTTON_VARIANT_CLASSES. */
+.clay-depth {
+  box-shadow: 0 var(--clay-lip-depth) 0 0 var(--clay-lip);
+  transition: transform var(--clay-press-duration) var(--clay-press-ease);
+}
+.clay-depth:not(:disabled):active {
+  --clay-lip-depth: var(--clay-lip-depth-pressed);
+  transform: translateY(var(--clay-press-travel));
+}
+.clay-depth:disabled { --clay-lip-depth: 1px; }
+
+.clay-depth-primary   { --clay-lip: var(--clay-solid-accent-lip); }
+.clay-depth-secondary { --clay-lip: var(--clay-solid-neutral-lip); }
+.clay-depth-danger    { --clay-lip: var(--clay-solid-pay-lip); }
+.clay-depth-warning   { --clay-lip: var(--clay-solid-warn-lip); }
+/* For the raw `bg-ink-900 text-white` CTA idiom (design-system §9). Not
+ * reachable through <Button>'s `depth` prop, because Button has no ink
+ * variant — compose it by hand:
+ *   <button class="bg-ink-900 text-white … clay-depth clay-depth-ink">
+ * Adding an `ink` variant to BUTTON_VARIANT_CLASSES was considered and left
+ * alone: §9 lists that idiom as an indigo-era leak awaiting its own sweep,
+ * and blessing it as a first-class variant would entrench it. */
+.clay-depth-ink       { --clay-lip: var(--clay-solid-ink-lip); }
+
+/* ---- The floating 3D icon ------------------------------------------------
+ * A tint-coloured drop-shadow, so the rendered icon casts onto the tile in
+ * the tile's own material colour. LIGHT ONLY: on a dark ground the shadow is
+ * invisible and only costs a filter pass on a WebView that cannot spare one.
+ * `filter` is used rather than box-shadow because the assets are transparent
+ * PNG/WebP with non-rectangular silhouettes. */
+.clay-icon {
+  filter: drop-shadow(0 6px 8px rgb(var(--clay-key) / 0.35));
+}
+html.dark .clay-icon { filter: none; }
+
+/* ---- Reduced motion ------------------------------------------------------
+ * The transform goes, the lip change stays. A press that produces no
+ * feedback at all is worse than a 2px one — same reasoning as the .press
+ * ladder above, which keeps its scale under reduced motion for exactly this
+ * reason. */
+@media (prefers-reduced-motion: reduce) {
+  .clay-tile,
+  .clay-depth { transition: none; }
+  .clay-tile:not(:disabled):not([aria-disabled='true']):active,
+  .clay-depth:not(:disabled):active { transform: none; }
+}
+
+/* ---- Geometry + type: layered, so utilities can still win ---------------- */
+@layer components {
+  .clay-tile {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 44px;                 /* minimum tap target */
+    padding: 14px;
+    border-radius: var(--clay-radius-tile);
+    text-align: start;                /* logical — RTL safe */
+    color: var(--color-ink-900);
+  }
+
+  /* ---- Tile layout A: CORNER (the default) --------------------------------
+   * Icon hangs off the top inline-end corner, title/subtitle beside it,
+   * left-aligned. Reserves the inline-end gutter the icon occupies.
+   *
+   * `.clay-tile-has-icon` is the md pairing and its VALUES ARE FROZEN — it is
+   * what every pre-`iconSize` call site already renders. The sm pairing is a
+   * separate class rather than a tweak to this one. */
+  .clay-tile-has-icon {
+    min-height: 76px;
+    padding-inline-end: 64px;
+  }
+  /* sm icon (36px) + 12px inset + 4px breathing room. */
+  .clay-tile-has-icon-sm {
+    min-height: 64px;
+    padding-inline-end: 52px;
+  }
+
+  /* ---- Tile layout B: TOP (stacked) ---------------------------------------
+   * Icon centred over the tile's top edge, title + subtitle centred beneath
+   * it. This is the shape that survives a 4-up grid on a 360px phone: at
+   * 20px page gutters and 8px column gaps a tile is ~74px wide, which a
+   * corner layout (64px reserved for the icon alone) cannot fit.
+   *
+   * padding-block-start is NOT decoration — it reserves the VISIBLE part of
+   * the icon (its height minus the 40% that hangs above the edge) plus an 8px
+   * gap, so the title can never collide with the art. The numbers are
+   * derived, not guessed: clayIconStackOffset()/clayTileStackPadding() in
+   * src/lib/clay.ts compute them and clay.test.ts pins them to these rules.
+   *
+   * padding-inline drops to 6px so a 12px title has ~62px to sit in. */
+  .clay-tile-stack {
+    text-align: center;
+    padding-inline: 6px;
+    padding-block-end: 10px;
+  }
+  .clay-tile-stack-sm { padding-block-start: 30px; }  /* 36 - 14 float + 8 gap */
+  .clay-tile-stack-md { padding-block-start: 37px; }  /* 48 - 19 float + 8 gap */
+  .clay-tile-stack-lg { padding-block-start: 46px; }  /* 64 - 26 float + 8 gap */
+
+  /* Denser type for the stacked shape. 10px is the documented legibility
+   * floor (§6) — do not go below it to win another character. */
+  .clay-tile-stack .clay-tile-title { font-size: 12px; }
+  .clay-tile-stack .clay-tile-sub { font-size: 10px; }
+
+  .clay-card {
+    position: relative;
+    border-radius: var(--clay-radius-card);
+    color: var(--color-ink-900);
+  }
+  /* `none` is for a list container that supplies its own row padding — the
+   * card contributes the surface and the radius only. */
+  .clay-card-none { padding: 0; }
+  .clay-card-sm { padding: 14px; }
+  .clay-card-md { padding: 20px; }
+  .clay-card-lg { padding: 24px; }
+
+  /* Icon anchored to the surface's inline-END corner and pulled up out of the
+   * box by .clay-icon-float's negative block margin, so it overlaps the top
+   * edge. inset-inline-end (not right) is what makes this mirror correctly
+   * if the app ever renders RTL.
+   *
+   * TIER-NEUTRAL, deliberately. A floating icon on a tier-2 card IS
+   * sanctioned: what separates the tiers is the LIP, the press, the focus
+   * ring and the radius — the affordances — not the art. A card with a
+   * floating icon still cannot be pressed and still reads as informational,
+   * so the tier boundary holds. `.clay-card-icon` is a true alias, not a
+   * variant, so the two never drift. */
+  .clay-tile-icon,
+  .clay-card-icon {
+    position: absolute;
+    inset-inline-end: 12px;
+    inset-block-start: 0;
+  }
+
+  /* Gutter for a card carrying a corner icon. Not applied when
+   * padding="none" — the whole point of `none` is that the caller owns the
+   * spacing, so silently adding 64px back would defeat it. */
+  .clay-card-has-icon { padding-inline-end: 64px; }
+
+  .clay-tile-title {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .clay-tile-sub {
+    display: block;
+    margin-block-start: 2px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--color-ink-600);
+  }
+  /* Neutral cream pill rather than a --clay-strong fill: white-on-600 fails
+   * AA for mint (2.9:1) and would have to differ per tint. ink-900 on
+   * cream-card is 18.6:1 light / 15.1:1 dark, in every tint. */
+  .clay-tile-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-block-start: 8px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    background: var(--color-cream-card);
+    color: var(--color-ink-900);
+    font-size: 11px;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgb(var(--clay-ambient-rgb) / 0.08);
+  }
+
+  /* Corner badge — a count pinned to the tile's top inline-end, the old
+   * QuickTile shape. Layered on top of .clay-tile-badge, so it keeps the
+   * cream-card + ink-900 pairing and only changes placement.
+   *
+   * The 2px ring is painted in the tile's OWN surface colour
+   * (--clay-top), which is what lets the pill sit legibly on top of a
+   * floating icon instead of dissolving into it.
+   *
+   * It sits slightly OUTSIDE the tile's corner. Nothing in this system sets
+   * overflow:hidden, so it is not clipped by the tile — but the same rule
+   * that applies to a floating icon applies here: a grid needs `pt-5` (or
+   * `gap-y-6`) so an ancestor scroll container does not crop it. */
+  .clay-tile-badge-corner {
+    position: absolute;
+    inset-block-start: -6px;
+    inset-inline-end: -4px;
+    z-index: 1;
+    margin-block-start: 0;
+    justify-content: center;
+    min-width: 20px;
+    padding: 1px 6px;
+    box-shadow:
+      0 0 0 2px var(--clay-top),
+      0 1px 3px rgb(var(--clay-ambient-rgb) / 0.16);
+  }
+
+  /* Icon sizes. The float offset is 35% of the icon's own height, rounded to
+   * a whole pixel — kept in lockstep with CLAY_ICON_SIZES in src/lib/clay.ts,
+   * which is what feeds the <img> width/height attributes. */
+  .clay-icon { display: block; }
+  .clay-icon-sm { width: 36px; height: 36px; }
+  .clay-icon-md { width: 48px; height: 48px; }
+  .clay-icon-lg { width: 64px; height: 64px; }
+  .clay-icon-sm.clay-icon-float { margin-block-start: -13px; }
+  .clay-icon-md.clay-icon-float { margin-block-start: -17px; }
+  .clay-icon-lg.clay-icon-float { margin-block-start: -22px; }
+
+  /* Stacked ("top") placement. Centred with inset-inline: 0 + margin-inline:
+   * auto rather than left:50% + translateX(-50%) — the inset pair is
+   * direction-agnostic, so it centres identically under RTL, whereas a
+   * translate anchored off one logical edge does not.
+   *
+   * A deeper overhang than the corner variant (40% vs 35%): with the title
+   * directly underneath rather than beside, the icon needs to clear the
+   * tile's top edge more decisively to read as floating. Icon3D is rendered
+   * WITHOUT `float` here — this class owns the offset, so the two negative
+   * margins can never both apply. */
+  .clay-tile-icon-top {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
+    margin-inline: auto;
+  }
+  .clay-icon-sm.clay-tile-icon-top { margin-block-start: -14px; }
+  .clay-icon-md.clay-tile-icon-top { margin-block-start: -19px; }
+  .clay-icon-lg.clay-tile-icon-top { margin-block-start: -26px; }
+}
+
+/* ╔══════════════════════════════════════════════════════════════════════╗
+ * ║  3D CLAY — end of block                                              ║
+ * ╚══════════════════════════════════════════════════════════════════════╝ */

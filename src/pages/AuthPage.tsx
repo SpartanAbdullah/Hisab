@@ -279,8 +279,10 @@ export function AuthPage() {
           <p className="text-white/35 text-[11px] leading-relaxed max-w-[290px] mt-2">{t('verify_spam')}</p>
 
           <div className="w-full max-w-[300px] mt-8 space-y-3">
+            {/* 3D clay: the lip + 2px press replace the scale squeeze — one
+                press treatment per button (design-system §10.6). */}
             <button onClick={backToLogin}
-              className="w-full bg-white text-navy-900 rounded-2xl py-4 text-[14px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-white/10">
+              className="clay-depth w-full bg-white text-navy-900 rounded-2xl py-4 text-[14px] font-semibold flex items-center justify-center gap-2">
               {t('verify_back_login')} <ArrowRight size={16} />
             </button>
             <button onClick={resendVerification} disabled={resending}
@@ -459,9 +461,13 @@ export function AuthPage() {
           </div>
         )}
 
-        {/* Primary CTA — the single accent-violet action on the navy hero. */}
+        {/* Primary CTA — the single accent-violet action on the navy hero.
+            3D clay: `.clay-depth` + the accent solid lip give it the chunky
+            pressable edge; the scale squeeze goes so there is one press, not
+            two (design-system §10.6). The lip box-shadow replaces the old
+            accent glow — .clay-depth is non-layered and beats `shadow-lg`. */}
         <button onClick={handleSubmit} disabled={loading || !email || (mode !== 'reset' && !password)}
-          className="auth-cta w-full mt-6 rounded-2xl py-4 text-[15px] font-semibold text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] active:brightness-95 disabled:opacity-40 disabled:shadow-none bg-gradient-to-b from-accent-500 to-accent-600 shadow-lg shadow-accent-600/30">
+          className="auth-cta clay-depth clay-depth-primary w-full mt-6 rounded-2xl py-4 text-[15px] font-semibold text-white flex items-center justify-center gap-2 active:brightness-95 disabled:opacity-40 bg-gradient-to-b from-accent-500 to-accent-600">
           {loading ? (
             <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
           ) : (

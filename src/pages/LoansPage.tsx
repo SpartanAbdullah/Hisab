@@ -19,6 +19,7 @@ import { MoneyDisplay } from '../components/MoneyDisplay';
 import { UserAvatar } from '../components/UserAvatar';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { Card3D } from '../components/Card3D';
 import { Modal } from '../components/Modal';
 import { TransactionItem } from '../components/TransactionItem';
 import { PaymentReminderModal } from '../components/PaymentReminderModal';
@@ -711,7 +712,7 @@ export function LoansPage() {
         {pendingTotal > 0 && (
           <Link
             to="/inbox"
-            className="flex items-center gap-2.5 rounded-2xl bg-accent-50 border border-accent-100 px-3.5 py-2.5 press-lg"
+            className="clay-tile clay-accent flex items-center gap-2.5 rounded-2xl px-3.5 py-2.5"
           >
             <Bell size={14} className="text-accent-600 shrink-0" strokeWidth={2.2} />
             <p className="flex-1 text-[12px] font-semibold text-accent-600 leading-snug">
@@ -832,6 +833,7 @@ export function LoansPage() {
         ) : loadStatus === 'ready' && primaryGroups.length === 0 && otherGroups.length === 0 ? (
           <EmptyState
             icon={Users}
+            clayIcon={tab === 'settled' ? 'shield' : 'handshake'}
             tone={tab === 'settled' ? 'receive' : 'warn'}
             title={
               tab === 'settled'
@@ -875,7 +877,7 @@ export function LoansPage() {
             {selectedGroup.status === 'active' && allocatableLoans.length >= 2 && (
               <button
                 onClick={() => setShowAllocate(true)}
-                className="w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold press"
+                className="clay-depth clay-depth-ink w-full bg-ink-900 text-white rounded-xl py-3 text-[13px] font-semibold"
               >
                 {t('alloc_title')}
               </button>
@@ -1034,13 +1036,10 @@ function LoanGroupSummary({
   const tone = isSettled || isGiven ? 'receive' : 'pay';
 
   return (
-    <div
-      className="rounded-[18px] p-4 border border-cream-border"
-      style={{
-        background:
-          tone === 'receive' ? 'var(--color-receive-50)' : 'var(--color-pay-50)',
-      }}
-    >
+    // 3D clay tier 2. The tint IS the direction the page is about: mint =
+    // owed to you, coral = you owe (design-system §10.8). It replaces the
+    // flat receive-50 / pay-50 fill, so the semantics are unchanged.
+    <Card3D tint={tone === 'receive' ? 'mint' : 'coral'} padding="sm" className="rounded-[18px]">
       <p
         className="text-[10.5px] font-semibold uppercase tracking-[0.12em]"
         style={{
@@ -1090,7 +1089,7 @@ function LoanGroupSummary({
           </button>
         </div>
       ) : null}
-    </div>
+    </Card3D>
   );
 }
 

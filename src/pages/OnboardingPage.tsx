@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { profilesDb } from '../lib/supabaseDb';
 import { track } from '../lib/telemetry';
 import type { Language } from '../lib/i18n';
-import { ArrowRight, Play, Shield, Globe, Users, BarChart3, CheckCircle, Sparkles } from 'lucide-react';
+import { ArrowRight, Play, Shield, Globe, CheckCircle, Sparkles } from 'lucide-react';
 import { BrandMark } from '../components/BrandMark';
+import { Tile3D } from '../components/Tile3D';
+import { Icon3D } from '../components/Icon3D';
+import type { ClayTint } from '../lib/clay';
 import { MODE_QUIZ, recommendMode } from '../lib/modeQuiz';
 import { useOnboardingStore } from '../stores/onboardingStore';
 import { useAppModeStore } from '../stores/appModeStore';
@@ -51,12 +54,18 @@ function StepDots({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
 // logging a loan in minute one, not staring at an expense tracker.
 type OnboardIntent = 'spending' | 'loans' | 'kameti' | 'splits' | 'budgets';
 
-const INTENT_OPTIONS: Array<{ value: OnboardIntent; emoji: string; labelKey: string; leansTo: AppMode }> = [
-  { value: 'spending', emoji: '\u{1F4B8}', labelKey: 'onboard_intent_spending', leansTo: 'full_tracker' },
-  { value: 'loans', emoji: '\u{1F91D}', labelKey: 'onboard_intent_loans', leansTo: 'full_tracker' },
-  { value: 'kameti', emoji: '\u{1F465}', labelKey: 'onboard_intent_kameti', leansTo: 'full_tracker' },
-  { value: 'splits', emoji: '\u{1F9FE}', labelKey: 'onboard_intent_splits', leansTo: 'splits_only' },
-  { value: 'budgets', emoji: '\u{1F3AF}', labelKey: 'onboard_intent_budgets', leansTo: 'full_tracker' },
+// 3D clay: each intent carries the tint + 3D icon of the domain it routes to,
+// so the tint the user meets here is the tint that domain keeps everywhere
+// else (CLAY_TINT_BY_DOMAIN in src/lib/clay.ts). The emoji is gone — the
+// rendered icon is the picture now.
+const INTENT_OPTIONS: Array<{
+  value: OnboardIntent; labelKey: string; leansTo: AppMode; tint: ClayTint; icon: string;
+}> = [
+  { value: 'spending', labelKey: 'onboard_intent_spending', leansTo: 'full_tracker', tint: 'coral', icon: 'receipt' },
+  { value: 'loans', labelKey: 'onboard_intent_loans', leansTo: 'full_tracker', tint: 'blush', icon: 'handshake' },
+  { value: 'kameti', labelKey: 'onboard_intent_kameti', leansTo: 'full_tracker', tint: 'gold', icon: 'coins' },
+  { value: 'splits', labelKey: 'onboard_intent_splits', leansTo: 'splits_only', tint: 'sky', icon: 'chat' },
+  { value: 'budgets', labelKey: 'onboard_intent_budgets', leansTo: 'full_tracker', tint: 'mint', icon: 'target' },
 ];
 
 const INTENT_LANDING: Record<OnboardIntent, string> = {
@@ -208,25 +217,24 @@ export function OnboardingPage() {
                 Settings). */}
             <div className="mt-8 w-full max-w-[280px]">
               <p className="text-white/50 text-[11px] font-medium uppercase tracking-widest mb-2 text-left">{t('onboard_language_label')}</p>
+              {/* 3D clay tiles. `selected` is the system's one selection
+                  treatment (inset accent ring + aria-pressed); the accent tint
+                  doubles the signal. No icon, so no float clearance needed. */}
               <div className="grid grid-cols-2 gap-2">
                 {(['en', 'ur'] as const).map((l) => (
-                  <button
+                  <Tile3D
                     key={l}
-                    type="button"
+                    tint={lang === l ? 'accent' : 'neutral'}
+                    title={l === 'en' ? t('lang_en') : t('lang_ur')}
+                    selected={lang === l}
                     onClick={() => setLang(l)}
-                    className={`p-3 rounded-2xl border-2 text-center transition-all duration-200 backdrop-blur-sm ${
-                      lang === l
-                        ? 'border-white/40 bg-white/15 scale-[1.02] shadow-lg shadow-white/5'
-                        : 'border-white/10 bg-white/5 active:scale-[0.98]'
-                    }`}
-                  >
-                    <p className="font-bold text-[13px] tracking-tight text-white">{l === 'en' ? t('lang_en') : t('lang_ur')}</p>
-                  </button>
+                    className="text-center font-bold"
+                  />
                 ))}
               </div>
             </div>
             <div className="mt-6 w-full max-w-[280px]">
-              <Button variant="secondary" size="lg" onClick={() => setStep(1)} icon={<ArrowRight size={16} />}>
+              <Button variant="secondary" size="lg" depth onClick={() => setStep(1)} icon={<ArrowRight size={16} />}>
                 {t('onboard_start')}
               </Button>
             </div>
@@ -267,7 +275,7 @@ export function OnboardingPage() {
               </div>
             </div>
             <div className="mt-auto pb-8">
-              <Button variant="secondary" size="lg" onClick={() => setStep(2)} disabled={!name.trim()} icon={<ArrowRight size={16} />}>
+              <Button variant="secondary" size="lg" depth onClick={() => setStep(2)} disabled={!name.trim()} icon={<ArrowRight size={16} />}>
                 {t('onboard_next')}
               </Button>
             </div>
@@ -282,20 +290,24 @@ export function OnboardingPage() {
               <h2 className="text-2xl font-bold tracking-tight text-white">{t('onboard_intent_title')}</h2>
               <p className="text-white/60 text-[13px] mt-2 leading-relaxed">{t('onboard_intent_sub')}</p>
             </div>
-            <div className="space-y-3 flex-1">
+            {/* 3D clay tiles. pt-5 + space-y-6 is the room the floating icon
+                needs: it overhangs each tile's top edge by 17px (§10.8). */}
+            <div className="space-y-6 flex-1 pt-5">
               {INTENT_OPTIONS.map((opt) => (
-                <button
+                <Tile3D
                   key={opt.value}
+                  tint={opt.tint}
+                  icon={opt.icon}
+                  title={t(opt.labelKey as Parameters<typeof t>[0])}
+                  // Single-line label in a 76px icon tile: centre it vertically
+                  // rather than leave it stranded at the top edge.
+                  className="flex items-center"
                   onClick={() => {
                     setIntent(opt.value);
                     setSelectedMode(opt.leansTo);
                     setStep(3);
                   }}
-                  className="w-full flex items-center gap-3.5 rounded-2xl border-2 border-white/10 bg-white/5 px-4 py-4 text-left active:scale-[0.98] transition-all backdrop-blur-sm"
-                >
-                  <span className="text-2xl shrink-0">{opt.emoji}</span>
-                  <span className="text-[13.5px] text-white/90 font-medium leading-snug">{t(opt.labelKey as Parameters<typeof t>[0])}</span>
-                </button>
+                />
               ))}
             </div>
             <div className="pb-6">
@@ -336,7 +348,7 @@ export function OnboardingPage() {
               ))}
             </div>
             <div className="mt-auto pb-4">
-              <Button variant="secondary" size="lg" onClick={() => setStep(4)} icon={<ArrowRight size={16} />}>
+              <Button variant="secondary" size="lg" depth onClick={() => setStep(4)} icon={<ArrowRight size={16} />}>
                 {t('onboard_safety_btn')}
               </Button>
               <p className="text-white/25 text-[10px] text-center mt-3">{t('onboard_safety_footer')}</p>
@@ -396,52 +408,53 @@ export function OnboardingPage() {
                   </div>
                 )}
 
-                <div className="space-y-4 flex-1">
+                {/* 3D clay. The two mode cards are real pressable tiles: the
+                    CHOSEN one carries its domain tint (gold = the money
+                    tracker, accent violet = splits) plus `.clay-tile-selected`
+                    — the system's inset accent ring, same treatment Tile3D's
+                    `selected` emits — and the other stays plain neutral clay.
+                    They are raw <button>s rather than <Tile3D> because each
+                    holds a three-bullet list Tile3D has no slot for, so
+                    aria-pressed is wired by hand here.
+                    pt-5 gives the floating icons room to overhang (§10.8),
+                    and ps-5/pe-16 avoids `px-*` clobbering the icon gutter
+                    that `.clay-tile-has-icon` reserves. */}
+                <div className="space-y-6 flex-1 pt-5">
                   {/* Full Tracker */}
                   <button onClick={() => setSelectedMode('full_tracker')}
-                    className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'full_tracker' ? 'border-warn-600/60 bg-warn-600/20 scale-[1.02] shadow-lg shadow-warn-600/15 ring-1 ring-warn-600/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${selectedMode === 'full_tracker' ? 'bg-warn-600/30' : 'bg-warn-600/20'}`}>
-                        <BarChart3 size={20} className="text-warn-50" strokeWidth={1.5} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className={`font-bold text-[14px] tracking-tight ${selectedMode === 'full_tracker' ? 'text-white' : 'text-white/80'}`}>{t('mode_full_title')}</p>
-                          {!quizSkipped && recommended === 'full_tracker' && (
-                            <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-600">{t('quiz_for_you')}</span>
-                          )}
-                        </div>
-                        <p className={`text-[11px] ${selectedMode === 'full_tracker' ? 'text-warn-50/85' : 'text-white/40'}`}>{t('mode_full_sub')}</p>
-                      </div>
+                    aria-pressed={selectedMode === 'full_tracker'}
+                    className={`clay-tile clay-tile-has-icon ps-5 pe-16 py-5 rounded-3xl ${selectedMode === 'full_tracker' ? 'clay-gold clay-tile-selected' : 'clay-neutral'}`}>
+                    <Icon3D name="wallet" size="md" float className="clay-tile-icon" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-bold text-[14px] tracking-tight">{t('mode_full_title')}</p>
+                      {!quizSkipped && recommended === 'full_tracker' && (
+                        <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-600">{t('quiz_for_you')}</span>
+                      )}
                     </div>
-                    <div className="space-y-1.5 ml-14">
-                      <p className={`text-[11px] ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_1')}</p>
-                      <p className={`text-[11px] ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_2')}</p>
-                      <p className={`text-[11px] ${selectedMode === 'full_tracker' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_full_3')}</p>
+                    <p className="text-[11px] text-ink-600 mt-0.5">{t('mode_full_sub')}</p>
+                    <div className="space-y-1.5 mt-3">
+                      <p className="text-[11px] text-ink-600">• {t('mode_full_1')}</p>
+                      <p className="text-[11px] text-ink-600">• {t('mode_full_2')}</p>
+                      <p className="text-[11px] text-ink-600">• {t('mode_full_3')}</p>
                     </div>
                   </button>
 
                   {/* Splits Only */}
                   <button onClick={() => setSelectedMode('splits_only')}
-                    className={`w-full border-2 rounded-3xl p-5 text-left transition-all duration-300 backdrop-blur-sm ${selectedMode === 'splits_only' ? 'border-accent-500/60 bg-accent-500/20 scale-[1.02] shadow-lg shadow-accent-500/15 ring-1 ring-accent-500/30' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${selectedMode === 'splits_only' ? 'bg-accent-500/30' : 'bg-accent-500/20'}`}>
-                        <Users size={20} className="text-accent-100" strokeWidth={1.5} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className={`font-bold text-[14px] tracking-tight ${selectedMode === 'splits_only' ? 'text-white' : 'text-white/80'}`}>{t('mode_splits_title')}</p>
-                          {!quizSkipped && recommended === 'splits_only' && (
-                            <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-600">{t('quiz_for_you')}</span>
-                          )}
-                        </div>
-                        <p className={`text-[11px] ${selectedMode === 'splits_only' ? 'text-accent-100/70' : 'text-white/40'}`}>{t('mode_splits_sub')}</p>
-                      </div>
+                    aria-pressed={selectedMode === 'splits_only'}
+                    className={`clay-tile clay-tile-has-icon ps-5 pe-16 py-5 rounded-3xl ${selectedMode === 'splits_only' ? 'clay-accent clay-tile-selected' : 'clay-neutral'}`}>
+                    <Icon3D name="chat" size="md" float className="clay-tile-icon" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-bold text-[14px] tracking-tight">{t('mode_splits_title')}</p>
+                      {!quizSkipped && recommended === 'splits_only' && (
+                        <span className="shrink-0 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-600">{t('quiz_for_you')}</span>
+                      )}
                     </div>
-                    <div className="space-y-1.5 ml-14">
-                      <p className={`text-[11px] ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_1')}</p>
-                      <p className={`text-[11px] ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_2')}</p>
-                      <p className={`text-[11px] ${selectedMode === 'splits_only' ? 'text-white/70' : 'text-white/40'}`}>• {t('mode_splits_3')}</p>
+                    <p className="text-[11px] text-ink-600 mt-0.5">{t('mode_splits_sub')}</p>
+                    <div className="space-y-1.5 mt-3">
+                      <p className="text-[11px] text-ink-600">• {t('mode_splits_1')}</p>
+                      <p className="text-[11px] text-ink-600">• {t('mode_splits_2')}</p>
+                      <p className="text-[11px] text-ink-600">• {t('mode_splits_3')}</p>
                     </div>
                   </button>
 
@@ -449,7 +462,7 @@ export function OnboardingPage() {
                 </div>
 
                 <div className="pb-4">
-                  <Button variant="secondary" size="lg" onClick={() => { confirmModeSelection(); setStep(5); }} icon={<ArrowRight size={16} />}>
+                  <Button variant="secondary" size="lg" depth onClick={() => { confirmModeSelection(); setStep(5); }} icon={<ArrowRight size={16} />}>
                     {t('onboard_next')}
                   </Button>
                   <button onClick={() => { setQuizAnswers([]); setQuizSkipped(false); }} className="text-[11px] text-white/40 w-full text-center min-h-[44px] mt-2 font-medium">
@@ -504,7 +517,7 @@ export function OnboardingPage() {
               </div>
             )}
             <div className="pb-6 space-y-1">
-              <Button variant="secondary" size="lg" onClick={() => handleFinish(true)} disabled={loading || !acctName.trim() || !acctBalanceValid} icon={<ArrowRight size={16} />}>
+              <Button variant="secondary" size="lg" depth onClick={() => handleFinish(true)} disabled={loading || !acctName.trim() || !acctBalanceValid} icon={<ArrowRight size={16} />}>
                 {t('onboard_acct_create')}
               </Button>
               <button onClick={() => handleFinish(false)} disabled={loading} className="text-[12px] text-white/45 w-full text-center min-h-[44px] font-medium">{t('onboard_acct_skip')}</button>
@@ -522,19 +535,22 @@ export function OnboardingPage() {
               <p className="text-white/60 text-[13px] mt-2">{t('onboard_how_sub')}</p>
               <p className="text-receive-50 text-[12px] font-semibold mt-3">{t('onboard_start_instruction')}</p>
             </div>
-            <div className="space-y-4 flex-1">
+            {/* 3D clay: the finish action for splits-only mode is a real mint
+                tile. pt-5 clears the floating icon's overhang (§10.8). */}
+            <div className="space-y-4 flex-1 pt-5">
               <button onClick={() => handleFinish(false)} disabled={loading}
-                className="w-full bg-white/8 border-2 border-receive-600/50 rounded-3xl p-6 text-left transition-all active:scale-[0.98] backdrop-blur-sm hover:bg-white/12 shadow-lg shadow-receive-600/15">
+                className="clay-tile clay-mint clay-tile-has-icon ps-6 pe-16 py-6 rounded-3xl">
+                <Icon3D name="sparkle" size="md" float className="clay-tile-icon" />
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-11 h-11 rounded-2xl bg-receive-600/25 flex items-center justify-center backdrop-blur-sm">
-                    <Play size={20} className="text-receive-50" strokeWidth={1.5} />
+                  <div className="w-11 h-11 rounded-2xl bg-receive-600/25 flex items-center justify-center shrink-0">
+                    <Play size={20} className="text-receive-700" strokeWidth={1.5} />
                   </div>
                   <div>
-                    <p className="font-bold text-[14px] tracking-tight text-white">{t('onboard_fresh_title')}</p>
-                    <p className="text-[11px] text-white/50">{t('onboard_fresh_sub')}</p>
+                    <p className="font-bold text-[14px] tracking-tight">{t('onboard_fresh_title')}</p>
+                    <p className="text-[11px] text-ink-600">{t('onboard_fresh_sub')}</p>
                   </div>
                 </div>
-                <p className="text-[12px] text-white/40 leading-relaxed">
+                <p className="text-[12px] text-ink-600 leading-relaxed">
                   {selectedMode === 'splits_only' ? t('onboard_fresh_desc_splits') : t('onboard_fresh_desc')}
                 </p>
                 <div className="mt-5 space-y-2.5">
@@ -553,12 +569,14 @@ export function OnboardingPage() {
                         t('onboard_fresh_tip_transactions'),
                       ]).map((tip) => (
                     <div key={tip} className="flex items-start gap-2.5">
-                      <CheckCircle size={14} className="text-receive-50 mt-0.5 shrink-0" />
-                      <p className="text-[11px] text-white/65 leading-snug">{tip}</p>
+                      <CheckCircle size={14} className="text-receive-700 mt-0.5 shrink-0" />
+                      <p className="text-[11px] text-ink-700 leading-snug">{tip}</p>
                     </div>
                   ))}
                 </div>
-                <div className="mt-5 rounded-2xl bg-receive-600/25 border border-receive-600/30 py-3 text-center">
+                {/* accent-600, not receive-600: white on green is 2.9:1 (§10.3),
+                    and violet is the app's primary-action colour anyway. */}
+                <div className="mt-5 -me-10 rounded-2xl bg-accent-600 py-3 text-center">
                   <span className="text-[13px] font-bold text-white">{t('onboard_fresh_cta')}</span>
                 </div>
               </button>

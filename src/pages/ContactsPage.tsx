@@ -5,7 +5,6 @@ import {
   X,
   UserPlus,
   CheckCircle2,
-  Sparkles,
   Info,
   MessageCircle,
   Archive,
@@ -37,6 +36,8 @@ import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { ContactDetailSheet } from './ContactDetailSheet';
 import { MyConnectCode } from '../components/MyConnectCode';
 import { useT } from '../lib/i18n';
+import { Card3D } from '../components/Card3D';
+import { Icon3D } from '../components/Icon3D';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
@@ -591,7 +592,7 @@ export function ContactsPage() {
             <button
               onClick={handleCreate}
               disabled={creating || !newName.trim()}
-              className="w-full rounded-xl bg-ink-900 text-white py-3 text-[13px] font-semibold disabled:opacity-30 press"
+              className="clay-depth clay-depth-ink w-full rounded-xl bg-ink-900 text-white py-3 text-[13px] font-semibold disabled:opacity-30"
             >
               {creating ? 'Adding…' : linkTarget ? t('addc_cta_linked') : t('addc_cta_plain')}
             </button>
@@ -656,8 +657,9 @@ export function ContactsPage() {
             contact. They can dismiss without linking; the contact stays
             unlinked which is a perfectly valid steady state. */}
         {lastCreated && !showAdd && (
-          <div className="rounded-[18px] bg-accent-50 border border-cream-border p-4 flex items-center gap-3 animate-fade-in">
-            <div className="w-10 h-10 rounded-2xl bg-accent-100 flex items-center justify-center shrink-0">
+          // 3D clay tier 2, blush — the khata / people-you-owe domain tint.
+          <Card3D tint="blush" padding="sm" className="rounded-[18px] flex items-center gap-3 animate-fade-in">
+            <div className="w-10 h-10 rounded-2xl bg-cream-card flex items-center justify-center shrink-0">
               <CheckCircle2 size={18} className="text-accent-600" />
             </div>
             <div className="min-w-0 flex-1">
@@ -684,15 +686,15 @@ export function ContactsPage() {
             >
               <X size={13} />
             </button>
-          </div>
+          </Card3D>
         )}
 
         {/* Linked-summary card — quiet steady-state reminder of how linking
             works, shown once the user has at least one contact. */}
         {persons.length > 0 && !showAdd && !lastCreated && (
-          <div className="rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-accent-100 flex items-center justify-center shrink-0">
-              <Link2 size={18} className="text-accent-600" strokeWidth={1.8} />
+          <Card3D tint="blush" padding="sm" className="rounded-[18px] flex items-center gap-3">
+            <div className="w-10 h-10 flex items-center justify-center shrink-0">
+              <Icon3D name="handshake" size="sm" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
@@ -704,7 +706,7 @@ export function ContactsPage() {
                 {t('cts_linked_of_desc')}
               </p>
             </div>
-          </div>
+          </Card3D>
         )}
 
         {loadStatus === 'error' && (
@@ -724,8 +726,9 @@ export function ContactsPage() {
         ) : persons.length === 0 ? (
           loadStatus === 'ready' ? (
             <div className="text-center py-10">
+              {/* 3D clay: the rendered icon replaces the flat glyph, same halo. */}
               <div className="w-14 h-14 rounded-3xl bg-accent-100 flex items-center justify-center mx-auto mb-3">
-                <Sparkles size={22} className="text-accent-600" />
+                <Icon3D name="handshake" size="sm" />
               </div>
               <p className="text-[13px] font-semibold text-ink-900">
                 {t('cts_empty_title')}
@@ -736,7 +739,7 @@ export function ContactsPage() {
               {!showAdd && (
                 <button
                   onClick={() => setShowAdd(true)}
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 text-white px-4 py-2.5 text-[12px] font-semibold press-sm"
+                  className="clay-depth clay-depth-ink mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 text-white px-4 py-2.5 text-[12px] font-semibold"
                 >
                   <UserPlus size={12} /> {t('cts_add_first')}
                 </button>

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, LogIn, Users, Receipt, Scale, HandCoins, KeyRound, Search, X, Mail, Archive } from 'lucide-react';
+import { Plus, Receipt, Scale, HandCoins, KeyRound, Search, X, Mail, Archive } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { MoneyDisplay } from '../components/MoneyDisplay';
 import { GroupCard } from '../components/GroupCard';
+import { Card3D } from '../components/Card3D';
+import { Tile3D } from '../components/Tile3D';
+import { Icon3D } from '../components/Icon3D';
 import { PageErrorState } from '../components/PageErrorState';
 import { NextStepHint } from '../components/NextStepHint';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -48,10 +51,11 @@ function GroupsEducationCard() {
     { icon: HandCoins, title: t('groups_edu_settle_title'), body: t('groups_edu_settle_body') },
   ];
   return (
-    <div className="rounded-[18px] bg-cream-card border border-cream-border p-4">
+    // 3D clay tier 2, sky — the splits domain tint.
+    <Card3D tint="sky" padding="sm" className="rounded-[18px]">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-accent-100 flex items-center justify-center shrink-0">
-          <Users size={18} className="text-accent-600" />
+        <div className="w-10 h-10 flex items-center justify-center shrink-0">
+          <Icon3D name="chat" size="sm" />
         </div>
         <div className="min-w-0 leading-normal">
           <p className="text-[14px] font-semibold text-ink-900 tracking-tight truncate">
@@ -82,7 +86,7 @@ function GroupsEducationCard() {
       <p className="text-[11px] text-ink-400 mt-3 text-center leading-normal">
         {t('groups_edu_hint')}
       </p>
-    </div>
+    </Card3D>
   );
 }
 
@@ -394,19 +398,26 @@ export function SplitsPage() {
         {/* Primary action buttons when groups exist — visible but not headline.
             For empty state the GroupsEducationCard carries the explanation. */}
         {hasGroups && (
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
+          // Stacked ("top") clay tiles: two short labels under centred
+          // floating art. pt-5 is the headroom the 40% overhang needs (§10.8);
+          // `sm` art keeps the pair from dominating the page's first screen.
+          <div className="grid grid-cols-2 gap-2.5 pt-5">
+            <Tile3D
+              tint="sky"
+              icon="chat"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t('groups_action_create_title')}
               onClick={openCreate}
-              className="rounded-[14px] bg-ink-900 text-white px-4 py-3 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold press"
-            >
-              <Plus size={13} strokeWidth={2.4} /> {t('groups_action_create_title')}
-            </button>
-            <button
+            />
+            <Tile3D
+              tint="neutral"
+              icon="handshake"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t('groups_action_join_title')}
               onClick={openJoin}
-              className="rounded-[14px] bg-cream-card border border-cream-border text-ink-800 px-4 py-3 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold press"
-            >
-              <LogIn size={13} strokeWidth={2.4} /> {t('groups_action_join_title')}
-            </button>
+            />
           </div>
         )}
 

@@ -583,8 +583,16 @@ export function SettingsPage() {
     }
   };
 
+  // 3D clay tier 2, neutral: a settings group is informational chrome around
+  // rows that are individually tappable — the group itself is not, so it is a
+  // card, never a tile. `.clay-card` + `.clay-neutral` are the utility form of
+  // <Card3D tint="neutral">; used as a class string here because this is a
+  // shared className constant applied to ~15 <div>s, not a component call.
+  // Radius stays 18px (between the tile's 16 and the card's 24) so the
+  // Settings rhythm is unchanged, and overflow-hidden keeps the divided rows
+  // clipped to it — safe, because no group here carries a floating icon.
   const sectionClass =
-    "rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline";
+    "clay-card clay-neutral rounded-[18px] overflow-hidden divide-y divide-cream-hairline";
   const rowClass =
     "row-base row-interactive px-4 py-3.5";
 

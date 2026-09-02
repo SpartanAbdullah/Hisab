@@ -4996,6 +4996,29 @@ const S = {
   guest_err_rename_invalid: { ur: "Sahi naam likhein (1-40 harf)", en: "Enter a valid name (1-40 characters)" },
   guest_renamed: { ur: "Naam badal diya gaya", en: "Renamed" },
   gev_guest_added: { ur: "App ke baghair member add hua", en: "Added someone without the app" },
+
+  // ── 3D clay: home page — quick-tile labels + surfaces that lost their
+  // hardcoded English when the tiles became Tile3D.
+  //
+  // Short on purpose, and the lengths are MEASURED, not guessed: the 4-up
+  // grid on a 360px phone gives each tile 74px, of which 62px is label. At
+  // the stacked tile's 12px type that is ~9 characters. The full page titles
+  // ("Subscription Tracker", "Investment Tracker", "Your Contacts") overflow
+  // it, and so do "Subscriptions" (78.1px) and "Investments" (70.1px) — hence
+  // the two abbreviations. They abbreviate the same word rather than renaming
+  // the feature, and the destination page states its full title on arrival.
+  home_tile_budget: { ur: "Budget", en: "Budget" },
+  home_tile_subs: { ur: "Subs", en: "Subs" },
+  home_tile_contacts: { ur: "Contacts", en: "Contacts" },
+  home_tile_invest: { ur: "Invest", en: "Invest" },
+  // The calm "nothing needs you" status card. Was two hardcoded English
+  // sentences inlined in HomePage's `homeHint` object.
+  home_status_ok_title: { ur: "Aap ka dashboard up to date hai.", en: "Your dashboard is up to date." },
+  home_status_ok_next: {
+    ur: "Jaisay jaisay kharcha ho, likhtay rahein — ya Search se koi purana account, banda ya kharcha foran dhoond lein.",
+    en: "Keep adding transactions as they happen, or use Search to quickly find an older account, person, or expense.",
+  },
+  // ── 3D clay: home page ──
 } as const;
 
 type Key = keyof typeof S;

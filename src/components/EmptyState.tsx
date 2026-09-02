@@ -1,10 +1,21 @@
 import { Button } from './Button';
+import { Icon3D } from './Icon3D';
+import { CLAY_ICONS } from '../lib/clayIcons.generated';
+import { normalizeClayIconRegistry, resolveClayIcon } from '../lib/clay';
 import type { LucideIcon } from 'lucide-react';
 
 type Tone = 'indigo' | 'accent' | 'receive' | 'pay' | 'warn';
 
 interface Props {
   icon: LucideIcon;
+  /**
+   * 3D clay: name of an asset in public/3d (see src/lib/clayIcons.generated).
+   * When given AND the asset exists, the rendered icon replaces the flat
+   * lucide glyph inside the halo — the halo, bloom and tone are unchanged, so
+   * every call site that does not pass this keeps exactly the visual it had.
+   * An unknown name falls through to `icon`, so a tile never loses its picture.
+   */
+  clayIcon?: string;
   title: string;
   description: string;
   // Tiny italic line below description. Use for personality copy in Roman Urdu
@@ -59,8 +70,12 @@ const TONES: Record<Tone, { halo: string; ring: string; icon: string; bloom: str
   },
 };
 
+// Resolved once at module scope — the registry is a build-time constant.
+const CLAY_REGISTRY = normalizeClayIconRegistry(CLAY_ICONS);
+
 export function EmptyState({
   icon: Icon,
+  clayIcon,
   title,
   description,
   subhint,
@@ -73,6 +88,9 @@ export function EmptyState({
 }: Props) {
   const t = TONES[tone];
   const isCompact = size === 'compact';
+  // Fall back to the lucide glyph when the 3D asset has not been produced —
+  // an empty state must never end up with no picture at all.
+  const has3d = !!resolveClayIcon(clayIcon, CLAY_REGISTRY);
   // The bloom is a soft blurred circle behind the icon container, sized
   // larger than the container so the edges feather out. Pure decoration —
   // does not capture pointer events.
@@ -85,7 +103,11 @@ export function EmptyState({
       <div
         className={`relative ${iconBoxSize} rounded-[28px] bg-gradient-to-br ${t.halo} ${t.icon} flex items-center justify-center mb-5 shadow-sm ring-1 ${t.ring} before:absolute before:inset-0 before:-z-10 before:rounded-[40px] before:blur-2xl before:opacity-70 ${t.bloom}`}
       >
-        <Icon size={iconSize} strokeWidth={1.5} />
+        {has3d ? (
+          <Icon3D name={clayIcon!} size={isCompact ? 'sm' : 'md'} />
+        ) : (
+          <Icon size={iconSize} strokeWidth={1.5} />
+        )}
       </div>
       <h3 className="font-bold text-[15px] text-ink-800 tracking-tight">{title}</h3>
       <p className="text-[13px] text-ink-500 mt-1.5 max-w-[260px] leading-relaxed">{description}</p>

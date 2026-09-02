@@ -48,6 +48,18 @@ android/app/*.keystore
 # e2e/.auth/*.json is a live Supabase storageState (session tokens) written by
 # e2e/global-setup.ts — never committed, even for a staging-only account.
 /test-results/
+
+# 3D clay/color icon RAW sources (unoptimized originals downloaded from
+# 3dicons.co / github.com/realvjy/3dicons, CC0). Deliberately NOT under
+# public/ — Vite copies public/ verbatim into dist/, and these multi-
+# hundred-KB originals must never ship to web or Android. Only the
+# optimized WebP output (public/3d/*.webp), manifest.json and LICENSE.md
+# are committed. Re-download originals into assets-src/3d-icons/<name>.png
+# (default "color" style; "gradient" style sources live in
+# assets-src/3d-icons/gradient/) and re-run `npm run build:3d`
+# (scripts/build-3d-icons.mjs) to regenerate — see docs/design-system.md
+# "3D icon assets".
+assets-src/
 /playwright-report/
 /blob-report/
 /playwright/.cache/

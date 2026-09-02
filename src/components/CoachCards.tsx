@@ -1,25 +1,40 @@
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Clock, TrendingUp, Repeat, Target, Sparkles, PenLine, ChevronRight } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
+import { Tile3D } from './Tile3D';
+import type { ClayTint } from '../lib/clay';
 import type { CoachCard, CoachKind, CoachTone } from '../lib/coachInsights';
 
-const KIND_ICON: Record<CoachKind, typeof AlertTriangle> = {
-  budget_over: AlertTriangle,
-  overdue_receivable: Clock,
-  budget_pace: TrendingUp,
-  renewals_soon: Repeat,
-  goal_behind: Target,
-  top_category: Sparkles,
-  log_nudge: PenLine,
+// A rendered 3D icon per insight kind (public/3d, see src/lib/clay.ts). The
+// lucide glyph each card used to carry is replaced 1:1 — the meaning still
+// lives in the title, the icon is decoration by construction (Icon3D is
+// alt="" aria-hidden).
+//
+// NOTE on names: the CC0 pack's art does not always match its filename —
+// `handshake` renders a thumbs-up and `bell` renders a megaphone. Picked by
+// what the asset LOOKS like, not by what it is called: `phone` (a handset)
+// is the "go nudge them" cue for an overdue receivable.
+const KIND_ICON: Record<CoachKind, string> = {
+  budget_over: 'wallet',
+  overdue_receivable: 'phone',
+  budget_pace: 'chart',
+  renewals_soon: 'calendar',
+  goal_behind: 'target',
+  top_category: 'receipt',
+  log_nudge: 'chat',
 };
 
-const TONE: Record<CoachTone, { bg: string; text: string }> = {
-  pay: { bg: 'bg-pay-50', text: 'text-pay-text' },
-  warn: { bg: 'bg-warn-50', text: 'text-warn-600' },
-  receive: { bg: 'bg-receive-50', text: 'text-receive-text' },
-  accent: { bg: 'bg-accent-100', text: 'text-accent-600' },
-  info: { bg: 'bg-info-50', text: 'text-info-600' },
+// Tone → clay tint. The old tone only coloured a 36px icon chip; carrying it
+// into the tint keeps the same signal ("this one is about money going out" /
+// "this one is a warning") on a surface the user can now read at a glance,
+// instead of flattening every insight onto one colour.
+const TONE_TINT: Record<CoachTone, ClayTint> = {
+  pay: 'coral',
+  warn: 'gold',
+  receive: 'mint',
+  accent: 'accent',
+  info: 'sky',
 };
 
 function copyFor(card: CoachCard, t: ReturnType<typeof useT>): { title: string; body: string } {
@@ -53,26 +68,23 @@ export function CoachCards({ cards }: { cards: CoachCard[] }) {
       <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5 flex items-center gap-1.5">
         <Sparkles size={12} className="text-accent-500" /> {t('coach_title')}
       </h2>
-      <div className="space-y-2">
+      {/* Tiles, not cards: every insight navigates, and §10.1 is explicit
+          that a surface which needs a tap is tier 1. The lip + 2px press
+          replaces the chevron as the affordance. `pt-5`/`space-y-6` give
+          the floating icons the 17px of overhang they need — this list must
+          never sit inside an overflow-hidden ancestor. */}
+      <div className="space-y-6 pt-5">
         {cards.map((card) => {
-          const Icon = KIND_ICON[card.kind];
-          const tone = TONE[card.tone];
           const { title, body } = copyFor(card, t);
           return (
-            <button
+            <Tile3D
               key={card.id}
+              tint={TONE_TINT[card.tone]}
+              icon={KIND_ICON[card.kind]}
+              title={title}
+              subtitle={body}
               onClick={() => navigate(card.href)}
-              className="w-full flex items-center gap-3 rounded-2xl bg-cream-card border border-cream-border p-3.5 text-left press-lg"
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${tone.bg} ${tone.text}`}>
-                <Icon size={16} strokeWidth={2} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-ink-900 tracking-tight truncate">{title}</p>
-                <p className="text-[11px] text-ink-500 mt-0.5 truncate">{body}</p>
-              </div>
-              <ChevronRight size={15} className="text-ink-300 shrink-0" />
-            </button>
+            />
           );
         })}
       </div>

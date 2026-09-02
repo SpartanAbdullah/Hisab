@@ -7,6 +7,9 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { Card3D } from '../components/Card3D';
+import { Icon3D } from '../components/Icon3D';
+import type { ClayTint } from '../lib/clay';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
@@ -307,20 +310,18 @@ export function GoalsPage() {
               const CatIcon = categoryIconMap[exp.category] ?? CalendarClock;
               const catColor = categoryColorMap[exp.category] ?? { bg: 'bg-cream-soft', text: 'text-ink-500' };
 
-              // Color-coded card tint
-              const cardTint = isOverdue || isUrgent
-                ? '!border-pay-100/60 !bg-pay-50/20'
-                : isDueToday
-                  ? '!border-warn-50/60 !bg-warn-50/20'
-                  : isSoon
-                    ? '!border-warn-50/60'
-                    : '!border-receive-100/60 !bg-receive-50/10';
+              // 3D clay: the same urgency ladder the flat tint encoded —
+              // coral for overdue/urgent, gold for due-today/soon, mint for
+              // everything comfortably ahead.
+              const cardTint: ClayTint = isOverdue || isUrgent
+                ? 'coral'
+                : isDueToday || isSoon
+                  ? 'gold'
+                  : 'mint';
 
               return (
-                <div key={exp.id}
-                  className={`rounded-2xl bg-cream-card border border-cream-border p-4 animate-fade-in ${cardTint}`}
-                  style={{ animationDelay: `${i * 60}ms` }}
-                >
+                <Card3D key={exp.id} tint={cardTint} padding="sm"
+                  className="animate-fade-in" style={{ animationDelay: `${i * 60}ms` }}>
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${catColor.bg} ${catColor.text}`}>
                       <CatIcon size={18} strokeWidth={1.8} />
@@ -382,7 +383,7 @@ export function GoalsPage() {
                       <XCircle size={12} /> {t('upcoming_status_cancel')}
                     </button>
                   </div>
-                </div>
+                </Card3D>
               );
             })}
           </div>
@@ -397,7 +398,7 @@ export function GoalsPage() {
           </h2>
         )}
         {loadStatus === 'ready' && goals.length === 0 && upcomingExpenses.length === 0 && (
-          <EmptyState icon={Target} tone="receive" title={t('empty_goals_title')} description={t('empty_goals_desc')} subhint={t('empty_goals_subhint')} actionLabel={t('empty_goals_cta')} onAction={() => setShowAdd(true)} />
+          <EmptyState icon={Target} clayIcon="piggybank" tone="receive" title={t('empty_goals_title')} description={t('empty_goals_desc')} subhint={t('empty_goals_subhint')} actionLabel={t('empty_goals_cta')} onAction={() => setShowAdd(true)} />
         )}
         {goals.map((g, i) => {
           const progress = g.targetAmount > 0 ? (g.savedAmount / g.targetAmount) * 100 : 0;
@@ -427,15 +428,14 @@ export function GoalsPage() {
             return g.savedAmount >= expected - 0.01;
           })();
           return (
-            <div key={g.id}
-              className={`rounded-2xl bg-cream-card border border-cream-border p-5 animate-fade-in ${isComplete ? '!border-receive-100/60' : ''}`}
-              style={{ animationDelay: `${i * 60}ms` }}
-            >
+            // 3D clay tier 2: mint is the savings tint, and a finished goal
+            // wears the trophy. `style` carries the staggered entrance delay,
+            // which cannot be a class because the value is an index.
+            <Card3D key={g.id} tint="mint" padding="lg"
+              className="animate-fade-in" style={{ animationDelay: `${i * 60}ms` }}>
               <div className="flex items-center gap-3.5">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-                  isComplete ? 'bg-gradient-to-br from-receive-100 to-receive-50 text-receive-600' : 'bg-gradient-to-br from-accent-100 to-accent-50 text-accent-600'
-                }`}>
-                  {isComplete ? <span className="text-lg">&#x1f389;</span> : <Target size={22} strokeWidth={1.8} />}
+                <div className="w-12 h-12 flex items-center justify-center shrink-0">
+                  <Icon3D name={isComplete ? 'trophy' : 'piggybank'} size="sm" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-[14px] text-ink-900 tracking-tight">{g.title}</p>
@@ -582,7 +582,7 @@ export function GoalsPage() {
                     : 'border-accent-100 text-accent-600 active:bg-accent-50'
                 }`}
               >{isComplete ? t('goal_manage') : t('goal_add_money')}</button>
-            </div>
+            </Card3D>
           );
         })}
       </div>

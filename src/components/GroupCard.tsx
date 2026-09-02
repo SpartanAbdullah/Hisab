@@ -58,8 +58,11 @@ export function GroupCard({
 
   // State copy + colour token mapping. Sukoon's group cards label the state
   // explicitly ("You're owed" / "You owe" / "All settled") rather than
-  // relying on the +/− sign alone.
-  const stateLabel = owed ? "You're owed" : owes ? 'You owe' : settledLabel;
+  // relying on the +/− sign alone. The two directional labels reuse the
+  // existing group_you_owed / group_you_owe keys — they were hardcoded
+  // English here while their roman-Urdu translations already existed unused
+  // in i18n.ts, which is exactly the leak the lint ratchet exists to stop.
+  const stateLabel = owed ? t('group_you_owed') : owes ? t('group_you_owe') : settledLabel;
   const amountColor = owed
     ? 'text-receive-text'
     : owes
@@ -69,12 +72,17 @@ export function GroupCard({
   return (
     <button
       onClick={onClick}
-      className={`w-full rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press-lg ${
+      // 3D clay: sky is the splits domain's tint (CLAY_TINT_BY_DOMAIN). The
+      // row keeps its own 18px radius — between the tile's 16 and the card's
+      // 24 — because the list reads as one rhythm; the lip and press are what
+      // mark it pressable. Direction still comes from the amount colour and
+      // the settle pill, not from the tint, so a list of groups stays calm.
+      className={`clay-tile clay-sky w-full rounded-[18px] p-4 text-left ${
         isArchived ? 'opacity-75' : ''
       }`}
     >
       <div className="flex items-center gap-3">
-        <div className="relative w-11 h-11 rounded-2xl bg-cream-soft border border-cream-hairline flex items-center justify-center text-lg shrink-0">
+        <div className="relative w-11 h-11 rounded-2xl bg-cream-card border border-cream-hairline flex items-center justify-center text-lg shrink-0">
           {group.emoji}
           {/* Unread-activity dot — present ONLY when there's unread activity, so
               its mere presence (not its colour) carries the meaning. */}
@@ -107,7 +115,7 @@ export function GroupCard({
 
       <div className="mt-3 pt-3 border-t border-cream-hairline flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.08em] flex items-center gap-1.5 min-w-0">
-          <span className="truncate">{balanceLoaded ? stateLabel : 'Loading…'}</span>
+          <span className="truncate">{balanceLoaded ? stateLabel : t('loading')}</span>
           {/* Unreconciled marker — a hollow amber ring with a '!' glyph, kept
               visually distinct from the filled unread-activity dot on the
               avatar so the two signals never read as the same thing. */}

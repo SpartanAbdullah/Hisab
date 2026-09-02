@@ -5,6 +5,7 @@ import { useCommitteeStore } from '../stores/committeeStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { Icon3D } from '../components/Icon3D';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { CreateCommitteeModal } from './CreateCommitteeModal';
@@ -58,7 +59,8 @@ export function KametiPage() {
         ) : committees.length === 0 ? (
           <EmptyState
             icon={Coins}
-            tone="accent"
+            clayIcon="coins"
+            tone="warn"
             title={t('kameti_empty_title')}
             description={t('kameti_empty_desc')}
             actionLabel={t('kameti_empty_cta')}
@@ -76,11 +78,15 @@ export function KametiPage() {
               <button
                 key={c.id}
                 onClick={() => navigate(`/kameti/${c.id}`)}
-                className="w-full text-left rounded-2xl bg-cream-card border border-cream-border p-4 press-lg"
+                className="clay-tile clay-gold w-full text-left p-4"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-100 to-accent-50 text-accent-600 flex items-center justify-center shrink-0 text-lg">
-                    {c.emoji ? c.emoji : <Coins size={20} strokeWidth={1.8} />}
+                  {/* A kameti the user named with an emoji keeps its emoji;
+                      everything else gets the 3D coins. Un-floated: this is a
+                      list row, and a floating icon would overhang the row
+                      above it. */}
+                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 text-lg">
+                    {c.emoji ? c.emoji : <Icon3D name="coins" size="sm" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">

@@ -97,7 +97,9 @@ export function InvestmentsPage() {
         key={`${h.marketId}:${h.symbol}`}
         type="button"
         onClick={() => navigate(`/investment/${h.marketId}/${encodeURIComponent(h.symbol)}`)}
-        className="w-full rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 text-left hover:shadow-sm hover:border-cream-hairline hover:bg-cream-soft active:scale-[0.99] transition-all"
+        // 3D clay tier 1. The hover lift and scale squeeze go: the lip's
+        // 3px→1px press is the only motion this system allows (§10.8).
+        className="clay-tile clay-neutral w-full rounded-[18px] p-4 flex items-center gap-3 text-left"
       >
         <div className={`w-11 h-11 rounded-2xl ${color.tint} border ${color.border} flex items-center justify-center shrink-0`}>
           <span className={`text-[12px] font-bold ${color.text} tracking-tight`}>{h.symbol.slice(0, 3)}</span>
@@ -237,6 +239,7 @@ export function InvestmentsPage() {
         ) : markets.length === 0 ? (
           <EmptyState
             icon={TrendingUp}
+            clayIcon="chart"
             tone="accent"
             title={t('inv_empty_title')}
             description={t('inv_empty_desc')}
@@ -325,6 +328,7 @@ export function InvestmentsPage() {
             {trades.length === 0 ? (
               <EmptyState
                 icon={TrendingUp}
+                clayIcon="chart"
                 tone="accent"
                 title={t('inv_empty_title')}
                 description={t('inv_empty_desc')}

@@ -13,6 +13,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "check:bundle": "node scripts/check-bundle-size.mjs",
+    "build:3d": "node scripts/build-3d-icons.mjs",
     "cap:sync": "npm run build && npx cap sync android",
     "cap:open:android": "npx cap open android",
     "cap:run:android": "npm run build && npx cap run android"
@@ -64,6 +65,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "sharp": "0.35.4",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",

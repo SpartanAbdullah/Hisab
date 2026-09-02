@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle, Pencil, Lock, SlidersHorizontal, UserMinus, UserPlus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, MessageCircle, Pencil, Lock, SlidersHorizontal, UserMinus, UserPlus } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCommitteeStore } from '../stores/committeeStore';
 import { CommitteeDrawError } from '../lib/supabaseDb';
@@ -11,6 +11,8 @@ import { PageHeader } from '../components/PageHeader';
 import { PageErrorState } from '../components/PageErrorState';
 import { CommitteeVerifyDraw } from '../components/CommitteeVerifyDraw';
 import { CommitteeWitnessLink } from '../components/CommitteeWitnessLink';
+import { Card3D } from '../components/Card3D';
+import { Icon3D } from '../components/Icon3D';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
@@ -303,8 +305,9 @@ export function KametiDetailPage() {
       )}
 
       <div className="px-5 pt-2 space-y-4">
-        {/* Pool + round + trust badges */}
-        <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+        {/* Pool + round + trust badges. 3D clay tier 2, gold — kameti's tint
+            (CLAY_TINT_BY_DOMAIN). Informational, so a card and never a tile. */}
+        <Card3D tint="gold" padding="md">
           <div className="flex items-baseline justify-between gap-2">
             <div>
               <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">{t('kameti_pool')}</p>
@@ -321,30 +324,30 @@ export function KametiDetailPage() {
             </span>
             <span className="inline-flex items-center rounded-full bg-accent-50 text-accent-600 px-2 py-1 text-[10px] font-semibold">{t('kameti_sood_free')}</span>
           </div>
-        </div>
+        </Card3D>
 
         {/* Undrawn ballot → draw CTA. Gated on hasDrawRecord (not isDrawn) so
             the button disappears the instant the server records a draw, even if
             the member slots haven't been re-read yet. */}
         {!hasDrawRecord && (
-          <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4 text-center">
+          <Card3D tint="accent" padding="md" className="text-center">
             <Dices size={26} className="text-accent-600 mx-auto" strokeWidth={1.8} />
             <p className="text-[13px] font-semibold text-ink-900 mt-2">{t('kameti_undrawn')}</p>
             <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">{t('kameti_method_ballot_desc')}</p>
-            <button onClick={handleDraw} disabled={drawing} className="mt-3 w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-50 press">
+            <button onClick={handleDraw} disabled={drawing} className="clay-depth clay-depth-ink mt-3 w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-50">
               {drawing ? t('kameti_drawing') : t('kameti_run_ballot')}
             </button>
-          </div>
+          </Card3D>
         )}
 
         {/* Draw recorded on the server but the slots aren't in this device's
             copy yet (stale tab, or a draw run elsewhere). Never offer a redraw
             here — say it's locked and let the refresh land. */}
         {hasDrawRecord && !isDrawn && (
-          <div className="rounded-2xl bg-cream-card border border-cream-border p-4 flex items-start gap-2.5">
+          <Card3D padding="md" className="flex items-start gap-2.5">
             <Lock size={15} className="text-ink-400 shrink-0 mt-0.5" strokeWidth={2.2} />
             <p className="text-[11.5px] text-ink-600 leading-relaxed">{t('kameti_draw_locked')}</p>
-          </div>
+          </Card3D>
         )}
 
         {/* The roster, BEFORE the ballot is drawn. Everything below this point
@@ -389,15 +392,17 @@ export function KametiDetailPage() {
           </div>
         )}
 
-        {/* This round's recipient (baari) */}
+        {/* This round's recipient (baari). The winner moment: gold clay + the
+            3D trophy — the one place in the kameti flow that should feel like
+            a prize. */}
         {isDrawn && recipient && (
-          <div className="rounded-2xl bg-gradient-to-br from-accent-100 to-accent-50 border border-accent-100 p-4">
+          <Card3D tint="gold" padding="md">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white/70 flex items-center justify-center shrink-0">
-                <Gift size={18} className="text-accent-600" strokeWidth={1.9} />
+              <div className="w-10 h-10 flex items-center justify-center shrink-0">
+                <Icon3D name="trophy" size="sm" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-semibold text-accent-600 uppercase tracking-wide">{t('kameti_baari_label')}</p>
+                <p className="text-[10px] font-semibold text-warn-700 uppercase tracking-wide">{t('kameti_baari_label')}</p>
                 <p className="text-[15px] font-bold text-ink-900 truncate">{recipient.name}{recipient.isOrganizer ? '' : ''}</p>
               </div>
               <button
@@ -421,7 +426,7 @@ export function KametiDetailPage() {
                 <Check size={12} strokeWidth={2.8} /> {recipient.payoutReceivedAt ? t('kameti_received') : t('kameti_mark_received')}
               </button>
             </div>
-          </div>
+          </Card3D>
         )}
 
         {/* Provably-fair draw — verify the ballot wasn't rigged */}
@@ -562,7 +567,7 @@ export function KametiDetailPage() {
           <button
             onClick={handleAddMember}
             disabled={rosterBusy || !newMemberName.trim()}
-            className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40 press"
+            className="clay-depth clay-depth-ink w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40"
           >
             {t('kameti_add_member')}
           </button>
@@ -594,7 +599,7 @@ export function KametiDetailPage() {
           <button
             onClick={saveEditMember}
             disabled={!editName.trim()}
-            className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40 press"
+            className="clay-depth clay-depth-ink w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40"
           >
             {t('cat_save')}
           </button>

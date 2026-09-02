@@ -7,6 +7,7 @@ import { useSplitStore } from '../stores/splitStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { EmptyState } from '../components/EmptyState';
+import { Card3D } from '../components/Card3D';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { PageErrorState } from '../components/PageErrorState';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
@@ -391,16 +392,18 @@ export function AnalyticsPage() {
         </p>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards. 3D clay tier 2 — informational, never tappable. The
+          tint carries the money direction the page already colours the
+          numbers with: coral out, mint in. */}
       <div className="px-5 pt-2 grid grid-cols-2 gap-2.5">
-        <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+        <Card3D tint="coral" padding="sm">
           <p className="text-[10px] text-ink-500 font-bold uppercase tracking-widest">{t('analytics_total_spent')}</p>
           <MoneyLines totals={spentByCurrency} tone="expense" />
-        </div>
-        <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+        </Card3D>
+        <Card3D tint="mint" padding="sm">
           <p className="text-[10px] text-ink-500 font-bold uppercase tracking-widest">{t('analytics_total_income')}</p>
           <MoneyLines totals={incomeByCurrency} tone="income" />
-        </div>
+        </Card3D>
       </div>
 
       {/* Spend trend vs the previous comparable period (chart currency). For
@@ -483,6 +486,7 @@ export function AnalyticsPage() {
         loadStatus === 'ready' ? (
           <EmptyState
             icon={TrendingUp}
+            clayIcon="chart"
             tone="accent"
             title={t('analytics_no_data')}
             description={t('analytics_empty_desc')}

@@ -3,20 +3,12 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
   ArrowDownLeft,
-  Wallet2,
-  Coins,
   TrendingUp,
   Plus,
-  BarChart3,
-  HandCoins,
   Users,
-  Target,
-  History,
   ChevronRight,
   ChevronDown,
   Landmark,
-  Contact,
-  CreditCard,
   Search,
   CheckCircle2,
 } from "lucide-react";
@@ -52,7 +44,7 @@ import {
 import { CHECK_STAMP_KEY, daysSince, type CheckStamp } from "../lib/hisaabCheck";
 import { buildInboxActionItems } from "../lib/inboxInfo";
 import { HisaabCheckModal } from "../components/HisaabCheckModal";
-import { CalendarClock, ClipboardCheck, Scale } from "lucide-react";
+import { CalendarClock, Scale } from "lucide-react";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
 import { SettlementNudgeBanner } from "../components/SettlementNudgeBanner";
 import { BudgetWarningBanner } from "../components/BudgetWarningBanner";
@@ -62,13 +54,21 @@ import { EditTransactionModal } from "../components/EditTransactionModal";
 import type { Transaction } from "../db";
 import { EmptyState } from "../components/EmptyState";
 import { PageErrorState } from "../components/PageErrorState";
+// 3D clay (docs/design-system.md §10). Tier 1 `Tile3D` for anything the user
+// can press, tier 2 `Card3D` for surfaces that only tell them something, and
+// `Icon3D` for the rendered icon that floats over both. The radius gap
+// between the tiers (16px vs 24px) is what makes "tappable" legible before
+// the tap, so nothing here uses a Card3D as a button.
+import { Card3D } from "../components/Card3D";
+import { Tile3D } from "../components/Tile3D";
+import { Icon3D } from "../components/Icon3D";
+import { Button } from "../components/Button";
 import { UserAvatar } from "../components/UserAvatar";
 import { NavyHero } from "../components/NavyHero";
 import { InboxAction } from "../components/InboxAction";
 import { AnimatedMoney } from "../components/AnimatedMoney";
 import { GlobalSearch } from "../components/GlobalSearch";
 import { getPrimaryCurrency } from "../lib/primaryCurrency";
-import { NextStepHint } from "../components/NextStepHint";
 import { GettingStartedCard } from "../components/GettingStartedCard";
 import { CoachCards } from "../components/CoachCards";
 import { buildCoachCards } from "../lib/coachInsights";
@@ -600,57 +600,77 @@ export function HomePage() {
               onRetry={retryLoad}
             />
           ) : isInitialLoading ? (
-            <div className="space-y-4">
+            // Skeletons wear the clay radii so the first real paint does not
+            // visibly re-corner every surface. Written by hand (rounded-2xl =
+            // 16px tile, rounded-3xl = 24px card) rather than borrowing
+            // .clay-tile, which §10.4 reserves for real buttons and links.
+            <div className="space-y-4" aria-hidden="true">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-[18px] bg-cream-card border border-cream-border h-24 animate-pulse" />
-                <div className="rounded-[18px] bg-cream-card border border-cream-border h-24 animate-pulse" />
+                <div className="rounded-2xl bg-cream-card h-24 animate-pulse" />
+                <div className="rounded-2xl bg-cream-card h-24 animate-pulse" />
               </div>
-              <div className="rounded-[18px] bg-cream-card border border-cream-border h-32 animate-pulse" />
+              <div className="grid grid-cols-2 gap-x-3 gap-y-6 pt-5">
+                <div className="rounded-2xl bg-cream-card h-[104px] animate-pulse" />
+                <div className="rounded-2xl bg-cream-card h-[104px] animate-pulse" />
+              </div>
+              <div className="rounded-3xl bg-cream-card h-32 animate-pulse" />
             </div>
           ) : (
             <>
               {receivableEntries.length === 0 && payableEntries.length === 0 ? (
-                <div className="rounded-[18px] bg-cream-card border border-cream-border p-5 text-center">
-                  <HandCoins size={26} className="text-accent-600 mx-auto" />
+                // The one place this mode gets an illustration. The asset
+                // named `handshake` is actually a thumbs-up, which is
+                // exactly right for "nothing outstanding": a blush card
+                // (blush is the khata / "diya aur liya" tint) with the
+                // record-an-IOU CTA on the clay depth button.
+                <Card3D tint="blush" padding="lg" className="text-center">
+                  <Icon3D name="handshake" size="lg" float className="mx-auto" />
                   <p className="font-semibold text-ink-900 mt-2">
                     {t('home_no_ious')}
                   </p>
-                  <p className="text-[12px] text-ink-500 mt-1">
+                  <p className="text-[12px] text-ink-600 mt-1">
                     {t('home_record_iou_hint')}
                   </p>
-                  <button
+                  <Button
+                    depth
+                    size="sm"
                     onClick={() => setShowQuickEntry(true)}
-                    className="mt-3 inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-2xl bg-accent-600 text-white text-[13px] font-semibold press"
+                    icon={<Plus size={15} strokeWidth={2.4} />}
+                    className="mt-4 min-h-[44px]"
                   >
-                    <Plus size={15} strokeWidth={2.4} />
                     {t('home_record_iou_cta')}
-                  </button>
-                </div>
+                  </Button>
+                </Card3D>
               ) : (
+                // Both halves are tappable, so they are TILES wearing a tint,
+                // not Card3Ds (§10.1: "if a card needs a tap, it is not a
+                // card"). No floating icon here — the money number is the
+                // point and a 64px icon gutter would squeeze it on a 360px
+                // phone; the arrow chip stays as the non-colour direction cue.
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => navigate("/loans?tab=receivables")}
-                    className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
+                    className="clay-tile clay-mint p-4 text-left"
                   >
                     <div className="flex items-center gap-2 mb-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-receive-100 flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-lg bg-cream-card/70 flex items-center justify-center">
                         <ArrowDownLeft size={14} className="text-receive-text" />
                       </div>
-                      <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
+                      <p className="text-[10.5px] font-semibold text-ink-600 uppercase tracking-[0.1em]">
                         {t('check_receivable')}
                       </p>
                     </div>
                     {recvLoanCount === 0 ? (
                       <>
-                        <p className="text-[20px] font-semibold text-ink-300 tabular-nums">—</p>
-                        <p className="text-[11px] text-ink-400 mt-1">{t('home_no_one')}</p>
+                        <p className="text-[20px] font-semibold text-ink-600 tabular-nums">—</p>
+                        <p className="text-[11px] text-ink-600 mt-1">{t('home_no_one')}</p>
                       </>
                     ) : (
                       <>
                         <p className="text-[20px] font-semibold text-receive-text tabular-nums tracking-tight">
                           {formatMoney(recvPrimary, recvPrimaryCur)}
                         </p>
-                        <p className="text-[11px] text-ink-500 mt-1">
+                        <p className="text-[11px] text-ink-600 mt-1">
                           {recvSecond
                             ? `+ ${formatMoney(recvSecond[1], recvSecond[0])}`
                             : recvLoanCount === 1
@@ -662,27 +682,27 @@ export function HomePage() {
                   </button>
                   <button
                     onClick={() => navigate("/loans?tab=payables")}
-                    className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
+                    className="clay-tile clay-coral p-4 text-left"
                   >
                     <div className="flex items-center gap-2 mb-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-pay-100 flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-lg bg-cream-card/70 flex items-center justify-center">
                         <ArrowUpRight size={14} className="text-pay-text" />
                       </div>
-                      <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
+                      <p className="text-[10.5px] font-semibold text-ink-600 uppercase tracking-[0.1em]">
                         {t('check_payable')}
                       </p>
                     </div>
                     {payLoanCount === 0 ? (
                       <>
-                        <p className="text-[20px] font-semibold text-ink-300 tabular-nums">—</p>
-                        <p className="text-[11px] text-ink-400 mt-1">{t('home_no_one')}</p>
+                        <p className="text-[20px] font-semibold text-ink-600 tabular-nums">—</p>
+                        <p className="text-[11px] text-ink-600 mt-1">{t('home_no_one')}</p>
                       </>
                     ) : (
                       <>
                         <p className="text-[20px] font-semibold text-pay-text tabular-nums tracking-tight">
                           {formatMoney(payPrimary, payPrimaryCur)}
                         </p>
-                        <p className="text-[11px] text-ink-500 mt-1">
+                        <p className="text-[11px] text-ink-600 mt-1">
                           {paySecond
                             ? `+ ${formatMoney(paySecond[1], paySecond[0])}`
                             : payLoanCount === 1
@@ -699,35 +719,27 @@ export function HomePage() {
                   accounts/transactions surfaces, surface the remaining
                   browse destinations (Contacts, Activity) directly on home
                   so they're not buried in Settings. */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
+              {/* Same 2-up shortcuts, now clay tiles. Stacked placement, not
+                  corner: these labels are two words each ("Aap ke Contacts",
+                  "Recent Activity") and the corner layout's 64px gutter would
+                  leave a 154px tile only 76px of copy. */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-6 pt-5">
+                <Tile3D
+                  tint="blush"
+                  icon="chat"
+                  iconPlacement="top"
+                  title={t('splits_home_contacts')}
+                  subtitle={t('splits_home_contacts_sub')}
                   onClick={() => navigate("/contacts")}
-                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-accent-50 flex items-center justify-center mb-2.5">
-                    <Contact size={16} className="text-accent-600" />
-                  </div>
-                  <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
-                    {t('splits_home_contacts')}
-                  </p>
-                  <p className="text-[11px] text-ink-500 mt-0.5">
-                    {t('splits_home_contacts_sub')}
-                  </p>
-                </button>
-                <button
+                />
+                <Tile3D
+                  tint="sky"
+                  icon="receipt"
+                  iconPlacement="top"
+                  title={t('splits_home_activity')}
+                  subtitle={t('splits_home_activity_sub')}
                   onClick={() => navigate("/activity")}
-                  className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-info-50 flex items-center justify-center mb-2.5">
-                    <History size={16} className="text-info-600" />
-                  </div>
-                  <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
-                    {t('splits_home_activity')}
-                  </p>
-                  <p className="text-[11px] text-ink-500 mt-0.5">
-                    {t('splits_home_activity_sub')}
-                  </p>
-                </button>
+                />
               </div>
 
               <div>
@@ -752,7 +764,7 @@ export function HomePage() {
                     subhint={t('home_no_splits_subhint')}
                   />
                 ) : (
-                  <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+                  <Card3D padding="none" className="overflow-hidden divide-y divide-cream-hairline">
                     {groups.slice(0, 3).map((group) => {
                       const balance = groupBalances[group.id] ?? 0;
                       return (
@@ -793,15 +805,18 @@ export function HomePage() {
                         </button>
                       );
                     })}
-                  </div>
+                  </Card3D>
                 )}
               </div>
 
-              <div className="rounded-[18px] bg-info-50 border border-cream-border p-4">
-                <p className="text-[12px] text-info-600 leading-relaxed">
-                  {t('home_notify_needs_app')}
-                </p>
-              </div>
+              <Card3D tint="sky" padding="sm">
+                <div className="flex items-center gap-3">
+                  <Icon3D name="bell" size="sm" />
+                  <p className="text-[12px] text-ink-700 leading-relaxed">
+                    {t('home_notify_needs_app')}
+                  </p>
+                </div>
+              </Card3D>
             </>
           )}
         </div>
@@ -898,21 +913,17 @@ export function HomePage() {
   const collapsedBanners = activeBanners.slice(ATTENTION_CAP);
   const collapsedReminderHref = collapsedBanners[0]?.href ?? "/";
 
-  const homeHint =
+  // The calm "nothing needs you" status card. Same three conditions as
+  // before — only the copy moved into i18n (it was two hardcoded English
+  // sentences) and the surface became a clay card.
+  const showCalmStatus =
     // The Getting Started card covers the no-account and no-transaction cases.
-    accountCount === 0 || transactions.length === 0
-      ? null
-      : hasAttentionBanner
-      ? // A concrete strip/banner is already covering the active signal(s) —
-        // don't echo it as a hint. (Kept null rather than removed so the
-        // "all up to date" branch below can't fire alongside an alert.)
-        null
-      : {
-          icon: CheckCircle2,
-          tone: "receive" as const,
-          status: "Your dashboard is up to date.",
-          next: "Keep adding transactions as they happen, or use Search to quickly find an older account, person, or expense.",
-        };
+    accountCount > 0 &&
+    transactions.length > 0 &&
+    // A concrete strip/banner is already covering the active signal(s) —
+    // don't echo it as a hint, and never let the calm state fire alongside
+    // an alert.
+    !hasAttentionBanner;
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -1028,13 +1039,23 @@ export function HomePage() {
         {/* First-load skeleton — never flash "Add an account" / quick tiles
             empty state before the accounts query finishes. */}
         {isInitialLoading && (
+          // Clay radii by hand (rounded-2xl = 16px tile, rounded-3xl = 24px
+          // card) so the first real paint doesn't re-corner the whole page.
+          // The 2x2 block previews the quick-tile grid's new geometry —
+          // same 104px height, same pt-5/gap-y-6 float clearance.
           <div className="space-y-4" aria-hidden="true">
-            <div className="rounded-[18px] bg-cream-card border border-cream-border h-20 animate-pulse" />
+            <div className="rounded-3xl bg-cream-card h-20 animate-pulse" />
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-[18px] bg-cream-card border border-cream-border h-24 animate-pulse" />
-              <div className="rounded-[18px] bg-cream-card border border-cream-border h-24 animate-pulse" />
+              <div className="rounded-2xl bg-cream-card h-24 animate-pulse" />
+              <div className="rounded-2xl bg-cream-card h-24 animate-pulse" />
             </div>
-            <div className="rounded-[20px] bg-cream-card border border-cream-border h-32 animate-pulse" />
+            <div className="grid grid-cols-2 gap-x-3 gap-y-6 pt-5">
+              <div className="rounded-2xl bg-cream-card h-[104px] animate-pulse" />
+              <div className="rounded-2xl bg-cream-card h-[104px] animate-pulse" />
+              <div className="rounded-2xl bg-cream-card h-[104px] animate-pulse" />
+              <div className="rounded-2xl bg-cream-card h-[104px] animate-pulse" />
+            </div>
+            <div className="rounded-3xl bg-cream-card h-32 animate-pulse" />
           </div>
         )}
 
@@ -1057,16 +1078,19 @@ export function HomePage() {
 
         {/* 2-up: To Receive | To Pay */}
         {accountCount > 0 && (hasReceivables || hasPayables) && (
+          // Tappable, so tiles wearing the mint / coral tint — not Card3Ds
+          // (§10.1). No floating icon: the amount is the content and the
+          // 64px icon gutter would squeeze it on a 360px phone.
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => navigate("/loans?tab=receivables")}
-              className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
+              className="clay-tile clay-mint p-4 text-left"
             >
               <div className="flex items-center gap-2 mb-2.5">
-                <div className="w-7 h-7 rounded-lg bg-receive-100 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-cream-card/70 flex items-center justify-center">
                   <ArrowDownLeft size={14} className="text-receive-text" />
                 </div>
-                <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
+                <p className="text-[10.5px] font-semibold text-ink-600 uppercase tracking-[0.1em]">
                   {t("loan_receivable")}
                 </p>
               </div>
@@ -1078,7 +1102,7 @@ export function HomePage() {
                       receivableEntries[0][0],
                     )}
                   </p>
-                  <p className="text-[11px] text-ink-500 mt-1">
+                  <p className="text-[11px] text-ink-600 mt-1">
                     {receivableEntries.length > 1
                       ? `+ ${formatMoney(
                           receivableEntries[1][1],
@@ -1089,22 +1113,22 @@ export function HomePage() {
                 </>
               ) : (
                 <>
-                  <p className="text-[20px] font-semibold text-ink-300 tabular-nums">
+                  <p className="text-[20px] font-semibold text-ink-600 tabular-nums">
                     —
                   </p>
-                  <p className="text-[11px] text-ink-400 mt-1">{t('home_no_one')}</p>
+                  <p className="text-[11px] text-ink-600 mt-1">{t('home_no_one')}</p>
                 </>
               )}
             </button>
             <button
               onClick={() => navigate("/loans?tab=payables")}
-              className="rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press"
+              className="clay-tile clay-coral p-4 text-left"
             >
               <div className="flex items-center gap-2 mb-2.5">
-                <div className="w-7 h-7 rounded-lg bg-pay-100 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-cream-card/70 flex items-center justify-center">
                   <ArrowUpRight size={14} className="text-pay-text" />
                 </div>
-                <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.1em]">
+                <p className="text-[10.5px] font-semibold text-ink-600 uppercase tracking-[0.1em]">
                   {t("loan_payable")}
                 </p>
               </div>
@@ -1113,7 +1137,7 @@ export function HomePage() {
                   <p className="text-[20px] font-semibold text-pay-text tabular-nums tracking-tight">
                     {formatMoney(payableEntries[0][1], payableEntries[0][0])}
                   </p>
-                  <p className="text-[11px] text-ink-500 mt-1">
+                  <p className="text-[11px] text-ink-600 mt-1">
                     {payableEntries.length > 1
                       ? `+ ${formatMoney(
                           payableEntries[1][1],
@@ -1124,82 +1148,107 @@ export function HomePage() {
                 </>
               ) : (
                 <>
-                  <p className="text-[20px] font-semibold text-ink-300 tabular-nums">
+                  <p className="text-[20px] font-semibold text-ink-600 tabular-nums">
                     —
                   </p>
-                  <p className="text-[11px] text-ink-400 mt-1">{t('home_no_one')}</p>
+                  <p className="text-[11px] text-ink-600 mt-1">{t('home_no_one')}</p>
                 </>
               )}
             </button>
           </div>
         )}
 
-        {/* Quick-access tile grid — Careem-inspired layout.
-            Each tile is its OWN filled card (cream-soft bg) with a big
-            colored icon at the top and the label pinned at the bottom.
-            Hierarchy: outer cream-card wrapper → inner cream-soft tile
-            cards, mirroring Careem's "white card with grey tiles nested"
-            pattern. Colors stay in the Sukoon palette — only the icon
-            glyph carries the tone; the tile chrome stays neutral. */}
+        {/* Quick-access tile grid — the one place this page spends its
+            boldness: eight clay tiles, each with a rendered 3D icon floating
+            over its top edge.
+
+            LAYOUT: 4 columns x 2 rows, on `iconPlacement="top"`. The stacked
+            shape is what makes 4-up survive a 360px phone: at 20px page
+            gutters and an 8px column gap a tile is 74px wide, and the corner
+            layout reserves 64px of that for the icon alone. Stacked, the icon
+            is centred over the top edge and the label gets the full 62px
+            beneath it. `iconSize="sm"` (36px) keeps the art in proportion to
+            a 74px tile; `badgePlacement="corner"` keeps the same counts the
+            old QuickTile pinned to the corner, now ringed in the tile's own
+            surface colour so it stays legible over the art.
+
+            No overflow-hidden ancestor here, and `pt-5` / `gap-y-6` on the
+            grid: a stacked icon hangs 14px above its tile and would clip
+            otherwise. */}
         {accountCount > 0 && (
-          <div className="rounded-[20px] bg-cream-card border border-cream-border p-2.5">
-            <div className="grid grid-cols-4 gap-2">
-              <QuickTile
-                label={t("nav_goals")}
-                icon={Target}
-                iconClass="text-accent-600"
-                onClick={() => navigate("/goals")}
-              />
-              <QuickTile
-                label="Budget"
-                icon={Wallet2}
-                iconClass="text-receive-text"
-                badge={budgetAttentionCount}
-                badgeBgClass="bg-receive-50"
-                onClick={() => navigate("/budgets")}
-              />
-              <QuickTile
-                label="Subscriptions"
-                icon={CreditCard}
-                iconClass="text-info-600"
-                badge={subscriptionsDueSoon}
-                badgeBgClass="bg-info-50"
-                onClick={() => navigate("/subscriptions")}
-              />
-              <QuickTile
-                label={t("analytics_title")}
-                icon={BarChart3}
-                iconClass="text-pay-text"
-                onClick={() => navigate("/analytics")}
-              />
-              <QuickTile
-                label="Activity"
-                icon={History}
-                iconClass="text-ink-700"
-                onClick={() => navigate("/activity")}
-              />
-              <QuickTile
-                label="Contacts"
-                icon={Contact}
-                iconClass="text-warn-600"
-                badge={unsettledContactCount}
-                badgeBgClass="bg-warn-50"
-                badgeTextClass="text-warn-700"
-                onClick={() => navigate("/contacts")}
-              />
-              <QuickTile
-                label={t("kameti_title")}
-                icon={Coins}
-                iconClass="text-accent-600"
-                onClick={() => navigate("/kameti")}
-              />
-              <QuickTile
-                label={t("inv_title")}
-                icon={TrendingUp}
-                iconClass="text-receive-text"
-                onClick={() => navigate("/investments")}
-              />
-            </div>
+          <div className="grid grid-cols-4 gap-x-2 gap-y-6 pt-5">
+            <Tile3D
+              tint="mint"
+              icon="target"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t("nav_goals")}
+              onClick={() => navigate("/goals")}
+            />
+            <Tile3D
+              tint="gold"
+              icon="wallet"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t("home_tile_budget")}
+              badge={budgetAttentionCount > 0 ? (budgetAttentionCount > 9 ? "9+" : budgetAttentionCount) : undefined}
+              badgePlacement="corner"
+              onClick={() => navigate("/budgets")}
+            />
+            <Tile3D
+              tint="sky"
+              icon="card"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t("home_tile_subs")}
+              badge={subscriptionsDueSoon > 0 ? (subscriptionsDueSoon > 9 ? "9+" : subscriptionsDueSoon) : undefined}
+              badgePlacement="corner"
+              onClick={() => navigate("/subscriptions")}
+            />
+            <Tile3D
+              tint="accent"
+              icon="chart"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t("nav_analytics")}
+              onClick={() => navigate("/analytics")}
+            />
+            <Tile3D
+              tint="neutral"
+              icon="receipt"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t("nav_activity")}
+              onClick={() => navigate("/activity")}
+            />
+            <Tile3D
+              tint="blush"
+              /* `chat` (two speech bubbles), not `handshake` — that asset's
+                 art is a thumbs-up, which reads as approval, not people. */
+              icon="chat"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t("home_tile_contacts")}
+              badge={unsettledContactCount > 0 ? (unsettledContactCount > 9 ? "9+" : unsettledContactCount) : undefined}
+              badgePlacement="corner"
+              onClick={() => navigate("/contacts")}
+            />
+            <Tile3D
+              tint="gold"
+              icon="coins"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t("kameti_title")}
+              onClick={() => navigate("/kameti")}
+            />
+            <Tile3D
+              tint="mint"
+              icon="trophy"
+              iconPlacement="top"
+              iconSize="sm"
+              title={t("home_tile_invest")}
+              onClick={() => navigate("/investments")}
+            />
           </div>
         )}
 
@@ -1209,9 +1258,9 @@ export function HomePage() {
             differentiator, visible daily; settling a loan or a group split
             visibly moves this number. */}
         {dataReady && meraPrimary && (loans.length > 0 || accounts.length > 0 || groupObligationTotals.length > 0) && (
-          <div className="rounded-[18px] bg-cream-card border border-cream-border p-4">
+          <Card3D as="section" padding="lg">
             <div className="flex items-center justify-between mb-1.5">
-              <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] flex items-center gap-1.5">
+              <h2 className="text-[10.5px] font-semibold text-ink-600 uppercase tracking-[0.12em] flex items-center gap-1.5">
                 <Scale size={11} /> {t("home_mera_hisaab")}
               </h2>
               {meraPrevNet !== null && Math.abs(meraPrimary.net - meraPrevNet) > 0.005 && (
@@ -1239,14 +1288,14 @@ export function HomePage() {
               </p>
             )}
             {meraTotals.length > 1 && (
-              <p className="text-[10.5px] text-ink-400 mt-1 tabular-nums">
+              <p className="text-[10.5px] text-ink-600 mt-1 tabular-nums">
                 {meraTotals
                   .filter((entry) => entry.currency !== meraPrimary.currency)
                   .map((entry) => formatSignedMoney(entry.net, entry.currency))
                   .join(" · ")}
               </p>
             )}
-          </div>
+          </Card3D>
         )}
 
         {/* Investment Tracker — the record-keeping investments, surfaced
@@ -1254,14 +1303,14 @@ export function HomePage() {
             scoped on its own market; the header opens the full book. Only
             renders when something is actually held. */}
         {dataReady && invMarketRows.length > 0 && (
-          <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden">
+          <Card3D padding="none" className="overflow-hidden">
             <button
               onClick={() => navigate("/investments")}
               className="w-full flex items-center justify-between px-4 pt-3.5 pb-2 text-left active:bg-cream-soft transition-colors"
             >
               {/* span, not h2 — heading content inside a <button> is invalid
                   and vanishes from the screen-reader outline anyway. */}
-              <span className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] flex items-center gap-1.5">
+              <span className="text-[10.5px] font-semibold text-ink-600 uppercase tracking-[0.12em] flex items-center gap-1.5">
                 <TrendingUp size={11} /> {t("inv_title")}
               </span>
               <ChevronRight size={14} className="text-ink-300" />
@@ -1311,7 +1360,7 @@ export function HomePage() {
                 );
               })}
             </div>
-          </div>
+          </Card3D>
         )}
 
         {/* Weekly ritual + needs-action queue — the review-ceremony entry.
@@ -1320,51 +1369,40 @@ export function HomePage() {
             needs a hand (overdue EMIs, missed recurring, kameti rounds,
             unfiled expenses) and lands on the Inbox "To-do" tab. */}
         {dataReady && (
-          <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
-            <button
+          // Both rows are taps, so both are tiles. The shield floats over
+          // the ritual row (the weekly check is the "your hisaab is
+          // guarded" moment); the to-do row wears gold + bell and keeps its
+          // count in the tile badge. Done-today flips the ritual tile to
+          // mint so keeping the ritual is visibly rewarded.
+          <div className="space-y-6 pt-5">
+            <Tile3D
+              tint={checkDays === 0 ? "mint" : "accent"}
+              icon="shield"
+              title={t("check_entry_title")}
+              subtitle={
+                checkDays === null
+                  ? t("check_entry_never")
+                  : checkDays === 0
+                    ? t("check_entry_today")
+                    : checkDays === 1
+                      ? t("check_entry_days_one")
+                      : t("check_entry_days").replace("{d}", String(checkDays))
+              }
               onClick={() => setShowCheck(true)}
-              className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left active:bg-cream-soft transition-colors"
-            >
-              {/* Done-today wears a live green tick + praise; otherwise the
-                  neutral clipboard nudge. A ritual should feel rewarding the
-                  day you keep it, not like a dead status line. */}
-              <div className={`w-8 h-8 rounded-lg border border-cream-hairline flex items-center justify-center shrink-0 ${checkDays === 0 ? "bg-receive-50" : "bg-accent-50"}`}>
-                {checkDays === 0
-                  ? <CheckCircle2 size={16} className="text-receive-text" strokeWidth={2.4} />
-                  : <ClipboardCheck size={15} className="text-accent-600" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-ink-900 tracking-tight">{t("check_entry_title")}</p>
-                <p className={`text-[10.5px] leading-tight ${checkDays === 0 ? "text-receive-text font-semibold" : "text-ink-500"}`}>
-                  {checkDays === null
-                    ? t("check_entry_never")
-                    : checkDays === 0
-                      ? t("check_entry_today")
-                      : checkDays === 1
-                        ? t("check_entry_days_one")
-                        : t("check_entry_days").replace("{d}", String(checkDays))}
-                </p>
-              </div>
-              <ChevronRight size={15} className="text-ink-300 shrink-0" />
-            </button>
+            />
             {needsActionCount > 0 && (
-              <button
+              <Tile3D
+                tint="gold"
+                icon="bell"
+                title={
+                  needsActionCount === 1
+                    ? t("home_action_one")
+                    : t("home_action_many").replace("{n}", String(needsActionCount))
+                }
+                subtitle={t("home_action_sub")}
+                badge={needsActionCount > 9 ? "9+" : needsActionCount}
                 onClick={() => navigate("/inbox", { state: { tab: "action" } })}
-                className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left active:bg-cream-soft transition-colors"
-              >
-                <span className="w-8 h-8 rounded-lg bg-warn-50 border border-cream-hairline flex items-center justify-center shrink-0 text-warn-700 text-[12px] font-bold tabular-nums">
-                  {needsActionCount > 9 ? "9+" : needsActionCount}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
-                    {needsActionCount === 1
-                      ? t("home_action_one")
-                      : t("home_action_many").replace("{n}", String(needsActionCount))}
-                  </p>
-                  <p className="text-[10.5px] text-ink-500 leading-tight">{t("home_action_sub")}</p>
-                </div>
-                <ChevronRight size={15} className="text-ink-300 shrink-0" />
-              </button>
+              />
             )}
           </div>
         )}
@@ -1385,7 +1423,7 @@ export function HomePage() {
                 </span>
               )}
             </div>
-            <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+            <Card3D padding="none" className="overflow-hidden divide-y divide-cream-hairline">
               {thisWeekRows.slice(0, 5).map((row) => (
                 <button
                   key={row.id}
@@ -1432,7 +1470,7 @@ export function HomePage() {
                   )}
                 </button>
               ))}
-            </div>
+            </Card3D>
             {thisWeekRows.length > 5 && (
               <p className="text-[10.5px] text-ink-400 mt-1.5 px-1">
                 {t("home_week_more").replace("{n}", String(thisWeekRows.length - 5))}
@@ -1441,14 +1479,30 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Pending strip — urgent upcoming expenses. */}
-        {dataReady && homeHint && (
-          <NextStepHint
-            icon={homeHint.icon}
-            tone={homeHint.tone}
-            status={homeHint.status}
-            next={homeHint.next}
-          />
+        {/* The calm status card. Not a NextStepHint any more: that component
+            is shared with SplitsPage/TransactionsPage and is out of this
+            pass's file ownership, and its copy here was two hardcoded
+            English sentences. Same three conditions, same words, now on a
+            mint clay card with a floating sparkle and real i18n keys. */}
+        {dataReady && showCalmStatus && (
+          <Card3D tint="mint" padding="lg" icon="sparkle">
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 size={12} className="text-receive-text" />
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-receive-text">
+                {t('hint_current_status')}
+              </p>
+            </div>
+            <p className="text-[13px] font-semibold text-ink-900 tracking-tight mt-1 leading-snug">
+              {t('home_status_ok_title')}
+            </p>
+            {/* -me-11 gives back 44 of the 64px gutter Card3D's `icon` prop
+                reserves on the whole card: the sparkle only overhangs the
+                first line or two, and a three-line paragraph should not pay
+                for it. */}
+            <p className="text-[12px] text-ink-600 mt-1.5 leading-relaxed -me-11">
+              {t('home_status_ok_next')}
+            </p>
+          </Card3D>
         )}
 
         {shownBannerKeys.has("urgent") && (
@@ -1459,35 +1513,32 @@ export function HomePage() {
                   (1000 * 60 * 60 * 24),
               );
               return (
-                <div
-                  key={exp.id}
-                  className="rounded-[18px] bg-warn-50 border border-cream-border p-4 flex items-center gap-3"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-warn-50 border border-warn-50 flex items-center justify-center shrink-0">
-                    <span className="text-base">&#x23f0;</span>
+                <Card3D key={exp.id} tint="gold" padding="sm">
+                  <div className="flex items-center gap-3">
+                    <Icon3D name="calendar" size="sm" className="shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-ink-900 truncate">
+                        {exp.title} — {formatMoney(exp.amount, exp.currency)}
+                      </p>
+                      <p className="text-[11px] text-warn-700 mt-0.5">
+                        {daysLeft <= 0
+                          ? t('home_overdue_bang')
+                          : daysLeft === 1
+                          ? t('home_due_tomorrow')
+                          : `${daysLeft} ${t("upcoming_due_in")}`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() =>
+                        setDismissedReminders((d) => [...d, exp.id])
+                      }
+                      className='relative w-7 h-7 rounded-lg flex items-center justify-center text-ink-600 active:bg-cream-soft transition-colors shrink-0 before:absolute before:-inset-2 before:content-[""]'
+                      aria-label={t('a11y_dismiss')}
+                    >
+                      &#x2715;
+                    </button>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-ink-900 truncate">
-                      {exp.title} — {formatMoney(exp.amount, exp.currency)}
-                    </p>
-                    <p className="text-[11px] text-warn-600 mt-0.5">
-                      {daysLeft <= 0
-                        ? t('home_overdue_bang')
-                        : daysLeft === 1
-                        ? t('home_due_tomorrow')
-                        : `${daysLeft} ${t("upcoming_due_in")}`}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setDismissedReminders((d) => [...d, exp.id])
-                    }
-                    className='relative w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 active:bg-cream-soft transition-colors shrink-0 before:absolute before:-inset-2 before:content-[""]'
-                    aria-label={t('a11y_dismiss')}
-                  >
-                    &#x2715;
-                  </button>
-                </div>
+                </Card3D>
               );
             })}
           </div>
@@ -1509,7 +1560,7 @@ export function HomePage() {
                 <Plus size={12} strokeWidth={2.5} /> {t('common_add')}
               </button>
             </div>
-            <div className="rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline">
+            <Card3D padding="none" className="overflow-hidden divide-y divide-cream-hairline">
               {accounts.slice(0, 3).map((a) => {
                 const meta = currencyMeta[a.currency];
                 const monthStats = getMonthStats(a.id);
@@ -1547,7 +1598,7 @@ export function HomePage() {
                   </button>
                 );
               })}
-            </div>
+            </Card3D>
             {accounts.length > 3 && (
               <button
                 onClick={() => navigate('/accounts')}
@@ -1563,14 +1614,15 @@ export function HomePage() {
             Gated on dataReady so we don't flash this between the accounts
             load completing and the transactions load completing. */}
         {dataReady && accountCount > 0 && transactions.length === 0 && (
-          <div className="rounded-[18px] bg-accent-50 border border-cream-border p-5 flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-2xl bg-accent-100 flex items-center justify-center mb-3">
-              <span className="text-2xl">&#x1f4b8;</span>
-            </div>
-            <p className="text-[14px] font-semibold text-ink-900 tracking-tight">
+          // Empty state with the illustration the founder asked for: the
+          // piggybank floats over an accent clay card instead of the old
+          // emoji-in-a-square.
+          <Card3D tint="accent" padding="lg" className="flex flex-col items-center text-center">
+            <Icon3D name="piggybank" size="lg" float />
+            <p className="text-[14px] font-semibold text-ink-900 tracking-tight mt-2">
               {t("empty_dash_title")}
             </p>
-            <p className="text-[12px] text-ink-500 mt-1 max-w-[240px] leading-relaxed">
+            <p className="text-[12px] text-ink-600 mt-1 max-w-[240px] leading-relaxed">
               {t("empty_dash_desc")}
             </p>
             <div className="mt-4 flex items-center gap-1.5 text-accent-600">
@@ -1579,7 +1631,7 @@ export function HomePage() {
               </span>
               <span className="text-base">&#x2192;</span>
             </div>
-          </div>
+          </Card3D>
         )}
 
         {/* Budget warning — most-overspent category surfaces above the
@@ -1600,17 +1652,17 @@ export function HomePage() {
         {collapsedBanners.length > 0 && (
           <button
             onClick={() => navigate(collapsedReminderHref)}
-            className="w-full min-h-[44px] rounded-2xl bg-cream-card border border-cream-border px-4 flex items-center gap-2.5 text-left active:bg-cream-soft transition-colors"
+            className="clay-tile clay-gold min-h-[44px] px-4 flex items-center gap-2.5 text-left"
           >
-            <span className="w-7 h-7 rounded-full bg-warn-50 flex items-center justify-center shrink-0 text-warn-700 text-[11px] font-bold tabular-nums">
+            <span className="w-7 h-7 rounded-full bg-cream-card flex items-center justify-center shrink-0 text-ink-900 text-[11px] font-bold tabular-nums">
               {collapsedBanners.length}
             </span>
-            <span className="text-[12px] font-semibold text-ink-700">
+            <span className="text-[12px] font-semibold text-ink-900">
               {collapsedBanners.length === 1
                 ? t('home_more_reminder_one')
                 : t('home_more_reminders').replace('{n}', String(collapsedBanners.length))}
             </span>
-            <ChevronRight size={15} className="text-ink-400 ml-auto shrink-0" />
+            <ChevronRight size={15} className="text-ink-600 ml-auto shrink-0" />
           </button>
         )}
 
@@ -1628,11 +1680,11 @@ export function HomePage() {
                 {t("home_see_all")} &#x2192;
               </button>
             </div>
-            <div className="rounded-[18px] bg-cream-card border border-cream-border px-4 divide-y divide-cream-hairline">
+            <Card3D padding="none" className="px-4 divide-y divide-cream-hairline">
               {recentTxns.map((txn) => (
                 <TransactionItem key={txn.id} transaction={txn} onClick={() => setSelectedTxn(txn)} />
               ))}
-            </div>
+            </Card3D>
           </div>
         )}
       </div>
@@ -1660,45 +1712,6 @@ export function HomePage() {
   );
 }
 
-// Careem-style quick-access tile. Each tile is its own filled card
-// (cream-soft background, soft inset border) with the icon enlarged and
-// the label sitting at the bottom of the card. The icon glyph carries
-// the tile's color identity; the card chrome stays neutral so seven
-// distinct tiles read as a single calm panel rather than a candy bar.
-interface QuickTileProps {
-  label: string;
-  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
-  // Tailwind text-color class for the icon glyph. Tile background stays
-  // neutral cream-soft across all tiles — only the icon carries the tone.
-  iconClass: string;
-  onClick: () => void;
-  // Optional pending-state count. >0 renders a corner badge tinted to match
-  // the icon (badgeBgClass) so the cue is never colour-only — it sits right
-  // beside the same-hue glyph and carries the number itself. badgeTextClass
-  // defaults to the icon tint but can override it for AA contrast on light
-  // tints (e.g. warn-700 instead of warn-600 on warn-50).
-  badge?: number;
-  badgeBgClass?: string;
-  badgeTextClass?: string;
-}
-
-function QuickTile({ label, icon: Icon, iconClass, onClick, badge = 0, badgeBgClass, badgeTextClass }: QuickTileProps) {
-  return (
-    <button
-      onClick={onClick}
-      className="relative aspect-square rounded-2xl bg-cream-soft border border-cream-hairline flex flex-col items-center justify-center gap-2 px-1.5 hover:bg-cream-card hover:border-cream-border hover:shadow-sm active:scale-[0.97] active:bg-cream-bg transition-all"
-    >
-      {badge > 0 && (
-        <span
-          className={`absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full ${badgeBgClass ?? "bg-warn-50"} ${badgeTextClass ?? iconClass} text-[10px] font-bold flex items-center justify-center tabular-nums ring-1 ring-white`}
-        >
-          {badge > 9 ? "9+" : badge}
-        </span>
-      )}
-      <Icon size={26} className={iconClass} strokeWidth={1.7} />
-      <span className="text-[10.5px] font-semibold text-ink-800 tracking-tight truncate max-w-full">
-        {label}
-      </span>
-    </button>
-  );
-}
+// The old Careem-style QuickTile lived here. It was the home page's only
+// consumer, and the quick-access grid now uses Tile3D (docs/design-system.md
+// §10), so the component is gone rather than left dead.

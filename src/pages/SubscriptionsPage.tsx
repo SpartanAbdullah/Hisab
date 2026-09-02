@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { CreditCard, CalendarClock, Ghost, Pause, Play, Trash2, Plus, Repeat, Pencil, Layers, PauseCircle } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
+import { Card3D } from '../components/Card3D';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { AddRecurringModal } from '../components/AddRecurringModal';
@@ -137,6 +138,7 @@ export function SubscriptionsPage() {
           loadStatus === 'ready' ? (
             <EmptyState
               icon={CreditCard}
+              clayIcon="calendar"
               tone="accent"
               title={tr('subs_empty_title')}
               description={tr('subs_empty_desc')}
@@ -152,16 +154,18 @@ export function SubscriptionsPage() {
                 subscription is paused there is no burn, so we swap the
                 "AED 0" cards for a calm, reassuring banner instead. */}
             {totals.activeCount === 0 ? (
-              <div className="flex items-center gap-2.5 rounded-2xl bg-cream-card border border-cream-border p-4">
+              <Card3D padding="sm" className="flex items-center gap-2.5">
                 <PauseCircle size={18} className="text-ink-400 shrink-0" />
                 <p className="text-[12.5px] font-semibold text-ink-700">
                   {tr('subs_paused')}
                 </p>
-              </div>
+              </Card3D>
             ) : (
               totals.byCurrency.map((c) => (
+                // 3D clay tier 2. Coral is the money-OUT tint (§10.2) and a
+                // subscription burn is money leaving every month.
                 <div key={c.currency} className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+                  <Card3D tint="coral" padding="sm">
                     <p className="text-[11px] text-ink-500">
                       {tr('subs_per_month')}{totals.mixed ? ` · ${c.currency}` : ''}
                     </p>
@@ -171,15 +175,15 @@ export function SubscriptionsPage() {
                     <p className="text-[10px] text-ink-500 mt-0.5 tabular-nums">
                       {tr('subs_active_count').replace('{c}', String(c.count))}
                     </p>
-                  </div>
-                  <div className="rounded-2xl bg-cream-card border border-cream-border p-4">
+                  </Card3D>
+                  <Card3D tint="coral" padding="sm">
                     <p className="text-[11px] text-ink-500">
                       {tr('subs_per_year')}{totals.mixed ? ` · ${c.currency}` : ''}
                     </p>
                     <p className="text-[20px] font-bold text-ink-900 tabular-nums mt-1">
                       {formatMoney(c.yearly, c.currency)}
                     </p>
-                  </div>
+                  </Card3D>
                 </div>
               ))
             )}
