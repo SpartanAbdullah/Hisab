@@ -907,4 +907,11 @@ SET ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub', '', false);
 
 SELECT test.assert_raises($$
-  SELECT record_single_leg_
+  SELECT record_single_leg_entry('J-noauth', 'expense', 'J-bank', 1, NULL, '', '', now(), 4272, false)
+$$, 'NOT_AUTHENTICATED', 'authenticated with NO jwt subject is NOT_AUTHENTICATED');
+
+SELECT test.assert_raises($$
+  SELECT apply_goal_saved_delta('J-g1', -1, 0)
+$$, 'NOT_AUTHENTICATED', 'the goal delta is NOT_AUTHENTICATED too');
+
+RESET ROLE;

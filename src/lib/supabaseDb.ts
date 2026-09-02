@@ -4021,6 +4021,191 @@ export interface AtomicCardBillUnavailable extends Error {
   code: 'ATOMIC_CARD_BILL_UNAVAILABLE';
 }
 
+// ── L4 step 5a: the four single-leg entries ─────────────────────────────────
+// supabase-migration-p3-atomic-investments-and-single-leg.sql. ONE table and
+// ONE account leg in one transaction — the balance and the transactions row.
+// The narrowest window in the engine, and the most common write in the app:
+// what it leaves behind is a balance that changed with nothing saying why.
+export type SingleLegEntryType = 'income' | 'expense' | 'opening_balance' | 'adjustment';
+
+export interface AtomicSingleLegInput {
+  transactionId: string;
+  type: SingleLegEntryType;
+  /**
+   * The ONE account. Never null: all four branches throw on a missing account
+   * in BOTH app modes, so there is no ledger shape to express and the server
+   * refuses one (ACCOUNT_NOT_FOUND).
+   */
+  accountId: string;
+  /** The row's unsigned magnitude. For an adjustment, abs(target − balance). */
+  amount: number;
+  /**
+   * `adjustment` only — the balance the account is set TO, which may legitimately
+   * be negative for a credit card. Null for the other three, and the server
+   * refuses a non-null value on them.
+   */
+  targetBalance: number | null;
+  note: string;
+  category: string;
+  /** ISO string. The row's created_at, so a backdated entry stays backdated. */
+  createdAt: string;
+  /** The compare-and-swap expectation — the locally-known balance. */
+  expectedBalance: number;
+  /**
+   * Skip the insufficient-balance guard. TRUE only where the client's own
+   * checkBalanceForTransaction is a no-op — i.e. splits_only mode, and only for
+   * 'expense' (isSimpleModeBalanceBypassAllowed). Full tracker always false,
+   * and income / opening_balance / adjustment have no guard to skip at all.
+   */
+  allowNegative?: boolean;
+}
+
+export interface AtomicSingleLegResult {
+  /** True when the server recognised the id and did NOT move money again. */
+  replay: boolean;
+  transactionId: string;
+  type: string;
+  /** Server truth after the move — apply this, do not recompute it. */
+  accountBalance: number;
+  /** Signed account movement (+ credit, − debit). The inverse negates it. */
+  accountDelta: number;
+  /**
+   * What the ROW says. For an adjustment this is the magnitude the SERVER
+   * derived from the locked row, which is the only figure a rollback can undo.
+   */
+  amount: number;
+  currency: string;
+}
+
+/** A stale compare-and-swap. Same token as `apply_account_balance_delta`. */
+export interface AtomicSingleLegConflict extends Error {
+  code: 'BALANCE_CONFLICT';
+  accountId: string | null;
+  accountBalance: number | null;
+}
+
+/** The RPC is missing — the migration has not been applied to this project. */
+export interface AtomicSingleLegUnavailable extends Error {
+  code: 'ATOMIC_SINGLE_LEG_UNAVAILABLE';
+}
+
+// ── L4 step 5b: the investment trade ────────────────────────────────────────
+// Same migration. TWO tables and one account leg in one transaction: the
+// balance, the investment_trades row and the transactions row. Positions are
+// REPLAYED from the trade ledger (src/lib/investmentMath.ts — "there is no
+// holdings table to drift"), so losing the trade row loses the position: shares
+// paid for that nobody holds, or sold shares that can be sold twice.
+export interface AtomicInvestmentTradeInput {
+  transactionId: string;
+  /** The client-generated trade id. Stamped on both rows. */
+  tradeId: string;
+  kind: 'buy' | 'sell' | 'dividend';
+  marketId: string;
+  /** The server upper-cases and trims it, exactly as the store does. */
+  symbol: string;
+  /** Forced to '' by the server for a dividend (transactionStore.ts:3407). */
+  companyName: string;
+  quantity: number;
+  pricePerUnit: number;
+  /** Dividend GROSS. Zero for a buy/sell, and the server refuses anything else. */
+  grossAmount: number;
+  fees: number;
+  /**
+   * Source for a buy, destination for a sell or a dividend. Never null: a trade
+   * held OUTSIDE Hisaab goes through investmentStore.recordOutsideTrade, which
+   * writes no money row at all.
+   */
+  accountId: string;
+  /** The ROW's amount, in MARKET currency. Cross-checked, never trusted. */
+  amount: number;
+  /**
+   * What the ACCOUNT moves, in account currency. Cross-checked (0.01). The
+   * convention is asymmetric and is the THIRD in this engine: a buy DIVIDES
+   * (`amount / rate`), a sell and a dividend MULTIPLY (`amount × rate`).
+   */
+  accountAmount: number;
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  /** ISO string — the money row's created_at. */
+  createdAt: string;
+  /** ISO string — the trade's own `traded_at`, which may be backdated. */
+  tradedAt: string;
+  /** The trade row's notes (separate from the money row's). */
+  tradeNotes: string;
+  /** ISO string — the trade row's created_at, distinct from `tradedAt`. */
+  tradeCreatedAt: string;
+  expectedBalance: number;
+  /**
+   * ALWAYS false from the shipped client: 'investment_*' is absent from
+   * isSimpleModeBalanceBypassAllowed, so the branch uses the strict
+   * `checkBalance`. Kept for the future repair queue.
+   */
+  allowNegative?: boolean;
+}
+
+export interface AtomicInvestmentTradeResult {
+  replay: boolean;
+  transactionId: string;
+  /**
+   * The trade the server stored. On a REPLAY this is the id the FIRST call
+   * minted, not the one this retry generated — adopt this, never the local one,
+   * or a retry leaves an orphan in the mirror.
+   */
+  tradeId: string;
+  kind: string;
+  symbol: string;
+  accountBalance: number;
+  /** Signed account movement (+ credit, − debit). The inverse negates it. */
+  accountDelta: number;
+  amount: number;
+  currency: string;
+  conversionRate: number | null;
+}
+
+/** A stale compare-and-swap. Same token as `apply_account_balance_delta`. */
+export interface AtomicInvestmentConflict extends Error {
+  code: 'BALANCE_CONFLICT';
+  accountId: string | null;
+  accountBalance: number | null;
+}
+
+/**
+ * The server re-validated the trade and refused it — the union of
+ * INSUFFICIENT_HOLDINGS (the oversell replay), INVALID_TRADE
+ * (validateTradeInput), TRADE_AMOUNT_MISMATCH / ACCOUNT_AMOUNT_MISMATCH (the
+ * two halves derived different money) and TRADE_ID_COLLISION.
+ *
+ * The important half is what it means, not which fired: the RPC is atomic, so a
+ * refusal wrote NONE of the three artifacts — no balance moved, no trade, no
+ * row. Never retried: the trade is wrong, not stale.
+ */
+export interface AtomicInvestmentRejected extends Error {
+  code: 'TRADE_REJECTED';
+  /** The server's own token, for Sentry — never shown to the user. */
+  serverToken:
+    | 'INSUFFICIENT_HOLDINGS' | 'INVALID_TRADE' | 'INVALID_KIND' | 'INVALID_SYMBOL'
+    | 'TRADE_AMOUNT_MISMATCH' | 'ACCOUNT_AMOUNT_MISMATCH' | 'TRADE_ID_COLLISION'
+    | 'MARKET_NOT_FOUND';
+  /** INSUFFICIENT_HOLDINGS only — what the timeline says is really held. */
+  held: number | null;
+  attempted: number | null;
+}
+
+/** The RPC is missing — the migration has not been applied to this project. */
+export interface AtomicInvestmentUnavailable extends Error {
+  code: 'ATOMIC_INVEST_UNAVAILABLE';
+}
+
+// ── L4 step 5c: the goal compensation's own compare-and-swap ────────────────
+// Same migration, doc §23 item 6. The goal twin of apply_loan_remaining_delta.
+export interface AtomicGoalSavedDeltaResult {
+  goalId: string;
+  goalSavedAmount: number;
+  /** What the goal ACTUALLY moved — the clamped figure, not the requested one. */
+  goalApplied: number;
+}
+
 export const atomicMoneyDb = {
   /**
    * The whole account→account transfer — both balance legs AND the
@@ -4655,6 +4840,317 @@ export const atomicMoneyDb = {
           rowId: typeof l.row_id === 'string' ? l.row_id : null,
         };
       }),
+    };
+  },
+
+  /**
+   * The four single-leg entries — income, expense, opening_balance and
+   * adjustment — as ONE Postgres transaction (`record_single_leg_entry`): the
+   * balance compare-and-swap AND the transactions row.
+   *
+   * This is the narrowest window in the engine and the one the audit did not
+   * rank, because it cannot leave money half-moved BETWEEN two places. What it
+   * can leave is a balance that changed with NO row saying why — and the user's
+   * own repair for that (`adjustment`) is one of the four branches with the
+   * same window.
+   *
+   * The adjustment case is a real tightening, not just a port: the target
+   * balance is SET inside the row lock, and the |delta| is derived there rather
+   * than from a snapshot that may already be stale.
+   *
+   * Idempotent on `transactionId`.
+   *
+   * Throws, with a `code` the caller can branch on:
+   *   BALANCE_CONFLICT               — refetch and retry once (accountStore ladder)
+   *   INSUFFICIENT_BALANCE           — message is already the user-facing string
+   *   ATOMIC_SINGLE_LEG_UNAVAILABLE  — the migration is not applied; unset the flag
+   * Anything else is rethrown untouched — including NOTHING_TO_CORRECT, which is
+   * the adjustment branch's own guard and whose message the branch already owns.
+   */
+  async singleLegAtomic(input: AtomicSingleLegInput): Promise<AtomicSingleLegResult> {
+    const { data, error } = await supabase.rpc('record_single_leg_entry', {
+      p_transaction_id: input.transactionId,
+      p_type: input.type,
+      p_account_id: input.accountId,
+      p_amount: input.amount,
+      p_target_balance: input.targetBalance,
+      p_note: input.note,
+      p_category: input.category,
+      p_date: input.createdAt,
+      p_expected_balance: input.expectedBalance,
+      p_allow_negative: input.allowNegative === true,
+    });
+
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      const detail = parseRpcDetail(error);
+
+      if (message.includes('BALANCE_CONFLICT')) {
+        const conflict = new Error('BALANCE_CONFLICT') as AtomicSingleLegConflict;
+        conflict.code = 'BALANCE_CONFLICT';
+        conflict.accountId = typeof detail?.account_id === 'string' ? detail.account_id : null;
+        conflict.accountBalance = numberOrNull(detail?.account_balance);
+        throw conflict;
+      }
+
+      if (message.includes('INSUFFICIENT_BALANCE')) {
+        // Rebuild the EXACT string checkBalance produces today so the toast is
+        // byte-identical in both languages whichever path raised it.
+        const accountName = typeof detail?.account_name === 'string' ? detail.account_name : '';
+        const available = numberOrNull(detail?.available) ?? 0;
+        const requested = numberOrNull(detail?.requested) ?? 0;
+        const err = new Error(
+          tStatic('err_insufficient')
+            .replace('{account}', accountName)
+            .replace('{available}', available.toLocaleString())
+            .replace('{amount}', requested.toLocaleString()),
+        ) as AtomicTransferInsufficient;
+        err.code = 'INSUFFICIENT_BALANCE';
+        err.accountName = accountName;
+        err.available = available;
+        err.requested = requested;
+        throw err;
+      }
+
+      // PGRST202 = "function not found in the schema cache". The flag was
+      // switched on before the migration was applied — say so, loudly.
+      if ((error as { code?: string })?.code === 'PGRST202' || message.includes('record_single_leg_entry')) {
+        const err = new Error(
+          'record_single_leg_entry is not available — apply supabase-migration-p3-atomic-investments-and-single-leg.sql or unset VITE_ATOMIC_SINGLE_LEG.',
+        ) as AtomicSingleLegUnavailable;
+        err.code = 'ATOMIC_SINGLE_LEG_UNAVAILABLE';
+        throw err;
+      }
+
+      throw error;
+    }
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    const accountBalance = numberOrNull(row.account_balance);
+    if (accountBalance === null) {
+      // A success reply we cannot read is not a success: the caller would write
+      // nonsense into the balance store.
+      throw new Error('record_single_leg_entry returned no balance');
+    }
+
+    return {
+      replay: row.replay === true,
+      transactionId: typeof row.transaction_id === 'string' ? row.transaction_id : input.transactionId,
+      type: typeof row.type === 'string' ? row.type : input.type,
+      accountBalance,
+      accountDelta: numberOrNull(row.account_delta) ?? 0,
+      amount: numberOrNull(row.amount) ?? input.amount,
+      currency: typeof row.currency === 'string' ? row.currency : '',
+    };
+  },
+
+  /**
+   * An account-linked investment trade — the balance leg, the
+   * `investment_trades` row AND the `transactions` row — in ONE Postgres
+   * transaction (`record_investment_trade`).
+   *
+   * The failure this closes is specific to how this feature is built: positions
+   * (quantity, average cost, realised P&L) are DERIVED by replaying the trade
+   * ledger and are never stored, so a drop between the balance leg and the
+   * trade INSERT does not corrupt a figure — it deletes the position outright.
+   * A buy leaves a wallet that paid for shares nobody holds; a sell leaves
+   * shares that can be sold a second time.
+   *
+   * The server re-derives the cash amount per kind, re-derives the account
+   * movement per the asymmetric currency convention, re-runs `validateTradeInput`
+   * and re-runs the FULL `simulateTimeline` oversell replay — including the
+   * backdated case and the skip-already-invalid rule. It does NOT re-derive the
+   * position: that stays in TypeScript, the same *plan on the client, apply on
+   * the server* rule steps 3 and 4 settled.
+   *
+   * Idempotent on `transactionId`; a repeated `tradeId` is REFUSED rather than
+   * upserted over a live trade.
+   *
+   * Throws, with a `code` the caller can branch on:
+   *   BALANCE_CONFLICT           — refetch and retry once (accountStore ladder)
+   *   TRADE_REJECTED             — the trade is WRONG, not stale; never retried.
+   *                                Message is already the user-facing string.
+   *   INSUFFICIENT_BALANCE       — message is already the user-facing string
+   *   ATOMIC_INVEST_UNAVAILABLE  — the migration is not applied; unset the flag
+   * Anything else is rethrown untouched.
+   */
+  async investmentTradeAtomic(
+    input: AtomicInvestmentTradeInput,
+  ): Promise<AtomicInvestmentTradeResult> {
+    const { data, error } = await supabase.rpc('record_investment_trade', {
+      p_transaction_id: input.transactionId,
+      p_trade_id: input.tradeId,
+      p_kind: input.kind,
+      p_market_id: input.marketId,
+      p_symbol: input.symbol,
+      p_company_name: input.companyName,
+      p_quantity: input.quantity,
+      p_price_per_unit: input.pricePerUnit,
+      p_gross_amount: input.grossAmount,
+      p_fees: input.fees,
+      p_account_id: input.accountId,
+      p_amount: input.amount,
+      p_account_amount: input.accountAmount,
+      p_conversion_rate: input.conversionRate,
+      p_note: input.note,
+      p_category: input.category,
+      p_date: input.createdAt,
+      p_traded_at: input.tradedAt,
+      p_trade_notes: input.tradeNotes,
+      p_trade_created_at: input.tradeCreatedAt,
+      p_expected_balance: input.expectedBalance,
+      p_allow_negative: input.allowNegative === true,
+    });
+
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      const detail = parseRpcDetail(error);
+
+      if (message.includes('BALANCE_CONFLICT')) {
+        const conflict = new Error('BALANCE_CONFLICT') as AtomicInvestmentConflict;
+        conflict.code = 'BALANCE_CONFLICT';
+        conflict.accountId = typeof detail?.account_id === 'string' ? detail.account_id : null;
+        conflict.accountBalance = numberOrNull(detail?.account_balance);
+        throw conflict;
+      }
+
+      // The trade itself was refused. The client ran the same rules before
+      // calling (validateTradeInput + simulateTimeline), so reaching here means
+      // the two halves disagree OR another device changed the timeline — either
+      // way the whole entry was refused as one, and the user must be told that
+      // nothing was saved rather than shown a raw Postgres string.
+      for (const token of [
+        'INSUFFICIENT_HOLDINGS', 'TRADE_AMOUNT_MISMATCH', 'ACCOUNT_AMOUNT_MISMATCH',
+        'TRADE_ID_COLLISION', 'INVALID_TRADE', 'INVALID_KIND', 'INVALID_SYMBOL',
+        'MARKET_NOT_FOUND',
+      ] as const) {
+        if (message.includes(token)) {
+          const err = new Error(tStatic('err_trade_rejected')) as AtomicInvestmentRejected;
+          err.code = 'TRADE_REJECTED';
+          err.serverToken = token;
+          err.held = numberOrNull(detail?.held);
+          err.attempted = numberOrNull(detail?.attempted);
+          throw err;
+        }
+      }
+
+      if (message.includes('INSUFFICIENT_BALANCE')) {
+        const accountName = typeof detail?.account_name === 'string' ? detail.account_name : '';
+        const available = numberOrNull(detail?.available) ?? 0;
+        const requested = numberOrNull(detail?.requested) ?? 0;
+        const err = new Error(
+          tStatic('err_insufficient')
+            .replace('{account}', accountName)
+            .replace('{available}', available.toLocaleString())
+            .replace('{amount}', requested.toLocaleString()),
+        ) as AtomicTransferInsufficient;
+        err.code = 'INSUFFICIENT_BALANCE';
+        err.accountName = accountName;
+        err.available = available;
+        err.requested = requested;
+        throw err;
+      }
+
+      if ((error as { code?: string })?.code === 'PGRST202' || message.includes('record_investment_trade')) {
+        const err = new Error(
+          'record_investment_trade is not available — apply supabase-migration-p3-atomic-investments-and-single-leg.sql or unset VITE_ATOMIC_INVEST.',
+        ) as AtomicInvestmentUnavailable;
+        err.code = 'ATOMIC_INVEST_UNAVAILABLE';
+        throw err;
+      }
+
+      throw error;
+    }
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    const accountBalance = numberOrNull(row.account_balance);
+    const tradeId = typeof row.trade_id === 'string' ? row.trade_id : null;
+    if (accountBalance === null || tradeId === null) {
+      // A success reply we cannot read is not a success: without the trade id
+      // the mirror would claim a position Postgres does not have.
+      throw new Error('record_investment_trade returned no balance or no trade id');
+    }
+
+    return {
+      replay: row.replay === true,
+      transactionId: typeof row.transaction_id === 'string' ? row.transaction_id : input.transactionId,
+      tradeId,
+      kind: typeof row.kind === 'string' ? row.kind : input.kind,
+      symbol: typeof row.symbol === 'string' ? row.symbol : input.symbol,
+      accountBalance,
+      accountDelta: numberOrNull(row.account_delta) ?? 0,
+      amount: numberOrNull(row.amount) ?? input.amount,
+      currency: typeof row.currency === 'string' ? row.currency : '',
+      conversionRate: numberOrNull(row.conversion_rate),
+    };
+  },
+
+  /**
+   * A compare-and-swap on `goals.saved_amount` (`apply_goal_saved_delta`) — the
+   * goal twin of `loansDb.applyRemainingDelta`.
+   *
+   * Step 4 gave the FORWARD goal write a CAS inside `contribute_to_goal`; the
+   * inverse the mutation scope registers still went through `goalsDb.update`,
+   * an unlocked read-modify-write that can clobber a contribution made on
+   * another device while the rollback is in flight. This closes doc §23 item 6.
+   *
+   * NOT idempotent — it is a delta with no id to key on. Its only caller is a
+   * compensation that runs at most once per scope, and that caller falls back
+   * to the legacy unlocked write if the CAS cannot be satisfied: a rollback
+   * that REFUSES to run would be strictly worse than one that races.
+   *
+   * Throws BALANCE_CONFLICT (the same token `contribute_to_goal` raises for a
+   * stale goal) or GOAL_NOT_FOUND; anything else is rethrown untouched.
+   */
+  async goalSavedDelta(
+    goalId: string,
+    delta: number,
+    expectedSaved: number,
+  ): Promise<AtomicGoalSavedDeltaResult> {
+    const { data, error } = await supabase.rpc('apply_goal_saved_delta', {
+      p_goal_id: goalId,
+      p_delta: delta,
+      p_expected_saved: expectedSaved,
+    });
+
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      const detail = parseRpcDetail(error);
+
+      if (message.includes('BALANCE_CONFLICT')) {
+        const conflict = new Error('BALANCE_CONFLICT') as AtomicGoalConflict;
+        conflict.code = 'BALANCE_CONFLICT';
+        conflict.accountId = null;
+        conflict.accountBalance = null;
+        conflict.goalSavedAmount = numberOrNull(detail?.goal_saved_amount);
+        throw conflict;
+      }
+
+      if (message.includes('GOAL_NOT_FOUND')) {
+        const err = new Error(tStatic('err_goal_gone')) as AtomicGoalMissing;
+        err.code = 'GOAL_NOT_FOUND';
+        throw err;
+      }
+
+      if ((error as { code?: string })?.code === 'PGRST202' || message.includes('apply_goal_saved_delta')) {
+        const err = new Error(
+          'apply_goal_saved_delta is not available — apply supabase-migration-p3-atomic-investments-and-single-leg.sql.',
+        ) as AtomicGoalUnavailable;
+        err.code = 'ATOMIC_GOAL_UNAVAILABLE';
+        throw err;
+      }
+
+      throw error;
+    }
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    const saved = numberOrNull(row.goal_saved_amount);
+    if (saved === null) throw new Error('apply_goal_saved_delta returned no figure');
+
+    return {
+      goalId: typeof row.goal_id === 'string' ? row.goal_id : goalId,
+      goalSavedAmount: saved,
+      goalApplied: numberOrNull(row.goal_applied) ?? 0,
     };
   },
 };

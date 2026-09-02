@@ -1137,7 +1137,7 @@ beginning of time", it is "no floor established":
 | `false` | `null` | **nothing is guaranteed** — initial state, or a load answered purely from cache |
 | `false` | ISO | every row with `createdAt >= since` is in the store |
 
-Three rules make it usable:
+Four rules make it usable:
 
 1. **The store may hold rows older than `since`.** The Dexie mirror keeps
    whatever it already had and the row floor over-fetches. Those rows are real
@@ -1150,6 +1150,9 @@ Three rules make it usable:
 3. **A bare request means "all".** `coverageSatisfies(coverage, {})` is false
    unless coverage is complete: a caller that does not say what it needs is
    assumed to need everything.
+4. **The floor is persisted, but only believed under one condition.** It rides
+   on the mirror's sync row and is adopted on boot only when the cursors say an
+   incremental sync is what runs next — §7.1.3a below.
 
 `ensureTransactionHistory({ all })` walks the whole table; `({ since })` fetches
 only the gap **below** the current floor (`historyGap`), inclusive at both ends
@@ -1189,6 +1192,69 @@ merge, the sort and the reconcile are all `createdAt`-keyed. A `splits_only` row
 with BOTH account ids null is windowed by date exactly like a full-tracker row,
 and the store test asserts the two modes produce equal results — same windowed
 count, same completeness, same merged total — from identical rows.
+
+### 7.1.3a The persisted coverage floor
+
+Added 2026-09-03, closing the first two open risks below. Files:
+`src/db/database.ts` (two non-indexed fields on `MirrorSyncState` — no Dexie
+version bump), `src/lib/mirrorSyncPolicy.ts` (all the rules, pure),
+`src/lib/mirrorCache.ts` (the I/O + the invalidation wiring), the LOAD region of
+`src/stores/transactionStore.ts`. New suites: `mirrorCache.coverage.test.ts`,
+`transactionHistoryPersistence.test.ts`, plus additions to
+`mirrorSyncPolicy.test.ts` and `historyCoverageContract.test.ts`.
+
+**The shape.** `coverageSince: string | null` + `coverageComplete: boolean`,
+stored on the `mirrorSync` row for `transactions` — i.e. next to the very
+cursors that vouch for the mirror's contents, and inside the per-user Dexie
+partition that sign-out deletes. Both fields are optional and unindexed: a row
+written before this shipped simply reads as "nothing proven".
+
+**When it is written.** Only when the store's live coverage widens or completes,
+and only *after* the fetched rows are in the mirror (`adoptHistoryCoverage`,
+the single call site of `writeMirrorCoverage`; the contract suite asserts both).
+The write **replaces** the stored floor rather than widening it — the live floor
+is the truth, and a union with disk would let an invalidated claim resurrect.
+It never creates a sync row: a floor with no cursor beside it could never be
+trusted anyway, and inventing a cursor would make the next load skip a refresh.
+
+**When it is believed.** On a load answered from cache — the case that used to
+earn nothing at all — and then only if `planMirrorRefresh` on the current
+cursors returns anything but `'full'` (`persistedCoverageIsTrustworthy`). A
+`'full'` plan means the mirror is empty, has no watermark, or the daily
+reconciliation is due; that reconciliation exists *because* the incremental
+cursor can have missed a tombstone, so until it lands the mirror is not
+known-good and the session claims nothing it did not prove itself. Not "trust it
+a little" — a narrowed stale claim is still a stale claim.
+
+**When it is invalidated** (`coverageSurvives`), each because it can leave rows
+missing below or above the floor:
+
+| event | why |
+|---|---|
+| a server truncation warning (`fetchAllPages`' max-rows probe) | a server that just under-reported is not evidence for anything |
+| a clear-and-replace of the mirror | every row below the floor is gone unless that one fetch returned it |
+| an in-window reconcile that pruned rows | the right repair for a missed tombstone, but indistinguishable from a short page, which would punch a hole *above* the floor |
+| sign-out / user switch | the whole per-user database goes; `reset()` clears the floor explicitly as well |
+
+And deliberately **not** invalidated by the incremental path's
+`fetchDeletedSince`. That is an explicit tombstone list — it names the ids the
+server says are gone and removes exactly those, leaving no hole. Dropping the
+floor there would drop it every time a user deletes an expense, which would make
+persisting one pointless. A control test pins that down, because a blanket
+"clear on anything" would pass every safety assertion and quietly buy nothing.
+
+One signal had to be split to make this work. A *windowed* caller sets
+`RemoteFetchResult.truncated` on **every** fetch — it means "this set is partial
+by construction, do not clear the mirror" — so reading it as a truncation
+warning would have invalidated the floor on every daily refresh. The DAL's real
+max-rows warning now travels separately as `serverTruncated`; unwindowed callers
+are unchanged, since for them `truncated` already meant exactly that.
+
+**What it buys.** A returning user with a warm mirror that already holds five
+years now starts the session knowing it, so the first statement or account
+screen resolves with **no** walk instead of a full one. The two safeguards are
+layered rather than alternatives: the trust gate stops a stale floor being read,
+and the invalidation stops a stale floor being there to read.
 
 ### 7.1.4 Consumers: what each one now asks for
 
@@ -1273,6 +1339,22 @@ store tests in `transactionStore.test.ts` covering the windowed load, the sparse
 user's complete coverage, the non-narrowing floor, the gap fetch, in-flight
 sharing, a locally-written row surviving a merge, and mode parity.
 
+The persisted floor (§7.1.3a) added 24 more: 11 pure ones in
+`mirrorSyncPolicy.test.ts` (the trust gate, the normaliser's degrade-to-less
+rule, the survival predicate), 13 in `mirrorCache.coverage.test.ts` (the real
+`loadCacheFirst`/`refreshMirror`/`reconcileWindow` over an in-memory table with
+Dexie's shape — round-trip, carry-forward across a sync, each invalidation
+trigger, and the control case that must *not* invalidate), 11 in
+`transactionHistoryPersistence.test.ts` (a simulated restart honouring the floor
+with zero round-trips, the same restart refusing it when a full refresh is due,
+truncation and an untombstoned deletion invalidating it, sign-out clearing it,
+and full-tracker vs `splits_only` producing byte-identical results), and 4 more
+source-level ones in `historyCoverageContract.test.ts`.
+
+Dexie cannot run in the Node suite, which is why those two files fake `../db`
+rather than `mirrorCache`: the policy, the cache and the store under test are
+all the real implementations, and only IndexedDB is substituted.
+
 `historyCoverageContract.test.ts` is deliberately a **source-level** assertion.
 The failure it guards against is invisible to every other kind of test: the
 store is populated, the component renders, the arithmetic is correct, and the
@@ -1296,17 +1378,27 @@ android`, then the Gradle AAB build goes to the user.
 
 Open risks, stated plainly:
 
-* **Coverage is session state, not persisted.** A returning user with a warm
-  mirror that already holds five years starts the session claiming nothing, so
-  the first statement or account screen pays one full walk it may not have
-  needed. Persisting a coverage floor alongside the mirror's sync cursor would
-  fix it; it was not done here because a persisted claim that outlives the data
-  it describes is a worse bug than an extra fetch.
-* **A load answered from cache earns no coverage.** `loadCacheFirst` skips
-  `fetchRemote` on the cache-hit and incremental plans, so coverage stays at
-  whatever the last real fetch proved — correct, but it means a warm session can
-  sit at `{ since: null, complete: false }` and make the next
-  `ensureTransactionHistory` fetch. Same trade as above.
+* ~~**Coverage is session state, not persisted.**~~ **Done 2026-09-03** —
+  §7.1.3a. The floor rides on the mirror's sync row, is adopted on boot only
+  when an incremental sync is what runs next, and is dropped by every event that
+  can remove rows below it. The stated reason for not doing it originally ("a
+  persisted claim that outlives the data it describes is a worse bug than an
+  extra fetch") is what the trust gate and the invalidation rules are for.
+* ~~**A load answered from cache earns no coverage.**~~ **Done 2026-09-03** —
+  same change. A cache-answered load still proves nothing itself; it may now
+  *adopt* the persisted floor, which is the only claim available that something
+  else already paid for.
+* **A widened floor makes the next full refresh wider too.** Coverage never
+  narrows, so a session that adopted `complete` plans `getAllPaged` on its next
+  real fetch instead of the 12-month window. That costs nothing on the cache and
+  incremental plans (they skip `fetchRemote` entirely), so in practice it is
+  paid once a day at most, by a user who had already proved completeness — but
+  it is the price of the non-narrowing rule and it is worth knowing about.
+* **The floor is trusted per-mirror, not per-row.** It says the mirror holds
+  everything from an instant onward; it cannot say *which* rows, so a mirror
+  corrupted by something outside these paths (a partial IndexedDB failure that
+  silently drops writes) would still be claimed as complete. The invalidation
+  rules cover every path this code owns, not every way a browser can lose data.
 * **The statement sheet now has a loading state it did not have.** On a slow
   connection the user taps "Send statement" and waits on a walk of their whole
   history before seeing figures. That is the right trade for a document that

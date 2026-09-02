@@ -737,12 +737,12 @@ In the app: `npx vitest run` → **141 files / 1822 tests green**, including 32 
 | 4 | `goal_contribution` (incl. self-stored) | ≤2 balances + goal CAS + 1 row | `contribute_to_goal` | `VITE_ATOMIC_GOAL` | ✅ **step 4** |
 | 5 | card bill pay | 2 balances + 1 row + N × (loan CAS + M EMI + 1 row) | `pay_card_bill` (`'transfer'`) | `VITE_ATOMIC_CARD_BILL` | ✅ **step 4** |
 | 6 | cash-advance repayment crediting the card | 2 balances + loan CAS + N EMI + 1 row | `pay_card_bill` (`'repayment'`) | `VITE_ATOMIC_CARD_BILL` | ✅ **step 4** |
-| — | `income`, `expense`, `opening_balance`, `adjustment` | 1 balance + 1 row | — | — | **single-leg**; a narrow window remains where the row insert fails after the balance moved, but they cannot leave money *half-moved between two places*, which is the finding. A shared `record_single_leg_entry()` is the natural next step |
-| — | `investment_buy` / `investment_sell` / `investment_dividend` | 1 balance + 1 trade row + 1 row | — | — | **two-artifact**, and genuinely uncovered: a drop between the balance and the trade row leaves a position that does not exist. Not in §6's order table, which predates the tracker; the honest next candidate after the single-leg helper |
+| — | `income`, `expense`, `opening_balance`, `adjustment` | 1 balance + 1 row | `record_single_leg_entry` | `VITE_ATOMIC_SINGLE_LEG` | ✅ **closed by step 5** — see §24-31. (Written before step 5: *"single-leg; a narrow window remains where the row insert fails after the balance moved, but they cannot leave money half-moved between two places, which is the finding. A shared `record_single_leg_entry()` is the natural next step."*) |
+| — | `investment_buy` / `investment_sell` / `investment_dividend` | 1 balance + 1 trade row + 1 row | `record_investment_trade` | `VITE_ATOMIC_INVEST` | ✅ **closed by step 5** — see §24-31. (Written before step 5: *"two-artifact, and genuinely uncovered: a drop between the balance and the trade row leaves a position that does not exist."*) |
 | — | ledger-only (`splits_only`) money | `loanStore.applyRepayment` / `createLoan` | — | — | untouched by every step, and every RPC **refuses** a null account so it stays that way |
 | — | cross-user (linked requests, group settlements, kameti draws) | — | already server-side | — | a different programme (`audit-p0-settlement-row-locks`, `audit-p0-kameti-draw`) |
 
-**Every multi-leg money-moving branch of `processTransaction` now has a server-side transaction behind a flag.** That is L4's scope, closed.
+**Every multi-leg money-moving branch of `processTransaction` now has a server-side transaction behind a flag.** That was L4's scope as step 4 left it; **step 5 (§24-31) closes the two single-artifact rows above as well**, so the table has no uncovered row left. The final version of it lives in §31.
 
 ## 23. What remains client-side — the honest list
 
@@ -753,7 +753,202 @@ Deliberately, and unchanged by all four steps:
 3. **The reminder reschedule** (`nudgeReminderSchedule`), fire-and-forget, native only.
 4. **The allocation and clamping rules themselves** — `allocateBillPayment`, `clampCardCredit`, `uncoveredToPaidIds`, `planRepaymentEmiMarks`, `planGoalContributionLegs`, `planLoanCreateLegs`. This is the *plan on the client, apply on the server* decision, made once and applied to every branch: the server re-validates every number it is handed but never re-derives the rule.
 5. **The scope inverse.** A rollback is still a best-effort client compensation and still fails in a total outage. What changed is that it now has **one** thing to undo instead of a half-applied sequence, and the forward move can no longer be partially committed.
-6. **The goal compensation's own write.** The inverse is now a *delta* (`addContribution(-applied)`) rather than the snapshot restore, so it cannot clobber a concurrent contribution — but that delta still goes through `goalsDb.update`, which is an unlocked read-modify-write. An `apply_goal_saved_delta` CAS RPC would close it; it is the smallest remaining gap in the goal path.
+6. ~~**The goal compensation's own write.**~~ **CLOSED by step 5 — see §25.3 and §26 correction 5.** The inverse became a *delta* (`addContribution(-applied)`) in step 4, so it could no longer clobber a concurrent contribution — but that delta still went through `goalsDb.update`, an unlocked read-modify-write. `apply_goal_saved_delta` now gives it a compare-and-swap, behind a retry-then-fall-back-to-the-legacy-write ladder (a rollback that *refuses to run* would be worse than one that races).
 7. **The consolidated multi-loan repayment** is still N independent commits (`repaymentExecution.ts`'s committed-prefix model). Each iteration is individually atomic — a mid-batch failure leaves whole repayments, never half ones — but "applied to 3 of 5" remains the honest report.
 8. **Offline.** An atomic RPC still needs a connection. M1's other half — persisting pending work and replaying it — is a separate decision, and the honest interim answer remains "Hisaab needs a network to record money".
 9. **The god store.** H-3's 640-line switch gained forks and helpers rather than losing branches. Step 4 lifted `prepareCardBillPlan` and `toCardBillLines` out of it and deleted the inline allocation block, which is the first net *shrink* of the switch body in the whole programme — but the structural win the audit asked for arrives only when the branches move out entirely, which none of the four steps has done.
+
+---
+
+# Step 5 — the last two shapes: the investment trade, the single leg, and the goal compensation's own lock
+
+**Written:** 2026-09-03 · **Status:** built, Docker-validated on PostgreSQL 15.19 through the repo's own harness, **flags OFF, migration not yet applied to production**
+
+`supabase-migration-p3-atomic-investments-and-single-leg.sql` · `VITE_ATOMIC_SINGLE_LEG` + `VITE_ATOMIC_INVEST` · `src/stores/transactionStoreAtomicInvestSingle.test.ts` · `supabase/tests/tests/7z-atomic-investments-single-leg.sql`
+
+## 24. Why these, and what they actually lose today
+
+Step 4 closed every **multi-leg** branch of `processTransaction`. §22's table left two rows uncovered and §23 left one gap; this step is all three.
+
+```
+investment_buy / investment_sell / investment_dividend   (TWO artifacts)
+  1. apply_account_balance_delta(account, ±cash, expected)  — commits
+  2. investment_trades INSERT                               — TIMES OUT
+  3. transactions INSERT                                    — never runs
+```
+
+Server truth: **the wallet moved and no trade exists.** That is worse than it sounds, and the reason is specific to how this feature is built. Positions — quantity, average cost, realised P&L — are **derived** by replaying the trade ledger on every render and are never stored (`src/lib/investmentMath.ts`; the schema header says it outright: *"there is no holdings table to drift"*). So a lost trade row is not a corrupted figure a reconciliation query could spot. It is a **deleted position**: a buy leaves a wallet that paid for shares nobody holds, and a sell leaves shares the app will happily let the user sell a second time. There is no artifact left to match against.
+
+```
+income / expense / opening_balance / adjustment          (ONE artifact + 1)
+  1. apply_account_balance_delta(account, ±amount, expected) — commits
+  2. transactions INSERT                                     — TIMES OUT
+```
+
+§6 called these "no RPC needed" and it was right about the *severity* — they cannot leave money half-moved between two places, which was MF-01's finding. It was wrong about the priority. This is the **most common write in the app**, and what it leaves behind is the one shape the product has no answer for: a balance that changed with nothing saying why. The user's own repair for that is `adjustment` — which is one of the same four branches, with the same window.
+
+And the leftover from step 4, §23 item 6: the goal contribution's **compensation** still wrote `goals.saved_amount` through `goalsDb.update`, an unlocked read-modify-write. Step 4 gave the forward write a compare-and-swap; the inverse did not have one.
+
+## 25. The artifact contracts
+
+The full tables live in the migration header. The splits:
+
+### 25.1 `record_single_leg_entry`
+
+| # | Artifact | Owner after step 5 |
+|---|---|---|
+| 1 | `accounts.balance` (exactly ONE row) | **server**, in the transaction |
+| 2 | `transactions` row (20 columns) | **server**, same transaction |
+| 3 | Dexie mirrors + Zustand in two stores | client, post-commit, adopting the server's balance |
+| 4 | `activity_log` `transaction_created`, or `opening_balance` for that one type | client, post-commit, best-effort — unchanged |
+| 5 | reminder reschedule | client, post-commit — unchanged |
+
+Per type, and this **is** the whole specification:
+
+| type | leg | row source | row destination | balance guard |
+|---|---|---|---|---|
+| `income` | +amount | NULL | the account | none, ever |
+| `opening_balance` | +amount | NULL | the account | none, ever |
+| `expense` | −amount | the account | NULL | `checkBalanceForTransaction` |
+| `adjustment` | ±delta | account if delta<0 | account if delta>0 | none, ever |
+
+None of the four is cross-currency: each takes the row's currency from its one account and writes `conversion_rate` NULL. The signature therefore **has no `p_conversion_rate` at all** — a stronger refusal than accepting one and rejecting it, which is the shape `create_loan_with_leg` was stuck with because its caller already bound the argument.
+
+### 25.2 `record_investment_trade`
+
+| # | Artifact | Owner after step 5 |
+|---|---|---|
+| 1 | `accounts.balance` (exactly ONE row) | **server**, in the transaction |
+| 2 | `investment_trades` row (16 columns) | **server**, same transaction |
+| 3 | `transactions` row, `related_investment_id` set | **server**, same transaction |
+| 4 | Zustand in three stores + the Dexie mirrors | client, post-commit, adopting the server's figures |
+| 5 | `activity_log` `transaction_created` | client, post-commit — unchanged |
+| 6 | reminder reschedule | client, post-commit — unchanged |
+| — | **derived positions** (qty / avg cost / P&L) | **nobody.** Replayed from artifact 2 on every render. There is nothing to sync and nothing to drift — which is exactly why losing the trade row loses the position |
+| — | `investment_prices` | untouched. A trade never writes a price; `updatePrice` is a separate user action |
+
+### 25.3 `apply_goal_saved_delta`
+
+One column, one compare-and-swap, no row writes — the goal twin of `apply_loan_remaining_delta`. Reached only from step 4's already-flagged goal path, as its inverse.
+
+## 26. Five corrections worth recording
+
+1. **There is no ledger-only `income` / `expense` / `opening_balance` / `adjustment` row in this product — confirmed, not assumed.** The brief allowed for one ("the single-leg RPC must accept a null account ONLY for the exact cases the legacy path writes a both-ids-null row today"). A full sweep of every `processTransaction` call site and every direct `transactions` writer found **zero** such cases, on three independent layers: the input types (`ExpenseInput.sourceAccountId: string` — not optional, unlike `RepaymentInput`'s), the runtime guards (all four branches throw before the row object is built), and the UI (`QuickEntry.tsx:330-332` removes the Spend/Receive/Move intents entirely in `splits_only` — *"Splits-only mode has no accounts"*). The both-ids-null shape that `tasks/lessons.md:26-27` records is exclusively `type = 'repayment'`, written by `loanStore.applyRepayment` and by the card-bill tail. **The RPC therefore refuses a null account unconditionally**, and verification query V5 watches production in case something nobody has traced produces one anyway.
+
+2. **The adjustment's magnitude is a *function of the balance*, so it cannot be sent once and retried.** The RPC re-derives `|target − balance|` from the locked row — that is the point of moving it server-side, since "set it to X" is only truthfully X when the read and the write are one transaction — and cross-checks the client's figure (`AMOUNT_MISMATCH`). The first version of the retry ladder sent the *pre-conflict* magnitude alongside the *post-conflict* expectation: a payload whose two halves describe different worlds, which the server correctly refused. A unit test caught it. `atomicSingleLeg` now recomputes the magnitude on every attempt from the freshly read account, and the branch adopts the server's `amount` and direction rather than the values it derived before the call.
+
+3. **The investment currency conventions are a THIRD pattern, and all three now live in one engine.** A buy **divides** (`round(amount / rate, 2)` — the `goal_contribution` shape); a sell and a dividend **multiply** (the `transfer` shape). And the *trigger* differs too: a buy and a sell convert only when `account.currency ≠ market.currency AND amount > 0` — a zero-cash entry (bonus shares at price 0) needs no rate and moves nothing — while a **dividend** converts on the currency test alone. The server reproduces each branch's own condition rather than a merged one.
+
+4. **`investmentTradesDb.add` is an UPSERT**, so on the legacy path a repeated trade id silently **overwrites a live trade** — and with it the position that trade produced. The RPC refuses (`TRADE_ID_COLLISION`). Nothing in the app can produce one; a `curl` can. Same shape as step 3's `LOAN_ID_COLLISION`.
+
+5. **A compare-and-swap on a *compensation* is a knife with two edges.** `apply_goal_saved_delta` protects the goal inverse from clobbering a concurrent contribution — but a rollback that *refuses to run* is strictly worse than one that races. `atomicGoalSavedDelta` therefore runs a three-rung ladder: try the CAS; on `BALANCE_CONFLICT` reload the goals and retry once against the truth (a pure delta is always safe to replay); on **any** remaining failure — a second conflict, a network drop, or the step-5 migration simply not being applied — fall back to the legacy unlocked write and report to Sentry. The result is never worse than today. A regression test pins the fallback.
+
+A sixth, smaller one: the adjustment's `NOTHING_TO_CORRECT` guard is a genuine tightening, not a port. On the legacy path `Math.abs(delta) < 0.005` is evaluated against a local snapshot, so a correction to a balance that has *since become correct* still writes a row for a movement of zero.
+
+## 27. Error contract — one new token
+
+| Token | Meaning | Client behaviour |
+|---|---|---|
+| `BALANCE_CONFLICT` | a stale CAS — on an account, or (in `apply_goal_saved_delta`) on the **goal** | byte-identical to `apply_account_balance_delta`; both helpers refetch and retry once. A conflict means **nothing moved** |
+| `INSUFFICIENT_BALANCE` | the server half of `checkBalance` / `checkBalanceForTransaction` | `DETAIL` rebuilds the identical bilingual `err_insufficient` string |
+| `GOAL_NOT_FOUND` | step 4's token, reused rather than reinvented | `tStatic('err_goal_gone')`, never retried |
+| **`INSUFFICIENT_HOLDINGS`** | **the one new token.** The server half of `simulateTimeline` — the one investment rule whose violation **mints shares** | folded, with `INVALID_TRADE` / `TRADE_AMOUNT_MISMATCH` / `ACCOUNT_AMOUNT_MISMATCH` / `TRADE_ID_COLLISION` / `MARKET_NOT_FOUND`, into one client-side `TRADE_REJECTED` whose message is the single new bilingual string (`err_trade_rejected`). The server's own token rides along as `serverToken` for Sentry only. **Never retried** — the trade is wrong, not stale, and the RPC is atomic so a refusal wrote none of the three artifacts |
+
+Everything else is a poisoned payload, unreachable from the shipped client: `NOT_AUTHENTICATED`, `INVALID_TRANSACTION_ID`, `INVALID_TYPE`, `INVALID_AMOUNT`, `INVALID_KIND`, `INVALID_SYMBOL`, `EXPECTED_BALANCE_REQUIRED`, `TARGET_BALANCE_REQUIRED`, `NOTHING_TO_CORRECT`, `AMOUNT_MISMATCH`, `CONVERSION_RATE_REQUIRED`, `INVALID_CONVERSION_RATE`, `CONVERSION_RATE_NOT_APPLICABLE`, `MARKET_NOT_FOUND`, `ACCOUNT_NOT_FOUND`, `TRANSACTION_ID_COLLISION`, `INVALID_ARGUMENT`.
+
+The client still runs `validateTradeInput` and `simulateTimeline` **before** calling, so the common refusal costs no round-trip on 3G — and a regression test asserts that a client-caught oversell makes **zero** RPC calls.
+
+## 28. Locking, idempotency, and both app modes
+
+**Locking.** The repo chain is `loans → accounts → emi_schedules → goals`. `record_single_leg_entry` and `record_investment_trade` touch **accounts only** — one row, taken `FOR UPDATE` through the same `ANY(...) ORDER BY id` shape their siblings use, before any write. `apply_goal_saved_delta` touches **goals only**, the leaf. `investment_markets` is immutable to this function so it is read, never locked; `investment_trades` is insert-only and the trade id is its own serialisation point via the primary key. None of the three can invert order against anything in the corpus.
+
+**Idempotency.** `p_transaction_id` is the client-generated primary key of `transactions`, checked **after** the row lock so two copies of the same retry serialise. `record_investment_trade` has a second guarantee that matters more than usual: a replay returns **the trade id the FIRST call minted** (read back from `transactions.related_investment_id`), not the id this retry generated, and the client adopts *that* — a mirror claiming a trade Postgres does not have is precisely the desync a derived-position feature cannot survive. `apply_goal_saved_delta` is deliberately not idempotent: it is a delta with no id to key on, and its only caller runs at most once per scope.
+
+**Both app modes.**
+
+- **full_tracker** — the only mode that reaches either RPC.
+- **splits_only (ledger-only)** — untouched, on both. There is no ledger single-leg entry at all (correction 1), and the ledger-shaped *trade* — "held outside Hisaab", `account_id` NULL — goes through `investmentStore.recordOutsideTrade`, which writes **one** `investment_trades` row and no money row and no balance (`investmentStore.ts:144-180`). Not one line of that path changes, and both RPCs refuse a null account so neither shape can be routed through them.
+- One subtlety reproduced faithfully: `'expense'` **is** in `isSimpleModeBalanceBypassAllowed`, so a full_tracker → splits_only switcher who still has accounts may legitimately push one negative. The client passes `p_allow_negative = true` in exactly that case and only for `'expense'`. `'investment_*'` is **absent** from that list, so the buy guard is the strict `checkBalance` and the client always sends false.
+
+## 29. What the harness proved
+
+Step 5 runs inside the repo's own trust-boundary suite (`docs/testing-the-trust-boundary.md`): `postgres:15` (**PostgreSQL 15.19**), `scaffold.sql`, then the **entire 72-file corpus in `apply-order.txt`** (this migration is entry #65), then the assertions, as role `authenticated` with a real JWT subject.
+
+`supabase/tests/tests/7z-atomic-investments-single-leg.sql`, with its own user J (`aaaaaaaa-…`) and its own `J-` object-id prefix, plus a user K whose rows exist only to be unreachable.
+
+| # | Scenario | Result |
+|---|---|---|
+| — | migration applies; Section 0 preconditions; V1–V4 self-verification | clean; `p3-atomic-investments-and-single-leg: verification passed`. Re-apply is clean too |
+| 0 | catalog shape | all three `security_definer=t`, `search_path=public`, `auth_can=t / anon_can=f` |
+| 1 | expense (bank 5000, spend 100) | 4900; **all 20 columns** of the row asserted field-by-field, including `created_at` passthrough, the NULL rate and the six NULLs |
+| 2 | income into an EMPTY account, and `opening_balance` | both credit with no guard at all; the row carries the destination and its own type |
+| 3 | **adjustment** UP, DOWN, and to a **negative** target on a credit card | the balance is **SET to the target exactly**; the row's leg follows the direction and `amount` stays an unsigned magnitude; the negative target is allowed (that is what adjustment is *for*) |
+| 3b | adjustment no-op and a lying `|delta|` | `NOTHING_TO_CORRECT` (evaluated **inside the lock**) and `AMOUNT_MISMATCH`; both wrote nothing |
+| 4 | stale expectation | `BALANCE_CONFLICT`, **nothing moved, no row**; the client-shaped retry then succeeds, moving the money exactly once. A missing expectation → `EXPECTED_BALANCE_REQUIRED` |
+| 5 | insufficient (10 000 from 300) | `INSUFFICIENT_BALANCE`, nothing written; `p_allow_negative=true` then takes the account negative (the splits_only bypass) |
+| 6 | replay | `{"replay":true}` **carrying the original stale expectation**, money moved once, one row; an id owned by another entry type → `TRANSACTION_ID_COLLISION` |
+| 7 | **the ledger guard** + poisoned payloads | null / whitespace / soft-deleted / **another user's** account → `ACCOUNT_NOT_FOUND`; empty tx id, a `transfer` type, 0, `NaN`, 1e13, a target on a non-adjustment, an adjustment with no target → seven named refusals. **Eleven refusals, zero writes**, and the other user's account is not even readable |
+| 8 | **single-leg mid-transaction failure** (a trigger raising on the `transactions` INSERT, i.e. after the balance UPDATE) | `SIMULATED_WRITE_FAILURE` and **both legs rolled back together** — a changed balance with no row saying why, prevented |
+| 9 | **buy** (100 × 10 + 5 fees) | 1005 leaves the wallet (fees CAPITALIZED), the symbol normalised to upper case; **all 16 columns** of the trade row asserted field-by-field (`amount = 0` for a buy, `traded_at` kept distinct from `created_at`) and the money row's `related_investment_id` |
+| 10 | **sell** and **dividend** | 40 × 12 − 3 arrives; the dividend stores the **gross** on the trade, credits the **net**, and forces the company name empty |
+| 11 | **the oversell replay** | selling 500 of a 60-share position → `INSUFFICIENT_HOLDINGS` with **none of the three artifacts written**; a **BACKDATED** sell that breaks a *later* one is caught; and a sell that is valid against the real buys **succeeds** even though the symbol carries an already-invalid historical sell — `computePosition` skips those, so `simulateTimeline` must too |
+| 12 | the three currency conventions | cross-currency buy **DIVIDES** (`round(7650 / 76.5, 2) = 100.00` leaves an AED wallet while the row stays PKR); a missing rate → `CONVERSION_RATE_REQUIRED`, rate 999999 → `INVALID_CONVERSION_RATE`, a rate on a same-currency trade → `CONVERSION_RATE_NOT_APPLICABLE`, a lying account amount → `ACCOUNT_AMOUNT_MISMATCH`, a lying cash amount → `TRADE_AMOUNT_MISMATCH`. **Five refusals, nothing moved, no trade left behind** |
+| 13 | `validateTradeInput`, re-run | negative fees, fees swallowing the dividend, zero quantity, fees exceeding the sale proceeds, a bad kind, a blank symbol → six named refusals |
+| 14 | ownership, ledger guard, balance guard, replay, collision | another user's market → `MARKET_NOT_FOUND`; a null account → `ACCOUNT_NOT_FOUND`; an unaffordable buy → `INSUFFICIENT_BALANCE`; a replay returns the **first** call's trade id and creates no second trade; a reused trade id → `TRADE_ID_COLLISION` **and the live trade is not overwritten** |
+| 15 | **investment mid-transaction failure** (the trigger raising on the money row, i.e. after the balance UPDATE **and** the `investment_trades` INSERT) | `SIMULATED_WRITE_FAILURE` and **all three legs rolled back together**. **This is the proof** — under the legacy path the wallet had already paid for shares nobody holds |
+| 16 | `apply_goal_saved_delta` | a −200 delta lands behind the CAS; replaying it with the **original** expectation → `BALANCE_CONFLICT` and the goal does not move twice; a −1000 delta against 300 clamps to 0 and reports `goal_applied = −300`, not −1000; another user's goal → `GOAL_NOT_FOUND`; `NaN` and a missing expectation → `INVALID_ARGUMENT` |
+| **R** | **two sessions racing the same account row** (session A opened through `dblink`, holding its transaction open) | session B **blocked on the row lock** until A committed (proved by a 1.5 s `lock_timeout` firing, SQLSTATE 55P03), then returned `BALANCE_CONFLICT` against its pre-A expectation, then succeeded on the client-shaped retry. **No deadlock. Money moved exactly once per call** and both rows exist. This is the first time the two-session check runs **inside** the suite rather than by hand — steps 1, 2 and 4 ran theirs manually. It degrades to a recorded SKIP if the image has no `dblink`, and the ascending-id lock order is additionally asserted statically by V3/V4 |
+| 17 | the shipped drift watches | V5 (a single-leg row with no account), V6 (one touching two accounts or carrying a rate), **V7 (the LOST-TRADE signature, in both directions)** and V8 (an oversold position) all return zero rows over everything the suite wrote; every closing balance reconciles to the cent |
+| P | roles | as `anon` → `permission denied` for all three; as `authenticated` with no JWT subject → `NOT_AUTHENTICATED` |
+
+**90 new SQL assertions; the whole suite is 546 assertions, 0 failed** (`bash supabase/tests/run.sh`). (The pre-step-5 total is higher than the 449 §20 recorded — other suites have grown since step 4 — so read 546 as the current floor, not as 449 + 90.)
+
+In the app: `npx vitest run` → **147 files / 1990 tests green**, including 22 driving the flagged store paths (`src/stores/transactionStoreAtomicInvestSingle.test.ts`) — among them the one-call proof for each shape, the adjustment that adopts the server's magnitude after a conflict retry, the client-side oversell that costs no round-trip, the server-side one that writes nothing and is never retried, both rollbacks, the replay that adopts the server's trade id, the splits_only negative expense, and both rungs of the goal-compensation ladder. `transactionStore.test.ts` gained throwing `singleLegAtomic` / `investmentTradeAtomic` / `goalSavedDelta` stubs — the widest tripwire in the suite, since income, expense and adjustment are its most common writes — so "the legacy path is byte-for-byte unchanged with the flags off" is asserted, not hoped. `npx tsc -b --noEmit` and `eslint` clean.
+
+**Not proven by the harness** (the same limitations `docs/testing-the-trust-boundary.md` records):
+
+- **PostgREST is absent** — every call was raw SQL. Named-argument binding for a **22**-argument RPC, the `jsonb`→JS mapping, and whether `DETAIL` reaches `PostgrestError.details` are **not** verified end to end. Highest-value staging check, as in steps 1–4.
+- **The oversell replay's tie-breaking is collation-dependent in one place.** The client orders by `id.localeCompare(id)`; the server by SQL text ordering. They can differ only for two trades sharing the *same* `traded_at`, kind and `created_at` — and even then the verdict changes only in a constructed case. Worth knowing, not worth a schema change.
+- **Production drift.** Section 0 hard-checks the 51 columns it needs and aborts with a named message, but that is a floor, not a schema audit.
+
+## 30. Rollout (step 5)
+
+1. **Apply `supabase-migration-p3-atomic-investments-and-single-leg.sql`** in Supabase Studio. Safe ahead of the client — it adds three functions and nothing calls them while both flags are unset. Run Section 4 (V1–V4) and confirm `verification passed`.
+2. **Run V7 before enabling.** It is the **lost-trade signature** in both directions — a money row whose trade is gone, or an account-linked trade whose money row is gone. Rows here are history, written by exactly the failure this step closes. Know the number *before* the flags go on so any post-rollout row is unambiguous. V5, V6 and V8 should all be zero already; if V5 returns anything, a writer nobody has traced exists and correction 1 needs revisiting **before** the flag.
+3. **Staging smoke through PostgREST**, not psql: a real signed-in session, one expense, one income, one **adjustment** (check the balance lands exactly on the target), one buy, one sell, one dividend, one **cross-currency buy** (check the wallet loses `amount ÷ rate`, not `× rate`), one deliberate oversell, and one deliberate conflict (move the balance in another tab first). Confirm `details` arrives as JSON.
+4. **Enable one flag at a time, web only**, and **after** the four earlier flags have each had their own release cycle. `VITE_ATOMIC_SINGLE_LEG` first — it is the highest-volume path, so a week of it is worth more evidence than a week of anything else — then `VITE_ATOMIC_INVEST`. Seven flags flipped together make an incident un-bisectable.
+5. **Watch** for one release cycle: `transactionStore.atomicSingleLeg.rpcFailed`; `transactionStore.atomicInvestmentTrade.rpcFailed` (its `extra.serverToken` says *which* rule the server disagreed about — a spike in `TRADE_AMOUNT_MISMATCH` or `ACCOUNT_AMOUNT_MISMATCH` means the two halves of the money derivation have forked, which is the one thing worth paging for); and `transactionStore.atomicGoalSavedDelta.fellBack` (the goal CAS could not be satisfied and the legacy write ran — expected to be rare and harmless, but a steady rate means concurrent goal writes are common enough to look at). Plus V5–V8 as the reconciliation surface.
+6. **Then Android**: `npm run build && npx cap sync android`, bump the version, hand the Gradle AAB build to the user.
+7. **Rollback** is unsetting the flags and redeploying. The migration never needs reverting — unused functions are inert, rows written by either path are identical, and `apply_goal_saved_delta` degrades to the legacy write on its own.
+
+## 31. THE FINAL BRANCH TABLE — the money engine, complete
+
+| # | Branch | Legs today | RPC | Flag | Status |
+|---|---|---|---|---|---|
+| 1 | `transfer` (plain) | 2 balances + 1 row | `transfer_between_accounts` | `VITE_ATOMIC_TRANSFER` | ✅ step 1 |
+| 2 | `repayment` (full-tracker, no card) | 1 balance + loan CAS + N EMI + 1 row | `record_loan_repayment` | `VITE_ATOMIC_REPAYMENT` | ✅ step 2 |
+| 3 | `loan_given` / `loan_taken` (incl. cash advance + EMI plan) | 1–2 balances + loan INSERT + N EMI + 1 row | `create_loan_with_leg` | `VITE_ATOMIC_LOAN_CREATE` | ✅ step 3 |
+| 4 | `goal_contribution` (incl. self-stored) | ≤2 balances + goal CAS + 1 row | `contribute_to_goal` | `VITE_ATOMIC_GOAL` | ✅ step 4 |
+| 5 | card bill pay | 2 balances + 1 row + N × (loan CAS + M EMI + 1 row) | `pay_card_bill` (`'transfer'`) | `VITE_ATOMIC_CARD_BILL` | ✅ step 4 |
+| 6 | cash-advance repayment crediting the card | 2 balances + loan CAS + N EMI + 1 row | `pay_card_bill` (`'repayment'`) | `VITE_ATOMIC_CARD_BILL` | ✅ step 4 |
+| 7 | `income` / `expense` / `opening_balance` / `adjustment` | 1 balance + 1 row | `record_single_leg_entry` | `VITE_ATOMIC_SINGLE_LEG` | ✅ **step 5** |
+| 8 | `investment_buy` / `investment_sell` / `investment_dividend` | 1 balance + 1 trade row + 1 row | `record_investment_trade` | `VITE_ATOMIC_INVEST` | ✅ **step 5** |
+| 9 | the goal contribution's **inverse** | 1 unlocked goal write | `apply_goal_saved_delta` | (none — ladder + fallback) | ✅ **step 5** |
+| — | ledger-only (`splits_only`) money | `loanStore.applyRepayment` / `createLoan` | — | — | untouched by every step, and **every** RPC refuses a null account so it stays that way |
+| — | cross-user (linked requests, group settlements, kameti draws) | — | already server-side | — | a different programme (`audit-p0-settlement-row-locks`, `audit-p0-kameti-draw`) |
+
+**Every branch of `processTransaction` that moves money now has a server-side transaction behind a flag.** There is no row left in this table without one. L4's scope is closed — with two honest caveats: none of the seven flags is on yet, and *deletes and edits* are a separate programme (§32 item 7).
+
+## 32. What remains client-side — the final honest list
+
+Item 6 of §23 is now **closed**. The rest stands, and is deliberate:
+
+1. **The audit trail.** `activity_log` entries are written post-commit, best-effort. Moving them into the transaction would make an audit-log failure roll back money that has moved — the opposite of the correct rule.
+2. **The Dexie mirrors and Zustand state.** Read caches, repopulated by `refetchMoneyStores` after a failed rollback.
+3. **The reminder reschedule**, fire-and-forget, native only.
+4. **The allocation, clamping and validation rules themselves** — `allocateBillPayment`, `clampCardCredit`, `uncoveredToPaidIds`, `planRepaymentEmiMarks`, `planGoalContributionLegs`, `planLoanCreateLegs`, `planEmiRows`, and now `validateTradeInput` / `simulateTimeline`. This is the *plan on the client, apply on the server* decision, made once and applied to every branch: **the server re-validates every number it is handed, and re-runs every rule that could mint value, but it never re-derives the rule.** Step 5 is the clearest instance — `computePosition` stays in TypeScript, while the *oversell verdict* it implies is recomputed server-side, because that is the one an attacker would want to skip.
+5. **The scope inverse.** Still a best-effort client compensation, and still fails in a total outage. What changed across the five steps is that it now has **one** thing to undo instead of a half-applied sequence, and the forward move can no longer be partially committed. The goal inverse additionally has its own CAS with a fallback (§26 correction 5).
+6. **The consolidated multi-loan repayment** is still N independent commits (`repaymentExecution.ts`'s committed-prefix model). Each iteration is individually atomic — a mid-batch failure leaves whole repayments, never half ones — but "applied to 3 of 5" remains the honest report.
+7. **Deletes and edits.** Every step covered *creation*. `deleteTransaction` and `updateTransaction` still unwind and re-apply money through the same multi-round-trip client sequences the create paths used to, with the same compensation model — deleting a `transfer` is still two balance calls and a row delete, and deleting an investment trade is a balance call plus a trade delete plus a row delete. That is now **the largest uncovered surface in the money engine**, and it is the honest next programme rather than a gap in this one: the RPCs would be reversals of the eight above, and the artifact-contract method in §6 applies unchanged.
+8. **Offline.** An atomic RPC still needs a connection. M1's other half — persisting pending work and replaying it — is a separate decision, and the honest interim answer remains "Hisaab needs a network to record money".
+9. **The god store.** H-3's switch gained forks and helpers rather than losing branches. Step 5 lifted the account-amount derivation out of the investment branches' four duplicated sub-blocks so the flagged and legacy paths consume one figure — a small net shrink — but the structural win the audit asked for arrives only when the branches move out of the switch entirely, which none of the five steps has done.

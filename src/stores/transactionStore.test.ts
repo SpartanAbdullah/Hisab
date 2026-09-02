@@ -304,6 +304,23 @@ vi.mock('../lib/supabaseDb', async () => {
       async payCardBillAtomic() {
         throw new Error('atomicMoneyDb.payCardBillAtomic must not be called with the flag off');
       },
+      // L4 step 5. The single-leg branches are the most common writes in this
+      // file, so these two stubs are the widest tripwire in the suite: with
+      // VITE_ATOMIC_SINGLE_LEG / VITE_ATOMIC_INVEST unset, every income,
+      // expense, opening_balance, adjustment and trade below must still go
+      // through the legacy balance-then-row sequence.
+      // Flagged path: transactionStoreAtomicInvestSingle.test.ts.
+      async singleLegAtomic() {
+        throw new Error('atomicMoneyDb.singleLegAtomic must not be called with the flag off');
+      },
+      async investmentTradeAtomic() {
+        throw new Error('atomicMoneyDb.investmentTradeAtomic must not be called with the flag off');
+      },
+      // Reached only from the flagged goal path's compensation, which this file
+      // never enters — but a stub that throws proves that, rather than assuming.
+      async goalSavedDelta() {
+        throw new Error('atomicMoneyDb.goalSavedDelta must not be called from the legacy path');
+      },
     },
   };
 });

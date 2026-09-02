@@ -14,6 +14,10 @@ import {
   // L4 step 4 — the goal-contribution and card-bill RPC result types
   // (ATOMIC_GOAL_ENABLED / ATOMIC_CARD_BILL_ENABLED).
   type AtomicGoalContributionResult, type AtomicCardBillResult,
+  // L4 step 5 — the single-leg and investment-trade RPC result types
+  // (ATOMIC_SINGLE_LEG_ENABLED / ATOMIC_INVEST_ENABLED).
+  type AtomicSingleLegResult, type AtomicInvestmentTradeResult,
+  type SingleLegEntryType,
 } from '../lib/supabaseDb';
 import {
   clearMirrorCoverage, loadCacheFirst, markMirrorStale, mirrorBulkPut, mirrorDelete, mirrorPut,
@@ -1405,7 +1409,12 @@ async function atomicGoalContribution(
       await useAccountStore.getState().updateBalance(result.linkedAccountId, -result.linkedDelta);
     }
     if (result.goalApplied !== 0) {
-      await useGoalStore.getState().addContribution(leg.goalId, -result.goalApplied);
+      // L4 step 5 (doc §23 item 6): the delta now goes through the
+      // `apply_goal_saved_delta` compare-and-swap, with a retry and a fallback
+      // to this exact call if the CAS cannot be satisfied — see
+      // atomicGoalSavedDelta. It was the last unlocked writer of
+      // goals.saved_amount left in the goal path.
+      await atomicGoalSavedDelta(leg.goalId, -result.goalApplied);
     }
     // The tail's trackedAddTransaction registers its own delete, which runs
     // first under LIFO; deleting twice is a no-op.
@@ -1712,6 +1721,305 @@ async function atomicPayCardBill(
   }
 
   return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVER-SIDE MONEY ENGINE — L4 step 5: the last two shapes
+//
+// audit docs/audit-2026-09/07-mobile-first.md MF-01, 12-qa-review.md O-1/F-4,
+// 00-executive-summary.md M1/L4. These are the two rows §22 of
+// docs/server-side-money-engine.md left uncovered when step 4 closed every
+// MULTI-leg branch.
+//
+//   income / expense / opening_balance / adjustment
+//     balance CAS → transactions INSERT. The narrowest window in the engine —
+//     it cannot leave money half-moved BETWEEN two places — but it is the most
+//     common write in the app, and what it leaves is a balance that changed
+//     with NO row saying why. The user's own repair for that is `adjustment`,
+//     which is one of the four branches with the same window.
+//
+//   investment_buy / investment_sell / investment_dividend
+//     balance CAS → investment_trades INSERT → transactions INSERT. Positions
+//     here are DERIVED by replaying the trade ledger (src/lib/investmentMath.ts
+//     — "there is no holdings table to drift"), so a drop between the first two
+//     does not corrupt a figure, it DELETES the position: a wallet that paid
+//     for shares nobody holds, or sold shares that can be sold again.
+//
+// BOTH OFF BY DEFAULT. The RPCs do not exist until the user applies
+// supabase-migration-p3-atomic-investments-and-single-leg.sql, so the flags stay
+// false and the legacy paths below run byte-for-byte unchanged.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ATOMIC_SINGLE_LEG_ENABLED = import.meta.env.VITE_ATOMIC_SINGLE_LEG === 'true';
+const ATOMIC_INVEST_ENABLED = import.meta.env.VITE_ATOMIC_INVEST === 'true';
+
+interface AtomicSingleLegLeg {
+  transactionId: string;
+  type: SingleLegEntryType;
+  accountId: string;
+  /** The row's unsigned magnitude. For an adjustment, the client's |delta|. */
+  amount: number;
+  /** `adjustment` only — the balance the account is set TO. */
+  targetBalance: number | null;
+  note: string;
+  category: string;
+  createdAt: string;
+  /**
+   * True only where the client's own checkBalanceForTransaction is a no-op —
+   * splits_only mode, and only for 'expense' (isSimpleModeBalanceBypassAllowed).
+   */
+  allowNegative: boolean;
+}
+
+/**
+ * Call the single-leg RPC, adopt the server's balance, and register the inverse.
+ *
+ * BALANCE_CONFLICT → refetch the accounts once and retry, the same ladder
+ * accountStore.updateBalance already runs against the account CAS. A conflict
+ * means NOTHING moved, so there is nothing to compensate.
+ *
+ * There is no retry floor and none is needed: every one of the four is a plain
+ * signed delta (an adjustment re-derives its own from the freshly locked row),
+ * so replaying against a fresh expectation is always correct.
+ */
+async function atomicSingleLeg(
+  scope: MutationScope,
+  leg: AtomicSingleLegLeg,
+): Promise<AtomicSingleLegResult> {
+  const call = async (): Promise<AtomicSingleLegResult> => {
+    const account = useAccountStore.getState().getAccount(leg.accountId);
+    if (!account) throw new Error('Account not found');
+    // An adjustment's magnitude is a FUNCTION of the balance it is correcting,
+    // so it must be re-derived on the retry as well: after a conflict refetch
+    // the account has moved, and sending the pre-conflict |delta| alongside the
+    // post-conflict expectation is a payload whose two halves describe
+    // different worlds — the server's own cross-check (AMOUNT_MISMATCH) would
+    // refuse it, correctly. Every other type carries a fixed amount.
+    const amount = leg.type === 'adjustment' && leg.targetBalance !== null
+      ? Math.abs(round2(leg.targetBalance - account.balance))
+      : leg.amount;
+    return atomicMoneyDb.singleLegAtomic({
+      transactionId: leg.transactionId,
+      type: leg.type,
+      accountId: leg.accountId,
+      amount,
+      targetBalance: leg.targetBalance,
+      note: leg.note,
+      category: leg.category,
+      createdAt: leg.createdAt,
+      expectedBalance: account.balance,
+      allowNegative: leg.allowNegative,
+    });
+  };
+
+  let result: AtomicSingleLegResult;
+  try {
+    result = await call();
+  } catch (err) {
+    if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') {
+      reportError(err, {
+        feature: 'transactionStore.atomicSingleLeg.rpcFailed',
+        extra: { transactionId: leg.transactionId, type: leg.type },
+      });
+      throw err;
+    }
+    const fresh = await accountsDb.getAll();
+    useAccountStore.setState({ accounts: fresh });
+    result = await call();
+  }
+
+  await setKnownBalance(leg.accountId, result.accountBalance);
+
+  scope.register(async () => {
+    // Reverse through the account CAS (delta-based, so a concurrent mutation
+    // commutes) and remove the row the server wrote. The tail's
+    // trackedAddTransaction registers its own delete which runs first under
+    // LIFO; deleting twice is a no-op.
+    if (result.accountDelta !== 0) {
+      await useAccountStore.getState().updateBalance(leg.accountId, -result.accountDelta);
+    }
+    await transactionsDb.delete(leg.transactionId);
+    await mirrorDelete(db.transactions, leg.transactionId);
+    markMirrorStale('transactions');
+    useTransactionStore.setState((s) => ({
+      transactions: s.transactions.filter((t) => t.id !== leg.transactionId),
+    }));
+  });
+
+  return result;
+}
+
+interface AtomicInvestmentLeg {
+  transactionId: string;
+  /** The trade the branch built. Its id is a REQUEST — the server's reply wins. */
+  trade: InvestmentTrade;
+  kind: 'buy' | 'sell' | 'dividend';
+  accountId: string;
+  /** The ROW's amount, in MARKET currency. */
+  amount: number;
+  /** What the ACCOUNT moves: buy DIVIDES, sell and dividend MULTIPLY. */
+  accountAmount: number;
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  createdAt: string;
+}
+
+/** Adopt a trade row the SERVER wrote. State only — the row already exists. */
+function adoptTradeRow(trade: InvestmentTrade): void {
+  useInvestmentStore.setState((s) => (
+    s.trades.some((t) => t.id === trade.id) ? s : { trades: [trade, ...s.trades] }
+  ));
+}
+
+/**
+ * Call the investment-trade RPC, adopt the server's figures, and register the
+ * inverse for the rest of the scope.
+ *
+ * BALANCE_CONFLICT → refetch the accounts once and retry. Everything else is
+ * final: a TRADE_REJECTED means the server re-ran `validateTradeInput` and
+ * `simulateTimeline` and disagreed with us, which is not something a retry can
+ * fix — and because the RPC is atomic, it wrote NONE of the three artifacts.
+ *
+ * The trade the store adopts is the one the SERVER reports, not the one this
+ * call generated: on a replay the server returns the id the FIRST attempt
+ * minted, and a mirror claiming a trade Postgres does not have is precisely the
+ * desync a derived-position feature cannot survive.
+ */
+async function atomicInvestmentTrade(
+  scope: MutationScope,
+  leg: AtomicInvestmentLeg,
+): Promise<{ result: AtomicInvestmentTradeResult; trade: InvestmentTrade }> {
+  const call = async (): Promise<AtomicInvestmentTradeResult> => {
+    const account = useAccountStore.getState().getAccount(leg.accountId);
+    if (!account) throw new Error('Account not found');
+    return atomicMoneyDb.investmentTradeAtomic({
+      transactionId: leg.transactionId,
+      tradeId: leg.trade.id,
+      kind: leg.kind,
+      marketId: leg.trade.marketId,
+      symbol: leg.trade.symbol,
+      companyName: leg.trade.name,
+      quantity: leg.trade.quantity,
+      pricePerUnit: leg.trade.pricePerUnit,
+      grossAmount: leg.trade.amount,
+      fees: leg.trade.fees,
+      accountId: leg.accountId,
+      amount: leg.amount,
+      accountAmount: leg.accountAmount,
+      conversionRate: leg.conversionRate,
+      note: leg.note,
+      category: leg.category,
+      createdAt: leg.createdAt,
+      tradedAt: leg.trade.tradedAt,
+      tradeNotes: leg.trade.notes,
+      tradeCreatedAt: leg.trade.createdAt,
+      expectedBalance: account.balance,
+      // 'investment_*' is absent from isSimpleModeBalanceBypassAllowed, so the
+      // branch uses the STRICT checkBalance and there is no bypass to reproduce.
+      allowNegative: false,
+    });
+  };
+
+  let result: AtomicInvestmentTradeResult;
+  try {
+    result = await call();
+  } catch (err) {
+    if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') {
+      reportError(err, {
+        feature: 'transactionStore.atomicInvestmentTrade.rpcFailed',
+        extra: {
+          transactionId: leg.transactionId,
+          kind: leg.kind,
+          serverToken: (err as { serverToken?: string })?.serverToken ?? null,
+        },
+      });
+      throw err;
+    }
+    const fresh = await accountsDb.getAll();
+    useAccountStore.setState({ accounts: fresh });
+    result = await call();
+  }
+
+  // The server is the only thing that knows which trade row exists.
+  const stored: InvestmentTrade = { ...leg.trade, id: result.tradeId };
+  await setKnownBalance(leg.accountId, result.accountBalance);
+  adoptTradeRow(stored);
+
+  scope.register(async () => {
+    await useInvestmentStore.getState().removeTradeRow(stored.id);
+    if (result.accountDelta !== 0) {
+      await useAccountStore.getState().updateBalance(leg.accountId, -result.accountDelta);
+    }
+    await transactionsDb.delete(leg.transactionId);
+    await mirrorDelete(db.transactions, leg.transactionId);
+    markMirrorStale('transactions');
+    useTransactionStore.setState((s) => ({
+      transactions: s.transactions.filter((t) => t.id !== leg.transactionId),
+    }));
+  });
+
+  return { result, trade: stored };
+}
+
+/**
+ * The goal compensation's own compare-and-swap (doc §23 item 6).
+ *
+ * Step 4 gave the FORWARD goal write a CAS inside `contribute_to_goal`. The
+ * INVERSE the scope registers still went through `goalStore.addContribution` →
+ * `goalsDb.update`, an unlocked read-modify-write that can clobber a
+ * contribution made on another device while the rollback is in flight. This
+ * routes it through `apply_goal_saved_delta` instead.
+ *
+ * THE LADDER MATTERS MORE THAN THE CAS. A compare-and-swap on a *compensation*
+ * is a knife with two edges: a rollback that REFUSES to run is strictly worse
+ * than one that races. So:
+ *   1. try the CAS against the local snapshot;
+ *   2. on BALANCE_CONFLICT, reload the goals and retry ONCE against the truth
+ *      (a pure delta is always safe to replay against a fresh expectation —
+ *      the same reasoning as the forward path's missing retry floor);
+ *   3. on ANY remaining failure — a second conflict, a missing RPC because the
+ *      step-5 migration has not been applied, a network drop — fall back to the
+ *      legacy unlocked write, and report.
+ * The result is never worse than today and usually better.
+ *
+ * Deliberately NOT behind its own flag: it is only ever reached from the
+ * already-flagged VITE_ATOMIC_GOAL path, and step 3 of the ladder means a
+ * project that has step 4's migration but not step 5's still rolls back
+ * exactly as it does today.
+ */
+async function atomicGoalSavedDelta(goalId: string, delta: number): Promise<void> {
+  if (delta === 0) return;
+
+  const expected = (): number | null => {
+    const goal = useGoalStore.getState().getGoal(goalId);
+    return goal ? goal.savedAmount : null;
+  };
+
+  try {
+    const before = expected();
+    if (before === null) throw new Error('Goal not found');
+    let applied;
+    try {
+      applied = await atomicMoneyDb.goalSavedDelta(goalId, delta, before);
+    } catch (err) {
+      if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') throw err;
+      await useGoalStore.getState().loadGoals();
+      const fresh = expected();
+      if (fresh === null) throw err;
+      applied = await atomicMoneyDb.goalSavedDelta(goalId, delta, fresh);
+    }
+    setKnownGoalSaved(goalId, applied.goalSavedAmount);
+    return;
+  } catch (err) {
+    reportError(err, {
+      feature: 'transactionStore.atomicGoalSavedDelta.fellBack',
+      extra: { goalId, delta },
+    });
+  }
+
+  // The floor: exactly what the compensation did before this function existed.
+  await useGoalStore.getState().addContribution(goalId, delta);
 }
 
 async function trackedUpdateLoan(
@@ -2524,7 +2832,26 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             if (!destAccount) throw new Error('Destination account not found');
             currency = destAccount.currency;
             destinationAccountId = input.destinationAccountId;
-            await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+            if (ATOMIC_SINGLE_LEG_ENABLED) {
+              // ── L4 STEP 5 ─────────────────────────────────────────────────
+              // Pin the timestamp BEFORE the server writes the row, so the
+              // tail's `input.createdAt ?? new Date().toISOString()` produces
+              // the identical value and its idempotent upsert rewrites the same
+              // row rather than a differently-stamped one. (The transfer pilot
+              // established this; see supabase-migration-p3-atomic-transfer.sql.)
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              await atomicSingleLeg(scope, {
+                transactionId, type: 'income',
+                accountId: input.destinationAccountId,
+                amount: input.amount, targetBalance: null,
+                note: input.notes ?? '', category: input.category ?? '',
+                createdAt: input.createdAt,
+                // income has no balance guard at all, in either mode.
+                allowNegative: false,
+              });
+            } else {
+              await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+            }
             description = `Income of ${currency} ${input.amount} → ${destAccount.name}`;
             break;
           }
@@ -2535,7 +2862,22 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             checkBalanceForTransaction(srcAccount, input.amount, input.type);
             currency = srcAccount.currency;
             sourceAccountId = input.sourceAccountId;
-            await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+            if (ATOMIC_SINGLE_LEG_ENABLED) {
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              await atomicSingleLeg(scope, {
+                transactionId, type: 'expense',
+                accountId: input.sourceAccountId,
+                amount: input.amount, targetBalance: null,
+                note: input.notes ?? '', category: input.category ?? '',
+                createdAt: input.createdAt,
+                // TRUE only where checkBalanceForTransaction above was a no-op
+                // — splits_only mode, which deliberately lets an expense make
+                // an account negative.
+                allowNegative: isSimpleModeBalanceBypassAllowed('expense'),
+              });
+            } else {
+              await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+            }
             description = `Expense of ${currency} ${input.amount} from ${srcAccount.name}`;
             break;
           }
@@ -3332,7 +3674,19 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             if (!destAccount) throw new Error('Destination account not found');
             currency = destAccount.currency;
             destinationAccountId = input.destinationAccountId;
-            await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+            if (ATOMIC_SINGLE_LEG_ENABLED) {
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              await atomicSingleLeg(scope, {
+                transactionId, type: 'opening_balance',
+                accountId: input.destinationAccountId,
+                amount: input.amount, targetBalance: null,
+                note: input.notes ?? '', category: input.category ?? '',
+                createdAt: input.createdAt,
+                allowNegative: false,
+              });
+            } else {
+              await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+            }
             description = `Opening Balance — ${currency} ${input.amount} in ${destAccount.name}`;
             break;
           }
@@ -3348,7 +3702,33 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             // stored amount stays positive like every other row.
             if (delta > 0) destinationAccountId = input.accountId;
             else sourceAccountId = input.accountId;
-            await trackedBalanceDelta(scope, input.accountId, delta);
+            if (ATOMIC_SINGLE_LEG_ENABLED) {
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              // The server SETS the target inside the row lock and derives its
+              // own |delta| there — the local `delta` above is computed from a
+              // snapshot that a concurrent write may already have invalidated,
+              // and "set it to X" is only truthfully X if the read and the write
+              // are the same transaction. It cross-checks `amount` against its
+              // own figure (AMOUNT_MISMATCH) rather than trusting either.
+              const applied = await atomicSingleLeg(scope, {
+                transactionId, type: 'adjustment',
+                accountId: input.accountId,
+                amount, targetBalance: input.targetBalance,
+                note: input.notes ?? '', category: input.category ?? '',
+                createdAt: input.createdAt,
+                // An adjustment has no balance guard at all — setting a credit
+                // card to a negative balance is the correct use of it.
+                allowNegative: false,
+              });
+              // Adopt the SERVER's magnitude and direction: after a refetch and
+              // retry the locked balance may differ from the one `delta` was
+              // derived from, and the row must agree with the money.
+              amount = applied.amount;
+              destinationAccountId = applied.accountDelta > 0 ? input.accountId : null;
+              sourceAccountId = applied.accountDelta > 0 ? null : input.accountId;
+            } else {
+              await trackedBalanceDelta(scope, input.accountId, delta);
+            }
             description = `Balance corrected — ${account.name} set to ${currency} ${input.targetBalance}`;
             break;
           }
@@ -3403,10 +3783,19 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               }
             }
 
+            // What the WALLET moves, in ACCOUNT currency. Derived before any
+            // money moves so the flagged and legacy paths below consume the
+            // identical figure and cannot drift. The convention is asymmetric —
+            // a buy DIVIDES (market-per-account), a sell MULTIPLIES
+            // (account-per-market) — and one "convert" implementation would
+            // mis-derive one of them by a factor of rate².
+            let accountAmount = amount;
+            let legAccountId: string;
             if (input.type === 'investment_buy') {
               const src = accountStore.getAccount(input.sourceAccountId);
               if (!src) throw new Error('Source account not found');
               sourceAccountId = src.id;
+              legAccountId = src.id;
               // Zero-cash entries (bonus shares at price 0) move no money —
               // no rate needed, both deltas are 0 via the same-currency path.
               if (src.currency !== market.currency && amount > 0) {
@@ -3415,36 +3804,61 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 }
                 conversionRate = input.conversionRate;
                 // rate = market-per-account (divide) — goal_contribution shape.
-                const srcDeduct = Math.round((amount / conversionRate) * 100) / 100;
-                checkBalance(src, srcDeduct);
-                await trackedBalanceDelta(scope, src.id, -srcDeduct);
-                description = `Bought ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount}, paid ${src.currency} ${srcDeduct} from ${src.name} (rate: ${conversionRate})`;
+                accountAmount = Math.round((amount / conversionRate) * 100) / 100;
+                description = `Bought ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount}, paid ${src.currency} ${accountAmount} from ${src.name} (rate: ${conversionRate})`;
               } else {
-                checkBalance(src, amount);
-                await trackedBalanceDelta(scope, src.id, -amount);
                 description = `Bought ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount} from ${src.name}`;
               }
+              // The STRICT checkBalance — 'investment_*' is absent from
+              // isSimpleModeBalanceBypassAllowed — applied to exactly the
+              // figure both sub-branches computed, as before.
+              checkBalance(src, accountAmount);
             } else {
               const dest = accountStore.getAccount(input.destinationAccountId);
               if (!dest) throw new Error('Destination account not found');
               destinationAccountId = dest.id;
+              legAccountId = dest.id;
               if (dest.currency !== market.currency && amount > 0) {
                 if (!input.conversionRate || !rateIsSane(input.conversionRate)) {
                   throw new Error('Conversion rate required — different currencies');
                 }
                 conversionRate = input.conversionRate;
                 // rate = account-per-market (multiply) — repayment-given shape.
-                const credited = Math.round(amount * conversionRate * 100) / 100;
-                await trackedBalanceDelta(scope, dest.id, credited);
-                description = `Sold ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount}, received ${dest.currency} ${credited} into ${dest.name} (rate: ${conversionRate})`;
+                accountAmount = Math.round(amount * conversionRate * 100) / 100;
+                description = `Sold ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount}, received ${dest.currency} ${accountAmount} into ${dest.name} (rate: ${conversionRate})`;
               } else {
-                await trackedBalanceDelta(scope, dest.id, amount);
                 description = `Sold ${input.quantity} ${symbol} (${market.name}) — ${currency} ${amount} → ${dest.name}`;
               }
             }
 
-            await trackedAddInvestmentTrade(scope, trade);
-            relatedInvestmentId = trade.id;
+            if (ATOMIC_INVEST_ENABLED) {
+              // ── L4 STEP 5 ─────────────────────────────────────────────────
+              // ONE server-side transaction moves the balance, writes the trade
+              // AND writes the row, so a drop between them can no longer leave
+              // a wallet that paid for shares nobody holds. Everything below the
+              // switch is unchanged.
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              const applied = await atomicInvestmentTrade(scope, {
+                transactionId, trade, kind,
+                accountId: legAccountId,
+                amount, accountAmount, conversionRate,
+                note: input.notes ?? '',
+                // The tail resolves this the same way; passing the resolved
+                // value keeps the server's row and the upsert byte-identical.
+                category: input.category ?? 'Investments',
+                createdAt: input.createdAt,
+              });
+              // The SERVER's trade id, never the local one: on a replay it is
+              // the id the FIRST attempt minted.
+              relatedInvestmentId = applied.trade.id;
+            } else {
+              await trackedBalanceDelta(
+                scope, legAccountId,
+                input.type === 'investment_buy' ? -accountAmount : accountAmount,
+              );
+              await trackedAddInvestmentTrade(scope, trade);
+              relatedInvestmentId = trade.id;
+            }
             break;
           }
 
@@ -3483,21 +3897,39 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               createdAt: now,
             };
 
+            // A dividend converts on the currency test ALONE — unlike a buy or
+            // a sell, which also require amount > 0. Its net is positive by
+            // construction (validateTradeInput refuses fees ≥ gross), so the
+            // two are equivalent here; the shapes are kept apart because the
+            // server reproduces each branch's own condition, not a merged one.
+            let creditedAmount = amount;
             if (dest.currency !== market.currency) {
               if (!input.conversionRate || !rateIsSane(input.conversionRate)) {
                 throw new Error('Conversion rate required — different currencies');
               }
               conversionRate = input.conversionRate;
-              const credited = Math.round(amount * conversionRate * 100) / 100;
-              await trackedBalanceDelta(scope, dest.id, credited);
-              description = `Dividend ${symbol} (${market.name}) — ${currency} ${amount}, received ${dest.currency} ${credited} into ${dest.name} (rate: ${conversionRate})`;
+              creditedAmount = Math.round(amount * conversionRate * 100) / 100;
+              description = `Dividend ${symbol} (${market.name}) — ${currency} ${amount}, received ${dest.currency} ${creditedAmount} into ${dest.name} (rate: ${conversionRate})`;
             } else {
-              await trackedBalanceDelta(scope, dest.id, amount);
               description = `Dividend ${symbol} (${market.name}) — ${currency} ${amount} → ${dest.name}`;
             }
 
-            await trackedAddInvestmentTrade(scope, trade);
-            relatedInvestmentId = trade.id;
+            if (ATOMIC_INVEST_ENABLED) {
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              const applied = await atomicInvestmentTrade(scope, {
+                transactionId, trade, kind: 'dividend',
+                accountId: dest.id,
+                amount, accountAmount: creditedAmount, conversionRate,
+                note: input.notes ?? '',
+                category: input.category ?? 'Investments',
+                createdAt: input.createdAt,
+              });
+              relatedInvestmentId = applied.trade.id;
+            } else {
+              await trackedBalanceDelta(scope, dest.id, creditedAmount);
+              await trackedAddInvestmentTrade(scope, trade);
+              relatedInvestmentId = trade.id;
+            }
             break;
           }
         }

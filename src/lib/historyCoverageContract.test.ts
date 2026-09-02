@@ -99,6 +99,62 @@ describe('history coverage contract', () => {
     expect(/filtersActive[\s\S]{0,300}ensureTransactionHistory/.test(text)).toBe(true);
   });
 
+  // ── The persisted floor (docs/performance.md §7.1) ─────────────────────
+  // Coverage now survives a restart, which puts a new way to lie in reach: a
+  // claim read back off disk that the mirror can no longer back. The statement
+  // gate above is unchanged and still awaits `complete` — these pin down that
+  // what it is awaiting cannot become a stale claim by the back door.
+
+  it('the store adopts a persisted floor ONLY through the trust gate', () => {
+    const text = source('../stores/transactionStore.ts');
+    // `readMirrorCoverageSeed` consults the sync cursors and hands back nothing
+    // when a full refresh is due. `readMirrorCoverage` is the raw read and must
+    // never reach `historyCoverage`.
+    expect(/readMirrorCoverageSeed\(/.test(text)).toBe(true);
+    expect(
+      /\breadMirrorCoverage\(/.test(text),
+      'transactionStore must not read the persisted floor without the trust gate.',
+    ).toBe(false);
+  });
+
+  it('only a cache-answered load may adopt the persisted floor', () => {
+    // A load that FETCHED states what it proved; the persisted floor is for the
+    // load that fetched nothing. Adopting it on a fetch path would let a stale
+    // claim override a fresh, narrower one.
+    const text = source('../stores/transactionStore.ts');
+    const branch = text.slice(text.indexOf('if (fetchedCoverage) {'), text.indexOf('readMirrorCoverageSeed('));
+    expect(branch).toMatch(/}\s*else if \(fromCache\) \{/);
+  });
+
+  it('the floor is written only after the rows are in the mirror', () => {
+    const text = source('../stores/transactionStore.ts');
+    // Every persist goes through one helper, so "after the merge, never before"
+    // is a single reviewable rule rather than three call sites to keep in step.
+    const writes = text.match(/writeMirrorCoverage\(/g) ?? [];
+    expect(writes).toHaveLength(1);
+    const helper = text.slice(text.indexOf('function adoptHistoryCoverage'));
+    expect(helper.slice(0, 400)).toMatch(/writeMirrorCoverage\(/);
+    // ...and every CALL SITE (the declaration excluded) puts rows in the mirror
+    // before it runs.
+    for (const call of text.matchAll(/(?<!function )adoptHistoryCoverage\(/g)) {
+      const before = text.slice(Math.max(0, call.index - 600), call.index);
+      expect(
+        /mirrorBulkPut\(|onRefreshed|fetchedCoverage/.test(before),
+        'adoptHistoryCoverage must follow a mirror write, not precede one.',
+      ).toBe(true);
+    }
+  });
+
+  it('an ordinary sync cannot silently drop the stored floor', () => {
+    // `writeSyncState` rebuilds the sync row from an object literal on every
+    // poll. If it stops carrying these two fields forward, the floor is gone by
+    // the next background refresh and nobody notices except the fetch counter.
+    const text = source('./mirrorCache.ts');
+    const write = text.slice(text.indexOf('async function writeSyncState'), text.indexOf('function sortRows'));
+    expect(write).toMatch(/coverageSince: previous\?\.coverageSince/);
+    expect(write).toMatch(/coverageComplete: previous\?\.coverageComplete === true/);
+  });
+
   it('exportAllData reads the DAL directly, so the window never truncates a backup', () => {
     // dataExport is the one "must be complete" consumer that needs no change:
     // it has always gone straight to transactionsDb.getAll() (the keyset walk),

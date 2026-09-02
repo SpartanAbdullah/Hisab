@@ -2571,6 +2571,16 @@ const S = {
     ur: "Card bill ka hisaab match nahi hua — kuch aur device par badal gaya hai. Screen refresh karke dobara try karein.",
     en: "The card bill didn't add up — something changed on another device. Refresh and try again.",
   },
+  // L4 step 5. record_investment_trade re-validated the trade and refused it
+  // (more shares than the position holds — including a backdated sell that
+  // breaks a later one — a figure the two halves derived differently, or a
+  // trade id already in use). The trade is wrong, not stale, so retrying it
+  // would refuse again. Nothing was written: no balance moved, no trade, no
+  // entry.
+  err_trade_rejected: {
+    ur: "Yeh trade record nahi ho saki — shayad itne shares mojood nahi ya kisi aur device par kuch badal gaya hai. Kuch bhi save nahi hua. Screen refresh karke dobara try karein.",
+    en: "That trade couldn't be recorded — you may not hold that many shares, or something changed on another device. Nothing was saved. Refresh and try again.",
+  },
   err_repayment_amount_invalid: {
     ur: "Payment ki raqam sahi nahi. Zero se zyada amount likhein.",
     en: "That payment amount isn't valid. Enter an amount greater than zero.",
