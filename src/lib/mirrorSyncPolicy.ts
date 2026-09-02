@@ -117,3 +117,118 @@ export function planMirrorRefresh(input: MirrorRefreshPlanInput): MirrorRefreshP
   if (now - toMs(cursor.lastSyncedAt) < freshMs) return 'cache';
   return 'incremental-background';
 }
+
+// ── The persisted coverage floor (docs/performance.md §7.1) ─────────────────
+//
+// `historyCoverage` in the transaction store answers "what does this app PROVE
+// it is holding". It was session state: a returning user with a warm five-year
+// mirror woke up claiming nothing and paid a full walk on their first
+// statement. The floor is now written next to the cursors above so it can
+// survive a restart.
+//
+// The danger this half of the module exists to prevent is the opposite one: a
+// persisted claim that OUTLIVES the data it describes. A floor read back from
+// disk is a promise about rows that are only still there if nothing removed
+// them in between — so it is trusted under exactly one condition, and dropped
+// on every event that could have punched a hole in it.
+
+/** The floor as it is stored: the same two fields as `HistoryCoverage`. */
+export interface PersistedCoverage {
+  /** Complete from this instant onward. `null` + `!complete` = nothing proven. */
+  since: string | null;
+  /** The whole table is held. `since` is then irrelevant. */
+  complete: boolean;
+}
+
+export function noPersistedCoverage(): PersistedCoverage {
+  return { since: null, complete: false };
+}
+
+/**
+ * Read the two stored fields into a floor, defaulting to "nothing proven".
+ *
+ * Deliberately paranoid about the shapes a Dexie row can come back as — a row
+ * written before this shipped has neither field, and a partially-written row
+ * (`coverageComplete` set, `coverageSince` lost) must degrade to LESS of a
+ * claim, never more.
+ */
+export function normalizePersistedCoverage(
+  row: { coverageSince?: string | null; coverageComplete?: boolean } | null | undefined,
+): PersistedCoverage {
+  if (!row) return noPersistedCoverage();
+  const complete = row.coverageComplete === true;
+  const since = typeof row.coverageSince === 'string' && row.coverageSince.length > 0
+    ? row.coverageSince
+    : null;
+  if (complete) return { since, complete: true };
+  if (!since) return noPersistedCoverage();
+  return { since, complete: false };
+}
+
+/**
+ * May a floor read back from disk be believed?
+ *
+ * ONLY when the very next thing this mirror will do is an incremental sync —
+ * i.e. `planMirrorRefresh` is anything but `'full'`. A `'full'` plan means one
+ * of three things, and all three say the same thing about the floor:
+ *
+ * - **no cache** — the mirror is empty, so it holds nothing at all;
+ * - **the daily full refresh is due** — that refresh exists precisely because
+ *   the incremental cursor can have missed a tombstone or a row that never got
+ *   its `updated_at` bumped, so the mirror is not known-good until it lands;
+ * - **no usable watermark** — nothing to diff from, so nothing to vouch for
+ *   what the mirror contains.
+ *
+ * A stale floor is worse than an extra fetch: it makes a statement of account
+ * compute over rows it only THINKS are all there. So the untrusted case does
+ * not "trust a little" — it claims nothing and lets the refresh that is about
+ * to run re-establish the floor from what it actually proved.
+ */
+export function persistedCoverageIsTrustworthy(input: MirrorRefreshPlanInput): boolean {
+  return planMirrorRefresh(input) !== 'full';
+}
+
+/** The floor to seed a session with: the persisted one, or nothing. */
+export function seedCoverage(
+  persisted: PersistedCoverage,
+  input: MirrorRefreshPlanInput,
+): PersistedCoverage {
+  return persistedCoverageIsTrustworthy(input) ? persisted : noPersistedCoverage();
+}
+
+/** What a mirror-write did, in the only terms the floor cares about. */
+export interface MirrorWriteOutcome {
+  /** The server did not hand back the whole set (PostgREST max-rows / pager cap). */
+  truncated: boolean;
+  /** The table was cleared and refilled from this fetch alone. */
+  replacedWholeMirror: boolean;
+  /** Rows the in-window reconcile deleted because the fetch did not return them. */
+  prunedRowCount: number;
+}
+
+/**
+ * Does the persisted floor survive this write?
+ *
+ * Three ways a write can leave the mirror unable to back the claim:
+ *
+ * 1. **`truncated`** — the response was short of the truth. Nothing was
+ *    removed (the truncated path merges, never clears — F-FE1), but a server
+ *    that just under-reported is not evidence for anything.
+ * 2. **`replacedWholeMirror`** — `clear()` then refill. Every row below the
+ *    floor is gone unless this one fetch returned it.
+ * 3. **`prunedRowCount > 0`** — the in-window reconcile removed rows the fetch
+ *    did not return. That is the right repair for a tombstone the incremental
+ *    feed missed, but a short page inside the window looks identical from here
+ *    and would punch a hole ABOVE the floor.
+ *
+ * Note what is deliberately NOT here: the incremental path's
+ * `fetchDeletedSince`. That is an explicit tombstone list — it names the ids
+ * the server says are gone and removes exactly those. It leaves no hole, and
+ * invalidating on it would drop the floor every time a user deletes an expense,
+ * which would make persisting one pointless.
+ */
+export function coverageSurvives(outcome: MirrorWriteOutcome): boolean {
+  if (outcome.truncated) return false;
+  if (outcome.replacedWholeMirror) return false;
+  return outcome.prunedRowCount === 0;
+}

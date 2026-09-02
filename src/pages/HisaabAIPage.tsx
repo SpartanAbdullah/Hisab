@@ -28,7 +28,11 @@ import { spendAnchor } from '../lib/spendAnchor';
 import { useAppModeStore } from '../stores/appModeStore';
 import { useSplitStore } from '../stores/splitStore';
 import { getActiveGroupMembers } from '../lib/groupActiveMembers';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
+import { localIso, localMonthIso } from '../lib/localDate';
 import { useVisualViewportInset } from '../hooks/useVisualViewportInset';
+import { track } from '../lib/telemetry';
+import { bucketAmount, bucketCount } from '../lib/telemetryEvents';
 import type { Account, SplitGroup } from '../db';
 
 const NAVY_BLOOM =
@@ -62,7 +66,7 @@ function matchGroups(hint: string | null, groups: SplitGroup[]): SplitGroup[] {
 }
 
 function primaryCurrency(): string {
-  return localStorage.getItem('hisaab_primary_currency') || 'AED';
+  return getPrimaryCurrency();
 }
 
 // First name for warm, sparing personalization (greeting only — research says
@@ -135,9 +139,9 @@ export function HisaabAIPage() {
   // ── This month, in the primary currency (no cross-currency summing) ──
   const summary = useMemo(() => {
     const cur = primaryCurrency();
-    const ym = new Date().toISOString().slice(0, 7);
+    const ym = localMonthIso(new Date());
     const monthExpenses = transactions.filter(
-      (t) => t.type === 'expense' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym,
+      (t) => t.type === 'expense' && t.currency === cur && (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym,
     );
     const spent = monthExpenses.reduce((a, t) => a + t.amount, 0);
     const byCat = new Map<string, number>();
@@ -160,10 +164,10 @@ export function HisaabAIPage() {
       const chips: string[] = [];
       // Busiest account this month (primary currency), if any.
       const cur = primaryCurrency();
-      const ym = new Date().toISOString().slice(0, 7);
+      const ym = localMonthIso(new Date());
       const byAcct = new Map<string, number>();
       for (const t of transactions) {
-        if (t.type === 'expense' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym && t.sourceAccountId) {
+        if (t.type === 'expense' && t.currency === cur && (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym && t.sourceAccountId) {
           byAcct.set(t.sourceAccountId, (byAcct.get(t.sourceAccountId) ?? 0) + t.amount);
         }
       }
@@ -194,7 +198,7 @@ export function HisaabAIPage() {
   }, [isFull, transactions, accounts, loans, groups]);
 
   // Gentle nudges + streak (Full Tracker feed only). All on-device.
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = localIso(new Date());
   const streak = useMemo(
     () => computeLoggingStreak(transactions.filter((t) => t.type === 'expense').map((t) => t.createdAt), todayIso),
     [transactions, todayIso],
@@ -206,13 +210,13 @@ export function HisaabAIPage() {
   // currency) so we can offer a precise "View these N transactions" link.
   const countCategorySpend = (category: string): number => {
     const cur = primaryCurrency();
-    const ym = new Date().toISOString().slice(0, 7);
+    const ym = localMonthIso(new Date());
     const c = category.trim().toLowerCase();
     return transactions.filter(
       (t) =>
         t.type === 'expense' &&
         t.currency === cur &&
-        (t.createdAt ?? '').slice(0, 7) === ym &&
+        (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym &&
         ((t.category || 'Other').toLowerCase().includes(c) || c.includes((t.category || 'other').toLowerCase())),
     ).length;
   };
@@ -305,13 +309,13 @@ export function HisaabAIPage() {
 
   const answerCategorySpend = (category: string): string => {
     const cur = primaryCurrency();
-    const ym = new Date().toISOString().slice(0, 7);
+    const ym = localMonthIso(new Date());
     const c = category.trim().toLowerCase();
     const rows = transactions.filter(
       (t) =>
         t.type === 'expense' &&
         t.currency === cur &&
-        (t.createdAt ?? '').slice(0, 7) === ym &&
+        (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym &&
         ((t.category || 'Other').toLowerCase().includes(c) || c.includes((t.category || 'other').toLowerCase())),
     );
     const total = rows.reduce((a, t) => a + t.amount, 0);
@@ -336,8 +340,8 @@ export function HisaabAIPage() {
   const monthYm = (period: 'this' | 'last'): string => {
     const now = new Date();
     return period === 'last'
-      ? new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 7)
-      : now.toISOString().slice(0, 7);
+      ? localMonthIso(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+      : localMonthIso(now);
   };
 
   const answerIncome = (period: 'this' | 'last'): string => {
@@ -345,7 +349,7 @@ export function HisaabAIPage() {
     const ym = monthYm(period);
     const label = period === 'last' ? 'last month' : 'this month';
     const rows = transactions.filter(
-      (t) => t.type === 'income' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym,
+      (t) => t.type === 'income' && t.currency === cur && (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym,
     );
     const total = rows.reduce((a, t) => a + t.amount, 0);
     if (rows.length === 0) return `You haven't logged any ${cur} income ${label} yet.`;
@@ -366,7 +370,7 @@ export function HisaabAIPage() {
       const acct = accounts.find((a) => a.name.toLowerCase().includes(accountName.toLowerCase()));
       if (!acct) return `I couldn't find an account called "${accountName}". Check the name on the Accounts screen.`;
       const total = transactions
-        .filter((t) => t.type === 'expense' && t.sourceAccountId === acct.id && (t.createdAt ?? '').slice(0, 7) === ym)
+        .filter((t) => t.type === 'expense' && t.sourceAccountId === acct.id && (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym)
         .reduce((a, t) => a + t.amount, 0);
       if (total <= 0) return `No spending from ${acct.name} ${label}.`;
       return `You spent ${formatMoney(total, acct.currency)} from ${acct.name} ${label}.`;
@@ -375,7 +379,7 @@ export function HisaabAIPage() {
     // compare e.g. PKR vs AED amounts directly (a non-primary card is invisible
     // here, matching the rest of the engine).
     const monthExpenses = transactions.filter(
-      (t) => t.type === 'expense' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym && t.sourceAccountId,
+      (t) => t.type === 'expense' && t.currency === cur && (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym && t.sourceAccountId,
     );
     if (monthExpenses.length === 0) return `No ${cur} card or account spending logged ${label} yet.`;
     const byAcct = new Map<string, number>();
@@ -404,11 +408,11 @@ export function HisaabAIPage() {
   const answerTrend = (): string => {
     const cur = primaryCurrency();
     const now = new Date();
-    const thisYm = now.toISOString().slice(0, 7);
-    const lastYm = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 7);
+    const thisYm = localMonthIso(now);
+    const lastYm = localMonthIso(new Date(now.getFullYear(), now.getMonth() - 1, 1));
     const sumFor = (ym: string) =>
       transactions
-        .filter((t) => t.type === 'expense' && t.currency === cur && (t.createdAt ?? '').slice(0, 7) === ym)
+        .filter((t) => t.type === 'expense' && t.currency === cur && (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym)
         .reduce((a, t) => a + t.amount, 0);
     const a = sumFor(thisYm);
     const b = sumFor(lastYm);
@@ -423,14 +427,14 @@ export function HisaabAIPage() {
   const answerBudgetStatus = (cat?: string): string => {
     if (budgets.length === 0) return "You haven't set any budgets yet — you can add one from the Budgets screen.";
     const cur = primaryCurrency();
-    const ym = new Date().toISOString().slice(0, 7);
+    const ym = localMonthIso(new Date());
     const spentOn = (category: string) =>
       transactions
         .filter(
           (t) =>
             t.type === 'expense' &&
             t.currency === cur &&
-            (t.createdAt ?? '').slice(0, 7) === ym &&
+            (t.createdAt ? localMonthIso(new Date(t.createdAt)) : '') === ym &&
             (t.category || 'Other').toLowerCase() === category.toLowerCase(),
         )
         .reduce((a, t) => a + t.amount, 0);
@@ -544,8 +548,27 @@ export function HisaabAIPage() {
     if (!input) return;
     setBusyChipId(chipId);
     try {
+      // Read BEFORE the write — after it, the stores are never empty again.
+      const isFirstEver = transactions.length === 0 && loans.length === 0;
       await processTransaction(input);
       await Promise.all([loadAccounts(), loadTransactions()]);
+      // Catalog #9 (source=ai) + #27. Never the raw typed text — only the
+      // parsed shape, exactly like every other entry_created call site.
+      if (input.type === 'expense' || input.type === 'income') {
+        const accountId = input.type === 'expense' ? input.sourceAccountId : input.destinationAccountId;
+        const currency = accounts.find((a) => a.id === accountId)?.currency;
+        if (currency) {
+          track('entry_created', {
+            entry_type: input.type,
+            source: 'ai',
+            is_first_ever: isFirstEver,
+            mode: 'full_tracker',
+            currency,
+            amount_bucket: bucketAmount(input.amount),
+          });
+        }
+      }
+      track('ai_entry_submitted', { parsed_ok: true, accepted: true });
       setMessages((m) =>
         m
           .map((msg) => (msg.id === chipId && msg.role === 'chip' ? { ...msg, resolved: summaryText } : msg))
@@ -581,6 +604,8 @@ export function HisaabAIPage() {
     }
     setBusyChipId(chipId);
     try {
+      // Read BEFORE the write — mirrors confirmChip above.
+      const isFirstEver = transactions.length === 0 && loans.length === 0;
       const splits = equalSplits(amount, memberIds);
       await addGroupExpense({
         groupId: group.id,
@@ -593,6 +618,22 @@ export function HisaabAIPage() {
         notes: '',
       });
       await loadGroups();
+      // Catalog #9 (source=group) + #19. This chip bypasses AddGroupExpenseModal
+      // entirely, so it mirrors that modal's call site rather than reusing it.
+      // Amount and participant count travel as buckets — never the raw split
+      // or the chat text that produced this entry.
+      track('entry_created', {
+        entry_type: 'expense',
+        source: 'group',
+        is_first_ever: isFirstEver,
+        mode,
+        currency: group.currency,
+        amount_bucket: bucketAmount(amount),
+      });
+      track('group_expense_added', {
+        split_type: 'equal',
+        participant_count_bucket: bucketCount(memberIds.length),
+      });
       const summaryText = `${formatMoney(amount, group.currency)} · ${description} · split ${memberIds.length} ways`;
       setMessages((m) =>
         m

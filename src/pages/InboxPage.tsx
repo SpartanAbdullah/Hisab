@@ -18,6 +18,9 @@ import { useContactLinkStore } from '../stores/contactLinkStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useCommitteeStore } from '../stores/committeeStore';
+import { useBlockStore } from '../stores/blockStore';
+import { BlockReportSheet, type BlockReportMode } from '../components/BlockReportSheet';
+import { hideBlockedSenders } from '../lib/blockStatus';
 import { buildInboxActionItems, buildInboxInfoItems, isInboxInfoNotification, type ActionContent, type ActionItem, type InfoItem, type InfoIcon as InfoIconKind } from '../lib/inboxInfo';
 import { notificationHref, renderNotificationContent } from '../lib/notificationContent';
 import type { RecurringDueDetail } from '../lib/recurringRunner';
@@ -77,6 +80,9 @@ export function InboxPage() {
   const emiSchedules = useEmiStore((s) => s.schedules);
   const committees = useCommitteeStore((s) => s.committees);
   const committeePayments = useCommitteeStore((s) => s.payments);
+  // My block list (audit M17). Subscribed raw so the inbox re-filters in the
+  // same frame a block lands, and un-filters the moment it is undone.
+  const blocks = useBlockStore((s) => s.blocks);
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
@@ -109,6 +115,11 @@ export function InboxPage() {
   const cancelGuard = useSubmitGuard();
   const rejectSettlementGuard = useSubmitGuard();
   const cancelSettlementGuard = useSubmitGuard();
+  // Block / report target for the sheet. `contextId` is the inbox row the
+  // action was raised from, so the operator's Studio query can find it.
+  const [safety, setSafety] = useState<
+    { mode: BlockReportMode; userId: string; name: string; contextId: string } | null
+  >(null);
 
   const load = useCallback(async () => {
     await Promise.all([
@@ -120,6 +131,10 @@ export function InboxPage() {
       useLoanStore.getState().loadLoans(),
       useEmiStore.getState().loadSchedules(),
       useCommitteeStore.getState().loadAll(),
+      // Block list — without it the inbox would briefly show cards from people
+      // the user has already blocked. Never fatal: loadBlocks swallows and
+      // reports its own failure, leaving the previous list in place.
+      useBlockStore.getState().loadBlocks(),
     ]);
   }, [loadRequests, loadSettlements, loadPersons, loadBudgets, loadTransactions, loadTemplates, loadAccounts, loadExpenses, loadNotifications, loadContactLinks]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
@@ -132,11 +147,31 @@ export function InboxPage() {
 
   const myId = user?.id ?? '';
 
+  const blockedIds = useMemo(() => new Set(blocks.map((b) => b.blockedId)), [blocks]);
+
+  // The server already refuses NEW requests from a blocked pair, but a block is
+  // not a deletion (docs/trust-and-safety.md RULE 3) — anything that arrived
+  // BEFORE the block is still in the table and would sit in the inbox forever.
+  // So hide it here, at the render site: purely cosmetic, and unblocking brings
+  // every row straight back.
+  //
+  // INCOMING ONLY. Outgoing items are the user's own asks; hiding those would
+  // make a request they sent look like it silently vanished.
+  const anyIncomingHidden = useMemo(
+    () =>
+      blockedIds.size > 0 &&
+      (requests.some((r) => r.toUserId === myId && blockedIds.has(r.fromUserId)) ||
+        settlements.some((r) => r.toUserId === myId && blockedIds.has(r.fromUserId))),
+    [requests, settlements, blockedIds, myId],
+  );
+
   const visible: InboxItem[] = useMemo(() => {
-    const linkedItems: InboxItem[] = requests
+    const incomingOnly = <T extends { fromUserId: string; toUserId: string }>(rows: T[]) =>
+      tab === 'incoming' ? hideBlockedSenders(rows, blockedIds, (r) => r.fromUserId) : rows;
+    const linkedItems: InboxItem[] = incomingOnly(requests)
       .filter((r) => (tab === 'incoming' ? r.toUserId === myId : r.fromUserId === myId))
       .map((r) => ({ kind: 'linked' as const, item: r }));
-    const settlementItems: InboxItem[] = settlements
+    const settlementItems: InboxItem[] = incomingOnly(settlements)
       .filter((r) => (tab === 'incoming' ? r.toUserId === myId : r.fromUserId === myId))
       .map((r) => ({ kind: 'settlement' as const, item: r }));
     // Pending (not-yet-acted) requests pin to the top so an older request
@@ -149,7 +184,7 @@ export function InboxPage() {
       if (ap !== bp) return ap - bp;
       return b.item.createdAt.localeCompare(a.item.createdAt);
     });
-  }, [requests, settlements, tab, myId]);
+  }, [requests, settlements, tab, myId, blockedIds]);
 
   // Where the pinned pending block ends — drives the "Earlier" divider so the
   // acted-upon history reads as a visually separate section below.
@@ -163,18 +198,22 @@ export function InboxPage() {
   // until they answer, and leaving it unanswered is a valid outcome.
   const contactAsks = useMemo(
     () =>
-      contactLinks
-        .filter((r) => r.toUserId === myId && r.status === 'pending')
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [contactLinks, myId],
+      hideBlockedSenders(
+        contactLinks.filter((r) => r.toUserId === myId && r.status === 'pending'),
+        blockedIds,
+        (r) => r.fromUserId,
+      ).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [contactLinks, myId, blockedIds],
   );
 
+  // Badge counts follow the same filter, or the tab would advertise work that
+  // has been hidden and can never be cleared.
   const incomingPendingCount = useMemo(
     () =>
-      requests.filter((r) => r.status === 'pending' && r.toUserId === myId).length +
-      settlements.filter((r) => r.status === 'pending' && r.toUserId === myId).length +
+      requests.filter((r) => r.status === 'pending' && r.toUserId === myId && !blockedIds.has(r.fromUserId)).length +
+      settlements.filter((r) => r.status === 'pending' && r.toUserId === myId && !blockedIds.has(r.fromUserId)).length +
       contactAsks.length,
-    [requests, settlements, myId, contactAsks],
+    [requests, settlements, myId, contactAsks, blockedIds],
   );
   const outgoingPendingCount = useMemo(
     () =>
@@ -702,8 +741,16 @@ export function InboxPage() {
               busy={busyId === ask.id}
               onAdd={() => void handleContactAsk(ask.id, true, ask.fromName)}
               onSkip={() => void handleContactAsk(ask.id, false, ask.fromName)}
+              onReport={() => setSafety({ mode: 'report', userId: ask.fromUserId, name: ask.fromName, contextId: ask.id })}
+              onBlock={() => setSafety({ mode: 'block', userId: ask.fromUserId, name: ask.fromName, contextId: ask.id })}
             />
           ))}
+
+        {/* Say that something is hidden rather than letting a blocked sender's
+            request appear to have vanished into thin air. */}
+        {tab === 'incoming' && anyIncomingHidden && (
+          <p className="text-[10.5px] text-ink-400 px-1 leading-relaxed">{t('blk_hidden_note')}</p>
+        )}
 
         {tab === 'action' ? (
           loadStatus === 'loading' && actionItems.length === 0 ? (
@@ -841,6 +888,14 @@ export function InboxPage() {
                     onAccept={() => handleAccept(entry.item.id)}
                     onReject={() => handleReject(entry.item.id)}
                     onCancel={() => handleCancel(entry.item.id)}
+                    // Per-SENDER actions, not per-item. The audit's own words:
+                    // "declining is per-item, not per-sender" is exactly the gap.
+                    onReport={tab === 'incoming'
+                      ? () => setSafety({ mode: 'report', userId: entry.item.fromUserId, name: contactNameFor(entry.item as LinkedRequest), contextId: entry.item.id })
+                      : undefined}
+                    onBlock={tab === 'incoming'
+                      ? () => setSafety({ mode: 'block', userId: entry.item.fromUserId, name: contactNameFor(entry.item as LinkedRequest), contextId: entry.item.id })
+                      : undefined}
                   />
                 ) : (
                   <SettlementCard
@@ -854,6 +909,12 @@ export function InboxPage() {
                     onAccept={() => handleAcceptSettlement(entry.item.id)}
                     onReject={() => handleRejectSettlement(entry.item.id)}
                     onCancel={() => handleCancelSettlement(entry.item.id)}
+                    onReport={tab === 'incoming'
+                      ? () => setSafety({ mode: 'report', userId: entry.item.fromUserId, name: contactNameForSettlement(entry.item as SettlementRequest), contextId: entry.item.id })
+                      : undefined}
+                    onBlock={tab === 'incoming'
+                      ? () => setSafety({ mode: 'block', userId: entry.item.fromUserId, name: contactNameForSettlement(entry.item as SettlementRequest), contextId: entry.item.id })
+                      : undefined}
                   />
                 );
               return (
@@ -895,7 +956,40 @@ export function InboxPage() {
           if (ok) setAcceptSheet(null);
         }}
       />
+
+      {/* Block / report the SENDER of an inbox item (audit M17). */}
+      <BlockReportSheet
+        open={!!safety}
+        mode={safety?.mode ?? 'block'}
+        targetUserId={safety?.userId ?? null}
+        targetName={safety?.name ?? t('ltr_unknown_person')}
+        contextType="inbox_item"
+        contextId={safety?.contextId ?? null}
+        onClose={() => setSafety(null)}
+      />
     </main>
+  );
+}
+
+// Per-sender safety actions on an inbox card. Rendered as quiet text buttons
+// under the primary accept/decline row: they must be findable when a request
+// is unwanted, without competing with the action the card is actually for.
+function CardSafetyActions({ onReport, onBlock }: { onReport?: () => void; onBlock?: () => void }) {
+  const t = useT();
+  if (!onReport && !onBlock) return null;
+  return (
+    <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-cream-hairline">
+      {onReport && (
+        <button type="button" onClick={onReport} className="text-[11px] font-semibold text-ink-400 active:opacity-60">
+          {t('blk_action_report')}
+        </button>
+      )}
+      {onBlock && (
+        <button type="button" onClick={onBlock} className="text-[11px] font-semibold text-pay-text active:opacity-60">
+          {t('blk_action_block')}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1123,12 +1217,14 @@ function InfoCard({ item, onOpen }: { item: InfoItem; onOpen: () => void }) {
 // the whole point of the consent model is that NOT adding someone back is a
 // legitimate, first-class answer, not a thing you achieve by ignoring a card.
 function ContactAskCard({
-  name, busy, onAdd, onSkip,
+  name, busy, onAdd, onSkip, onReport, onBlock,
 }: {
   name: string;
   busy: boolean;
   onAdd: () => void;
   onSkip: () => void;
+  onReport?: () => void;
+  onBlock?: () => void;
 }) {
   const t = useT();
   return (
@@ -1165,12 +1261,13 @@ function ContactAskCard({
           {t('clink_add_cta').replace('{name}', name)}
         </button>
       </div>
+      <CardSafetyActions onReport={onReport} onBlock={onBlock} />
     </div>
   );
 }
 
 function SettlementCard({
-  request, tab, busy, contactName, remindUrl, accountLine, fullTracker, onAccept, onReject, onCancel,
+  request, tab, busy, contactName, remindUrl, accountLine, fullTracker, onAccept, onReject, onCancel, onReport, onBlock,
 }: {
   request: SettlementRequest;
   tab: Tab;
@@ -1184,6 +1281,9 @@ function SettlementCard({
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
+  /** Incoming only — a per-SENDER escape hatch, not a per-item one. */
+  onReport?: () => void;
+  onBlock?: () => void;
 }) {
   const t = useT();
   const isPending = request.status === 'pending';
@@ -1283,12 +1383,13 @@ function SettlementCard({
           </div>
         </>
       ) : null}
+      <CardSafetyActions onReport={onReport} onBlock={onBlock} />
     </div>
   );
 }
 
 function RequestCard({
-  request, tab, busy, contactName, remindUrl, accountLine, onAccept, onReject, onCancel,
+  request, tab, busy, contactName, remindUrl, accountLine, onAccept, onReject, onCancel, onReport, onBlock,
 }: {
   request: LinkedRequest;
   tab: Tab;
@@ -1301,6 +1402,9 @@ function RequestCard({
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
+  /** Incoming only — a per-SENDER escape hatch, not a per-item one. */
+  onReport?: () => void;
+  onBlock?: () => void;
 }) {
   const t = useT();
   const isPending = request.status === 'pending';
@@ -1437,6 +1541,7 @@ function RequestCard({
           )}
         </div>
       ) : null}
+      <CardSafetyActions onReport={onReport} onBlock={onBlock} />
     </div>
   );
 }

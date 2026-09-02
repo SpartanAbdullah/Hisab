@@ -24,6 +24,7 @@ import { currencyMeta } from '../lib/design-tokens';
 import { daysUntilDayOfMonth } from '../lib/inboxInfo';
 import { useT } from '../lib/i18n';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 
 const iconForType: Record<string, React.ElementType> = {
   cash: Wallet,
@@ -50,7 +51,7 @@ export function AccountsPage() {
   const { loadTransactions } = useTransactionStore();
   const navigate = useNavigate();
   const t = useT();
-  const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
+  const primaryCurrency = getPrimaryCurrency();
   const [showAdd, setShowAdd] = useState(false);
 
   const load = useCallback(async () => {

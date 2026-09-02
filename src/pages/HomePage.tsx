@@ -23,6 +23,7 @@ import {
 import { useAccountStore } from "../stores/accountStore";
 import { useTransactionStore } from "../stores/transactionStore";
 import { useLoanStore } from "../stores/loanStore";
+import { oldestCreatedAt } from "../lib/historyWindow";
 import { useGoalStore } from "../stores/goalStore";
 import { useUpcomingExpenseStore } from "../stores/upcomingExpenseStore";
 import { useAppModeStore } from "../stores/appModeStore";
@@ -43,6 +44,11 @@ import {
   upsertSnapshot,
   type NetSnapshot,
 } from "../lib/meraHisaab";
+import { buildWhoOwesMe, whoOwesTotals } from "../lib/whoOwesMe";
+import {
+  groupInputsFromNetBalances,
+  mergeGroupObligations,
+} from "../lib/whoOwesGroupInputs";
 import { CHECK_STAMP_KEY, daysSince, type CheckStamp } from "../lib/hisaabCheck";
 import { buildInboxActionItems } from "../lib/inboxInfo";
 import { HisaabCheckModal } from "../components/HisaabCheckModal";
@@ -61,6 +67,7 @@ import { NavyHero } from "../components/NavyHero";
 import { InboxAction } from "../components/InboxAction";
 import { AnimatedMoney } from "../components/AnimatedMoney";
 import { GlobalSearch } from "../components/GlobalSearch";
+import { getPrimaryCurrency } from "../lib/primaryCurrency";
 import { NextStepHint } from "../components/NextStepHint";
 import { GettingStartedCard } from "../components/GettingStartedCard";
 import { CoachCards } from "../components/CoachCards";
@@ -89,6 +96,12 @@ function waitForNextPaint(): Promise<void> {
 export function HomePage() {
   const { accounts, loadAccounts } = useAccountStore();
   const { transactions, loadTransactions } = useTransactionStore();
+  // `cardFundedLoanIds` below keys a loan to the card that funded it, and that
+  // link exists ONLY on the loan's origin transaction — which can be older than
+  // the default 12-month history window. Missing it would double-count the same
+  // debt in "this week" (card bill + the loan). Widened to the oldest loan we
+  // hold, and no further (docs/performance.md §7).
+  const ensureTransactionHistory = useTransactionStore((s) => s.ensureTransactionHistory);
   const { loans, loadLoans } = useLoanStore();
   const { loadGoals } = useGoalStore();
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
@@ -130,7 +143,7 @@ export function HomePage() {
   });
 
   const userName = localStorage.getItem("hisaab_user_name") ?? "User";
-  const primaryCurrency = localStorage.getItem("hisaab_primary_currency") ?? "AED";
+  const primaryCurrency = getPrimaryCurrency();
   const userId = useSupabaseAuthStore((s) => s.user?.id ?? "");
 
   // Load account balances first so the mobile dashboard can paint its core
@@ -159,6 +172,16 @@ export function HomePage() {
         console.error("loadInvestments failed (non-fatal)", err);
       }),
     ]);
+    // Bounded-history top-up (see the note at `ensureTransactionHistory`).
+    // NON-FATAL: the dashboard must render even if this hop fails — the worst
+    // case is a card-funded loan showing as a person's debt for one session,
+    // which is what the pre-window code did on a cold, offline start anyway.
+    const oldestLoanAt = oldestCreatedAt(useLoanStore.getState().loans);
+    if (oldestLoanAt) {
+      await ensureTransactionHistory({ since: oldestLoanAt }).catch((err) => {
+        console.error("ensureTransactionHistory failed (non-fatal)", err);
+      });
+    }
   }, [
     loadAccounts,
     loadTransactions,
@@ -167,6 +190,7 @@ export function HomePage() {
     loadExpenses,
     loadGroups,
     loadBalances,
+    ensureTransactionHistory,
     mode,
   ]);
 
@@ -312,9 +336,41 @@ export function HomePage() {
 
   // "Mera Hisaab" — the net position INCLUDING people: accounts (cards as
   // −owed) + receivables − payables, with cash advances never counted twice.
+  //
+  // GROUP OBLIGATIONS (audit G4 / docs/who-owes-me.md §6a): the headline used
+  // to net loans + accounts ONLY, so a user who was owed AED 400 across three
+  // group splits saw none of it here. `buildWhoOwesMe` supplies that half from
+  // `splitStore.groups` + `splitStore.balances` — state HomePage already
+  // subscribes to, so this adds no fetch. `currentProfileId` is passed so
+  // `resolveMeMemberId` never falls back to the group OWNER (wrong for any
+  // group the user does not belong to).
+  //
+  // Loans deliberately do NOT go through buildWhoOwesMe here:
+  // `computeMeraHisaab` carries the card-funded cash-advance exclusion (the
+  // card already holds that debt in accountsNet) and re-deriving the loan half
+  // would silently drop it. Per currency throughout — never merged.
+  const groupObligationInputs = useMemo(
+    () => groupInputsFromNetBalances(groups, groupBalances, userId || null),
+    [groups, groupBalances, userId],
+  );
+  const groupObligationTotals = useMemo(
+    () =>
+      whoOwesTotals(
+        buildWhoOwesMe({
+          loans: [],
+          groups: groupObligationInputs,
+          currentProfileId: userId || null,
+        }),
+      ),
+    [groupObligationInputs, userId],
+  );
   const meraTotals = useMemo(
-    () => computeMeraHisaab({ accounts, loans, cardFundedLoanIds }),
-    [accounts, loans, cardFundedLoanIds],
+    () =>
+      mergeGroupObligations(
+        computeMeraHisaab({ accounts, loans, cardFundedLoanIds }),
+        groupObligationTotals,
+      ),
+    [accounts, loans, cardFundedLoanIds, groupObligationTotals],
   );
   const meraPrimary = useMemo(
     () => meraTotals.find((entry) => entry.currency === primaryCurrency) ?? meraTotals[0] ?? null,
@@ -1148,10 +1204,11 @@ export function HomePage() {
         )}
 
         {/* "Mera Hisaab" — one net-position number that includes PEOPLE:
-            accounts (cards as −owed) + what people owe you − what you owe.
-            Loans as balance-sheet items is THE differentiator, visible
-            daily; settling a loan visibly moves this number. */}
-        {dataReady && meraPrimary && (loans.length > 0 || accounts.length > 0) && (
+            accounts (cards as −owed) + what people owe you − what you owe,
+            across loans AND group splits. Loans as balance-sheet items is THE
+            differentiator, visible daily; settling a loan or a group split
+            visibly moves this number. */}
+        {dataReady && meraPrimary && (loans.length > 0 || accounts.length > 0 || groupObligationTotals.length > 0) && (
           <div className="rounded-[18px] bg-cream-card border border-cream-border p-4">
             <div className="flex items-center justify-between mb-1.5">
               <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] flex items-center gap-1.5">

@@ -71,7 +71,7 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
 
   const inputClass =
     className ??
-    'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 bg-cream-card transition-all';
+    'w-full border border-slate-200/60 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   return (
     <div ref={wrapperRef} className="relative">
@@ -100,13 +100,13 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
                 onChange({ id: p.id, name: p.name });
                 setOpen(false);
               }}
-              className="w-full text-left px-4 py-2.5 hover:bg-indigo-50/60 active:bg-indigo-100/60 transition-colors border-b border-slate-100/60 last:border-0"
+              className="w-full text-left px-4 py-2.5 hover:bg-accent-50/60 active:bg-accent-100/60 transition-colors border-b border-slate-100/60 last:border-0"
             >
               <span className="flex items-center gap-2 min-w-0">
                 <span className="text-[13px] font-medium text-ink-900 truncate">{p.name}</span>
                 <span className={`text-[9px] font-bold uppercase tracking-wider rounded-full px-1.5 py-0.5 shrink-0 ${
                   p.linkedProfileId
-                    ? 'bg-indigo-100 text-indigo-700'
+                    ? 'bg-accent-100 text-accent-600'
                     : 'bg-cream-soft text-ink-500'
                 }`}>
                   {getContactTypeLabel(p)}
@@ -126,7 +126,7 @@ export function ContactPicker({ value, onChange, placeholder, required, classNam
                 onChange({ id: null, name: query });
                 setOpen(false);
               }}
-              className="w-full text-left px-4 py-2.5 text-[12px] font-semibold text-indigo-600 hover:bg-indigo-50/60 active:bg-indigo-100/60 transition-colors"
+              className="w-full text-left px-4 py-2.5 text-[12px] font-semibold text-accent-600 hover:bg-accent-50/60 active:bg-accent-100/60 transition-colors"
             >
               {t('cp_create_new_prefix')}&ldquo;{query}&rdquo;
             </button>

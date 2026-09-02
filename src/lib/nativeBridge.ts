@@ -16,6 +16,7 @@ import { extractDeepLinkPath } from './deepLinkRoute';
 import { rescheduleNotifications } from './notificationScheduler';
 import { resumeGlobalRealtime } from './realtime';
 import { useUIStore } from '../stores/uiStore';
+import { track } from './telemetry';
 
 type NavigateFn = (to: string, opts?: { replace?: boolean }) => void;
 type CanGoBackFn = () => boolean;
@@ -134,7 +135,16 @@ export async function initNativeBridge(opts: {
       const { LocalNotifications } = await import('@capacitor/local-notifications');
       void LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
         const href = (event.notification.extra as { href?: string } | undefined)?.href;
-        if (href) opts.navigate(href);
+        // Mirrors pushRegistration.ts's hrefForPush guard: only an in-app
+        // absolute path is navigable — a full URL or a protocol-relative
+        // "//evil" is refused rather than handed to navigate().
+        if (href && href.startsWith('/') && !href.startsWith('//')) {
+          opts.navigate(href);
+          // Catalog #25. Every locally-scheduled notification IS a payment/
+          // kameti/etc. reminder by construction — 'reminder', not the
+          // destination-based classification FCM taps use.
+          track('notification_opened', { type: 'reminder' });
+        }
       });
     } catch {
       // Plugin unavailable (older binary) — reminders simply stay off.

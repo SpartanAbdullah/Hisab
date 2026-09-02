@@ -4,7 +4,7 @@ import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSubmitGuard, useSubmitIntentId } from '../lib/useSubmitGuard';
 import { useAccountStore } from '../stores/accountStore';
-import { useTransactionStore } from '../stores/transactionStore';
+import { useTransactionStore, loanScheduleAlreadyCreated } from '../stores/transactionStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useLoanStore } from '../stores/loanStore';
 import { usePersonStore } from '../stores/personStore';
@@ -13,12 +13,16 @@ import { useAppModeStore } from '../stores/appModeStore';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { useToast } from '../components/Toast';
 import { AccountSelect } from '../components/AccountSelect';
+import { ShareKhataLinkSheet } from '../components/ShareKhataLinkSheet';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
 import { getPrimaryCurrency } from '../lib/primaryCurrency';
-import { SUPPORTED_CURRENCIES, type Currency, type LoanType } from '../db';
+import { planEmiRows } from '../lib/emiPlan';
+import { track } from '../lib/telemetry';
+import { shouldOfferKhataShareNudge, snoozeKhataShareNudge } from '../lib/khataLinkStatus';
+import { SUPPORTED_CURRENCIES, type Currency, type LoanType, type Person } from '../db';
 
 interface Props { open: boolean; onClose: () => void; }
 
@@ -47,8 +51,24 @@ export function AddLoanModal({ open, onClose }: Props) {
   const [startDate, setStartDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // L2 share-at-save nudge (audit 2026-09 P3): offered at most once every 14
+  // days per person, from any of the three save paths below.
+  const [khataNudge, setKhataNudge] = useState<{ personId: string; personName: string; phone: string | null } | null>(null);
 
   void loans;
+
+  const offerKhataNudge = (recipient: Pick<Person, 'id' | 'name' | 'phone'>) => {
+    if (!shouldOfferKhataShareNudge(recipient.id)) return;
+    snoozeKhataShareNudge(recipient.id);
+    toast.show({
+      type: 'info',
+      title: t('khata_nudge_toast_title').replace('{name}', recipient.name),
+      action: {
+        label: t('khata_nudge_toast_action'),
+        onPress: () => setKhataNudge({ personId: recipient.id, personName: recipient.name, phone: recipient.phone ?? null }),
+      },
+    });
+  };
 
   useEffect(() => {
     if (open && !isLedgerOnlyMode) {
@@ -154,7 +174,15 @@ export function AddLoanModal({ open, onClose }: Props) {
           note: notes,
           requestId: nextRequestId(),
         });
+        track('loan_created', {
+          direction: loanType,
+          linked_contact: true,
+          has_schedule: false,
+          currency: branch.currency,
+          mode: isLedgerOnlyMode ? 'splits_only' : 'full_tracker',
+        });
         toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
+        offerKhataNudge(person);
         setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
         setHasEmi(false); setInstallments(''); setStartDate('');
         onClose();
@@ -170,18 +198,37 @@ export function AddLoanModal({ open, onClose }: Props) {
           currency: ledgerCurrency,
           notes,
         });
-        if (emiActive && installments && startDate) {
+        const scheduled = emiActive && !!installments && !!startDate;
+        if (scheduled) {
           await generateSchedule({ loanId: loan.id, totalAmount: amt, installments: parseInt(installments), startDate });
         }
+        track('loan_created', {
+          direction: loanType,
+          linked_contact: false,
+          has_schedule: scheduled,
+          currency: ledgerCurrency,
+          mode: 'splits_only',
+        });
+        offerKhataNudge(person);
         setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
         setHasEmi(false); setInstallments(''); setStartDate('');
         onClose();
         return;
       }
 
+      // L4 step 3: plan the instalments BEFORE the money call, so they can ride
+      // into `create_loan_with_leg` and be inserted in the same Postgres
+      // transaction as the loan. `planEmiRows` is the same arithmetic
+      // generateSchedule runs (src/lib/emiPlan.ts) — with the flag off the
+      // store ignores this field and the call below still does the writing.
+      const wantsSchedule = emiActive && !!installments && !!startDate;
+      const emiPlan = wantsSchedule
+        ? planEmiRows({ totalAmount: amt, installments: parseInt(installments), startDate })
+        : null;
+
       const tx = await processTransaction(
         loanType === 'given'
-          ? { type: 'loan_given', amount: amt, sourceAccountId: accountId, personName: person.name, personId: person.id, notes }
+          ? { type: 'loan_given', amount: amt, sourceAccountId: accountId, personName: person.name, personId: person.id, notes, emiPlan }
           : {
               type: 'loan_taken',
               amount: amt,
@@ -190,11 +237,24 @@ export function AddLoanModal({ open, onClose }: Props) {
               personName: person.name,
               personId: person.id,
               notes,
+              emiPlan,
             }
       );
-      if (emiActive && tx.relatedLoanId && installments && startDate) {
-        await generateSchedule({ loanId: tx.relatedLoanId, totalAmount: amt, installments: parseInt(installments), startDate });
+      const scheduled = emiActive && !!tx.relatedLoanId && !!installments && !!startDate;
+      // Skip only when the schedule provably already landed inside the creation
+      // itself. Anything else — the flag off, a plan the store declined to
+      // forward — still generates it here, exactly as it always has.
+      if (scheduled && !loanScheduleAlreadyCreated(tx.relatedLoanId)) {
+        await generateSchedule({ loanId: tx.relatedLoanId!, totalAmount: amt, installments: parseInt(installments), startDate });
       }
+      track('loan_created', {
+        direction: loanType,
+        linked_contact: false,
+        has_schedule: scheduled,
+        currency: destinationAccount?.currency ?? ledgerCurrency,
+        mode: 'full_tracker',
+      });
+      offerKhataNudge(person);
       setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');
       setHasEmi(false); setInstallments(''); setStartDate('');
       onClose();
@@ -211,6 +271,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   }
 
   return (
+    <>
     <Modal open={open} onClose={onClose} title={t('loan_new')}
       confirmClose={() => guardClose(isDirty)}
       footer={
@@ -292,7 +353,7 @@ export function AddLoanModal({ open, onClose }: Props) {
               {availableCashAdvanceCards.map(a => (
                 <button key={a.id} type="button" onClick={() => setCashAdvanceSourceId(a.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    cashAdvanceSourceId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
+                    cashAdvanceSourceId === a.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-accent-500/5' : 'border-cream-border bg-cream-card'
                   }`}
                 >
                   <span className="text-[13px] font-semibold text-ink-800">{a.name}</span>
@@ -374,5 +435,13 @@ export function AddLoanModal({ open, onClose }: Props) {
         {error && <p className="text-[12px] text-pay-text font-semibold bg-pay-50 rounded-xl p-3">{error}</p>}
       </form>
     </Modal>
+    <ShareKhataLinkSheet
+      open={!!khataNudge}
+      onClose={() => setKhataNudge(null)}
+      personId={khataNudge?.personId ?? ''}
+      personName={khataNudge?.personName ?? ''}
+      phone={khataNudge?.phone ?? null}
+    />
+    </>
   );
 }

@@ -31,7 +31,7 @@ export function SpendingWarningModal({ open, expense, onContinue, onCancel }: Pr
             {t('spend_warning_cancel')}
           </button>
           <button onClick={onContinue}
-            className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-indigo-500/20"
+            className="flex-1 bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-accent-600/20"
           >
             {t('spend_warning_continue')}
           </button>

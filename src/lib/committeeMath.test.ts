@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   poolAmount, roundDate, currentRound, hasPaid, paidRoundCount,
   recipientForRound, memberPosition, slotKind, ballotOrder, buildSchedule,
+  committeeEditState, isMoneyShapeEditable, canAddCommitteeMember, canRemoveCommitteeMember,
+  canReorderCommittee,
 } from './committeeMath';
 import type { Committee, CommitteeMember, CommitteePayment } from '../db';
 
@@ -106,6 +108,129 @@ describe('ballotOrder', () => {
     let i = 0;
     const rand = () => seq[i++ % seq.length];
     expect(ballotOrder(['a', 'b', 'c', 'd'], rand)).toEqual(ballotOrder(['a', 'b', 'c', 'd'], (() => { let k = 0; return () => seq[k++ % seq.length]; })()));
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Post-creation editing (UX-25). These mirror
+// supabase/tests/tests/8w-kameti-editing.sql assertion for assertion — the two
+// suites together are what catches a drift between the client's "why is this
+// field greyed out" copy and the server's actual refusal.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('committeeEditState', () => {
+  it('is `drawn` on a real ballot draw, and NEVER on a fixed kameti stamped drawnAt at creation', () => {
+    // The trap: createCommittee stamps drawnAt on every fixed kameti, so a
+    // drawnAt-based rule would freeze them all from birth.
+    const fixedAtBirth = { ...committee, payoutMethod: 'fixed' as const, drawnAt: '2026-01-01', drawSeed: null };
+    expect(committeeEditState(fixedAtBirth, [])).toBe('open');
+    expect(committeeEditState({ drawSeed: 'abc' }, [])).toBe('drawn');
+    expect(committeeEditState({ drawSeed: 'abc' }, [pay('a', 1)])).toBe('drawn');
+  });
+  it('is `collecting` the moment one contribution exists', () => {
+    expect(committeeEditState({ drawSeed: null }, [])).toBe('open');
+    expect(committeeEditState({ drawSeed: null }, [pay('a', 1)])).toBe('collecting');
+  });
+  it('only `open` unlocks the money-shaping fields', () => {
+    expect(isMoneyShapeEditable('open')).toBe(true);
+    expect(isMoneyShapeEditable('collecting')).toBe(false);
+    expect(isMoneyShapeEditable('drawn')).toBe(false);
+  });
+});
+
+describe('canAddCommitteeMember', () => {
+  const base = { ...committee, payoutMethod: 'fixed' as const, startDate: '2026-01-15', totalRounds: 5, memberCount: 5 };
+  const roster = [member('a', 1), member('b', 2)];
+  const inCycle = new Date('2026-02-01');
+
+  it('allows an add mid-collection while nobody has taken their pool', () => {
+    expect(canAddCommitteeMember(base, roster, inCycle)).toEqual({ ok: true });
+  });
+  it('refuses once ANY payout is confirmed (the pool would grow for the rest)', () => {
+    expect(canAddCommitteeMember(base, [member('a', 1, true), member('b', 2)], inCycle))
+      .toEqual({ ok: false, reason: 'payout_confirmed' });
+  });
+  it('refuses after the ballot draw and on a completed kameti', () => {
+    expect(canAddCommitteeMember({ ...base, drawSeed: 'seed' }, roster, inCycle))
+      .toEqual({ ok: false, reason: 'drawn' });
+    expect(canAddCommitteeMember({ ...base, status: 'completed' }, roster, inCycle))
+      .toEqual({ ok: false, reason: 'completed' });
+  });
+  it('refuses when the round the newcomer would receive has already passed', () => {
+    // Round 6 of a monthly cycle starting 2026-01-15 falls on 2026-06-15.
+    expect(canAddCommitteeMember(base, roster, new Date('2026-06-14'))).toEqual({ ok: true });
+    expect(canAddCommitteeMember(base, roster, new Date('2026-06-15')))
+      .toEqual({ ok: false, reason: 'cycle_over' });
+    expect(canAddCommitteeMember(base, roster, new Date('2027-01-01')))
+      .toEqual({ ok: false, reason: 'cycle_over' });
+  });
+});
+
+describe('canRemoveCommitteeMember', () => {
+  // Four slots, four members; the organiser holds slot 1.
+  const base = { ...committee, memberCount: 4, totalRounds: 4, drawSeed: null };
+  const roster: CommitteeMember[] = [
+    { ...member('a', 1), isOrganizer: true },
+    member('b', 2), member('c', 3), member('d', 4),
+  ];
+
+  it('allows a clean member and reports how many slots shift down', () => {
+    expect(canRemoveCommitteeMember(base, roster, [], 'b')).toEqual({ ok: true, slotsShifted: 2 });
+    expect(canRemoveCommitteeMember(base, roster, [], 'd')).toEqual({ ok: true, slotsShifted: 0 });
+  });
+  it('refuses the organiser, an unknown member, and a drop below two members', () => {
+    expect(canRemoveCommitteeMember(base, roster, [], 'a')).toEqual({ ok: false, reason: 'organizer' });
+    expect(canRemoveCommitteeMember(base, roster, [], 'zzz')).toEqual({ ok: false, reason: 'not_found' });
+    expect(canRemoveCommitteeMember({ ...base, memberCount: 2 }, roster, [], 'b'))
+      .toEqual({ ok: false, reason: 'too_few' });
+  });
+  it('refuses after the draw, with payments of their own, or after their payout', () => {
+    expect(canRemoveCommitteeMember({ ...base, drawSeed: 'seed' }, roster, [], 'b'))
+      .toEqual({ ok: false, reason: 'drawn' });
+    expect(canRemoveCommitteeMember(base, roster, [pay('b', 1)], 'b'))
+      .toEqual({ ok: false, reason: 'member_has_payments' });
+    expect(canRemoveCommitteeMember(base, [roster[0], member('b', 2, true), roster[2], roster[3]], [], 'b'))
+      .toEqual({ ok: false, reason: 'payout_received' });
+  });
+  it('protects rounds that have already been collected, but not the untouched tail', () => {
+    // A contribution for round 2 pins slot 2 (and everything above it), because
+    // the compaction would re-number the round that money belongs to.
+    expect(canRemoveCommitteeMember(base, roster, [pay('a', 2)], 'b'))
+      .toEqual({ ok: false, reason: 'rounds_collected' });
+    // …while round 1 money leaves the slot-2 member removable.
+    expect(canRemoveCommitteeMember(base, roster, [pay('a', 1)], 'b'))
+      .toEqual({ ok: true, slotsShifted: 2 });
+    // The LAST slot is pinned by any payment in the last round only.
+    expect(canRemoveCommitteeMember(base, roster, [pay('a', 1)], 'd'))
+      .toEqual({ ok: true, slotsShifted: 0 });
+    expect(canRemoveCommitteeMember(base, roster, [pay('a', 4)], 'd'))
+      .toEqual({ ok: false, reason: 'rounds_collected' });
+  });
+  it('an unslotted member is judged against the LAST round (removal drops one)', () => {
+    const unslotted = [...roster.slice(0, 3), member('e', null)];
+    expect(canRemoveCommitteeMember(base, unslotted, [pay('a', 1)], 'e'))
+      .toEqual({ ok: true, slotsShifted: 0 });
+    expect(canRemoveCommitteeMember(base, unslotted, [pay('a', 4)], 'e'))
+      .toEqual({ ok: false, reason: 'rounds_collected' });
+  });
+});
+
+describe('canReorderCommittee', () => {
+  // Latent path (setFixedOrder has no UI caller today) — mirrors
+  // committeeEditState exactly: open unlocks it, any payment or a real draw
+  // locks it.
+  const roster = [member('a', 1), member('b', 2)];
+
+  it('allows a reorder while the kameti is open', () => {
+    expect(canReorderCommittee({ drawSeed: null }, roster, [])).toEqual({ ok: true });
+  });
+  it('locks the moment one contribution exists', () => {
+    expect(canReorderCommittee({ drawSeed: null }, roster, [pay('a', 1)]))
+      .toEqual({ ok: false, reason: 'collecting' });
+  });
+  it('locks a real ballot draw, even with no payments recorded', () => {
+    expect(canReorderCommittee({ drawSeed: 'seed' }, roster, []))
+      .toEqual({ ok: false, reason: 'drawn' });
   });
 });
 

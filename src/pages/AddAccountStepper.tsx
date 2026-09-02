@@ -10,6 +10,8 @@ import { SUPPORTED_CURRENCIES, type AccountType, type Currency } from '../db';
 import { currencyMeta } from '../lib/design-tokens';
 import { StatementCycleField } from '../components/StatementCycleField';
 import { useT } from '../lib/i18n';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
+import { track } from '../lib/telemetry';
 
 interface Props { open: boolean; onClose: () => void; onComplete?: () => void; inline?: boolean; }
 
@@ -53,7 +55,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const t = useT();
   const guardClose = useDiscardGuard();
   const submitGuard = useSubmitGuard();
-  const primaryCurrency = ((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
+  const primaryCurrency = getPrimaryCurrency();
 
   const [step, setStep] = useState(0);
   const [accountType, setAccountType] = useState<AccountType>('cash');
@@ -162,6 +164,14 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
         metadata,
       });
       await loadAccounts();
+      // Catalog #7. Onboarding's own create fires from OnboardingPage.tsx
+      // directly — this stepper only ever runs post-onboarding, from the
+      // Accounts page or embedded inline inside QuickEntry.
+      track('account_created', {
+        account_type: accountType,
+        is_first: isFirstAccount,
+        source: inline ? 'quick_entry' : 'accounts_page',
+      });
       if (isFirstAccount) {
         toast.show({ type: 'success', title: t('first_acct_congrats'), subtitle: t('first_acct_msg') });
       } else {
@@ -182,17 +192,17 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
       <button onClick={() => setStep(0)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft">&#x2190;</button>
       {isCreditCard ? (
         <button onClick={handleSubmit} disabled={saving || !canProceedStep1()}
-          className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+          className="flex-1 bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20 flex items-center justify-center gap-2"
         >{saving ? t('acct_creating') : <><Check size={16} /> {t('acct_create')}</>}</button>
       ) : (
-        <button onClick={() => setStep(2)} disabled={!canProceedStep1()} className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">{t('quick_next')} &#x2192;</button>
+        <button onClick={() => setStep(2)} disabled={!canProceedStep1()} className="flex-1 bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20">{t('quick_next')} &#x2192;</button>
       )}
     </div>
   ) : step === 2 ? (
     <div className="flex gap-2.5">
       <button onClick={() => setStep(1)} className="px-4 py-3.5 rounded-2xl text-sm font-semibold border border-cream-border text-ink-500 active:bg-cream-soft">&#x2190;</button>
       <button onClick={handleSubmit} disabled={saving || !name.trim() || !balanceValid}
-        className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2"
+        className="flex-1 bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20 flex items-center justify-center gap-2"
       >{saving ? t('acct_creating') : <><Check size={16} /> {t('acct_create')}</>}</button>
     </div>
   ) : undefined;
@@ -291,7 +301,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                       return (
                         <button key={c} type="button" onClick={() => setCurrency(c)}
                           className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card text-ink-500'
+                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-accent-500/5' : 'border-cream-border bg-cream-card text-ink-500'
                           }`}
                         >{meta?.flag} {c}</button>
                       );
@@ -311,7 +321,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                         return (
                           <button key={p.name} onClick={() => selectPreset(p)}
                             className={`p-3.5 rounded-2xl border-2 text-left transition-all active:scale-[0.97] ${
-                              name === p.name ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
+                              name === p.name ? 'border-accent-500 bg-accent-50 shadow-sm shadow-accent-500/5' : 'border-cream-border bg-cream-card'
                             }`}
                           >
                             <p className="font-semibold text-[12px] text-ink-800 tracking-tight">{p.name}</p>
@@ -341,7 +351,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
                       return (
                         <button key={c} type="button" onClick={() => setCurrency(c)}
                           className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card text-ink-500'
+                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-accent-500/5' : 'border-cream-border bg-cream-card text-ink-500'
                           }`}
                         >{meta?.flag} {c}</button>
                       );

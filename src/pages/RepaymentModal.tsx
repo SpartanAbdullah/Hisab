@@ -19,6 +19,7 @@ import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
 import { rateIsSane, RATE_MIN } from '../lib/conversionMath';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { track } from '../lib/telemetry';
 import { resolvePersonName } from '../lib/resolvePersonName';
 import type { Loan } from '../db';
 
@@ -250,6 +251,15 @@ export function RepaymentModal({
         });
       }
 
+      // Catalog #12. Fires only once the commit above has actually succeeded.
+      // `emiId` payments are one instalment of a schedule, never "consolidated"
+      // (that term is reserved for the cross-loan lump allocator).
+      track('repayment_recorded', {
+        consolidated: false,
+        settles_loan: parsedAmount >= loan.remainingAmount - 0.00001,
+        mode: isLedgerOnlyMode ? 'splits_only' : 'full_tracker',
+        currency: loan.currency,
+      });
       setConfirmData({
         title: t('title_done').replace('{label}', isInstallmentPayment ? t('loan_mark_paid') : t('loan_repay')),
         description: (isGiven ? t('repay_done_received_from') : t('repay_done_paid_to'))

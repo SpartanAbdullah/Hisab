@@ -18,6 +18,7 @@ import { useToast } from '../components/Toast';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { computePosition, simulateTimeline, validateTradeInput } from '../lib/investmentMath';
+import { localIso } from '../lib/localDate';
 import { marketColorFor } from '../lib/marketColors';
 import { rateIsSane } from '../lib/conversionMath';
 import { formatMoney } from '../lib/constants';
@@ -86,7 +87,7 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
     setPrice('');
     setDividendAmount('');
     setFees('');
-    setTradedAt(new Date().toISOString().slice(0, 10));
+    setTradedAt(localIso(new Date()));
     setNotes('');
     // No accounts at all → this can only be an outside-Hisaab record.
     setOutside(accounts.length === 0);

@@ -1,26 +1,59 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle, Eye, Pencil, Lock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle, Pencil, Lock, SlidersHorizontal, UserMinus, UserPlus } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCommitteeStore } from '../stores/committeeStore';
 import { CommitteeDrawError } from '../lib/supabaseDb';
+import { EditCommitteeSheet } from '../components/EditCommitteeSheet';
+import { committeeErrorKey } from '../lib/committeeErrorText';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { PageErrorState } from '../components/PageErrorState';
 import { CommitteeVerifyDraw } from '../components/CommitteeVerifyDraw';
+import { CommitteeWitnessLink } from '../components/CommitteeWitnessLink';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { formatMoney } from '../lib/constants';
-import { useT } from '../lib/i18n';
+import { useT, type I18nKey } from '../lib/i18n';
 import { buildWhatsAppUrl } from '../lib/whatsappReminder';
-import { buildAppShareUrl } from '../lib/collaboration';
 import { KametiPayoutSlipSheet } from '../components/KametiPayoutSlipSheet';
 import {
   poolAmount, currentRound, roundDate, recipientForRound, hasPaid,
   paymentsForRound, slotKind, buildSchedule,
+  canAddCommitteeMember, canRemoveCommitteeMember,
+  type MemberAddBlock, type MemberRemoveBlock,
 } from '../lib/committeeMath';
 import type { CommitteeMember } from '../db';
+
+// The refusal → sentence map that used to live here is now
+// `committeeErrorKey` in src/lib/committeeErrorText.ts: the editing RPCs raise
+// into the same code space as the draw and EditCommitteeSheet surfaces them
+// too, so two exhaustive copies would drift. It is still exhaustive by
+// construction — a code added to COMMITTEE_DRAW_ERRORS is a type error there
+// rather than a silent "couldn't run the draw".
+
+// Why the Add / Remove affordance is unavailable — one sentence per refusal in
+// add_committee_member / remove_committee_member. Exhaustive `Record`s over the
+// two reason unions, for the same reason as above.
+const ADD_BLOCK_KEY: Record<MemberAddBlock, I18nKey> = {
+  drawn: 'kameti_add_blocked_drawn',
+  payout_confirmed: 'kameti_add_blocked_payout',
+  cycle_over: 'kameti_add_blocked_cycle_over',
+  completed: 'kameti_add_blocked_completed',
+  too_many: 'kameti_add_blocked_too_many',
+};
+
+const REMOVE_BLOCK_KEY: Record<MemberRemoveBlock, I18nKey> = {
+  drawn: 'kameti_remove_blocked_drawn',
+  organizer: 'kameti_remove_blocked_organizer',
+  too_few: 'kameti_remove_blocked_too_few',
+  member_has_payments: 'kameti_remove_blocked_payments',
+  payout_received: 'kameti_remove_blocked_payout',
+  rounds_collected: 'kameti_remove_blocked_rounds',
+  not_found: 'kameti_draw_failed',
+};
 
 export function KametiDetailPage() {
   const { id = '' } = useParams();
@@ -37,10 +70,11 @@ export function KametiDetailPage() {
   const allPayments = useCommitteeStore((s) => s.payments);
   const loadAll = useCommitteeStore((s) => s.loadAll);
   const runBallot = useCommitteeStore((s) => s.runBallot);
-  const ensureShareToken = useCommitteeStore((s) => s.ensureShareToken);
   const setPaid = useCommitteeStore((s) => s.setPaid);
   const confirmPayout = useCommitteeStore((s) => s.confirmPayout);
   const updateMember = useCommitteeStore((s) => s.updateMember);
+  const addMember = useCommitteeStore((s) => s.addMember);
+  const removeMember = useCommitteeStore((s) => s.removeMember);
   const deleteCommittee = useCommitteeStore((s) => s.deleteCommittee);
 
   const load = useCallback(async () => { if (!getCommittee(id)) await loadAll(); }, [getCommittee, id, loadAll]);
@@ -71,6 +105,16 @@ export function KametiDetailPage() {
     await updateMember(editMember.id, { name: editName.trim(), phone: editPhone.trim() || null });
     setEditMember(null);
   };
+  // Post-creation editing (audit UX-25): the committee sheet, plus adding and
+  // removing members. `busy` is the ref-backed double-tap guard's visible half
+  // — add/remove both move member_count and total_rounds, so a duplicated tap
+  // would silently lengthen the cycle.
+  const [editingCommittee, setEditingCommittee] = useState(false);
+  const [addingMember, setAddingMember] = useState(false);
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberPhone, setNewMemberPhone] = useState('');
+  const [rosterBusy, setRosterBusy] = useState(false);
+  const memberGuard = useSubmitGuard();
   const round = viewRound ?? liveRound;
 
   if (status === 'loading' && !committee) {
@@ -95,6 +139,86 @@ export function KametiDetailPage() {
   const recipient = recipientForRound(members, round);
   const collected = paymentsForRound(payments, round).length;
 
+  // Client mirror of the server's add/remove matrix (UX-25). Used to disable
+  // the affordance AND to name the reason — an action that is simply missing
+  // teaches the organiser nothing. The RPCs re-check every rule.
+  const addCheck = canAddCommitteeMember(committee, members);
+  const removeCheckFor = (memberId: string) => canRemoveCommitteeMember(committee, members, payments, memberId);
+
+  const handleAddMember = () => memberGuard.run(async () => {
+    const name = newMemberName.trim();
+    if (!name) return;
+    setRosterBusy(true);
+    try {
+      await addMember(committee.id, { name, phone: newMemberPhone.trim() || null });
+      toast.show({ type: 'success', title: t('kameti_member_added') });
+      setNewMemberName('');
+      setNewMemberPhone('');
+      setAddingMember(false);
+    } catch (err) {
+      toast.show({ type: 'error', title: t(committeeErrorKey(err)) });
+    } finally {
+      setRosterBusy(false);
+    }
+  });
+
+  const handleRemoveMember = (m: CommitteeMember) => memberGuard.run(async () => {
+    const check = removeCheckFor(m.id);
+    if (!check.ok) {
+      toast.show({ type: 'error', title: t(REMOVE_BLOCK_KEY[check.reason]) });
+      return;
+    }
+    const ok = await confirmDestructive({
+      title: t('kameti_remove_member'),
+      description: t('kameti_remove_member_confirm').replace('{name}', m.name),
+      confirmLabel: t('kameti_remove_member'),
+    });
+    if (!ok) return;
+    setRosterBusy(true);
+    try {
+      await removeMember(committee.id, m.id);
+      toast.show({ type: 'success', title: t('kameti_member_removed') });
+    } catch (err) {
+      toast.show({ type: 'error', title: t(committeeErrorKey(err)) });
+    } finally {
+      setRosterBusy(false);
+    }
+  });
+
+  // Pencil (name / WhatsApp number) + trash (remove from the kameti). The
+  // trash only appears where the server would actually accept it, so the
+  // organiser is never offered an action that comes back as a refusal.
+  const memberActions = (m: CommitteeMember) => (
+    <>
+      <button onClick={() => openEditMember(m)} className="shrink-0 text-ink-400 active:opacity-60 p-1" aria-label={t('kameti_edit_member')}>
+        <Pencil size={13} />
+      </button>
+      {removeCheckFor(m.id).ok && (
+        <button onClick={() => handleRemoveMember(m)} disabled={rosterBusy}
+          className="shrink-0 text-ink-400 active:opacity-60 p-1 -mr-1 disabled:opacity-30" aria-label={t('kameti_remove_member')}>
+          <UserMinus size={13} />
+        </button>
+      )}
+    </>
+  );
+
+  // The "add a member" affordance, with its reason when it is unavailable.
+  // Rendered under both rosters (the pre-draw one and the collection list) —
+  // for a FIXED kameti the collection list IS the roster, and that is exactly
+  // where a late joiner is remembered.
+  const addMemberRow = (
+    <div className="mt-2">
+      {addCheck.ok ? (
+        <button type="button" onClick={() => setAddingMember(true)}
+          className="w-full py-2.5 rounded-2xl border border-dashed border-accent-500/50 text-accent-600 text-[12px] font-semibold flex items-center justify-center gap-1.5 active:bg-accent-50/60">
+          <UserPlus size={13} strokeWidth={2.4} /> {t('kameti_add_member')}
+        </button>
+      ) : (
+        <p className="text-[10.5px] text-ink-400 leading-relaxed px-1">{t(ADD_BLOCK_KEY[addCheck.reason])}</p>
+      )}
+    </div>
+  );
+
   const handleDraw = async () => {
     // Belt and braces around the server's ALREADY_DRAWN guard: never even ask
     // if this device already knows an order exists.
@@ -117,14 +241,10 @@ export function KametiDetailPage() {
       if (elapsed < 1900) await new Promise((r) => setTimeout(r, 1900 - elapsed));
       toast.show({ type: 'success', title: t('kameti_draw_done') });
     } catch (err) {
-      const code = err instanceof CommitteeDrawError ? err.code : 'UNKNOWN';
-      const title = code === 'ALREADY_DRAWN' ? t('kameti_draw_already')
-        : code === 'TOO_FEW_MEMBERS' ? t('kameti_draw_too_few')
-        : code === 'NOT_ORGANISER' ? t('kameti_draw_not_organizer')
-        : t('kameti_draw_failed');
       // ALREADY_DRAWN is not a failure to apologise for — the store has already
       // resynced the real order, so show it as information.
-      toast.show({ type: code === 'ALREADY_DRAWN' ? 'info' : 'error', title });
+      const drawnElsewhere = err instanceof CommitteeDrawError && err.code === 'ALREADY_DRAWN';
+      toast.show({ type: drawnElsewhere ? 'info' : 'error', title: t(committeeErrorKey(err)) });
     } finally {
       setDrawing(false);
     }
@@ -160,20 +280,6 @@ export function KametiDetailPage() {
     window.open(buildWhatsAppUrl(null, text), '_blank');
   };
 
-  const shareWitness = async () => {
-    try {
-      const token = await ensureShareToken(committee.id);
-      const url = `${buildAppShareUrl()}/kameti/witness/${token}`;
-      const text = t('kameti_witness_msg').replace('{committee}', committee.name).replace('{url}', url);
-      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-        try { await navigator.share({ text, url }); return; } catch { /* fall through */ }
-      }
-      window.open(buildWhatsAppUrl(null, text), '_blank');
-    } catch {
-      toast.show({ type: 'error', title: t('error') });
-    }
-  };
-
   const handleDelete = async () => {
     const ok = await confirmDestructive({ title: t('kameti_delete'), description: t('kameti_delete_confirm'), confirmLabel: t('kameti_delete') });
     if (!ok) return;
@@ -184,7 +290,7 @@ export function KametiDetailPage() {
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
-      <PageHeader title={committee.name} back />
+      <PageHeader title={committee.emoji ? `${committee.emoji} ${committee.name}` : committee.name} back />
 
       {/* Rolling-dice overlay while the ballot draws — turns the draw into a
           little moment of suspense. */}
@@ -241,6 +347,32 @@ export function KametiDetailPage() {
           </div>
         )}
 
+        {/* The roster, BEFORE the ballot is drawn. Everything below this point
+            is gated on `isDrawn`, so an undrawn ballot used to show no member
+            list at all — leaving the organiser no way to fix a name or drop
+            someone who never joined except deleting the kameti (audit UX-25).
+            This is also the last moment adding or removing is free. */}
+        {!hasDrawRecord && (
+          <div>
+            <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2.5">{t('kameti_roster')}</h2>
+            <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-cream-hairline overflow-hidden">
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center gap-2.5 px-3.5 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-ink-900 truncate flex items-center gap-1.5">
+                      {m.name}
+                      {m.isOrganizer && <Crown size={11} className="text-accent-600 shrink-0" aria-label={t('kameti_you_organizer')} />}
+                    </p>
+                    {m.phone && <p className="text-[10.5px] text-ink-400 tabular-nums">{m.phone}</p>}
+                  </div>
+                  {memberActions(m)}
+                </div>
+              ))}
+            </div>
+            {addMemberRow}
+          </div>
+        )}
+
         {/* Round navigator */}
         {isDrawn && (
           <div className="flex items-center justify-between">
@@ -272,16 +404,17 @@ export function KametiDetailPage() {
                 onClick={async () => {
                   const next = !recipient.payoutReceivedAt;
                   await confirmPayout(recipient.id, next);
-                  // On marking received, offer a premium payout slip (with the
-                  // witness link) to send the recipient. Un-marking does nothing.
-                  if (next) {
-                    let witnessUrl: string | undefined;
-                    try {
-                      const token = await ensureShareToken(committee.id);
-                      witnessUrl = `${buildAppShareUrl()}/kameti/witness/${token}`;
-                    } catch { /* offer the slip without the verify link */ }
-                    setSlip({ recipient, round, witnessUrl });
-                  }
+                  // On marking received, offer a payout slip to send the
+                  // recipient. Un-marking does nothing.
+                  //
+                  // The slip no longer carries a witness URL (audit M19 /
+                  // docs/trust-and-safety.md §4.5 item 7): minting one is now a
+                  // ROTATE, which would silently kill whatever link the
+                  // organiser had already shared with the group — every time
+                  // they ticked a payout. A printed capability URL that expires
+                  // in 90 days is stale paper anyway. The organiser shares the
+                  // link deliberately, from the Witness link card below.
+                  if (next) setSlip({ recipient, round });
                 }}
                 className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 ${recipient.payoutReceivedAt ? 'bg-receive-600 text-white' : 'bg-cream-card text-ink-900 border border-cream-border'}`}
               >
@@ -343,13 +476,12 @@ export function KametiDetailPage() {
                         <MessageCircle size={12} /> {t('kameti_remind')}
                       </button>
                     )}
-                    <button onClick={() => openEditMember(m)} className="shrink-0 text-ink-400 active:opacity-60 p-1 -mr-1" aria-label={t('kameti_edit_member')}>
-                      <Pencil size={13} />
-                    </button>
+                    {memberActions(m)}
                   </div>
                 );
               })}
             </div>
+            {addMemberRow}
           </div>
         )}
 
@@ -379,11 +511,20 @@ export function KametiDetailPage() {
           </div>
         )}
 
-        {/* Footer actions */}
-        <button onClick={shareWitness} className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[12.5px] font-bold flex items-center justify-center gap-2 press">
-          <Eye size={14} /> {t('kameti_share_witness')}
-        </button>
+        {/* Witness link — create / replace / stop sharing, plus the
+            initials-only privacy toggle. Replaces the old one-tap "Share
+            witness link" button, which minted a never-expiring plaintext token
+            on this device (audit M19 / UX-24). */}
+        <CommitteeWitnessLink committee={committee} members={members} />
+
+        {/* Footer actions. "Edit" is organiser-only by construction: committees
+            are owner-only rows (committees.sql RLS), so the only person who can
+            open this page IS the organiser — and update_committee refuses
+            anyone else with NOT_ORGANISER regardless. */}
         <div className="flex gap-2">
+          <button onClick={() => setEditingCommittee(true)} className="flex-1 py-3 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[12.5px] font-semibold flex items-center justify-center gap-2 active:bg-cream-soft">
+            <SlidersHorizontal size={14} /> {t('kameti_edit')}
+          </button>
           <button onClick={shareStatement} className="flex-1 py-3 rounded-2xl bg-cream-card border border-cream-border text-ink-700 text-[12.5px] font-semibold flex items-center justify-center gap-2 active:bg-cream-soft">
             <Share2 size={14} /> {t('kameti_share_statement')}
           </button>
@@ -404,6 +545,46 @@ export function KametiDetailPage() {
           witnessUrl={slip.witnessUrl}
         />
       )}
+
+      <EditCommitteeSheet
+        open={editingCommittee}
+        onClose={() => setEditingCommittee(false)}
+        committee={committee}
+        members={members}
+        payments={payments}
+      />
+
+      <Modal
+        open={addingMember}
+        onClose={() => setAddingMember(false)}
+        title={t('kameti_member_add_title')}
+        footer={
+          <button
+            onClick={handleAddMember}
+            disabled={rosterBusy || !newMemberName.trim()}
+            className="w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-40 press"
+          >
+            {t('kameti_add_member')}
+          </button>
+        }
+      >
+        <div className="space-y-3">
+          {/* Adding a member adds a ROUND: say so before the tap, not after. */}
+          <p className="text-[11.5px] text-ink-600 leading-relaxed rounded-2xl bg-cream-card border border-cream-border p-3">
+            {t('kameti_member_add_note')}
+          </p>
+          <div>
+            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('kameti_member_name')}</label>
+            <input value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} maxLength={60}
+              className="w-full mt-1.5 border border-cream-border rounded-xl px-4 py-3 text-[14px] bg-cream-bg focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('kameti_member_phone')}</label>
+            <input value={newMemberPhone} onChange={(e) => setNewMemberPhone(e.target.value)} inputMode="tel" placeholder="+92…"
+              className="w-full mt-1.5 border border-cream-border rounded-xl px-4 py-3 text-[14px] bg-cream-bg focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all" />
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={!!editMember}

@@ -30,6 +30,10 @@ import {
   RefreshCw,
   FileText,
   Bell,
+  BellRing,
+  Clock,
+  Ban,
+  BellOff,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSupabaseAuthStore } from "../stores/supabaseAuthStore";
@@ -44,6 +48,12 @@ import { isNativeRuntime } from "../lib/runtime";
 import { enableRemindersFlow, remindersEnabled, rescheduleNotifications, REMINDERS_KEY } from "../lib/notificationScheduler";
 import { requestPushPermissionAndRegister } from "../lib/pushRegistration";
 import { PhoneDiscoverySection } from "../components/PhoneDiscoverySection";
+import { TelemetryConsentToggle } from "../components/TelemetryConsentToggle";
+import { FeedbackCard } from "../components/FeedbackCard";
+import { useBlockStore } from "../stores/blockStore";
+import { useNotificationStore } from "../stores/notificationStore";
+import { usePersonStore } from "../stores/personStore";
+import { useSubmitGuard } from "../lib/useSubmitGuard";
 import { confirmDestructive } from "../components/ConfirmDestructiveSheet";
 import { ManageCategoriesModal } from "../components/ManageCategoriesModal";
 import { useThemeStore, type ThemeMode } from "../stores/themeStore";
@@ -80,6 +90,25 @@ function copyWithTextareaFallback(text: string): Promise<void> {
   } finally {
     document.body.removeChild(textarea);
   }
+}
+
+// Quiet hours are stored as whole local hours (0-23) per
+// docs/notifications.md §3 — `notification_prefs.quiet_hours_start/_end`.
+// The pickers are <input type="time">, which round-trips "HH:MM"; only the
+// hour is kept, on the minute-precision-would-lie-about-what's-stored theory.
+const DEFAULT_QUIET_START_HOUR = 22;
+const DEFAULT_QUIET_END_HOUR = 7;
+
+function hourToTimeInput(hour: number | null, fallback: number): string {
+  const h = hour ?? fallback;
+  return `${String(h).padStart(2, "0")}:00`;
+}
+
+function timeInputToHour(value: string): number | null {
+  const match = /^(\d{1,2}):/.exec(value);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  return Number.isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null;
 }
 
 function copyShareText(text: string): Promise<void> {
@@ -199,6 +228,27 @@ export function SettingsPage() {
   // the toggle drives REMINDERS_KEY and the permission flow.
   const [remindersOn, setRemindersOn] = useState(() => remindersEnabled());
   const [remindersBusy, setRemindersBusy] = useState(false);
+  // M5 quiet hours + real push opt-in (docs/notifications.md §8.2, audit N-6).
+  // Quiet hours mirror `notification_prefs`' global row through the store;
+  // both null (no window configured yet) shows the DEFAULT_QUIET_* fallback
+  // in the pickers without writing anything until the user actually changes
+  // one — a silent auto-write on first render would surprise a user who never
+  // touched this screen.
+  const quietHours = useNotificationStore((s) => s.quietHours);
+  const loadNotificationPrefs = useNotificationStore((s) => s.loadPrefs);
+  const setQuietHoursPref = useNotificationStore((s) => s.setQuietHours);
+  const [quietHoursBusy, setQuietHoursBusy] = useState(false);
+  // Global mute (docs/notifications.md §8.2) — the group_id-null prefs row.
+  // Mode-agnostic like the rest of the notification system (§7): it reads
+  // and writes the same global row regardless of full_tracker/splits_only.
+  const globalMuted = useNotificationStore((s) => s.globalMuted);
+  const setGlobalMutedPref = useNotificationStore((s) => s.setGlobalMuted);
+  const [globalMuteBusy, setGlobalMuteBusy] = useState(false);
+  // Push permission state — read straight off the Capacitor plugin (native
+  // only) rather than duplicating registration logic; pushRegistration.ts
+  // already owns the actual register/token flow.
+  const [pushPermission, setPushPermission] = useState<"granted" | "denied" | "prompt" | "unknown">("unknown");
+  const [pushBusy, setPushBusy] = useState(false);
   const [email] = useState(
     () => user?.email ?? localStorage.getItem("hisaab_email") ?? "",
   );
@@ -214,6 +264,16 @@ export function SettingsPage() {
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [publicCode, setPublicCode] = useState("");
+  // Blocked people (audit M17). Names are resolved from local contacts where a
+  // linked row exists; a block can outlive the contact row, so an unresolved id
+  // renders as a neutral "Hisaab user" rather than a raw UUID.
+  const blocks = useBlockStore((s) => s.blocks);
+  const blocksLoading = useBlockStore((s) => s.loading);
+  const loadBlocks = useBlockStore((s) => s.loadBlocks);
+  const unblock = useBlockStore((s) => s.unblock);
+  const persons = usePersonStore((s) => s.persons);
+  const loadPersons = usePersonStore((s) => s.loadPersons);
+  const unblockGuard = useSubmitGuard();
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteSaving, setDeleteSaving] = useState(false);
@@ -277,6 +337,36 @@ export function SettingsPage() {
     // while the Sync Status card is hidden (audit UX-09).
     if (!OUTBOX_UI_ENABLED) return;
     void loadSyncStatus();
+  }, []);
+
+  // Blocked-people list + the contacts that give those ids names. Both stores
+  // gate on their own freshness window, so this is cheap on a re-visit.
+  useEffect(() => {
+    void loadBlocks();
+    void loadPersons().catch(() => {});
+  }, [loadBlocks, loadPersons]);
+
+  // Notification prefs (quiet hours) — best-effort, tolerates the M5
+  // migration not being applied yet (loadPrefs swallows that itself).
+  useEffect(() => {
+    void loadNotificationPrefs();
+  }, [loadNotificationPrefs]);
+
+  // Current push permission, native only. Re-checked after the opt-in button
+  // runs so the row reflects what the OS dialog actually decided.
+  const refreshPushPermission = async () => {
+    if (!isNativeRuntime()) return;
+    try {
+      const { PushNotifications } = await import("@capacitor/push-notifications");
+      const perm = await PushNotifications.checkPermissions();
+      const receive = String(perm.receive);
+      setPushPermission(receive === "granted" || receive === "denied" || receive === "prompt" ? receive : "unknown");
+    } catch {
+      setPushPermission("unknown");
+    }
+  };
+  useEffect(() => {
+    void refreshPushPermission();
   }, []);
 
   const handleExport = async () => {
@@ -497,6 +587,42 @@ export function SettingsPage() {
     "rounded-[18px] bg-cream-card border border-cream-border overflow-hidden divide-y divide-cream-hairline";
   const rowClass =
     "row-base row-interactive px-4 py-3.5";
+
+  // A window is "on" only when both edges are set and distinct — matches the
+  // server's own reading of the global row (docs/notifications.md §3: "Both
+  // null, or equal, means no window").
+  const quietHoursEnabled =
+    quietHours.start !== null && quietHours.end !== null && quietHours.start !== quietHours.end;
+  const quietHoursTz =
+    quietHours.tz ||
+    (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone;
+      } catch {
+        return "Asia/Karachi";
+      }
+    })();
+
+  const blockedName = (profileId: string): string =>
+    persons.find((p) => p.linkedProfileId === profileId)?.name ?? t('blk_unknown_person');
+
+  const handleUnblock = (profileId: string) => unblockGuard.run(async () => {
+    const name = blockedName(profileId);
+    const ok = await confirmDestructive({
+      title: t('blk_unblock_confirm_title').replace('{name}', name),
+      description: t('blk_unblock_confirm_body'),
+      confirmLabel: t('blk_action_unblock'),
+      cancelLabel: t('cancel'),
+      tone: 'warning',
+    });
+    if (!ok) return;
+    try {
+      await unblock(profileId);
+      toast.show({ type: 'success', title: t('blk_unblocked_toast').replace('{name}', name) });
+    } catch {
+      toast.show({ type: 'error', title: t('blk_failed') });
+    }
+  });
 
   const copyUserCode = async () => {
     if (!publicCode) return;
@@ -834,9 +960,228 @@ export function SettingsPage() {
           </div>
         )}
 
+        {/* Global mute — M5 (docs/notifications.md §8.2). Same server-side
+            row as the per-group mute in GroupDetailPage, just group_id null:
+            suppresses every `notifications` row (and therefore every push)
+            for this user. The in-app Inbox / Activity feed are unaffected —
+            copy below says so explicitly, same honesty rule as the per-group
+            mute. Mode-agnostic like the rest of §3/§7. */}
+        <div className={sectionClass}>
+          <div className={rowClass}>
+            <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+              <BellOff size={16} className="text-accent-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">{t("settings_mute_all")}</p>
+              <p className="text-[11px] text-ink-500">{t("settings_mute_all_desc")}</p>
+            </div>
+            <button
+              disabled={globalMuteBusy}
+              onClick={() => {
+                void (async () => {
+                  setGlobalMuteBusy(true);
+                  try {
+                    await setGlobalMutedPref(!globalMuted);
+                  } catch {
+                    toast.show({ type: "error", title: t("settings_mute_all_failed") });
+                  } finally {
+                    setGlobalMuteBusy(false);
+                  }
+                })();
+              }}
+              aria-pressed={globalMuted}
+              aria-label={t("settings_mute_all")}
+              className={`relative w-12 h-7 rounded-full transition-colors shrink-0 disabled:opacity-50 ${globalMuted ? "bg-receive-600" : "bg-cream-border"}`}
+            >
+              <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${globalMuted ? "left-6" : "left-1"}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* Quiet hours — M5 (docs/notifications.md §8.2). Mode-agnostic and not
+            native-only: it governs a server-side push delivery decision, so a
+            web user can set it even though they'll never see the effect
+            themselves. Mute suppresses the notifications row entirely; quiet
+            hours only soften how a push rings — the in-app Inbox always gets
+            every item regardless. */}
+        <div className={sectionClass}>
+          <div className={rowClass}>
+            <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+              <Clock size={16} className="text-accent-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-ink-900">{t("settings_quiet_hours")}</p>
+              <p className="text-[11px] text-ink-500">{t("settings_quiet_hours_desc")}</p>
+            </div>
+            <button
+              disabled={quietHoursBusy}
+              onClick={() => {
+                void (async () => {
+                  setQuietHoursBusy(true);
+                  try {
+                    if (quietHoursEnabled) {
+                      await setQuietHoursPref(null, null);
+                    } else {
+                      await setQuietHoursPref(DEFAULT_QUIET_START_HOUR, DEFAULT_QUIET_END_HOUR);
+                    }
+                  } catch {
+                    toast.show({ type: "error", title: t("settings_quiet_hours_failed") });
+                  } finally {
+                    setQuietHoursBusy(false);
+                  }
+                })();
+              }}
+              aria-pressed={quietHoursEnabled}
+              aria-label={t("settings_quiet_hours")}
+              className={`relative w-12 h-7 rounded-full transition-colors shrink-0 disabled:opacity-50 ${quietHoursEnabled ? "bg-receive-600" : "bg-cream-border"}`}
+            >
+              <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${quietHoursEnabled ? "left-6" : "left-1"}`} />
+            </button>
+          </div>
+          {quietHoursEnabled && (
+            <div className={rowClass}>
+              <div className="flex-1 flex items-center gap-3">
+                <label className="flex-1">
+                  <span className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-widest mb-1">
+                    {t("settings_quiet_hours_start")}
+                  </span>
+                  <input
+                    type="time"
+                    step={3600}
+                    disabled={quietHoursBusy}
+                    value={hourToTimeInput(quietHours.start, DEFAULT_QUIET_START_HOUR)}
+                    onChange={(e) => {
+                      const hour = timeInputToHour(e.target.value);
+                      if (hour === null) return;
+                      void setQuietHoursPref(hour, quietHours.end ?? DEFAULT_QUIET_END_HOUR).catch(() =>
+                        toast.show({ type: "error", title: t("settings_quiet_hours_failed") }),
+                      );
+                    }}
+                    className="w-full bg-cream-soft border border-cream-border rounded-lg px-3 py-2 text-[13px] text-ink-900 outline-none focus:border-accent-500 disabled:opacity-50"
+                  />
+                </label>
+                <label className="flex-1">
+                  <span className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-widest mb-1">
+                    {t("settings_quiet_hours_end")}
+                  </span>
+                  <input
+                    type="time"
+                    step={3600}
+                    disabled={quietHoursBusy}
+                    value={hourToTimeInput(quietHours.end, DEFAULT_QUIET_END_HOUR)}
+                    onChange={(e) => {
+                      const hour = timeInputToHour(e.target.value);
+                      if (hour === null) return;
+                      void setQuietHoursPref(quietHours.start ?? DEFAULT_QUIET_START_HOUR, hour).catch(() =>
+                        toast.show({ type: "error", title: t("settings_quiet_hours_failed") }),
+                      );
+                    }}
+                    className="w-full bg-cream-soft border border-cream-border rounded-lg px-3 py-2 text-[13px] text-ink-900 outline-none focus:border-accent-500 disabled:opacity-50"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+          {quietHoursEnabled && (
+            <p className="px-4 pb-3.5 text-[10.5px] text-ink-400 leading-relaxed">
+              {t("settings_quiet_hours_tz").replace("{tz}", quietHoursTz)}
+            </p>
+          )}
+        </div>
+
+        {/* Dedicated push opt-in — audit N-6: push used to be welded to the
+            local-reminders toggle above with no way to enable one without the
+            other. Native only; a PWA tab has no OS-level push channel here. */}
+        {isNativeRuntime() && (
+          <div className={sectionClass}>
+            <div className={rowClass}>
+              <div className="w-9 h-9 rounded-xl bg-accent-100 flex items-center justify-center">
+                <BellRing size={16} className="text-accent-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold text-ink-900">{t("push_title")}</p>
+                <p className="text-[11px] text-ink-500">{t("push_desc")}</p>
+              </div>
+              {pushPermission === "granted" ? (
+                <span className="text-[10.5px] font-bold uppercase tracking-widest text-receive-text bg-receive-50 rounded-full px-2.5 py-1 shrink-0">
+                  {t("push_status_on")}
+                </span>
+              ) : pushPermission === "denied" ? (
+                <span className="text-[10.5px] font-bold uppercase tracking-widest text-pay-text bg-pay-50 rounded-full px-2.5 py-1 shrink-0">
+                  {t("push_status_denied")}
+                </span>
+              ) : (
+                <button
+                  disabled={pushBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setPushBusy(true);
+                      try {
+                        await requestPushPermissionAndRegister((to) => navigate(to));
+                        await refreshPushPermission();
+                      } finally {
+                        setPushBusy(false);
+                      }
+                    })();
+                  }}
+                  className="shrink-0 px-3.5 py-2 rounded-xl bg-ink-900 text-white text-[11.5px] font-bold disabled:opacity-50"
+                >
+                  {pushBusy ? t("cds_working") : t("push_enable_cta")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Phone discovery — opt-in, and the ONLY contact-matching Hisaab
             does. No address-book access anywhere in the app. */}
         <PhoneDiscoverySection sectionClass={sectionClass} rowClass={rowClass} />
+
+        {/* Blocked people — audit M17. Users must be able to see and undo what
+            they did; a block with no visible list is an action they can never
+            take back. The blocked party can never read these rows. */}
+        <div className={sectionClass}>
+          <div className={rowClass}>
+            <div className="w-9 h-9 rounded-xl bg-pay-50 flex items-center justify-center">
+              <Ban size={16} className="text-pay-text" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-ink-900">{t('blk_list_title')}</p>
+              <p className="text-[11px] text-ink-500">{t('blk_list_sub')}</p>
+            </div>
+          </div>
+          {blocks.length === 0 ? (
+            <p className="px-4 py-3.5 text-[11.5px] text-ink-500 leading-relaxed">
+              {blocksLoading ? t('gdp_loading') : t('blk_list_empty')}
+            </p>
+          ) : (
+            blocks.map((entry) => (
+              <div key={entry.blockedId} className={rowClass}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-ink-900 truncate">
+                    {blockedName(entry.blockedId)}
+                  </p>
+                  <p className="text-[10.5px] text-ink-500 tabular-nums">
+                    {t('blk_list_since').replace(
+                      '{date}',
+                      new Date(entry.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
+                    )}
+                  </p>
+                  {entry.reason && (
+                    <p className="text-[10.5px] text-ink-400 italic truncate">{entry.reason}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleUnblock(entry.blockedId)}
+                  className="shrink-0 px-3 py-2 rounded-xl bg-cream-soft border border-cream-hairline text-ink-700 text-[11px] font-bold active:bg-cream-hairline transition-colors"
+                >
+                  {t('blk_action_unblock')}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
 
         {/* App Mode */}
         <div className={sectionClass}>
@@ -1132,6 +1477,10 @@ export function SettingsPage() {
           />
         </div>
 
+        {/* Opt-in usage stats — device-level, default OFF, no free text and no
+            amounts (audit report 10 §5.2). Self-contained card. */}
+        <TelemetryConsentToggle />
+
         {/* Sync Status — audit UX-09. Hidden unless VITE_ENABLE_OUTBOX is on,
             because "Queued offline changes: 0" is a promise the inert outbox
             cannot keep. Kept (not deleted) so it returns with the feature. */}
@@ -1189,6 +1538,10 @@ export function SettingsPage() {
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-500 px-1 pt-2">
           {t('settings_grp_about')}
         </p>
+
+        {/* Talk to us — the only in-app channel a confused-but-not-crashed
+            user has (audit report 10, F3). Self-contained card. */}
+        <FeedbackCard />
 
         {/* About */}
         <div className={sectionClass}>

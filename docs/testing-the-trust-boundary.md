@@ -201,11 +201,101 @@ behaves. Everything below is still only provable on staging.
 | **Data volume** | Empty tables plus ~40 fixture rows. | `performance-indexes` and the balance CTEs have never been seen under load. No `EXPLAIN` is checked. |
 | **Production drift** | The harness replays *this repo's files*. | Production is whatever was actually pasted into Studio over five months, including the five migrations `APPLY-ORDER.md` §1 flags as possibly unapplied. **This is the largest gap and it is not closable from here.** Run `supabase-audit-p0-verification.sql` against production and reconcile Section 13 before applying anything. |
 
-### Also out of scope: the browser half of M7
+### The browser half of M7
 
-M7 asked for two things. This document is the first: the database trust
-boundary. The second — a **Playwright smoke test** covering signup → onboarding
-→ create a group → add an expense → settle → sign out — is **not built**. It
-needs a `devDependencies` entry and an npm script, i.e. `package.json`, which
-was owned by another workstream while this was written. That remains the open
-half of M7.
+M7 asked for two things. Everything above is the first: the database trust
+boundary. The second — a Playwright smoke suite — is below.
+
+---
+
+## E2E smoke (Playwright)
+
+`e2e/` closes M7's second half: a small Playwright suite that drives the
+**real browser UI** against a **real Supabase project** — the layer
+`supabase/tests/` above deliberately cannot reach (PostgREST, GoTrue,
+Realtime, the actual React app). It proves the app *renders and functions*,
+not that the SQL is correct; the two suites are complementary, not
+overlapping.
+
+### Running it locally
+
+```bash
+npx playwright install chromium   # once
+npx playwright test               # runs against `npm run dev` on :5173
+npx playwright test --ui          # interactive mode
+```
+
+No setup beyond that for the **public** specs (they need no session at all).
+The **authenticated** specs need a staging account — see below; without one
+they still run, they just skip themselves with a clear reason instead of
+failing.
+
+### The staging-account rule
+
+There is no way to sign up a fresh account from this suite: `AuthPage` hard-
+gates on `email_confirmed_at` (`src/App.tsx`), and nothing in this repo has
+SMTP to click a verification link with. So every authenticated spec logs into
+a **pre-provisioned account** instead, supplied via env vars:
+
+| Var | Purpose |
+|---|---|
+| `E2E_EMAIL` / `E2E_PASSWORD` | The primary account. Must already be email-verified. |
+| `E2E_EMAIL_2` / `E2E_PASSWORD_2` | A second account, for the cross-user request spec only. `E2E_PASSWORD_2` falls back to `E2E_PASSWORD` if unset. |
+
+**This must be a `hisaab-staging` account (`docs/staging-environment.md`§1),
+never production.** `e2e/global-setup.ts` logs it in once per run through the
+real `AuthPage` UI (not an API shortcut) and saves the session as a
+`storageState` file (`e2e/.auth/user.json`, gitignored — it's a live session
+token) that every authenticated spec then reuses, so the suite authenticates
+exactly once regardless of how many specs run.
+
+**No credentials configured is a supported, green outcome.** Every
+authenticated `test.describe` starts with `test.skip(!hasCreds, …)`
+(`e2e/env.ts`), so `npx playwright test` with nothing configured runs the
+public-page and auth-page specs and reports the rest as **skipped**, not
+failed — that's what a contributor without staging credentials sees.
+
+### What's covered
+
+| Spec | Auth? | Covers |
+|---|---|---|
+| `public-pages.spec.ts` | No | `/privacy`, `/terms`, `/contact`, `/delete-account` render under both `hisaab_lang` values; an unmatched URL falls through to the auth gate instead of a blank page. |
+| `auth-page.spec.ts` | No | AuthPage renders; the language toggle switches visible copy (asserted against literal strings read out of `src/lib/i18n.ts`, not guessed); Login/Sign Up tabs and the reset-password link are reachable. |
+| `onboarding.spec.ts` | Yes | Full onboarding wizard → choose `splits_only` → lands on the home shell with the mode-correct BottomNav tab. Self-skips once the staging account has completed onboarding once — `profiles.onboarding_completed` is permanent, there is no reset affordance, so this is only reachable the very first time this suite ever logs that account in. |
+| `quick-entry.spec.ts` | Yes | QuickEntry: type-first flow → Spend Money → amount + account + note → save → appears in `/transactions` → deleted (cleanup). Self-skips if the staging account is in `splits_only` mode (no plain "Spend Money" intent there — see `CLAUDE.md`'s "Two app modes"). |
+| `pin-lock.spec.ts` | Yes | Settings → set a 4-digit PIN → reload (cold start) → `PinLockScreen` gate appears → unlock via the numpad → Settings → remove PIN (cleanup). The PIN is device-local storage, never server state, so this never touches account reusability regardless of pass/fail. |
+| `cross-user-loan.spec.ts` | Yes (+2nd account) | Read a second staging account's connect code (`MyConnectCode`) → resolve/link it via `/u/:code` (`ConnectByCodePage`) → record a `loan_given` to that linked contact, which QuickEntry branches into a mirrored cross-user request (`confirmCrossUserRequest`) rather than an immediate loan. Deliberately shallow and unconditionally skippable (`E2E_EMAIL_2` unset) per the M7 task spec — the request only becomes a real loan once the second account accepts, which this suite doesn't automate, and the product has no "cancel a sent request" affordance to clean up with. The amount/note are fixed (not timestamped) so repeat runs collide on QuickEntry's own dedup `requestId` instead of piling up duplicate pending requests. |
+
+Every spec that creates something the UI can delete, deletes it before
+finishing (the transaction in `quick-entry.spec.ts`, the PIN in
+`pin-lock.spec.ts`) — the shared staging account has to stay reusable across
+runs, same rule `supabase/tests/`'s fixtures follow at the SQL layer.
+
+### Selector policy
+
+Role/name and `data-testid` **only where an element already has one** — none
+were added to `src/**` for this suite (out of scope: another workstream owns
+`src/**` concurrently). Text-based selectors match literal `{ ur, en }`
+values copied out of `src/lib/i18n.ts` into `e2e/i18n-strings.ts` (that file
+can't be imported live — `useI18nStore`'s initializer reads `localStorage` at
+module-evaluation time, which doesn't exist in Node). If a spec starts
+failing on a text selector after an i18n copy change, that's the signal to
+update `e2e/i18n-strings.ts` to match — not a flake to retry.
+
+### CI (`.github/workflows/e2e.yml`)
+
+Runs on every push/PR to `main`, against `npm run build` + `vite preview`
+(the production bundle, not the dev server) on port 4173. Needs these
+repository secrets — all optional, with the degraded-but-green behavior noted:
+
+| Secret | If unset |
+|---|---|
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Falls back to the same CI-dummy values `ci.yml`'s build step uses — the build still succeeds (no compile-time Supabase call), but any authenticated spec that *did* have `E2E_EMAIL` would fail loudly against a fake project, so set these together with the `E2E_*` ones below or not at all. Should point at `hisaab-staging`, never production. |
+| `E2E_EMAIL`, `E2E_PASSWORD` | Authenticated specs self-skip; public/auth specs still run and the job stays green. |
+| `E2E_EMAIL_2`, `E2E_PASSWORD_2` | Only `cross-user-loan.spec.ts` skips. |
+
+`npm run check:bundle` (the bundle-size budget, `scripts/check-bundle-size.mjs`)
+runs as a step in this workflow right after the build — it needed wiring into
+*some* CI job per `docs/performance.md`, and `ci.yml` was owned by another
+workstream while this was written, same reasoning as the M7 gap above. On
+failure, the Playwright HTML report is uploaded as a build artifact.

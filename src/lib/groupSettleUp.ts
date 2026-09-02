@@ -9,6 +9,7 @@
 import { formatMoney } from './constants';
 import { moneyFormatter } from './maskMoney';
 import type { GroupDebt } from './groupDebts';
+import { MONEY_TOLERANCE } from './moneyTolerance';
 
 export interface MemberSettleUp {
   net: number; // signed: + this member receives overall, − they pay overall
@@ -45,8 +46,8 @@ export function buildMemberCardText(su: MemberSettleUp, opts: MemberCardOptions)
   }
   out.push(`*Settle up — ${groupName}*`);
 
-  if (su.net > 0.005) out.push(`You'll receive ${money(su.net, currency)} overall.`);
-  else if (su.net < -0.005) out.push(`You need to pay ${money(Math.abs(su.net), currency)} overall.`);
+  if (su.net > MONEY_TOLERANCE) out.push(`You'll receive ${money(su.net, currency)} overall.`);
+  else if (su.net < -MONEY_TOLERANCE) out.push(`You need to pay ${money(Math.abs(su.net), currency)} overall.`);
   else out.push(`You're all settled up in ${groupName}.`);
 
   if (su.owes.length > 0 || su.owed.length > 0) {

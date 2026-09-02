@@ -180,7 +180,7 @@ export function OnboardingPage() {
             <div className="w-20 h-20 rounded-[21px] mb-8 animate-bounce-in shadow-lg shadow-black/30">
               <BrandMark size={80} />
             </div>
-            <h1 className="text-4xl font-bold tracking-tighter">Hisaab</h1>
+            <h1 className="text-4xl font-bold tracking-tighter">{t('auth_brand_name')}</h1>
             <p className="text-white/85 text-[15px] leading-relaxed max-w-[280px] mt-4 font-medium">
               {t('onboard_tagline')}
             </p>
@@ -202,9 +202,10 @@ export function OnboardingPage() {
                 </div>
               ))}
             </div>
-            {/* Language confirmation — default is English; the user can pick
-                Roman Urdu right at the start (also toggleable any time via the
-                corner button and in Settings). */}
+            {/* Language confirmation — default is Roman Urdu (DEFAULT_LANGUAGE in
+                src/lib/i18n.ts); the user can switch to English right at the
+                start (also toggleable any time via the corner button and in
+                Settings). */}
             <div className="mt-8 w-full max-w-[280px]">
               <p className="text-white/50 text-[11px] font-medium uppercase tracking-widest mb-2 text-left">{t('onboard_language_label')}</p>
               <div className="grid grid-cols-2 gap-2">
@@ -244,7 +245,7 @@ export function OnboardingPage() {
             <div className="space-y-6">
               <div>
                 <label className="block text-[11px] text-white/50 font-medium uppercase tracking-widest mb-2">{t('onboard_name_label')}</label>
-                <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Ahmed, Faizan, Bilal"
+                <input value={name} onChange={e => setName(e.target.value)} placeholder={t('onboard_name_placeholder')}
                   className="w-full bg-white/8 border border-white/15 rounded-2xl px-4 py-4 text-white placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30 text-[15px] tracking-tight backdrop-blur-sm transition-all" autoFocus />
               </div>
               <div>

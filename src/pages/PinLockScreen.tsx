@@ -98,7 +98,7 @@ export function PinLockScreen() {
   const dots = Array.from({ length: 4 }, (_, i) => i < pin.length);
 
   return (
-    <div className="min-h-dvh bg-gradient-to-b from-indigo-600 via-indigo-700 to-indigo-900 flex flex-col items-center justify-center px-8">
+    <div className="min-h-dvh bg-navy-bloom flex flex-col items-center justify-center px-8">
       <div className="w-16 h-16 rounded-3xl bg-white/10 flex items-center justify-center mb-6">
         <Lock size={28} className="text-white/80" />
       </div>
@@ -164,7 +164,7 @@ export function PinLockScreen() {
           <button
             onClick={handleForgotPin}
             disabled={recovering}
-            className="mt-3 w-full min-h-[44px] rounded-xl bg-white text-indigo-700 text-[13px] font-bold disabled:opacity-50 press"
+            className="mt-3 w-full min-h-[44px] rounded-xl bg-white text-accent-600 text-[13px] font-bold disabled:opacity-50 press"
           >
             {recovering ? t('pin_signing_out') : t('pin_signout_reset')}
           </button>

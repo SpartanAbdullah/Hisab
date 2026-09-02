@@ -11,6 +11,7 @@ import { useT } from '../lib/i18n';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
+import { localIso } from '../lib/localDate';
 import {
   isSubscription,
   subscriptionTotals,
@@ -56,7 +57,7 @@ export function SubscriptionsPage() {
   const load = useCallback(() => loadTemplates(), [loadTemplates]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = localIso(new Date());
   const subs = templates.filter(isSubscription);
   const totals = subscriptionTotals(templates);
   const renewals = upcomingRenewals(templates, todayIso);

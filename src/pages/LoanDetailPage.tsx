@@ -6,6 +6,8 @@ import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
+import { useAppModeStore } from '../stores/appModeStore';
+import { track } from '../lib/telemetry';
 import { Modal } from '../components/Modal';
 import { VerifiedBadge } from '../components/VerifiedBadge';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
@@ -22,6 +24,7 @@ import { PaymentReminderModal } from '../components/PaymentReminderModal';
 import { NotificationPermissionPrompt } from '../components/NotificationPermissionPrompt';
 import { SendStatementModal } from '../components/SendStatementModal';
 import { PageErrorState } from '../components/PageErrorState';
+import { EditHistorySheet, EditHistoryRow } from '../components/EditHistorySheet';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useToast } from '../components/Toast';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
@@ -49,6 +52,7 @@ export function LoanDetailPage() {
   const cancelSettlement = useSettlementRequestStore((s) => s.cancel);
   const persons = usePersonStore((s) => s.persons);
   const currentUserId = useSupabaseAuthStore((s) => s.user?.id ?? '');
+  const appMode = useAppModeStore((s) => s.mode);
   const t = useT();
   const toast = useToast();
   const [cancellingSettlementId, setCancellingSettlementId] = useState<string | null>(null);
@@ -69,6 +73,11 @@ export function LoanDetailPage() {
   // them too). Starts at 0, which NotificationPermissionPrompt ignores.
   const [notifPromptTrigger, setNotifPromptTrigger] = useState(0);
   const [showStatement, setShowStatement] = useState(false);
+  // Audit G5/O10: the dispute-resolution layer. A loan's history is private to
+  // its owner (record_edits RLS), and reads identically in both app modes —
+  // a ledger-mode loan has no account leg and the change JSON has no account
+  // id, so nothing about the sentences differs.
+  const [showHistory, setShowHistory] = useState(false);
   const [statementIntro, setStatementIntro] = useState<string | undefined>(undefined);
   const [receiptData, setReceiptData] = useState<{ receivedAmount: number; currency: string; remaining: number | null; date: string } | undefined>(undefined);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -194,6 +203,13 @@ export function LoanDetailPage() {
       // writeOff meta: this record is forgiveness, not cash — money views
       // (flex budget's fixed, weekly flow) must not count it as spending.
       await applyRepayment(loan.id, loan.remainingAmount, buildInternalNote(t('loan_settle_nomoney_note'), { writeOff: '1' }));
+      // Catalog #12. A write-off always clears the whole remaining balance.
+      track('repayment_recorded', {
+        consolidated: false,
+        settles_loan: true,
+        mode: appMode === 'splits_only' ? 'splits_only' : 'full_tracker',
+        currency: loan.currency,
+      });
       toast.show({ type: 'success', title: t('loan_settle_nomoney_done') });
       refreshLoanDetail();
     } catch (err) {
@@ -376,7 +392,11 @@ export function LoanDetailPage() {
                 </button>
                 {showMenu && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                    <div
+                      className="fixed inset-0 z-40"
+                      role="presentation"
+                      onClick={() => setShowMenu(false)}
+                    />
                     <div className="absolute right-0 top-11 z-50 bg-cream-card rounded-2xl shadow-xl shadow-navy-900/15 border border-cream-border py-1.5 w-56 animate-fade-in">
                       <button
                         onClick={() => {
@@ -786,6 +806,11 @@ export function LoanDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Who changed what. Always present — a persistent affordance, not one
+            that appears only when something looks wrong (lessons.md: never
+            gate a primary capability behind an edge case). */}
+        <EditHistoryRow onClick={() => setShowHistory(true)} />
       </div>
 
       {loan.status === 'active' && (
@@ -866,6 +891,13 @@ export function LoanDetailPage() {
         phone={(loan.personId ? persons.find((x) => x.id === loan.personId)?.phone : null) ?? null}
       />
       <NotificationPermissionPrompt trigger={notifPromptTrigger} />
+      <EditHistorySheet
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        table="loans"
+        recordId={loan.id}
+        currency={loan.currency}
+      />
       <SendStatementModal
         open={showStatement}
         onClose={() => { setShowStatement(false); setStatementIntro(undefined); setReceiptData(undefined); }}

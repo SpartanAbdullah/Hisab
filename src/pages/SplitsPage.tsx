@@ -16,6 +16,7 @@ import { useT } from '../lib/i18n';
 import { track } from '../lib/telemetry';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 
 function GroupsListSkeleton() {
   return (
@@ -215,7 +216,7 @@ export function SplitsPage() {
   const [showArchived, setShowArchived] = useState(false);
   const navigate = useNavigate();
   const t = useT();
-  const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
+  const primaryCurrency = getPrimaryCurrency();
   const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
 
   // Funnel-top steps for the group loop: opening the sheet vs. actually
@@ -300,22 +301,22 @@ export function SplitsPage() {
               <button
                 onClick={() => setShowSearch((v) => !v)}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Search"
+                aria-label={t('a11y_search')}
               >
                 <Search size={15} className="text-white" />
               </button>
               <button
                 onClick={openJoin}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Join with code"
-                title="Join with code"
+                aria-label={t('a11y_join_with_code')}
+                title={t('a11y_join_with_code')}
               >
                 <KeyRound size={14} className="text-white" strokeWidth={2.2} />
               </button>
               <button
                 onClick={openCreate}
                 className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Create group"
+                aria-label={t('a11y_create_group')}
               >
                 <Plus size={15} className="text-white" strokeWidth={2.4} />
               </button>
@@ -325,7 +326,7 @@ export function SplitsPage() {
 
         <div className="px-5 pb-7">
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
-            Across all groups · {primaryCurrency}
+            {t('grp_hero_across').replace('{currency}', primaryCurrency)}
           </p>
           {hasGroups ? (
             <>
@@ -339,19 +340,19 @@ export function SplitsPage() {
                 />
               </div>
               <p className="text-[12px] text-white/55 mt-2">
-                {groups.length} {groups.length === 1 ? 'split' : 'splits'}
+                {groups.length} {groups.length === 1 ? t('grp_unit_split') : t('grp_unit_splits')}
                 {otherCcyGroups.length > 0 && (
-                  <> · +{otherCcyGroups.length} in other currencies</>
+                  <> {t('grp_other_currencies').replace('{n}', String(otherCcyGroups.length))}</>
                 )}
               </p>
             </>
           ) : (
             <>
               <p className="text-white text-[22px] font-semibold tracking-tight mt-1.5 leading-tight">
-                No splits yet
+                {t('grp_no_splits_title')}
               </p>
               <p className="text-[12px] text-white/55 mt-1.5 max-w-[260px] leading-relaxed">
-                Create one to split expenses with friends, or join one with a code.
+                {t('grp_no_splits_body')}
               </p>
             </>
           )}
@@ -365,7 +366,7 @@ export function SplitsPage() {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search groups"
+              placeholder={t('grp_search_placeholder')}
               className="w-full bg-cream-card border border-cream-border rounded-2xl pl-10 pr-10 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all"
               autoFocus
             />
@@ -373,7 +374,7 @@ export function SplitsPage() {
               <button
                 onClick={() => setSearchQuery('')}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-400 press-xs"
-                aria-label="Clear search"
+                aria-label={t('a11y_clear_search')}
               >
                 <X size={14} />
               </button>
@@ -415,19 +416,19 @@ export function SplitsPage() {
             tone={primaryNet > 0 ? 'receive' : primaryNet < 0 ? 'pay' : 'info'}
             status={
               q
-                ? `${visibleGroups.length} group${visibleGroups.length === 1 ? '' : 's'} match your search.`
+                ? t(visibleGroups.length === 1 ? 'splits_hint_search_match_one' : 'splits_hint_search_match_many').replace('{n}', String(visibleGroups.length))
                 : primaryNet === 0
-                ? 'Your primary-currency groups are settled.'
+                ? t('splits_hint_settled')
                 : primaryNet > 0
-                ? `Across groups, you should receive ${formatMoney(primaryNet, primaryCurrency)}.`
-                : `Across groups, you should pay ${formatMoney(Math.abs(primaryNet), primaryCurrency)}.`
+                ? t('splits_hint_receive').replace('{amount}', formatMoney(primaryNet, primaryCurrency))
+                : t('splits_hint_pay').replace('{amount}', formatMoney(Math.abs(primaryNet), primaryCurrency))
             }
             next={
               q
-                ? 'Clear search to see every split again.'
-                : 'Open any group to add an expense, reconcile activity, or settle the balance.'
+                ? t('splits_hint_next_search')
+                : t('splits_hint_next_open')
             }
-            actionLabel={q ? 'Clear search' : undefined}
+            actionLabel={q ? t('splits_hint_clear_search') : undefined}
             onAction={q ? () => setSearchQuery('') : undefined}
           />
         )}
@@ -452,7 +453,7 @@ export function SplitsPage() {
               </div>
               {visibleGroups.length === 0 ? (
                 <p className="text-[12px] text-ink-400 text-center py-6">
-                  No matches for "{searchQuery}"
+                  {t('grp_no_matches_for').replace('{q}', searchQuery)}
                 </p>
               ) : (
                 <div className="space-y-2.5">

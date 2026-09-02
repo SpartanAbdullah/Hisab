@@ -12,6 +12,8 @@ import { useT } from '../lib/i18n';
 import { track } from '../lib/telemetry';
 import { bucketCount } from '../lib/telemetryEvents';
 import { SUPPORTED_CURRENCIES, type Currency, type CommitteeCadence, type CommitteePayoutMethod } from '../db';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
+import { localIso } from '../lib/localDate';
 
 interface Props {
   open: boolean;
@@ -30,10 +32,10 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
 
   const myName = localStorage.getItem('hisaab_user_name') || '';
   const [name, setName] = useState('');
-  const [currency, setCurrency] = useState<Currency>(() => (localStorage.getItem('hisaab_primary_currency') as Currency) || 'PKR');
+  const [currency, setCurrency] = useState<Currency>(() => getPrimaryCurrency());
   const [amount, setAmount] = useState('');
   const [cadence, setCadence] = useState<CommitteeCadence>('monthly');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(() => localIso(new Date()));
   const [method, setMethod] = useState<CommitteePayoutMethod>('fixed');
   // Row 0 is always the organizer (you); the rest are other members.
   const [organizerName, setOrganizerName] = useState(myName);
@@ -45,7 +47,7 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
 
   const reset = () => {
     setName(''); setAmount(''); setCadence('monthly'); setMethod('fixed');
-    setStartDate(new Date().toISOString().slice(0, 10));
+    setStartDate(localIso(new Date()));
     setOrganizerName(myName);
     setRows([{ name: '', phone: '' }, { name: '', phone: '' }]);
   };
@@ -140,7 +142,7 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
         </div>
 
         <div>
-          <label className="form-label">Currency</label>
+          <label className="form-label">{t('common_currency')}</label>
           <div className="grid grid-cols-4 gap-2">
             {SUPPORTED_CURRENCIES.map((c) => (
               <button key={c} type="button" onClick={() => setCurrency(c)}
@@ -198,7 +200,7 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
                   <input value={r.phone} onChange={(e) => updateRow(i, { phone: e.target.value })} placeholder={t('kameti_member_phone_ph')} inputMode="tel" className="w-28 bg-transparent outline-none text-[11px] text-ink-600 placeholder:text-ink-400 border-l border-cream-hairline pl-2" />
                 </div>
                 {rows.length > 1 && (
-                  <button type="button" onClick={() => removeRow(i)} className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-400 active:bg-cream-soft" aria-label="Remove">
+                  <button type="button" onClick={() => removeRow(i)} className="w-8 h-8 rounded-lg flex items-center justify-center text-ink-400 active:bg-cream-soft" aria-label={t('kameti_remove_member')}>
                     {rows.length > 2 ? <Trash2 size={14} /> : <X size={14} />}
                   </button>
                 )}

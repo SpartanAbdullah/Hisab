@@ -25,6 +25,7 @@
 // Synthesised lines are flagged `estimated` so renderers can add an honest note.
 
 import type { Currency, Loan, Transaction } from '../db';
+import { isZeroMoney, MONEY_TOLERANCE } from './moneyTolerance';
 
 export type StatementScope = 'contact' | 'loan';
 
@@ -58,7 +59,7 @@ export interface Statement {
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
-const isNonZero = (n: number): boolean => Math.abs(n) > 0.005;
+const isNonZero = (n: number): boolean => !isZeroMoney(n);
 
 // One event's signed effect on "what they owe you", given the direction of the
 // loan the transaction belongs to. Returns null for transaction types that
@@ -245,7 +246,7 @@ export function buildStatement(input: BuildStatementInput): Statement {
       // it the statement would overstate what's still owed.
       const paidDown = round2(loan.totalAmount - loan.remainingAmount);
       const unrecorded = round2(paidDown - recordedRepay);
-      if (unrecorded > 0.005) {
+      if (unrecorded > MONEY_TOLERANCE) {
         entries.push({
           date: loan.updatedAt ?? asOf,
           description: loan.type === 'given' ? 'Repayments received (summary)' : 'Repayments made (summary)',

@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChevronRight, TrendingUp, TrendingDown } from 'lucide-react';
@@ -13,20 +13,85 @@ import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { getPrimaryCurrency } from '../lib/primaryCurrency';
-import { groupByCategory, monthlyTrend, dailySpending, topExpenses } from '../lib/analytics';
+import {
+  dailySpending,
+  dailySpendingFromSeries,
+  endOfMonthExact,
+  groupByCategory,
+  groupByCategoryFromSummary,
+  monthlyTrend,
+  monthlyTrendFromSummary,
+  sumByCurrency,
+  sumByCurrencyFromSummary,
+  summaryCurrencies,
+  topExpenses,
+  topExpensesFromRows,
+  toTopExpenseRow,
+  totalFromSummary,
+  type DailySeriesRow,
+  type MonthlySummaryRow,
+  type TopExpenseRow,
+} from '../lib/analytics';
+import { analyticsDb } from '../lib/supabaseDb';
+import { reportError } from '../lib/errorReporter';
 import { parseInternalNote } from '../lib/internalNotes';
 import type { Currency, Transaction } from '../db';
 
+// Audit P2 M2 / 03-performance H3: this page used to sum the user's ENTIRE
+// transaction history in the browser, on every render pass.
+//
+// M2(c) moved the summary cards, the currency chips and the category pie into
+// `analytics_monthly_summary`. M2(d) — this pass — adds
+// `analytics_daily_series` and `analytics_top_expenses`
+// (supabase-migration-p2-analytics-aggregates-2.sql) and, because the monthly
+// trend's bucket-end bug is now fixed in TypeScript (`endOfMonthExact`), serves
+// the trend and the spend-trend card from the SAME monthly-summary RPC over
+// their own windows. With all of it answering, this page NO LONGER CALLS
+// `loadTransactions()` at all — the unbounded full-history fetch is gone from
+// the Analytics surface.
+//
+// OFF by default, and off means OFF: with the flag unset nothing here calls a
+// single RPC, the page loads transactions exactly as it always did, and every
+// figure comes from exactly the same expression as before.
+//
+// FAILS SOFT: if ANY of the five calls errors (unapplied migration → PGRST202,
+// offline, timeout), the failure is reported and the page falls back to
+// `loadTransactions()` + the client aggregation. A finance app must never
+// answer "how much did I spend" with a blank card because a request failed.
+const ANALYTICS_RPC_ENABLED = import.meta.env.VITE_ANALYTICS_RPC === 'true';
+
 type Period = 'this_month' | 'last_month' | '3months' | 'year';
 
-function getDateRange(period: Period): [Date, Date] {
-  const now = new Date();
+/** The top-expenses list length. One constant, both paths (and the RPC's p_limit). */
+const TOP_EXPENSE_LIMIT = 5;
+
+// `now` is passed in rather than read inside, so the period window, the
+// previous window and the trend buckets are all cut from ONE instant. Two
+// `new Date()` calls a millisecond apart across a midnight boundary would
+// otherwise put the cards and the chart in different months.
+function getDateRange(period: Period, now: Date): [Date, Date] {
   switch (period) {
     case 'this_month': return [new Date(now.getFullYear(), now.getMonth(), 1), now];
-    case 'last_month': return [new Date(now.getFullYear(), now.getMonth() - 1, 1), new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)];
+    // endOfMonthExact, not `new Date(y, m, 0, 23, 59, 59)`: the old form
+    // dropped the last 999 ms of the month — see src/lib/analytics.ts.
+    case 'last_month': return [new Date(now.getFullYear(), now.getMonth() - 1, 1), endOfMonthExact(now.getFullYear(), now.getMonth() - 1)];
     case '3months': return [new Date(now.getFullYear(), now.getMonth() - 2, 1), now];
     case 'year': return [new Date(now.getFullYear(), 0, 1), now];
   }
+}
+
+/** How many month buckets the trend chart shows for a period. */
+function trendMonthsFor(period: Period): number {
+  return period === 'year' ? 12 : period === '3months' ? 3 : 2;
+}
+
+/** The window covering every bucket `monthlyTrend` will walk, whole months. */
+function trendRange(period: Period, now: Date): [Date, Date] {
+  const months = trendMonthsFor(period);
+  return [
+    new Date(now.getFullYear(), now.getMonth() - (months - 1), 1),
+    endOfMonthExact(now.getFullYear(), now.getMonth()),
+  ];
 }
 
 function inRange(tx: Transaction, start: Date, end: Date) {
@@ -35,27 +100,21 @@ function inRange(tx: Transaction, start: Date, end: Date) {
 }
 
 // The comparable window immediately before the selected period — used for the
-// "vs previous period" spend trend.
-function previousRange(period: Period): [Date, Date] {
-  const now = new Date();
+// "vs previous period" spend trend. Every end is `endOfMonthExact` now: the old
+// `…, 0, 23, 59, 59` form silently excluded anything stamped in the final
+// 999 ms of the month from BOTH the period and its comparison.
+function previousRange(period: Period, now: Date): [Date, Date] {
   switch (period) {
-    case 'this_month': return [new Date(now.getFullYear(), now.getMonth() - 1, 1), new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)];
-    case 'last_month': return [new Date(now.getFullYear(), now.getMonth() - 2, 1), new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59)];
-    case '3months': return [new Date(now.getFullYear(), now.getMonth() - 5, 1), new Date(now.getFullYear(), now.getMonth() - 2, 0, 23, 59, 59)];
-    case 'year': return [new Date(now.getFullYear() - 1, 0, 1), new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59)];
+    case 'this_month': return [new Date(now.getFullYear(), now.getMonth() - 1, 1), endOfMonthExact(now.getFullYear(), now.getMonth() - 1)];
+    case 'last_month': return [new Date(now.getFullYear(), now.getMonth() - 2, 1), endOfMonthExact(now.getFullYear(), now.getMonth() - 2)];
+    case '3months': return [new Date(now.getFullYear(), now.getMonth() - 5, 1), endOfMonthExact(now.getFullYear(), now.getMonth() - 3)];
+    case 'year': return [new Date(now.getFullYear() - 1, 0, 1), endOfMonthExact(now.getFullYear() - 1, 11)];
   }
 }
 
-function sumByCurrency(transactions: Transaction[], type: 'expense' | 'income', start: Date, end: Date) {
-  const totals = new Map<Currency, number>();
-  transactions
-    .filter(tx => tx.type === type && inRange(tx, start, end))
-    .forEach(tx => totals.set(tx.currency, (totals.get(tx.currency) ?? 0) + tx.amount));
-
-  return Array.from(totals.entries())
-    .map(([currency, amount]) => ({ currency, amount }))
-    .sort((a, b) => b.amount - a.amount || a.currency.localeCompare(b.currency));
-}
+// `sumByCurrency` used to live here; it moved verbatim into src/lib/analytics.ts
+// so the RPC path (`sumByCurrencyFromSummary`) has something a unit test can be
+// proven equal to. Behaviour is unchanged — same filter, same sort.
 
 function MoneyLines({ totals, tone }: { totals: { currency: Currency; amount: number }[]; tone: 'expense' | 'income' }) {
   const color = tone === 'expense' ? 'text-pay-text' : 'text-receive-text';
@@ -75,8 +134,11 @@ function MoneyLines({ totals, tone }: { totals: { currency: Currency; amount: nu
   );
 }
 
-function getTransactionSubtitle(tx: Transaction) {
-  const parsedNote = parseInternalNote(tx.notes);
+// Takes the raw note rather than a Transaction, because the top-expenses list
+// is now fed by `TopExpenseRow` (six columns) on the RPC path and by a narrowed
+// Transaction on the client path — one renderer, one shape.
+function getTransactionSubtitle(notes: string) {
+  const parsedNote = parseInternalNote(notes);
   return parsedNote.visibleNote || parsedNote.meta.expenseDescription || '';
 }
 
@@ -84,8 +146,22 @@ export function AnalyticsPage() {
   const t = useT();
   const navigate = useNavigate();
   const { transactions, loadTransactions } = useTransactionStore();
+  // The client-side fallback aggregation is a "must be complete" consumer —
+  // see loadEverything below (docs/performance.md §7).
+  const ensureTransactionHistory = useTransactionStore((s) => s.ensureTransactionHistory);
   const { loadGroups } = useSplitStore();
-  const [period, setPeriod] = useState<Period>('this_month');
+  // The selected period AND the instant it was selected at, as ONE state value.
+  // Every window on the screen — the period, its previous comparable window and
+  // the trend buckets — is cut from that single instant, so the cards and the
+  // charts can never disagree about which month it is (a page left open across
+  // midnight used to be able to do exactly that).
+  const [{ period, now }, setPeriodState] = useState<{ period: Period; now: Date }>(
+    () => ({ period: 'this_month', now: new Date() }),
+  );
+  const setPeriod = useCallback(
+    (next: Period) => setPeriodState({ period: next, now: new Date() }),
+    [],
+  );
   const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
 
   // Audit UX-09: Analytics was the sole core page still firing a
@@ -94,25 +170,108 @@ export function AnalyticsPage() {
   // app) and it rendered the empty state on the very first frame, before the
   // store's Supabase fetch had returned. Same useAsyncLoad + skeleton +
   // PageErrorState contract as HomePage/TransactionsPage/AccountsPage.
-  const loadEverything = useCallback(async () => {
-    await Promise.all([loadTransactions(), loadGroups()]);
-  }, [loadTransactions, loadGroups]);
-  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(loadEverything);
-  const isInitialLoading = loadStatus === 'loading' && transactions.length === 0;
+  // ── SQL-side analytics (audit P2 M2) ─────────────────────────────────────
+  // `rpcFailed` is the fallback latch: once ANY of the five calls errors, this
+  // page behaves exactly as it did before M2 — it loads the full history and
+  // aggregates in the browser. `loadEverything`'s identity changes with it, so
+  // useAsyncLoad re-runs and actually fetches the rows the fallback needs.
+  const [rpcFailed, setRpcFailed] = useState(false);
+  const needsClientRows = !ANALYTICS_RPC_ENABLED || rpcFailed;
 
-  const [start, end] = useMemo(() => getDateRange(period), [period]);
+  const loadEverything = useCallback(async () => {
+    // Groups are loaded in both modes; the transaction rows only when the
+    // client aggregation is the one that will run.
+    //
+    // When it does run it must run on the COMPLETE history, not the store's
+    // default 12-month window: the period selector offers "this year" and "all
+    // time", and `monthlyTrend` walks six months back regardless of the
+    // selected period. A windowed store would render those as smaller numbers
+    // with no visible difference from real ones — the single worst failure mode
+    // a finance app has. `ensureTransactionHistory` is a no-op once coverage is
+    // complete, so this costs one walk per session, not one per period tap.
+    await Promise.all([
+      // `loadTransactions` first so the warm Dexie mirror still serves the
+      // rows; `ensureTransactionHistory` then resolves without a request
+      // whenever that load already proved completeness (every user under the
+      // 1000-row floor), and pages the rest in when it did not.
+      needsClientRows
+        ? loadTransactions().then(() => ensureTransactionHistory({ all: true }))
+        : Promise.resolve(),
+      loadGroups(),
+    ]);
+  }, [needsClientRows, loadTransactions, ensureTransactionHistory, loadGroups]);
+  const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(loadEverything);
+
+  const [start, end] = useMemo(() => getDateRange(period, now), [period, now]);
+
+  // The rows the RPC path holds. Null in four cases, each of which falls
+  // straight back to the client aggregation below: the flag is off, the calls
+  // have not resolved yet, they failed, or the period changed and the answer we
+  // hold belongs to the previous window. The window travels WITH the rows, so a
+  // period switch invalidates them by comparison rather than by an extra
+  // synchronous setState inside the effect (react-hooks/set-state-in-effect).
+  const windowKey = `${start.getTime()}:${end.getTime()}`;
+  const [rpcResult, setRpcResult] = useState<{
+    key: string;
+    /** The selected period — cards, chips, pie. */
+    summary: MonthlySummaryRow[];
+    /** The trend's own window (whole months back from now). */
+    trend: MonthlySummaryRow[];
+    /** The comparable previous window — the spend-trend card. */
+    previous: MonthlySummaryRow[];
+    daily: DailySeriesRow[];
+    top: TopExpenseRow[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!ANALYTICS_RPC_ENABLED || rpcFailed) return;
+    let cancelled = false;
+    const [trendStart, trendEnd] = trendRange(period, now);
+    const [prevStart, prevEnd] = previousRange(period, now);
+    // Five aggregate calls in parallel, each returning tens of rows, replacing
+    // a paged walk of the entire transactions table.
+    Promise.all([
+      analyticsDb.monthlySummary(start, end),
+      analyticsDb.monthlySummary(trendStart, trendEnd),
+      analyticsDb.monthlySummary(prevStart, prevEnd),
+      analyticsDb.dailySeries(start, end),
+      analyticsDb.topExpenses(start, end, TOP_EXPENSE_LIMIT),
+    ])
+      .then(([summary, trend, previous, daily, top]) => {
+        if (!cancelled) setRpcResult({ key: windowKey, summary, trend, previous, daily, top });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        reportError(err, { feature: 'AnalyticsPage.analyticsRpcs' });
+        // Latch the fallback: re-running the RPCs on every period change when
+        // the migration simply is not applied would be five failed requests a
+        // tap. One failure, one fallback, for the life of the screen.
+        setRpcFailed(true);
+        setRpcResult(null);
+      });
+    return () => { cancelled = true; };
+  }, [start, end, windowKey, period, now, rpcFailed]);
+
+  const rpc = rpcResult?.key === windowKey ? rpcResult : null;
+  const rpcRows = rpc?.summary ?? null;
+  // On the RPC path the skeleton is owned by the RPC's own in-flight state —
+  // `transactions` is deliberately empty and never arrives.
+  const isInitialLoading = needsClientRows
+    ? loadStatus === 'loading' && transactions.length === 0
+    : rpc === null && loadStatus !== 'error';
 
   const periodTransactions = useMemo(
     () => transactions.filter(tx => inRange(tx, start, end)),
     [transactions, start, end],
   );
   const currencies = useMemo(() => {
+    if (rpcRows) return summaryCurrencies(rpcRows);
     const activeCurrencies = new Set<Currency>();
     periodTransactions
       .filter(tx => tx.type === 'expense' || tx.type === 'income')
       .forEach(tx => activeCurrencies.add(tx.currency));
     return Array.from(activeCurrencies).sort();
-  }, [periodTransactions]);
+  }, [periodTransactions, rpcRows]);
   // UX-34: was the PKR-fallback outlier while ~19 other screens fell back to
   // AED. One helper, one fallback — see src/lib/primaryCurrency.ts.
   const primaryCurrency = getPrimaryCurrency();
@@ -131,22 +290,58 @@ export function AnalyticsPage() {
   const insightHref = (category: string) =>
     `/hisaab-ai/insight/${encodeURIComponent(category)}?from=${start.toISOString()}&to=${end.toISOString()}&cur=${chartCurrency}`;
 
-  const categories = useMemo(() => groupByCategory(chartTransactions, start, end), [chartTransactions, start, end]);
-  const trend = useMemo(() => monthlyTrend(chartTransactions, period === 'year' ? 12 : period === '3months' ? 3 : 2), [chartTransactions, period]);
-  const daily = useMemo(() => dailySpending(chartTransactions, start, end), [chartTransactions, start, end]);
-  const topExp = useMemo(() => topExpenses(chartTransactions, start, end), [chartTransactions, start, end]);
+  const categories = useMemo(
+    () => (rpcRows
+      ? groupByCategoryFromSummary(rpcRows, chartCurrency)
+      : groupByCategory(chartTransactions, start, end)),
+    [rpcRows, chartCurrency, chartTransactions, start, end],
+  );
+  const trend = useMemo(
+    () => (rpc
+      ? monthlyTrendFromSummary(rpc.trend, chartCurrency, trendMonthsFor(period), now)
+      : monthlyTrend(chartTransactions, trendMonthsFor(period), now)),
+    [rpc, chartCurrency, chartTransactions, period, now],
+  );
+  const daily = useMemo(
+    () => (rpc
+      ? dailySpendingFromSeries(rpc.daily, chartCurrency, start, end)
+      : dailySpending(chartTransactions, start, end)),
+    [rpc, chartCurrency, chartTransactions, start, end],
+  );
+  const topExp = useMemo(
+    () => (rpc
+      ? topExpensesFromRows(rpc.top, chartCurrency, TOP_EXPENSE_LIMIT)
+      : topExpenses(chartTransactions, start, end, TOP_EXPENSE_LIMIT).map(toTopExpenseRow)),
+    [rpc, chartCurrency, chartTransactions, start, end],
+  );
 
   // Spend trend vs the previous comparable window, in the chart currency.
   const spendCompare = useMemo(() => {
-    const [pStart, pEnd] = previousRange(period);
-    const cur = chartTransactions.filter((tx) => tx.type === 'expense' && inRange(tx, start, end)).reduce((s, tx) => s + tx.amount, 0);
-    const prev = chartTransactions.filter((tx) => tx.type === 'expense' && inRange(tx, pStart, pEnd)).reduce((s, tx) => s + tx.amount, 0);
+    const cur = rpc
+      ? totalFromSummary(rpc.summary, 'expense', chartCurrency)
+      : chartTransactions.filter((tx) => tx.type === 'expense' && inRange(tx, start, end)).reduce((s, tx) => s + tx.amount, 0);
+    const prev = rpc
+      ? totalFromSummary(rpc.previous, 'expense', chartCurrency)
+      : (() => {
+          const [pStart, pEnd] = previousRange(period, now);
+          return chartTransactions.filter((tx) => tx.type === 'expense' && inRange(tx, pStart, pEnd)).reduce((s, tx) => s + tx.amount, 0);
+        })();
     if (prev <= 0) return null;
     return { pct: Math.round(((cur - prev) / prev) * 100) };
-  }, [chartTransactions, period, start, end]);
+  }, [rpc, chartCurrency, chartTransactions, period, start, end, now]);
 
-  const spentByCurrency = useMemo(() => sumByCurrency(transactions, 'expense', start, end), [transactions, start, end]);
-  const incomeByCurrency = useMemo(() => sumByCurrency(transactions, 'income', start, end), [transactions, start, end]);
+  const spentByCurrency = useMemo(
+    () => (rpcRows
+      ? sumByCurrencyFromSummary(rpcRows, 'expense')
+      : sumByCurrency(transactions, 'expense', start, end)),
+    [rpcRows, transactions, start, end],
+  );
+  const incomeByCurrency = useMemo(
+    () => (rpcRows
+      ? sumByCurrencyFromSummary(rpcRows, 'income')
+      : sumByCurrency(transactions, 'income', start, end)),
+    [rpcRows, transactions, start, end],
+  );
   const hasAnyData = spentByCurrency.length > 0 || incomeByCurrency.length > 0;
 
   // Net = income − spent, kept per-currency (never summed across currencies).
@@ -381,7 +576,7 @@ export function AnalyticsPage() {
               </div>
               <div className="rounded-2xl bg-cream-card border border-cream-border divide-y divide-cream-hairline">
                 {topExp.map(tx => {
-                  const subtitle = getTransactionSubtitle(tx);
+                  const subtitle = getTransactionSubtitle(tx.notes);
                   const cat = tx.category || 'Other';
                   return (
                     <button

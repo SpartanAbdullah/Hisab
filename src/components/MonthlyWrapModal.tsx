@@ -1,61 +1,46 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Sparkles, Share2 } from 'lucide-react';
 import { Modal } from './Modal';
-import { useTransactionStore } from '../stores/transactionStore';
-import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
-import {
-  computeMonthlyWrap,
-  shouldShowMonthlyWrap,
-  markWrapShown,
-  type WrapStats,
-} from '../lib/monthlyWrap';
+import { markWrapShown, type WrapStats } from '../lib/monthlyWrap';
 import { formatMoney } from '../lib/constants';
 import { generateWrapCard } from '../lib/wrapCard';
 import { shareStatementFile } from '../lib/shareStatement';
-import type { Currency } from '../db';
 import { useT } from '../lib/i18n';
 
-// Spotify-Wrapped-style end-of-month summary. Triggers on app boot:
-// - we're at least 24h into a new month
-// - we haven't already shown this month's wrap
-// - there are >= 3 transactions in the prior month in the user's primary currency
+interface Props {
+  /** The already-computed wrap. Non-null: mounting this component means "show it". */
+  stats: WrapStats;
+  /** Lets the gate that mounted this unmount it again after dismissal. */
+  onClose?: () => void;
+}
+
+// Spotify-Wrapped-style end-of-month summary.
 //
-// All the cleverness is in monthlyWrap.ts; this component is the surface.
-export function MonthlyWrapModal() {
+// Audit 03-performance H1 / P2 M2c: this component is LAZY now. It reaches
+// wrapCard.ts → renderNodeToImage.ts → jspdf + modern-screenshot, so while it
+// was statically imported by src/App.tsx that whole image/PDF stack sat in the
+// eager import graph of every cold boot (see docs/performance.md §3).
+//
+// The trigger — "at least into a new month, not shown yet, >= 3 transactions in
+// the prior month in the primary currency" — therefore runs in the gate in
+// src/App.tsx, which dynamic-imports the (tiny, pure) monthlyWrap.ts, and only
+// mounts this component once it has real stats to render.
+export function MonthlyWrapModal({ stats, onClose }: Props) {
   const t = useT();
-  const transactions = useTransactionStore((s) => s.transactions);
-  const user = useSupabaseAuthStore((s) => s.user);
-  const [open, setOpen] = useState(false);
-  const [stats, setStats] = useState<WrapStats | null>(null);
+  const [open, setOpen] = useState(true);
   const [includeTotals, setIncludeTotals] = useState(false);
   const [sharing, setSharing] = useState(false);
 
-  useEffect(() => {
-    if (!user?.id || transactions.length === 0) return;
-    const primaryCurrency =
-      (localStorage.getItem('hisaab_primary_currency') as Currency) ?? 'AED';
-    const computed = computeMonthlyWrap(transactions, primaryCurrency);
-    if (!shouldShowMonthlyWrap(computed)) return;
-    // Intentional: one-shot computation + scheduled open at mount. Deriving
-    // `stats` in render would recompute on every transaction change and is
-    // gated by `shouldShowMonthlyWrap`, so it's bounded but wasteful.
-    setStats(computed);
-    // Small delay so the wrap doesn't fight with auth/onboarding paint.
-    const timer = setTimeout(() => setOpen(true), 1200);
-    return () => clearTimeout(timer);
-    // `transactions` deliberately omitted — we only check at mount/auth.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, transactions.length]);
-
   const handleClose = () => {
     setOpen(false);
-    if (stats) markWrapShown(stats.monthKey);
+    markWrapShown(stats.monthKey);
+    onClose?.();
   };
 
   // Share the Wrapped as a portrait IMAGE card (WhatsApp Status shaped) so it
   // reaches non-users. Exact totals only ride along when the user opts in.
   const handleShare = async () => {
-    if (!stats || sharing) return;
+    if (sharing) return;
     setSharing(true);
     try {
       const { blob, filename } = await generateWrapCard(stats, { showTotals: includeTotals });
@@ -71,8 +56,6 @@ export function MonthlyWrapModal() {
       setSharing(false);
     }
   };
-
-  if (!stats) return null;
 
   const trendArrow = stats.spendChangePercent == null
     ? ''

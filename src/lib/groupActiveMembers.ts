@@ -1,3 +1,4 @@
+import { tStatic } from './i18n';
 import type { GroupExpense, GroupMember, SplitDetail, SplitGroup } from '../db';
 
 export const INACTIVE_GROUP_MEMBER_MESSAGE =
@@ -56,7 +57,13 @@ export function friendlyGroupParticipantError(error: unknown): string {
       ? String(error.message)
       : String(error ?? '');
   if (/not_enough_active_group_members/i.test(message)) return NEED_TWO_ACTIVE_MEMBERS_MESSAGE;
-  return /inactive_group_member|not an active connected member/i.test(message)
-    ? INACTIVE_GROUP_MEMBER_MESSAGE
-    : message;
+  if (/inactive_group_member|not an active connected member/i.test(message)) {
+    return INACTIVE_GROUP_MEMBER_MESSAGE;
+  }
+  // Server trigger mirrors (supabase-migration-p1-money-bounds.sql): raw
+  // `RAISE EXCEPTION 'CODE: detail'` text on a group expense/split write.
+  if (/GROUP_SPLITS_DO_NOT_SUM/.test(message)) return tStatic('grp_err_splits_mismatch');
+  if (/INVALID_GROUP_SPLIT_AMOUNT/.test(message)) return tStatic('grp_err_invalid_split_amount');
+  if (/INVALID_GROUP_SPLIT_MEMBER/.test(message)) return tStatic('grp_err_invalid_split_member');
+  return message;
 }

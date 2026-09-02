@@ -10,16 +10,35 @@ import { brandIconFor } from '../lib/brandIcon';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 import { useT } from '../lib/i18n';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
+import { useLoanStore } from '../stores/loanStore';
+import { track } from '../lib/telemetry';
+import { bucketAmount } from '../lib/telemetryEvents';
 import type { RecurringTransaction } from '../db';
 import type { RecurringDueDetail } from '../lib/recurringRunner';
+
+interface Props {
+  /**
+   * Templates the gate in src/App.tsx already captured from the FIRST
+   * `hisaab:recurring-due` event. That event is what causes this component to
+   * be mounted at all, so without seeding it would be missed: the lazy chunk
+   * only finishes loading (and this component only starts listening) a tick or
+   * two after the event has already been dispatched and gone.
+   */
+  initialTemplates?: RecurringTransaction[];
+}
 
 // Listens for the `hisaab:recurring-due` event fired by recurringRunner.
 // Walks due templates one at a time, prompting the user to confirm, skip,
 // or pause. Confirmation materialises a real Transaction via the existing
 // transactionStore.processTransaction pipeline so balance math + activity
 // log stay consistent — recurring entries are not a parallel ledger.
-export function RecurringDuePrompt() {
-  const [queue, setQueue] = useState<RecurringTransaction[]>([]);
+//
+// Audit 03-performance H1 / P2 M2c: lazy-mounted. It is only rendered once the
+// gate has seen a due event, so on the overwhelming majority of boots (no
+// recurring template is due) neither this component nor the Modal/brandIcon/
+// submit-guard code it pulls is fetched at all.
+export function RecurringDuePrompt({ initialTemplates }: Props = {}) {
+  const [queue, setQueue] = useState<RecurringTransaction[]>(() => initialTemplates ?? []);
   const advanceTemplate = useRecurringStore((s) => s.advanceTemplate);
   const updateTemplate = useRecurringStore((s) => s.updateTemplate);
   const processTransaction = useTransactionStore((s) => s.processTransaction);
@@ -88,6 +107,11 @@ export function RecurringDuePrompt() {
       // late confirm must not misfile last month's rent into this month's
       // budget, and delete+recreate can't fix the date afterwards.
       const createdAt = new Date(`${current.nextDueDate}T12:00:00`).toISOString();
+      // Read BEFORE the write — after it, the stores are never empty again.
+      // Recurring templates only exist in full-tracker (App.tsx skips their
+      // load in splits_only), so mode is always 'full_tracker' here.
+      const isFirstEver =
+        useTransactionStore.getState().transactions.length === 0 && useLoanStore.getState().loans.length === 0;
 
       if (current.type === 'income' && current.destinationAccountId) {
         await processTransaction({
@@ -124,6 +148,17 @@ export function RecurringDuePrompt() {
       } else {
         throw new Error('Template is missing the account references needed to post.');
       }
+
+      // Catalog #9 (source=recurring). Fires only once processTransaction has
+      // actually committed — a throw above skips this line entirely.
+      track('entry_created', {
+        entry_type: current.type,
+        source: 'recurring',
+        is_first_ever: isFirstEver,
+        mode: 'full_tracker',
+        currency: current.currency,
+        amount_bucket: bucketAmount(current.amount),
+      });
 
       // The money has moved — from here on this entry IS posted, whatever
       // happens to the due-date advance. Never tell the user it failed.

@@ -73,6 +73,22 @@ export interface MirrorSyncState {
   // full-table re-download — audit 03-performance H2). Not indexed, so no Dexie
   // version bump is needed; older rows simply read as undefined.
   dirtyAt?: string | null;
+  // ── The persisted history-coverage floor (docs/performance.md §7.1) ──────
+  // What the mirror PROVES it holds, surviving a restart. Read together, and
+  // read ONLY when the cursors above say an incremental sync is what runs next
+  // (`persistedCoverageIsTrustworthy` in src/lib/mirrorSyncPolicy.ts):
+  //
+  //   coverageComplete: true            → the mirror holds the whole table
+  //   coverageSince: ISO, !complete     → it holds every row created at/after it
+  //   both absent/null                  → nothing is proven (the safe default)
+  //
+  // Cleared by every event that can remove rows below the floor — a truncated
+  // fetch, a clear-and-replace, an in-window reconcile that pruned rows — and
+  // by the mirror wipe itself (the whole per-user Dexie database is deleted at
+  // sign-out, so these go with it). Also not indexed: no version bump, and a
+  // row written before this shipped simply reads as "nothing proven".
+  coverageSince?: string | null;
+  coverageComplete?: boolean;
 }
 
 export class HisaabDatabase extends Dexie {

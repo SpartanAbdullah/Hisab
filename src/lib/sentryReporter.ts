@@ -47,13 +47,6 @@ import type { ErrorContext, ErrorReporter } from './errorReporter';
 // tag, the fingerprint and the DSN-absent console fallback all survive.
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Is a DSN configured at all? Checked by the caller BEFORE this module is
- *  even fetched, so a build with no DSN never downloads the SDK chunk. */
-export function hasSentryDsn(): boolean {
-  const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
-  return typeof dsn === 'string' && dsn.length > 0;
-}
-
 // Fetch + initialise Sentry from VITE_SENTRY_DSN. Called once from main.tsx
 // AFTER first paint (requestIdleCallback), never during module evaluation.
 // Resolves to the reporter to hand to resolveDeferredReporter(), or null if
@@ -62,13 +55,30 @@ export function hasSentryDsn(): boolean {
 // Everything reported between boot and this promise resolving is buffered by
 // errorReporter's pending queue and replayed here — see the deferred-reporter
 // block in errorReporter.ts.
+//
+// NOTE: main.tsx checks the DSN ITSELF before importing this module — that is
+// deliberate and load-bearing. `import.meta.env.VITE_SENTRY_DSN` is replaced
+// at build time, so a DSN-less build turns that check into `if (false)` and
+// the bundler never even reaches the `import()`. A `hasSentryDsn()` helper
+// exported from here could not do that: calling it would require fetching the
+// very chunk we are trying not to fetch. The check below is the second belt,
+// for a runtime where the value is somehow empty anyway.
 export async function loadSentryReporter(): Promise<ErrorReporter | null> {
   const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
   if (!dsn || dsn.length === 0) return null;
 
-  const Sentry = await import('@sentry/browser');
+  // Destructured, NOT `const Sentry = await import(...)`. A namespace binding
+  // forces the bundler to keep every export of the SDK alive (measured: 431 kB
+  // raw in the lazy chunk); naming the four functions we use lets it tree-shake
+  // the rest away exactly as the old static import did.
+  const {
+    init,
+    withScope,
+    captureException: sentryCaptureException,
+    captureMessage: sentryCaptureMessage,
+  } = await import('@sentry/browser');
 
-  Sentry.init({
+  init({
     dsn,
     environment: import.meta.env.MODE,
     // Sample everything in dev, 10% in prod. Adjust once you've calibrated
@@ -107,15 +117,15 @@ export async function loadSentryReporter(): Promise<ErrorReporter | null> {
 
   return {
     captureException(error, context) {
-      Sentry.withScope((scope) => {
+      withScope((scope) => {
         applyContext(scope, context, 'error');
-        Sentry.captureException(error);
+        sentryCaptureException(error);
       });
     },
     captureMessage(message, context) {
-      Sentry.withScope((scope) => {
+      withScope((scope) => {
         applyContext(scope, context, 'info');
-        Sentry.captureMessage(message, context?.level ?? 'info');
+        sentryCaptureMessage(message, context?.level ?? 'info');
       });
     },
   };

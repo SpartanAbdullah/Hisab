@@ -23,7 +23,7 @@ import { unrealizedPnl, marketValue } from '../lib/investmentMath';
 import { marketColorFor } from '../lib/marketColors';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
-import type { Currency } from '../db';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -58,7 +58,7 @@ export function InvestmentsPage() {
   const { status, error, retry } = useAsyncLoad(load);
 
   const scopedMarket = scopedMarketId ? markets.find((m) => m.id === scopedMarketId) ?? null : null;
-  const primaryCurrency = (localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED';
+  const primaryCurrency = getPrimaryCurrency();
 
   const totals = useMemo(() => {
     const scoped = scopedMarket ? markets.filter((m) => m.id === scopedMarket.id) : markets;

@@ -254,7 +254,7 @@ export function AuthPage() {
   const inputBad = 'border-pay-600/70 focus:ring-pay-600/40 focus:border-pay-600/70';
 
   return (
-    <div className="min-h-dvh relative overflow-hidden bg-navy-bloom">
+    <main className="min-h-dvh relative overflow-hidden bg-navy-bloom" aria-labelledby="auth-heading">
       {/* Navy + bloom backdrop matches Onboarding so the auth → onboard flow
           reads as one continuous Sukoon surface. */}
 
@@ -272,7 +272,7 @@ export function AuthPage() {
           <div className="w-20 h-20 rounded-3xl bg-receive-600/25 flex items-center justify-center mb-6 backdrop-blur-sm border border-receive-600/30 animate-bounce-in">
             <MailCheck size={36} className="text-receive-50" strokeWidth={1.5} />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight mb-3">{t('verify_title')}</h1>
+          <h1 id="auth-heading" className="text-2xl font-bold tracking-tight mb-3">{t('verify_title')}</h1>
           <p className="text-white/60 text-[13px] leading-relaxed max-w-[300px]">{t('verify_body')}</p>
           <p className="text-white text-[14px] font-semibold mt-1.5 break-all max-w-[300px]">{sentEmail}</p>
           <p className="text-white/45 text-[12px] leading-relaxed max-w-[290px] mt-4">{t('verify_instruction')}</p>
@@ -301,7 +301,7 @@ export function AuthPage() {
           <div className="w-16 h-16 rounded-[17px] mb-4 shadow-lg shadow-black/30">
             <BrandMark size={64} />
           </div>
-          <h1 className="text-3xl font-bold tracking-tighter">Hisaab</h1>
+          <h1 id="auth-heading" className="text-3xl font-bold tracking-tighter">{t('auth_brand_name')}</h1>
           {/* Rotating colored feature word — teaches "what does this app do?" in
               the first few seconds, and pre-cues the violet action color. */}
           <RotatingHeadline />
@@ -324,11 +324,11 @@ export function AuthPage() {
           <div className="flex bg-white/8 rounded-2xl p-1 mb-6 border border-white/10">
             <button onClick={() => switchMode('login')}
               className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold transition-all ${mode === 'login' ? 'bg-white text-navy-900 shadow-md' : 'text-white/60'}`}>
-              Login
+              {t('auth_tab_login')}
             </button>
             <button onClick={() => switchMode('signup')}
               className={`flex-1 py-2.5 rounded-xl text-[12px] font-bold transition-all ${mode === 'signup' ? 'bg-white text-navy-900 shadow-md' : 'text-white/60'}`}>
-              Sign Up
+              {t('auth_tab_signup')}
             </button>
           </div>
         )}
@@ -395,6 +395,7 @@ export function AuthPage() {
                   onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
                 <label htmlFor="auth-password" className="auth-float-label">{t('auth_label_password')}</label>
                 <button type="button" tabIndex={-1} onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? t('auth_hide_password') : t('auth_show_password')}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -481,17 +482,17 @@ export function AuthPage() {
           ) : mode === 'login' ? (
             <>
               {t('auth_no_account')}{' '}
-              <button onClick={() => switchMode('signup')} className="text-white/60 font-semibold underline">Sign Up</button>
+              <button onClick={() => switchMode('signup')} className="text-white/60 font-semibold underline">{t('auth_tab_signup')}</button>
             </>
           ) : (
             <>
               {t('auth_have_account')}{' '}
-              <button onClick={() => switchMode('login')} className="text-white/60 font-semibold underline">Login</button>
+              <button onClick={() => switchMode('login')} className="text-white/60 font-semibold underline">{t('auth_tab_login')}</button>
             </>
           )}
         </p>
       </div>
       )}
-    </div>
+    </main>
   );
 }

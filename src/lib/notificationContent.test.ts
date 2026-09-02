@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  notificationChannel,
+  notificationCollapseKey,
   notificationHref,
   readAmount,
   renderNotificationContent,
@@ -150,6 +152,9 @@ describe('renderNotificationContent — templated rendering', () => {
       'expense_deleted', 'settlement_added', 'settlement_deleted',
       // notify_group_archive_state (group-deletion-guard.sql §6a).
       'group_archived', 'group_unarchived',
+      // M5 event gaps (p2-notification-maturity.sql §4 and §6, audit N-11).
+      'member_left',
+      'kameti_draw_completed', 'kameti_round_due', 'kameti_payout_due',
     ];
     for (const template of templates) {
       for (const translate of [en, ur]) {
@@ -159,6 +164,7 @@ describe('renderNotificationContent — templated rendering', () => {
             params: {
               actorName: 'Ali', groupName: 'Flat 12', description: 'Groceries',
               amount: 100, currency: 'AED', fromName: 'Ali', toName: 'Sara',
+              committeeName: 'Office Kameti', memberName: 'Sara', round: 2, slot: 3,
             },
           },
           translate,
@@ -194,5 +200,80 @@ describe('notificationHref', () => {
   it('sends a group invitation to the groups list, never to the hidden group', () => {
     expect(notificationHref({ type: 'invite', groupId: 'g1' })).toBe('/groups');
     expect(notificationHref({ type: 'invite', groupId: null })).toBe('/groups');
+  });
+});
+
+// ── M5: the client half of the routing metadata the server now stamps ───────
+// Each of these mirrors a SQL helper in
+// supabase-migration-p2-notification-maturity.sql §3. Divergence between the
+// two is invisible in production — the push and the in-app tap would just
+// quietly disagree about where a notification goes — so they are pinned here.
+describe('notificationHref — server-stamped href (audit N-8)', () => {
+  it('prefers the href the server computed', () => {
+    expect(notificationHref({ type: 'group_update', groupId: 'g1', href: '/group/g9' }))
+      .toBe('/group/g9');
+  });
+  it('falls back to the type/group rules for a pre-migration row', () => {
+    expect(notificationHref({ type: 'group_update', groupId: 'g1', href: null }))
+      .toBe('/group/g1');
+  });
+  it('refuses an href that is not an in-app absolute path', () => {
+    // navigate() gets this value; a full URL or a protocol-relative path would
+    // be an open redirect handed to us by whatever wrote the row.
+    expect(notificationHref({ type: 'linked_request', href: 'https://evil.example' })).toBe('/inbox');
+    expect(notificationHref({ type: 'linked_request', href: '//evil.example' })).toBe('/inbox');
+    expect(notificationHref({ type: 'linked_request', href: 'javascript:alert(1)' })).toBe('/inbox');
+  });
+  it('deep-links a kameti notification to its committee', () => {
+    expect(notificationHref({ type: 'kameti', params: { committeeId: 'K1' } })).toBe('/kameti/K1');
+  });
+  it('sends a kameti row with no committee id to the inbox rather than /kameti/undefined', () => {
+    expect(notificationHref({ type: 'kameti', params: {} })).toBe('/inbox');
+  });
+});
+
+describe('notificationChannel (audit N-10)', () => {
+  it('routes actionable money to its own channel', () => {
+    expect(notificationChannel({ type: 'linked_request' })).toBe('money');
+    expect(notificationChannel({ type: 'linked_settlement' })).toBe('money');
+  });
+  it('routes group traffic and everything unknown to the group channel', () => {
+    expect(notificationChannel({ type: 'group_update', template: 'expense_added' })).toBe('groups');
+    expect(notificationChannel({ type: 'contact_linked' })).toBe('groups');
+    expect(notificationChannel({ type: 'system' })).toBe('groups');
+  });
+  it('routes kameti by type or by template prefix', () => {
+    expect(notificationChannel({ type: 'kameti' })).toBe('kameti');
+    expect(notificationChannel({ type: 'system', template: 'kameti_round_due' })).toBe('kameti');
+  });
+  it('prefers the stored channel, but only when this build knows it', () => {
+    expect(notificationChannel({ type: 'group_update', channelId: 'money' })).toBe('money');
+    // An unregistered channel makes Android drop the notification silently —
+    // an unknown value must fall back, never pass through.
+    expect(notificationChannel({ type: 'group_update', channelId: 'wormhole' })).toBe('groups');
+  });
+});
+
+describe('notificationCollapseKey (audit N-10)', () => {
+  it('collapses group traffic per (group, template) so a trip is one entry', () => {
+    const key = (id: string) => notificationCollapseKey({
+      id, type: 'group_update', groupId: 'g1', template: 'expense_added',
+    });
+    expect(key('n1')).toBe('group:g1:expense_added');
+    expect(key('n2')).toBe(key('n1'));
+  });
+  it('does NOT collapse two different money requests together', () => {
+    const a = notificationCollapseKey({ id: 'n1', type: 'linked_request' });
+    const b = notificationCollapseKey({ id: 'n2', type: 'linked_request' });
+    expect(a).not.toBe(b);
+  });
+  it('keys kameti traffic per (committee, template)', () => {
+    expect(notificationCollapseKey({
+      id: 'n1', type: 'kameti', template: 'kameti_round_due', params: { committeeId: 'K1' },
+    })).toBe('kameti:K1:kameti_round_due');
+  });
+  it('prefers the server-stamped key', () => {
+    expect(notificationCollapseKey({ id: 'n1', type: 'group_update', collapseKey: 'x:y' }))
+      .toBe('x:y');
   });
 });

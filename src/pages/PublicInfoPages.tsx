@@ -63,7 +63,7 @@ function PublicInfoLayout({
           <h1 className="mt-8 text-[28px] font-semibold leading-tight">{title}</h1>
           <p className="mt-2 max-w-xl text-[13px] leading-6 text-white/65">{intro}</p>
           {title !== 'Contact & Support' && (
-            <p className="mt-4 text-[11px] text-white/45">Last updated: {LAST_UPDATED}</p>
+            <p className="mt-4 text-[11px] text-white/60">Last updated: {LAST_UPDATED}</p>
           )}
         </div>
       </header>

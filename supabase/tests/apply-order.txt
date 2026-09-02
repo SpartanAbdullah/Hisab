@@ -85,7 +85,6 @@ supabase-migration-p1-app-config.sql
 supabase-migration-p1-profile-lang.sql
 supabase-migration-p1-group-preview.sql
 supabase-migration-p1-money-bounds.sql
-supabase-migration-p1-profile-lang.sql
 
 # ── P2 batch. Its own header: "Apply LAST — after every audit-p0 file and
 #    after every supabase-migration-p1-*.sql", because it CREATE-OR-REPLACEs
@@ -98,7 +97,42 @@ supabase-migration-p2-notification-maturity.sql
 supabase-migration-p3-khata-link.sql
 # ↓ flag-gated, safe ahead of the client; needs prelaunch-hardening + p1-money-bounds
 supabase-migration-p3-atomic-transfer.sql
+# ↓ flag-gated; needs loan-concurrency + p1-money-bounds + p3-atomic-transfer's conventions
+supabase-migration-p3-atomic-repayment.sql
+# ↓ flag-gated; L4 step 3 (loan creation). Needs prelaunch-hardening +
+#   p1-money-bounds; copies steps 1-2's error contract, so it goes after them.
+supabase-migration-p3-atomic-loan-create.sql
+# ↓ flag-gated; L4 step 4 (goal contributions + the whole credit-card story).
+#   Needs prelaunch-hardening + loan-concurrency + goal-target-date +
+#   p1-money-bounds; copies steps 1-3's error contract, so it goes after them.
+supabase-migration-p3-atomic-goal-and-card.sql
+# ↓ flag-gated; L4 step 5 (investment trades + the four single-leg branches, and
+#   the goal compensation's own CAS). Needs prelaunch-hardening, investments
+#   (investment_markets / investment_trades / transactions.related_investment_id)
+#   and p1-money-bounds; copies steps 1-4's error contract and warns if step 4's
+#   contribute_to_goal is absent, so it goes after them.
+supabase-migration-p3-atomic-investments-and-single-leg.sql
+# ↓ flag-gated (VITE_ANALYTICS_RPC), safe ahead; needs p1-money-bounds + performance-indexes
+supabase-migration-p2-analytics-aggregates.sql
+# ↓ M2(d): the daily-series + top-expenses RPCs. Same flag, same prerequisites;
+#   must come directly AFTER its sibling (its §1 warns if the summary is absent).
+supabase-migration-p2-analytics-aggregates-2.sql
+# ↓ G6/O4 guest members. Needs audit-p0 group-ledger-integrity / group-concurrency
+#   / account-deletion / group-deletion-guard / consent-guards, p1-money-bounds,
+#   and p2-trust-safety (it CREATE-OR-REPLACEs that file's join_group_by_code).
+supabase-migration-p2-guest-members.sql
 # ↓ order-independent (new objects only); its header says LAST-ish
 supabase-migration-p2-realtime-broadcast.sql
+# ↓ needs p2-trust-safety (witness guard), audit-p0-kameti-draw (draw triggers)
+#   and p2-notification-maturity (committee_round_date). Adds a THIRD committees
+#   BEFORE trigger that composes with the other two.
+supabase-migration-p2-kameti-editing.sql
+# ↓ G5/O10 per-record edit history. Creates only new objects (record_edits +
+#   four AFTER triggers) and CREATE-OR-REPLACEs nothing anybody else owns, so
+#   it is order-independent; it sits here because it READS is_group_member
+#   (audit-p0-consent-guards) and the deleted_at columns
+#   (incremental-sync-tombstones), and because a new file's safe default is
+#   late.
+supabase-migration-p2-edit-history.sql
 # ↓ LAST — reconciliation reads every table above
 supabase-migration-p3-invariant-monitoring.sql

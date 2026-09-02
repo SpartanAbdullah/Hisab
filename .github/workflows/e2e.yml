@@ -1,0 +1,85 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: UTC
+      # Same dummy-value pattern as ci.yml's "Production build" step: the
+      # build never contacts Supabase at compile time, so a placeholder is
+      # fine when the real secrets aren't configured on this repo yet. If
+      # VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY ARE set as repo secrets,
+      # they should point at the hisaab-staging project (see
+      # docs/staging-environment.md) — NEVER production.
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://example.supabase.co' }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'ci-dummy-anon-key' }}
+      VITE_PUBLIC_APP_URL: 'https://example.com'
+      # A pre-verified hisaab-staging account (docs/staging-environment.md).
+      # Unset in this repo today — every authenticated spec self-skips with a
+      # clear reason when these are empty (see docs/testing-the-trust-
+      # boundary.md's "E2E smoke" section), so the job still runs the
+      # public-page + auth-page specs green without them.
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      # Second staging account, for the cross-user request spec only. Also
+      # optional — that one spec skips without it even when E2E_EMAIL/
+      # E2E_PASSWORD are set.
+      E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
+      E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
+      # Point the suite at this job's own `vite preview` server (started by
+      # Playwright itself via E2E_WEB_SERVER_CMD below) instead of `npm run
+      # dev` — exercises the real production build, same as what ships.
+      E2E_BASE_URL: 'http://localhost:4173'
+      E2E_WEB_SERVER_CMD: 'npx vite preview --port 4173 --strictPort'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Production build
+        run: npm run build
+
+      # Bundle-size budget (docs/performance.md, scripts/check-bundle-size.mjs)
+      # — wired in here rather than ci.yml (owned by another workstream) so the
+      # budget is enforced somewhere in CI. Runs against the same dist/ the E2E
+      # job below serves via `vite preview`.
+      - name: Bundle size budget
+        run: npm run check:bundle
+
+      # e2e/a11y.spec.ts (axe-core) — public info pages + the signed-out auth
+      # gate only, so unlike most of the suite it needs no E2E_EMAIL/
+      # E2E_PASSWORD secrets (same "public pages only" scope as
+      # e2e/public-pages.spec.ts). Run as its own labelled step so a11y
+      # regressions are easy to spot in the job summary; "E2E smoke suite"
+      # below re-runs it too (it's in testDir), which is fine — it's a fast,
+      # session-less spec.
+      - name: Accessibility scan (axe)
+        run: npx playwright test e2e/a11y.spec.ts
+
+      - name: E2E smoke suite
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

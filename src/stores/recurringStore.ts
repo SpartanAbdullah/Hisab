@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { recurringTransactionsDb } from '../lib/supabaseDb';
 import { validateRecurringStart } from '../lib/recurringStartValidation';
 import { reportError } from '../lib/errorReporter';
+import { localIso } from '../lib/localDate';
 import type { RecurringTransaction, RecurringCadence, Currency } from '../db';
 
 interface CreateInput {
@@ -51,7 +52,7 @@ export const useRecurringStore = create<RecurringState>((set, get) => ({
     // Server-of-last-resort: refuse an absurd start date (years off = a typo)
     // before it materialises retroactive entries. The modal handles the softer
     // "this is in the past" warning.
-    const startCheck = validateRecurringStart(input.nextDueDate, new Date().toISOString().slice(0, 10));
+    const startCheck = validateRecurringStart(input.nextDueDate, localIso(new Date()));
     if (!startCheck.ok && startCheck.severity === 'block') {
       throw new Error(startCheck.reason ?? 'Pick a valid start date.');
     }

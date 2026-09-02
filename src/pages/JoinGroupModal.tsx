@@ -228,7 +228,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
       : 'Invite link'
     : '';
 
-  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all";
+  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all";
 
   return (
     <Modal
@@ -253,7 +253,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
               <button
                 onClick={handleJoin}
                 disabled={loading}
-                className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 min-h-[44px]"
+                className="w-full bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-accent-600/20 min-h-[44px]"
               >
                 <Link2 size={16} />
                 {loading ? t('join_modal_joining') : t('join_confirm_cta')}
@@ -263,7 +263,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
             <button
               onClick={handleFind}
               disabled={loading || finding || !input.trim()}
-              className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 min-h-[44px]"
+              className="w-full bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-2 shadow-md shadow-accent-600/20 min-h-[44px]"
             >
               <Search size={16} />
               {finding ? t('join_finding') : t('join_find_cta')}

@@ -1,0 +1,219 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { format, isToday, isYesterday } from 'date-fns';
+import { History, ShieldCheck } from 'lucide-react';
+import { Modal } from './Modal';
+import { useT, useI18nStore } from '../lib/i18n';
+import { formatMoney } from '../lib/constants';
+import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
+import { editHistoryDb, EditHistoryUnavailableError } from '../lib/supabaseDb';
+import {
+  renderEditHistory,
+  type EditHistoryEntry,
+  type EditHistoryTable,
+} from '../lib/editHistory';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Edit history sheet — audit 11-competitive-analysis.md G5 / O10.
+//
+// "For a two-sided ledger — Hisaab's defining feature — edit accountability is
+// the dispute-resolution layer; Settle Up's and Tricount's 2025 sync scandals
+// show ledger-integrity doubt is the fatal failure mode."
+//
+// Read-only. Every row comes from `public.record_edits`, written by an AFTER
+// trigger in the same transaction as the money write. Nothing on this screen
+// can create, edit or delete a history row — that is the whole point, and the
+// subtitle says so to the user.
+//
+// BOTH APP MODES: identical. The change JSON carries no account id, so a
+// splits_only (ledger) loan or transaction — which has no account legs at all
+// — produces exactly the same sentences as a full_tracker one.
+// ════════════════════════════════════════════════════════════════════════════
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  /** Which table the record lives in. */
+  table: EditHistoryTable;
+  /** The record's own id. */
+  recordId: string;
+  /** Currency for money formatting. Falls back to plain numbers when absent. */
+  currency?: string;
+  /**
+   * profileId → display name, for naming the ACTOR. Group surfaces pass their
+   * `group_members` display names; a personal loan needs none (every actor is
+   * the owner, who renders as "Aap"/"You").
+   */
+  actorNames?: Record<string, string>;
+  /**
+   * memberId → display name, for naming split PARTICIPANTS and the payer.
+   * Group surfaces only.
+   */
+  memberNames?: Record<string, string>;
+}
+
+export function EditHistorySheet({
+  open,
+  onClose,
+  table,
+  recordId,
+  currency,
+  actorNames,
+  memberNames,
+}: Props) {
+  const t = useT();
+  const lang = useI18nStore((s) => s.lang);
+  const currentUserId = useSupabaseAuthStore((s) => s.user?.id ?? '');
+
+  const [entries, setEntries] = useState<EditHistoryEntry[]>([]);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error' | 'unavailable'>('idle');
+
+  const load = useCallback(async () => {
+    setStatus('loading');
+    try {
+      const rows = await editHistoryDb.forRecord(table, recordId);
+      setEntries(rows);
+      setStatus('ready');
+    } catch (err) {
+      // The migration is applied by hand in Supabase Studio, so a client that
+      // ships first must degrade to an honest "not available yet" instead of
+      // an error a user would read as "my records are broken".
+      setEntries([]);
+      setStatus(err instanceof EditHistoryUnavailableError ? 'unavailable' : 'error');
+    }
+  }, [table, recordId]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Fetching on open IS the "synchronize with an external system" case the
+    // rule is aimed past — same false positive `useAsyncLoad` disables at
+    // src/hooks/useAsyncLoad.ts:45. (useAsyncLoad itself is not usable here:
+    // it fires on mount, and this sheet must only read when it is opened.)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+  }, [open, load]);
+
+  const resolveActor = useCallback(
+    (entry: EditHistoryEntry): string => {
+      if (entry.actorKind === 'system') return t('eh_actor_system');
+      if (!entry.actorId) return t('eh_actor_removed');
+      if (currentUserId && entry.actorId === currentUserId) return t('eh_actor_you');
+      const named = actorNames?.[entry.actorId];
+      return named && named.trim() ? named.trim() : t('eh_actor_someone');
+    },
+    [actorNames, currentUserId, t],
+  );
+
+  const rendered = useMemo(
+    () =>
+      renderEditHistory(entries, (entry) => ({
+        lang,
+        actorName: resolveActor(entry),
+        memberName: (id: string) => memberNames?.[id] ?? id,
+        money: currency ? (value: number) => formatMoney(value, currency) : undefined,
+        date: formatHistoryDate,
+      })),
+    [entries, lang, resolveActor, memberNames, currency],
+  );
+
+  return (
+    <Modal open={open} onClose={onClose} title={t('eh_title')}>
+      <div className="space-y-4">
+        <div className="flex items-start gap-2.5 rounded-2xl bg-cream-soft border border-cream-hairline p-3">
+          <ShieldCheck size={15} className="text-receive-text shrink-0 mt-0.5" strokeWidth={2.1} />
+          <p className="text-[11.5px] text-ink-600 leading-relaxed">{t('eh_subtitle')}</p>
+        </div>
+
+        {status === 'loading' && (
+          <p className="text-[12px] text-ink-400 text-center py-6">{t('loading')}</p>
+        )}
+
+        {status === 'unavailable' && (
+          <div className="text-center py-6 px-2">
+            <p className="text-[13px] font-semibold text-ink-900">{t('eh_unavailable')}</p>
+            <p className="text-[11.5px] text-ink-500 mt-1.5 leading-relaxed">
+              {t('eh_unavailable_sub')}
+            </p>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div className="text-center py-6">
+            <p className="text-[13px] font-semibold text-ink-900">{t('eh_err')}</p>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="mt-3 text-[12px] font-semibold text-accent-600 active:opacity-70"
+            >
+              {t('err_retry')}
+            </button>
+          </div>
+        )}
+
+        {status === 'ready' && rendered.length === 0 && (
+          <p className="text-[12px] text-ink-400 text-center py-6">{t('eh_empty')}</p>
+        )}
+
+        {status === 'ready' && rendered.length > 0 && (
+          <ol className="relative space-y-3">
+            {rendered.map(({ entry, lines }) => (
+              <li key={entry.id} className="rounded-[18px] bg-cream-card border border-cream-border p-3.5">
+                <p className="text-[10px] font-semibold text-ink-400 uppercase tracking-[0.1em]">
+                  {stampLabel(entry.createdAt, t)}
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  {lines.map((line) => (
+                    <li key={line.key} className="text-[12.5px] text-ink-800 leading-relaxed">
+                      {line.text}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * A tappable row that opens the sheet. Kept in this file so every surface that
+ * mounts edit history gets the same label, icon and affordance shape.
+ */
+export function EditHistoryRow({ onClick }: { onClick: () => void }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-[18px] bg-cream-card border border-cream-border px-4 py-3.5 flex items-center gap-3 active:bg-cream-soft transition-colors"
+    >
+      <div className="w-9 h-9 rounded-xl bg-cream-soft flex items-center justify-center shrink-0">
+        <History size={15} className="text-ink-500" strokeWidth={2} />
+      </div>
+      <div className="flex-1 min-w-0 text-left">
+        <p className="text-[13px] font-medium text-ink-900 tracking-tight">{t('eh_row_title')}</p>
+        <p className="text-[10.5px] text-ink-500 mt-0.5">{t('eh_row_sub')}</p>
+      </div>
+    </button>
+  );
+}
+
+// ── Dates ───────────────────────────────────────────────────────────────────
+// Same helpers ActivityPage uses (date-fns `isToday` / `isYesterday` /
+// `format`), so a timestamp reads the same wherever it appears in the app.
+
+function stampLabel(iso: string, t: (key: 'activity_today' | 'activity_yesterday') => string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  if (isToday(d)) return `${t('activity_today')} · ${format(d, 'h:mm a')}`;
+  if (isYesterday(d)) return `${t('activity_yesterday')} · ${format(d, 'h:mm a')}`;
+  return format(d, 'd MMM yyyy · h:mm a');
+}
+
+/** Date VALUES inside a change (an expense's `date`, a transaction's date). */
+function formatHistoryDate(raw: string): string {
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return format(d, 'd MMM yyyy');
+}

@@ -28,6 +28,7 @@ import { initNativeBridge } from './lib/nativeBridge';
 import { isNativeRuntime } from './lib/runtime';
 import { useAuthStore } from './stores/authStore';
 import { PIN_RELOCK_AFTER_MS } from './lib/pinCrypto';
+import { identify, resetTelemetryIdentity } from './lib/telemetry';
 // Statically imported on purpose: a lazy chunk that fails to load (offline, or
 // a stale deploy) must never be the reason the PIN gate silently doesn't render.
 import { PinLockScreen } from './pages/PinLockScreen';
@@ -71,6 +72,7 @@ const KametiDetailPage = lazy(() => import('./pages/KametiDetailPage').then(m =>
 const InvestmentsPage = lazy(() => import('./pages/InvestmentsPage').then(m => ({ default: m.InvestmentsPage })));
 const HoldingDetailPage = lazy(() => import('./pages/HoldingDetailPage').then(m => ({ default: m.HoldingDetailPage })));
 const KametiWitnessPage = lazy(() => import('./pages/KametiWitnessPage').then(m => ({ default: m.KametiWitnessPage })));
+const KhataLinkPage = lazy(() => import('./pages/KhataLinkPage').then(m => ({ default: m.KhataLinkPage })));
 const HisaabAIPage = lazy(() => import('./pages/HisaabAIPage').then(m => ({ default: m.HisaabAIPage })));
 const InsightDetailPage = lazy(() => import('./pages/InsightDetailPage').then(m => ({ default: m.InsightDetailPage })));
 const PublicInfoPage = lazy(() => import('./pages/PublicInfoPages').then(m => ({ default: m.PublicInfoPage })));
@@ -85,21 +87,50 @@ const ConnectByCodePage = lazy(() => import('./pages/ConnectByCodePage').then(m 
 // the user can pick (or create) a group without losing the amount they
 // already typed. GroupDetailPage still uses its own local instance of
 // AddGroupExpenseModal for the inline "+ Add expense" button.
-import { QuickEntry } from './pages/QuickEntry';
-import { AddGroupExpenseModal } from './pages/AddGroupExpenseModal';
-import { CreateGroupModal } from './pages/CreateGroupModal';
-import { RecurringDuePrompt } from './components/RecurringDuePrompt';
-import { MonthlyWrapModal } from './components/MonthlyWrapModal';
-import { DailyQuote } from './components/DailyQuote';
+//
+// ── All six are LAZY + mounted on first trigger (audit 03-performance H1 /
+//    P2 M2c, docs/performance.md §6.5) ──────────────────────────────────────
+// They used to be static imports, which put ~all of QuickEntry (2.2k lines),
+// both group-expense modals, and — through MonthlyWrapModal → wrapCard.ts →
+// renderNodeToImage.ts — jspdf + modern-screenshot into the eager import graph
+// of every cold boot, PWA and bundled-in-the-APK Android alike.
+//
+// The rule for each: the TRIGGER stays eager and unchanged (it is a state flag,
+// a window event listener, or two localStorage reads — all free); only the
+// COMPONENT is deferred, and it is fetched the moment its trigger fires.
+const QuickEntry = lazy(() => import('./pages/QuickEntry').then(m => ({ default: m.QuickEntry })));
+const AddGroupExpenseModal = lazy(() => import('./pages/AddGroupExpenseModal').then(m => ({ default: m.AddGroupExpenseModal })));
+const CreateGroupModal = lazy(() => import('./pages/CreateGroupModal').then(m => ({ default: m.CreateGroupModal })));
+const RecurringDuePrompt = lazy(() => import('./components/RecurringDuePrompt').then(m => ({ default: m.RecurringDuePrompt })));
+const MonthlyWrapModal = lazy(() => import('./components/MonthlyWrapModal').then(m => ({ default: m.MonthlyWrapModal })));
+const DailyQuote = lazy(() => import('./components/DailyQuote').then(m => ({ default: m.DailyQuote })));
+
 import { OfflineBanner } from './components/OfflineBanner';
 import { AppLoadingScreen } from './components/AppLoadingScreen';
 import { GlobalChunkRecoveryOverlay } from './components/GlobalChunkRecoveryOverlay';
 import { startOutboxRunner, stopOutboxRunner } from './lib/outboxRunner';
 import { getPendingInviteResumePath, savePendingInvite } from './lib/pendingInvite';
-import type { SplitGroup } from './db';
+import { shouldShowDailyQuote } from './lib/dailyQuotePrefs';
+import type { WrapStats } from './lib/monthlyWrap';
+import type { RecurringDueDetail } from './lib/recurringRunner';
+import type { RecurringTransaction, SplitGroup } from './db';
 
 function PageLoader() {
   return <AppLoadingScreen />;
+}
+
+// requestIdleCallback where it exists (not Safari/iOS), a macrotask otherwise.
+function onIdle(fn: () => void, timeout = 3000): () => void {
+  const w = window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+  if (typeof w.requestIdleCallback === 'function') {
+    const handle = w.requestIdleCallback(fn, { timeout });
+    return () => w.cancelIdleCallback?.(handle);
+  }
+  const handle = setTimeout(fn, timeout);
+  return () => clearTimeout(handle);
 }
 
 // Native only (no-op on web): rebuild the local reminder schedule from the
@@ -281,6 +312,24 @@ function AppContent() {
   const [createGroupForExpense, setCreateGroupForExpense] =
     useState<{ amount: string } | null>(null);
 
+  // ── Lazy-modal triggers (audit H1 / P2 M2c) ──────────────────────────────
+  // Each of these three modals used to self-trigger from inside its own
+  // component, which meant the component had to be mounted — and therefore
+  // downloaded and parsed — on every single boot just to find out that it had
+  // nothing to show. The trigger now lives here (cheap: an event listener, two
+  // localStorage reads, one deferred pure computation) and the component is
+  // fetched only when the answer is yes.
+  const [recurringDue, setRecurringDue] = useState<RecurringTransaction[] | null>(null);
+  const [wrapStats, setWrapStats] = useState<WrapStats | null>(null);
+  const [showDailyQuote, setShowDailyQuote] = useState(false);
+  // QuickEntry and CreateGroupModal are driven by an `open` prop and animate on
+  // the way OUT, so once opened they stay MOUNTED for the rest of the session:
+  // unmounting them the instant `open` goes false would cut the exit transition,
+  // and re-opening must not re-suspend on a chunk the browser already has.
+  // Latched by the same handlers that open them — never derived in an effect.
+  const [quickEntryMounted, setQuickEntryMounted] = useState(false);
+  const [createGroupMounted, setCreateGroupMounted] = useState(false);
+
   // Version compatibility. Runs unconditionally (hook rules); the block it
   // produces is rendered down with the other gates. Fails open — see
   // useVersionGate above.
@@ -429,6 +478,11 @@ function AppContent() {
   useEffect(() => {
     if (!user?.id) {
       void stopPushRegistration();
+      // This is App.tsx's user-became-null backstop (see pushRegistration.ts's
+      // stopPushRegistration docstring) — the natural place to also drop the
+      // telemetry identity so the next signed-in user on this device is never
+      // merged into the previous one.
+      resetTelemetryIdentity();
       return;
     }
     void startPushRegistration((to) => navigate(to));
@@ -468,6 +522,12 @@ function AppContent() {
     // before the user ever opens the inbox. Realtime keeps it fresh after.
     void useNotificationStore.getState().loadNotifications().catch((err) => {
       console.error('loadNotifications failed (non-fatal)', err);
+    });
+    // Notification preferences (mute state) feed the bell-badge's honest
+    // count (notificationCounts.ts) — load them alongside the notifications
+    // they gate, not only lazily from Settings.
+    void useNotificationStore.getState().loadPrefs().catch((err) => {
+      console.error('loadPrefs failed (non-fatal)', err);
     });
     // Preload groups on app boot so the QuickEntry "Group expense" picker
     // is ready the moment the user opens it from any page. Previously
@@ -564,7 +624,8 @@ function AppContent() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    const uid = user?.id;
+    if (!uid) return;
     let cancelled = false;
     void useSupabaseAuthStore.getState().getProfile().then((profile) => {
       if (cancelled || !profile) return;
@@ -579,6 +640,13 @@ function AppContent() {
       // profile row. setLang keeps it current from here on; this catches users
       // who picked a language before profiles.lang existed.
       reconcileProfileLang(profile.lang);
+      // Session hydrate: attach the session to the opaque auth id. Person
+      // properties are enums/codes only (telemetryEvents.ts PII policy) —
+      // never name, email or phone.
+      identify(uid, {
+        app_mode: profileMode ?? useAppModeStore.getState().mode,
+        language: profile.lang === 'ur' || profile.lang === 'en' ? profile.lang : useI18nStore.getState().lang,
+      });
     });
     return () => {
       cancelled = true;
@@ -640,6 +708,112 @@ function AppContent() {
     wasAuthed.current = !!user;
   }, [user, navigate]);
 
+  // ── Lazy-modal trigger effects (audit H1 / P2 M2c) ───────────────────────
+
+  // 1. Recurring due prompt. recurringRunner dispatches `hisaab:recurring-due`
+  //    once, from the boot expansion — by the time a lazily-fetched component
+  //    could add its own listener the event is long gone, so the FIRST payload
+  //    is captured here and seeded into the component as `initialTemplates`.
+  //    The component keeps its own listener (deduped by id) for later events.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<RecurringDueDetail>).detail;
+      if (!detail || !Array.isArray(detail.templates) || detail.templates.length === 0) return;
+      setRecurringDue((prev) => {
+        if (!prev) return detail.templates;
+        const seen = new Set(prev.map((t) => t.id));
+        return [...prev, ...detail.templates.filter((t) => !seen.has(t.id))];
+      });
+    };
+    window.addEventListener('hisaab:recurring-due', handler);
+    return () => window.removeEventListener('hisaab:recurring-due', handler);
+  }, []);
+
+  // 2. Monthly Wrap. The decision needs the transaction list and the pure
+  //    computation in monthlyWrap.ts — both are dynamic-imported so neither
+  //    monthlyWrap.ts nor (far more importantly) MonthlyWrapModal's jspdf /
+  //    modern-screenshot share stack is in the boot graph.
+  //
+  //    transactionStore is read IMPERATIVELY (getState + subscribe), never as a
+  //    hook: subscribing AppContent to `transactions` would re-render the whole
+  //    app shell on every ledger write. The subscription exists because the
+  //    store is empty at boot and fills asynchronously — the old component
+  //    effect keyed off `transactions.length` for exactly the same reason.
+  //
+  //    Both app modes: splits_only writes transaction rows too (ledger
+  //    repayments, with BOTH account ids null) and /analytics + the wrap are
+  //    routed in both modes, so nothing here is mode-gated. computeMonthlyWrap
+  //    reads only type/amount/currency/category/createdAt — never an account id.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+
+    // Same "don't fight auth/onboarding paint" delay the component used.
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const [wrap, currency, txStore] = await Promise.all([
+            import('./lib/monthlyWrap'),
+            import('./lib/primaryCurrency'),
+            import('./stores/transactionStore'),
+          ]);
+          if (cancelled) return;
+          const evaluate = (transactions: Parameters<typeof wrap.computeMonthlyWrap>[0]) => {
+            if (cancelled || transactions.length === 0) return false;
+            const computed = wrap.computeMonthlyWrap(transactions, currency.getPrimaryCurrency());
+            if (!wrap.shouldShowMonthlyWrap(computed)) return false;
+            setWrapStats(computed);
+            return true;
+          };
+          const store = txStore.useTransactionStore;
+          if (evaluate(store.getState().transactions)) return;
+          // Not loaded yet (or nothing to show yet) — watch until the first
+          // non-empty snapshot, then stop watching either way.
+          unsubscribe = store.subscribe((state) => {
+            if (state.transactions.length === 0) return;
+            evaluate(state.transactions);
+            unsubscribe?.();
+            unsubscribe = undefined;
+          });
+        } catch {
+          // The wrap is a nice-to-have; a failed chunk fetch must not surface.
+        }
+      })();
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      unsubscribe?.();
+    };
+  }, [user?.id]);
+
+  // 3. Daily wisdom. Two localStorage reads (src/lib/dailyQuotePrefs.ts — pure,
+  //    tested, and deliberately NOT inside the component, which is the chunk we
+  //    are trying not to fetch). Gated on a signed-in, onboarded user because
+  //    that is the only shell the popup is rendered in.
+  useEffect(() => {
+    if (!user?.id || !completed) return;
+    if (!shouldShowDailyQuote()) return;
+    const timer = setTimeout(() => setShowDailyQuote(true), 700);
+    return () => clearTimeout(timer);
+  }, [user?.id, completed]);
+
+  // 4. Warm the QuickEntry chunk once the app is idle. QuickEntry is the FAB —
+  //    the single most-tapped action in the app — so paying a cold chunk fetch
+  //    on tap would trade a boot win for a worse interaction on exactly the
+  //    low-end/3G devices MF-14 is about. Idle-time prefetch keeps it out of
+  //    the entry graph AND out of the modulepreload list while still having it
+  //    resident before the first tap. Failure is silent: the lazy() boundary
+  //    fetches it again on demand.
+  useEffect(() => {
+    if (!user?.id || !completed) return;
+    return onIdle(() => {
+      void import('./pages/QuickEntry').catch(() => {});
+    });
+  }, [user?.id, completed]);
+
   // Public witness route — a read-only committee record reachable WITHOUT an
   // account (for non-app members/relatives). Checked before every other gate
   // so the share link opens directly in any browser.
@@ -647,6 +821,18 @@ function AppContent() {
     return (
       <Suspense fallback={<PageLoader />}>
         <KametiWitnessPage />
+      </Suspense>
+    );
+  }
+
+  // Public khata route (audit P3 / L2) — the read-only per-counterparty ledger
+  // the owner shares over WhatsApp. Same gate-free treatment as the witness
+  // link above, and for the same reason: its reader usually has no account at
+  // all, so every gate below would be a dead end for them.
+  if (location.pathname.startsWith('/khata/')) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <KhataLinkPage />
       </Suspense>
     );
   }
@@ -776,51 +962,97 @@ function AppContent() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
-      <BottomNav onQuickEntry={() => setShowQuickEntry(true)} />
-      <QuickEntry
-        open={showQuickEntry}
-        onClose={() => setShowQuickEntry(false)}
-        onPickGroupExpense={(group, amount) => {
-          setShowQuickEntry(false);
-          setGroupExpenseTarget({ group, amount });
-        }}
-        onCreateGroupForExpense={(amount) => {
-          setShowQuickEntry(false);
-          setCreateGroupForExpense({ amount });
+      <BottomNav
+        onQuickEntry={() => {
+          setQuickEntryMounted(true);
+          setShowQuickEntry(true);
         }}
       />
+
+      {/* ── App-level modals ──────────────────────────────────────────────
+          Every one is lazy (see the lazy() block at the top of this file) and
+          mounted only from the frame its trigger fires in. `fallback={null}`
+          throughout on purpose: these are overlays, so the correct thing to
+          show while a chunk arrives is the page the user is already looking
+          at — never a full-screen PageLoader. A chunk that fails to load is
+          picked up by GlobalChunkRecoveryOverlay, same as any route. */}
+
+      {quickEntryMounted && (
+        <Suspense fallback={null}>
+          <QuickEntry
+            open={showQuickEntry}
+            onClose={() => setShowQuickEntry(false)}
+            onPickGroupExpense={(group, amount) => {
+              setShowQuickEntry(false);
+              setGroupExpenseTarget({ group, amount });
+            }}
+            onCreateGroupForExpense={(amount) => {
+              setShowQuickEntry(false);
+              setCreateGroupMounted(true);
+              setCreateGroupForExpense({ amount });
+            }}
+          />
+        </Suspense>
+      )}
+
       {/* Phase 3: recurring entries due today appear as a single-prompt
-          queue. Mounted at app level so the prompt persists across navigation. */}
-      <RecurringDuePrompt />
+          queue. Mounted at app level so the prompt persists across navigation.
+          `recurringDue` is the payload of the first `hisaab:recurring-due`
+          event — see trigger effect 1 above. */}
+      {recurringDue && (
+        <Suspense fallback={null}>
+          <RecurringDuePrompt initialTemplates={recurringDue} />
+        </Suspense>
+      )}
+
       {/* Phase 3: end-of-month "Hisaab Wrap" — Spotify Wrapped for the
-          user's money. Self-triggers on the first session of a new month. */}
-      <MonthlyWrapModal />
-      {/* Once-a-day money-wisdom popup. Self-triggers on the first app open of
-          each day; can be turned off in Settings. */}
-      <DailyQuote />
+          user's money. Trigger effect 2 above decides; this only renders once
+          there are real stats, so the jspdf/modern-screenshot share stack is
+          fetched at most once a month instead of on every boot. */}
+      {wrapStats && (
+        <Suspense fallback={null}>
+          <MonthlyWrapModal stats={wrapStats} onClose={() => setWrapStats(null)} />
+        </Suspense>
+      )}
+
+      {/* Once-a-day money-wisdom popup; can be turned off in Settings.
+          Trigger effect 3 above owns the "is it due today?" check. */}
+      {showDailyQuote && (
+        <Suspense fallback={null}>
+          <DailyQuote onDismiss={() => setShowDailyQuote(false)} />
+        </Suspense>
+      )}
+
       {/* Create-then-expense chain: when CreateGroupModal returns the new
           group, we immediately open AddGroupExpenseModal with the amount
           the user originally typed in QuickEntry. */}
-      <CreateGroupModal
-        open={!!createGroupForExpense}
-        onClose={() => setCreateGroupForExpense(null)}
-        onCreated={(group) => {
-          const amount = createGroupForExpense?.amount ?? '';
-          setCreateGroupForExpense(null);
-          setGroupExpenseTarget({ group, amount });
-        }}
-      />
+      {createGroupMounted && (
+        <Suspense fallback={null}>
+          <CreateGroupModal
+            open={!!createGroupForExpense}
+            onClose={() => setCreateGroupForExpense(null)}
+            onCreated={(group) => {
+              const amount = createGroupForExpense?.amount ?? '';
+              setCreateGroupForExpense(null);
+              setGroupExpenseTarget({ group, amount });
+            }}
+          />
+        </Suspense>
+      )}
+
       {/* AddGroupExpenseModal for the QuickEntry path. GroupDetailPage
           still mounts its own local instance for the inline button —
           they don't conflict because both paths set/clear independent
           state slots and the user can't be on both screens at once. */}
       {groupExpenseTarget && (
-        <AddGroupExpenseModal
-          open
-          group={groupExpenseTarget.group}
-          prefillAmount={groupExpenseTarget.amount}
-          onClose={() => setGroupExpenseTarget(null)}
-        />
+        <Suspense fallback={null}>
+          <AddGroupExpenseModal
+            open
+            group={groupExpenseTarget.group}
+            prefillAmount={groupExpenseTarget.amount}
+            onClose={() => setGroupExpenseTarget(null)}
+          />
+        </Suspense>
       )}
     </div>
   );

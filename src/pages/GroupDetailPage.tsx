@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical, UserPlus, Pencil, X, Archive, ArchiveRestore, UserMinus, Crown, RefreshCw, Lock } from 'lucide-react';
+import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical, UserPlus, Pencil, X, Archive, ArchiveRestore, UserMinus, Crown, RefreshCw, Lock, Bell, BellOff, History } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
@@ -14,13 +14,21 @@ import { ProgressRing } from '../components/ProgressRing';
 import { PageErrorState } from '../components/PageErrorState';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { VerifiedBadge } from '../components/VerifiedBadge';
+import { EditHistorySheet } from '../components/EditHistorySheet';
 import { readGroupGuardFailure } from '../lib/groupGuardErrors';
+import { buildGuestInviteText, isGuestMember } from '../lib/groupGuests';
+import { buildWhatsAppUrl } from '../lib/whatsappReminder';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
 import { subscribeToGroupMembers } from '../lib/realtime';
+import { useBlockStore } from '../stores/blockStore';
+import { BlockReportSheet, type BlockReportMode } from '../components/BlockReportSheet';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
-import type { SplitGroup, GroupExpense, GroupEvent, GroupSettlement } from '../db';
+import type { SplitGroup, GroupExpense, GroupEvent, GroupMember, GroupSettlement } from '../db';
+import type { SettlePlans } from '../lib/settleUpMinimize';
+import type { EditHistoryTable } from '../lib/editHistory';
 
 // Compact "May 26, 2026 · 11:39 PM" date format for activity tiles. Sidesteps
 // the noisy `toLocaleString()` default ("5/26/2026, 11:39:45 PM") so users can
@@ -147,6 +155,17 @@ function getActivityDisplay(
         title: event.summary,
         subtitle: t('gev_member_invited'),
       };
+    case 'guest_added':
+      // add_group_guest, supabase-migration-p2-guest-members.sql §4a. Written
+      // with an EMPTY recipient list on purpose: adding a guest is a group
+      // FACT that belongs in the shared feed, but it is nobody's push
+      // notification. Payload: { memberId, displayName, groupName, … }
+      return {
+        icon: <UserPlus size={16} />,
+        iconBg: 'bg-cream-soft text-ink-600',
+        title: event.summary,
+        subtitle: t('gev_guest_added'),
+      };
     case 'group_created':
       return {
         icon: <Sparkles size={16} />,
@@ -216,22 +235,42 @@ function getActivityDisplay(
 // Human-readable member status, replacing the raw enum ("connected",
 // "invited", "guest"…) that leaked into the UI. Owner wins over status.
 // Takes the active translator so the short status words localize.
-function memberStatusLabel(t: ReturnType<typeof useT>, status?: string, isOwner?: boolean): string {
-  if (isOwner) return t('member_owner');
-  if (status === 'connected') return t('member_on_app');
-  if (status === 'invited') return t('member_invited');
+//
+// GUESTS ARE CHECKED FIRST, and it matters: a guest seat carries
+// status='connected' — that is precisely what makes them a real ledger
+// participant (audit G6 / O4) — so a status-only branch would label the one
+// person who is NOT on Hisaab as "on Hisaab".
+function memberStatusLabel(t: ReturnType<typeof useT>, member: Pick<GroupMember, 'profileId' | 'status' | 'isOwner'>): string {
+  if (member.isOwner) return t('member_owner');
+  if (isGuestMember(member)) return t('guest_tag');
+  if (member.status === 'connected') return t('member_on_app');
+  if (member.status === 'invited') return t('member_invited');
   return t('member_not_on_app');
 }
 
-function memberStatusClass(status?: string, isOwner?: boolean) {
+function memberStatusClass(member: Pick<GroupMember, 'profileId' | 'status' | 'isOwner'>) {
   // Avatar chips render inside the navy hero, so the palette is white-on-dark
   // tints rather than the legacy pastel-on-light. Owner uses the violet accent;
-  // connected uses receive green; invited uses warn amber; everyone else
-  // (synthetic guest, declined, etc.) falls back to a translucent neutral.
-  if (isOwner) return 'bg-accent-500/30 text-white ring-2 ring-accent-500/40';
-  if (status === 'connected') return 'bg-receive-600/25 text-white';
-  if (status === 'invited') return 'bg-warn-600/30 text-white';
+  // connected uses receive green; invited uses warn amber; a guest and everyone
+  // else (declined, left) falls back to a translucent neutral.
+  if (member.isOwner) return 'bg-accent-500/30 text-white ring-2 ring-accent-500/40';
+  if (isGuestMember(member)) return 'bg-white/15 text-white/80';
+  if (member.status === 'connected') return 'bg-receive-600/25 text-white';
+  if (member.status === 'invited') return 'bg-warn-600/30 text-white';
   return 'bg-white/15 text-white/80';
+}
+
+// Maps renameGroupGuest's status vocabulary to copy. NOT guestRpcFailureMessage
+// (groupGuests.ts) — that helper's NOT_ALLOWED / INVALID_NAME copy is written
+// for add/remove ("...can remove this seat", "up to 60 characters") and would
+// read wrong here; guest_err_duplicate_name / guest_err_archived /
+// guest_err_not_member are reused as-is since they're generic to both flows.
+function renameFailureMessage(t: ReturnType<typeof useT>, status: string): string {
+  if (status === 'DUPLICATE_NAME') return t('guest_err_duplicate_name');
+  if (status === 'INVALID_NAME') return t('guest_err_rename_invalid');
+  if (status === 'GROUP_ARCHIVED') return t('guest_err_archived');
+  if (status === 'NOT_ACTIVE_MEMBER') return t('guest_err_not_member');
+  return t('guest_err_generic');
 }
 
 export function GroupDetailPage() {
@@ -239,8 +278,15 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const t = useT();
   const toast = useToast();
-  const { groups, getGroupExpenses, getSimplifiedDebts, getPairwiseDebts, deleteGroup, leaveGroup, getGroupEvents, getSettlements, deleteSettlement, loadGroups, setGroupExpenseReconciled, archiveGroup, unarchiveGroup, transferGroupOwnership, refreshJoinCode } = useSplitStore();
+  const { groups, getGroupExpenses, getSettlePlans, deleteGroup, leaveGroup, getGroupEvents, getSettlements, deleteSettlement, loadGroups, setGroupExpenseReconciled, archiveGroup, unarchiveGroup, transferGroupOwnership, refreshJoinCode, createInvite, renameGroupGuest } = useSplitStore();
   const markGroupRead = useNotificationStore((state) => state.markGroupRead);
+  // M5 per-group mute (docs/notifications.md §8.1). Silent and one-sided —
+  // the group's activity/expense rows are still written for everyone, this
+  // just stops notifications+push landing for the muted member.
+  const mutes = useNotificationStore((state) => state.mutes);
+  const setGroupMuted = useNotificationStore((state) => state.setGroupMuted);
+  const groupMuted = mutes.mutedGroupIds instanceof Set && !!id && mutes.mutedGroupIds.has(id);
+  const [mutingGroup, setMutingGroup] = useState(false);
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
   const [expenses, setExpenses] = useState<GroupExpense[]>([]);
@@ -248,14 +294,30 @@ export function GroupDetailPage() {
   const [settlements, setSettlements] = useState<GroupSettlement[]>([]);
   const [debts, setDebts] = useState<{ from: string; fromName: string; to: string; toName: string; amount: number }[]>([]);
   const [pairwiseDebts, setPairwiseDebts] = useState<{ from: string; fromName: string; to: string; toName: string; amount: number }[]>([]);
+  // Both settle-up plans (settleUpMinimize.ts) — direct + minimized, and which
+  // minimized transfers reroute through someone the payer never split with.
+  // `debts`/`pairwiseDebts` above mirror plans.minimized/direct.transfers so
+  // the rest of the page (which predates the shared plan builder) is unchanged.
+  const [plans, setPlans] = useState<SettlePlans | null>(null);
   // Default to RAW direct debts (no rerouting to strangers); "Simplify" is opt-in.
   const [simplify, setSimplify] = useState(false);
+  // The toggle only makes a real offer when minimizing actually saves a
+  // transfer and greedy didn't fall back to the direct plan — otherwise
+  // "Simplify" would be a no-op button. `effectiveSimplify` guards every
+  // render decision so a stale `simplify=true` from a previous group can't
+  // silently apply to one with nothing to simplify.
+  const canSimplify = !!plans && plans.transfersSaved > 0 && !plans.minimizedFellBackToDirect;
+  const effectiveSimplify = simplify && canSimplify;
   const [tab, setTab] = useState<'expenses' | 'balances' | 'activity'>('expenses');
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showSettle, setShowSettle] = useState(false);
   const [showSettleShare, setShowSettleShare] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [editExpense, setEditExpense] = useState<GroupExpense | null>(null);
+  // Who-changed-what (audit G5/O10). Which record's edit history sheet is
+  // open, if any — set from the expense row's history icon or the activity
+  // tab's "See what changed" link, and fed to the ONE sheet mounted below.
+  const [historyFor, setHistoryFor] = useState<{ table: EditHistoryTable; id: string } | null>(null);
   const [savingReconciliationId, setSavingReconciliationId] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [archiving, setArchiving] = useState(false);
@@ -263,6 +325,31 @@ export function GroupDetailPage() {
   const [showTransfer, setShowTransfer] = useState(false);
   const [transferringMemberId, setTransferringMemberId] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  // Trust & safety (audit M17). Blocking a fellow member does NOT remove them
+  // from the group and does not hide their ledger rows — it stops notifications
+  // between the two of you. The sheet's copy says exactly that; see
+  // docs/trust-and-safety.md §6.2 for why a shared group is deliberately NOT
+  // filtered (one member silently excluding another from a group they do not
+  // own is a bigger abuse surface than the one it would close, and a failed
+  // join would leak who is inside a group you cannot see).
+  const blocks = useBlockStore((s) => s.blocks);
+  const loadBlocks = useBlockStore((s) => s.loadBlocks);
+  const unblockMember = useBlockStore((s) => s.unblock);
+  const unblockGuard = useSubmitGuard();
+  // Ref-backed entry re-check for the two guest-seat actions. Both mint an
+  // invite row server-side, so a double tap would leave a second live token
+  // pointing at the same seat.
+  const guestInviteGuard = useSubmitGuard();
+  const [invitingGuestId, setInvitingGuestId] = useState<string | null>(null);
+  // Rename a guest seat (docs/guest-members.md §9.4) — owner-only, gated below
+  // on `isOwner` next to the rename button itself.
+  const renameGuard = useSubmitGuard();
+  const [renamingGuest, setRenamingGuest] = useState<GroupMember | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [memberSafety, setMemberSafety] = useState<
+    { mode: BlockReportMode; userId: string; name: string } | null
+  >(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   // One-time member-status legend. Shown the first time a group has any
   // non-connected member; dismissal persists per-device so it doesn't nag.
@@ -296,20 +383,20 @@ export function GroupDetailPage() {
     // Deep-links to /group/:id may land here before the global groups list
     // is hydrated. Kick off loadGroups in parallel so the header renders.
     const needsGroups = useSplitStore.getState().groups.length === 0;
-    const [, nextExpenses, nextDebts, nextPairwise, nextEvents, nextSettlements] = await Promise.all([
+    const [, nextExpenses, nextPlans, nextEvents, nextSettlements] = await Promise.all([
       needsGroups ? loadGroups() : Promise.resolve(),
       getGroupExpenses(id),
-      getSimplifiedDebts(id),
-      getPairwiseDebts(id),
+      getSettlePlans(id),
       getGroupEvents(id),
       getSettlements(id),
     ]);
     setExpenses(nextExpenses);
-    setDebts(nextDebts);
-    setPairwiseDebts(nextPairwise);
+    setPlans(nextPlans);
+    setDebts(nextPlans?.minimized.transfers ?? []);
+    setPairwiseDebts(nextPlans?.direct.transfers ?? []);
     setEvents(nextEvents);
     setSettlements(nextSettlements);
-  }, [id, getGroupExpenses, getSimplifiedDebts, getPairwiseDebts, getGroupEvents, getSettlements, loadGroups]);
+  }, [id, getGroupExpenses, getSettlePlans, getGroupEvents, getSettlements, loadGroups]);
 
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(reload);
 
@@ -317,6 +404,10 @@ export function GroupDetailPage() {
     if (!id || loadStatus !== 'ready') return;
     void markGroupRead(id).catch(err => console.error('mark group read failed', err));
   }, [id, loadStatus, markGroupRead]);
+
+  // Warm the block list so a member row shows Block or Unblock correctly on
+  // first paint. Store-level freshness gate makes repeat mounts free.
+  useEffect(() => { void loadBlocks(); }, [loadBlocks]);
 
   // While this page is open, subscribe to member changes on this group so
   // the header avatars and member count reflect joins/leaves instantly.
@@ -351,6 +442,86 @@ export function GroupDetailPage() {
     );
   }
 
+  /**
+   * A guest seat's two affordances — "invite them to Hisaab" (WhatsApp) and
+   * "assign this seat to a member" (copy the link) — are ONE mechanism, not
+   * two, and not a third claim path either.
+   *
+   * Both mint an invite carrying `linked_member_id = <this seat>`, and
+   * accept_group_invite rebinds a profile_id-NULL seat by that id
+   * (consent-guards.sql §3.5, restated by p2-trust-safety §4.2). So whoever
+   * opens the link takes over THIS seat together with every expense share and
+   * settlement already recorded against it, instead of landing on a fresh row
+   * and orphaning the history.
+   *
+   * The seat's phone number is deliberately unavailable here — add_group_guest
+   * keeps only a SHA-256 digest, in a table no client role can read — so the
+   * WhatsApp hand-off opens the contact picker rather than a pre-addressed
+   * chat. `buildWhatsAppUrl(null, …)` is exactly that fallback.
+   */
+  const handleGuestInvite = (member: GroupMember, channel: 'whatsapp' | 'copy') =>
+    guestInviteGuard.run(async () => {
+      setInvitingGuestId(member.id);
+      try {
+        const result = await createInvite(group.id, member.id);
+        await navigator.clipboard.writeText(result.url).catch(() => {});
+        if (channel === 'whatsapp') {
+          window.open(
+            buildWhatsAppUrl(null, buildGuestInviteText(member.name, group.name, result.url)),
+            '_blank',
+            'noopener,noreferrer',
+          );
+        } else {
+          toast.show({ type: 'success', title: t('ginv_link_copied'), subtitle: t('guest_assign_hint') });
+        }
+      } catch {
+        toast.show({ type: 'error', title: t('ginv_err_create') });
+      } finally {
+        setInvitingGuestId(null);
+      }
+    });
+
+  const openRenameGuest = (member: GroupMember) => {
+    setRenameValue(member.name);
+    setRenamingGuest(member);
+  };
+
+  const handleRenameGuest = () => renameGuard.run(async () => {
+    if (!renamingGuest) return;
+    const trimmed = renameValue.trim();
+    setRenaming(true);
+    try {
+      const result = await renameGroupGuest(group.id, renamingGuest.id, trimmed);
+      if (result.status !== 'ok') {
+        toast.show({ type: 'error', title: renameFailureMessage(t, result.status) });
+        return;
+      }
+      toast.show({ type: 'success', title: t('guest_renamed'), subtitle: trimmed });
+      setRenamingGuest(null);
+    } catch {
+      toast.show({ type: 'error', title: t('guest_err_generic') });
+    } finally {
+      setRenaming(false);
+    }
+  });
+
+  const handleUnblockMember = (profileId: string, name: string) => unblockGuard.run(async () => {
+    const ok = await confirmDestructive({
+      title: t('blk_unblock_confirm_title').replace('{name}', name),
+      description: t('blk_unblock_confirm_body'),
+      confirmLabel: t('blk_action_unblock'),
+      cancelLabel: t('cancel'),
+      tone: 'warning',
+    });
+    if (!ok) return;
+    try {
+      await unblockMember(profileId);
+      toast.show({ type: 'success', title: t('blk_unblocked_toast').replace('{name}', name) });
+    } catch {
+      toast.show({ type: 'error', title: t('blk_failed') });
+    }
+  });
+
   const getMemberName = (memberId: string) => group.members.find(member => member.id === memberId)?.name ?? '?';
   const currentMember = group.members.find(member => member.profileId === localStorage.getItem('hisaab_supabase_uid'))
     ?? group.members.find(member => member.isOwner);
@@ -379,7 +550,7 @@ export function GroupDetailPage() {
   // Group-level health: total spend, settlements, and how far toward "zero
   // imbalance" the group is. Used both by the summary card and by the
   // per-member rings on the Balances tab.
-  const shownDebts = simplify ? debts : pairwiseDebts;
+  const shownDebts = effectiveSimplify ? debts : pairwiseDebts;
   const totalSpend = expenses.reduce((s, e) => s + e.amount, 0);
   const totalSettled = settlements.reduce((s, x) => s + x.amount, 0);
   const totalOutstanding = shownDebts.reduce((s, d) => s + d.amount, 0);
@@ -642,6 +813,23 @@ export function GroupDetailPage() {
     }
   };
 
+  const handleToggleMute = async () => {
+    if (!id || mutingGroup) return;
+    setMutingGroup(true);
+    try {
+      await setGroupMuted(id, !groupMuted);
+    } catch (err) {
+      console.error('Failed to update group mute', err);
+      toast.show({
+        type: 'error',
+        title: t('grp_mute_failed'),
+        subtitle: err instanceof Error ? err.message : t('common_please_try_again'),
+      });
+    } finally {
+      setMutingGroup(false);
+    }
+  };
+
   const handleLeave = async () => {
     if (leaving) return;
     const ok = await confirmDestructive({
@@ -735,15 +923,29 @@ export function GroupDetailPage() {
                     role="menu"
                     className="absolute right-0 top-11 z-30 min-w-[180px] rounded-2xl bg-cream-card border border-cream-border shadow-lg overflow-hidden animate-fade-in"
                   >
+                    <button
+                      role="menuitem"
+                      onClick={() => { setShowMenu(false); void handleToggleMute(); }}
+                      disabled={mutingGroup}
+                      className="w-full px-4 py-3 text-left text-[13px] font-medium text-ink-800 active:bg-cream-soft flex items-start gap-2.5 disabled:opacity-50 transition-colors"
+                    >
+                      {groupMuted ? <Bell size={14} className="text-ink-600 mt-0.5 shrink-0" /> : <BellOff size={14} className="text-ink-600 mt-0.5 shrink-0" />}
+                      <span className="flex flex-col">
+                        <span>{t(groupMuted ? 'grp_unmute' : 'grp_mute')}</span>
+                        <span className="text-[10.5px] font-normal text-ink-500 mt-0.5">
+                          {t('grp_mute_sub')}
+                        </span>
+                      </span>
+                    </button>
                     {currentMember?.profileId === currentUserId && (
                       <button
                         role="menuitem"
                         onClick={() => { setShowMenu(false); handleLeave(); }}
                         disabled={leaving}
-                        className="w-full px-4 py-3 text-left text-[13px] font-medium text-ink-800 active:bg-cream-soft flex items-center gap-2.5 disabled:opacity-50 transition-colors"
+                        className="w-full px-4 py-3 text-left text-[13px] font-medium text-ink-800 active:bg-cream-soft flex items-center gap-2.5 border-t border-cream-hairline disabled:opacity-50 transition-colors"
                       >
                         <LogOut size={14} className={`text-ink-600 ${leaving ? 'animate-pulse' : ''}`} />
-                        {leaving ? 'Leaving…' : 'Leave group'}
+                        {leaving ? t('grp_leaving') : t('grp_leave_cta')}
                       </button>
                     )}
                     {isOwner && transferCandidates.length > 0 && !isArchived && (
@@ -788,7 +990,11 @@ export function GroupDetailPage() {
         <div className="px-5 pb-7">
           <p className="text-[10.5px] font-semibold text-white/50 tracking-[0.12em] uppercase">
             {group.members.length} {t('group_members_count')} ·{' '}
-            {t('gdp_connected_count').replace('{n}', String(group.members.filter((m) => m.status === 'connected').length))} ·{' '}
+            {/* "Connected" means "on Hisaab", and a guest is not — even though
+                their seat carries status='connected' so the ledger accepts them
+                (audit G6 / O4). Counting them here would make the header claim
+                people are on the app who never installed it. */}
+            {t('gdp_connected_count').replace('{n}', String(group.members.filter((m) => m.status === 'connected' && !isGuestMember(m)).length))} ·{' '}
             {group.currency}
           </p>
 
@@ -796,12 +1002,12 @@ export function GroupDetailPage() {
             {group.members.map((member) => (
               <div key={member.id} className="flex flex-col items-center gap-0.5 shrink-0 w-14">
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold ${memberStatusClass(member.status, member.isOwner)}`}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold ${memberStatusClass(member)}`}
                 >
                   {member.name.charAt(0).toUpperCase()}
                 </div>
                 <span className="text-[9px] text-white/60 truncate w-full text-center">
-                  {memberStatusLabel(t, member.status, member.isOwner)}
+                  {memberStatusLabel(t, member)}
                 </span>
               </div>
             ))}
@@ -810,7 +1016,9 @@ export function GroupDetailPage() {
           {/* One-line status legend — appears the first time a group has any
               non-connected member, so the colour coding on the avatars is
               decodable. Dismissible and remembered per-device. */}
-          {!legendDismissed && group.members.some((m) => !m.isOwner && m.status !== 'connected') && (
+          {/* Guests count as "needs decoding" too: their chip is the neutral
+              tint, which the legend is the only thing explaining. */}
+          {!legendDismissed && group.members.some((m) => !m.isOwner && (m.status !== 'connected' || isGuestMember(m))) && (
             <div className="mt-2.5 flex items-center gap-3 rounded-xl bg-white/10 px-3 py-2 animate-fade-in">
               <span className="flex items-center gap-1.5 text-[9.5px] text-white/75">
                 <span className="w-2 h-2 rounded-full bg-receive-600/70" />
@@ -1017,15 +1225,28 @@ export function GroupDetailPage() {
           <div className="rounded-[18px] bg-cream-card border border-cream-border p-4 space-y-2.5">
             <div className="flex items-center justify-between pb-0.5">
               <span className="text-[10px] font-bold uppercase tracking-widest text-ink-400">
-                {simplify ? 'Simplified' : 'Who owes whom'}
+                {effectiveSimplify ? t('gdp_plan_simplified') : t('gdp_plan_direct')}
               </span>
-              <button
-                onClick={() => setSimplify((v) => !v)}
-                className="text-[10.5px] font-semibold text-accent-600 active:opacity-60"
-              >
-                {simplify ? 'Show direct' : 'Simplify debts'}
-              </button>
+              {canSimplify && (
+                <button
+                  onClick={() => setSimplify((v) => !v)}
+                  className="text-[10.5px] font-semibold text-accent-600 active:opacity-60"
+                >
+                  {effectiveSimplify
+                    ? t('gdp_show_direct')
+                    : t('gdp_simplify')
+                        .replace('{direct}', String(plans?.direct.count ?? 0))
+                        .replace('{minimized}', String(plans?.minimized.count ?? 0))}
+                </button>
+              )}
             </div>
+            {effectiveSimplify && plans && plans.rerouted.length > 0 && (
+              <div className="rounded-xl bg-warn-50 border border-warn-100 px-3 py-2 text-[10.5px] font-medium text-warn-700 leading-relaxed">
+                {plans.rerouted.length === 1
+                  ? t('gdp_reroute_warning_one')
+                  : t('gdp_reroute_warning_many').replace('{n}', String(plans.rerouted.length))}
+              </div>
+            )}
             {[...shownDebts]
               // Float debts involving "you" to the top — that's what the user
               // most likely came here to act on.
@@ -1065,7 +1286,7 @@ export function GroupDetailPage() {
             onClick={() => setTab(nextTab)}
             className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${tab === nextTab ? 'bg-ink-900 text-white' : 'bg-cream-card text-ink-500 border border-cream-border'}`}
           >
-            {nextTab === 'expenses' ? t('group_expenses') : nextTab === 'balances' ? t('group_balances') : 'Activity'}
+            {nextTab === 'expenses' ? t('group_expenses') : nextTab === 'balances' ? t('group_balances') : t('group_activity')}
           </button>
         ))}
       </div>
@@ -1167,13 +1388,13 @@ export function GroupDetailPage() {
                       aria-disabled={!canReconcile || savingReconciliationId === expense.id}
                       aria-label={
                         canReconcile
-                          ? isReconciled ? 'Mark expense unreconciled' : 'Mark expense reconciled'
-                          : isReconciled ? 'Expense reconciled by payer' : 'Only the payer can reconcile this expense'
+                          ? isReconciled ? t('gdp_reconcile_aria_unmark') : t('gdp_reconcile_aria_mark')
+                          : isReconciled ? t('gdp_reconcile_aria_done_by_payer') : t('gdp_reconcile_aria_payer_only')
                       }
                       title={
                         canReconcile
-                          ? isReconciled ? 'Reconciled' : 'Mark reconciled'
-                          : isReconciled ? 'Reconciled by payer' : 'Only the payer can reconcile'
+                          ? isReconciled ? t('gdp_reconcile_title_reconciled') : t('gdp_reconcile_title_mark')
+                          : isReconciled ? t('gdp_reconcile_title_done_by_payer') : t('gdp_reconcile_title_payer_only')
                       }
                       className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all active:scale-95 ${
                         isReconciled
@@ -1212,6 +1433,21 @@ export function GroupDetailPage() {
                       <p className="text-[14px] font-bold text-ink-900 tabular-nums">{formatMoney(expense.amount, group.currency)}</p>
                       <p className="text-[9px] text-ink-500">{new Date(expense.date).toLocaleDateString()}</p>
                     </div>
+                    {/* Who-changed-what (audit G5/O10). A small secondary
+                        control, not the row's tap target — the card itself
+                        still opens the edit modal. */}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setHistoryFor({ table: 'group_expenses', id: expense.id });
+                      }}
+                      aria-label={t('eh_row_title')}
+                      title={t('eh_row_title')}
+                      className="w-7 h-7 rounded-full border border-cream-border bg-cream-soft flex items-center justify-center shrink-0 active:bg-cream-card transition-colors"
+                    >
+                      <History size={12} className="text-ink-500" />
+                    </button>
                   </div>
                 </div>
               );
@@ -1249,13 +1485,13 @@ export function GroupDetailPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 ${memberStatusClass(member.status, member.isOwner)}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 ${memberStatusClass(member)}`}>
                       {member.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0">
                       <p className="text-[13px] font-semibold text-ink-800 truncate">{member.name}</p>
                       <p className="text-[10px] text-ink-500 mt-0.5">
-                        {memberStatusLabel(t, member.status, member.isOwner)}
+                        {memberStatusLabel(t, member)}
                         {member.id === currentMember?.id ? <span className="font-semibold text-accent-600">{t('gdp_you_suffix')}</span> : null}
                       </p>
                     </div>
@@ -1298,6 +1534,77 @@ export function GroupDetailPage() {
                     <p className="text-[12px] font-bold text-ink-800 tabular-nums mt-0.5">{formatMoney(share, group.currency)}</p>
                   </div>
                 </div>
+                {/* Guest seat actions (audit G6 / O4). A guest has no account,
+                    so there is nobody to block or report — instead the two
+                    things a real member can do FOR them: hand the seat over,
+                    or nudge them onto Hisaab. Both are the same linked-invite
+                    mechanism; see handleGuestInvite. */}
+                {isGuestMember(member) && (
+                  <div className="mt-2.5 pt-2.5 border-t border-cream-hairline">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        type="button"
+                        disabled={invitingGuestId === member.id}
+                        onClick={() => handleGuestInvite(member, 'whatsapp')}
+                        className="text-[11px] font-semibold text-accent-600 active:opacity-60 disabled:opacity-40"
+                      >
+                        {t('guest_invite_cta')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={invitingGuestId === member.id}
+                        onClick={() => handleGuestInvite(member, 'copy')}
+                        className="text-[11px] font-semibold text-ink-600 active:opacity-60 disabled:opacity-40"
+                      >
+                        {t('guest_assign_cta')}
+                      </button>
+                      {/* Rename — owner-only (docs/guest-members.md §9.4). The
+                          only affordance here that isn't the shared linked-
+                          invite mechanism. */}
+                      {isOwner && (
+                        <button
+                          type="button"
+                          onClick={() => openRenameGuest(member)}
+                          className="text-[11px] font-semibold text-ink-500 active:opacity-60 flex items-center gap-1"
+                        >
+                          <Pencil size={11} /> {t('guest_rename_cta')}
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-ink-500 mt-1.5 leading-snug">{t('guest_assign_hint')}</p>
+                  </div>
+                )}
+                {/* Per-member safety actions (audit M17). Offered for anyone
+                    with a real account other than me — owner included; the
+                    group owner is exactly the person who can force-add you. */}
+                {member.profileId && member.profileId !== currentUserId && (
+                  <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-cream-hairline">
+                    <button
+                      type="button"
+                      onClick={() => setMemberSafety({ mode: 'report', userId: member.profileId!, name: member.name })}
+                      className="text-[11px] font-semibold text-ink-400 active:opacity-60"
+                    >
+                      {t('blk_action_report')}
+                    </button>
+                    {blocks.some((b) => b.blockedId === member.profileId) ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUnblockMember(member.profileId!, member.name)}
+                        className="text-[11px] font-semibold text-ink-600 active:opacity-60"
+                      >
+                        {t('blk_action_unblock')}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setMemberSafety({ mode: 'block', userId: member.profileId!, name: member.name })}
+                        className="text-[11px] font-semibold text-pay-text active:opacity-60"
+                      >
+                        {t('blk_action_block')}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1349,24 +1656,46 @@ export function GroupDetailPage() {
                         <p className="text-[10px] font-semibold text-ink-400 tabular-nums tracking-wide">
                           {formatActivityTime(event.createdAt)}
                         </p>
-                        {/* A wrong settle-up (wrong row, double-record from two
-                            phones) used to be permanent — the recorder can now
-                            remove it and balances recalculate. */}
-                        {event.eventType === 'settlement_added' &&
-                          (() => {
-                            const settlement = settlements.find((s) => s.id === event.entityId);
-                            if (!settlement) return null;
-                            if (settlement.createdBy && settlement.createdBy !== currentUserId) return null;
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => void handleRemoveSettlement(settlement)}
-                                className="text-[10px] font-semibold text-pay-text active:opacity-70 flex items-center gap-1"
-                              >
-                                <Trash2 size={10} /> {t('stl_remove_cta')}
-                              </button>
-                            );
-                          })()}
+                        <div className="flex items-center gap-3">
+                          {/* Who-changed-what (audit G5/O10). A group_events row
+                              and its record_edits rows describe the same act —
+                              this links an edit/settlement event straight to the
+                              per-field diff for that record. */}
+                          {(event.eventType === 'expense_updated' ||
+                            event.eventType === 'settlement_added' ||
+                            event.eventType === 'settlement_deleted') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setHistoryFor({
+                                  table: event.entityType === 'group_expense' ? 'group_expenses' : 'group_settlements',
+                                  id: event.entityId,
+                                })
+                              }
+                              className="text-[10px] font-semibold text-accent-600 active:opacity-70 flex items-center gap-1"
+                            >
+                              <History size={10} /> {t('eh_view_changes')}
+                            </button>
+                          )}
+                          {/* A wrong settle-up (wrong row, double-record from two
+                              phones) used to be permanent — the recorder can now
+                              remove it and balances recalculate. */}
+                          {event.eventType === 'settlement_added' &&
+                            (() => {
+                              const settlement = settlements.find((s) => s.id === event.entityId);
+                              if (!settlement) return null;
+                              if (settlement.createdBy && settlement.createdBy !== currentUserId) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleRemoveSettlement(settlement)}
+                                  className="text-[10px] font-semibold text-pay-text active:opacity-70 flex items-center gap-1"
+                                >
+                                  <Trash2 size={10} /> {t('stl_remove_cta')}
+                                </button>
+                              );
+                            })()}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1408,8 +1737,50 @@ export function GroupDetailPage() {
       <AddGroupExpenseModal open={showAddExpense} group={group} recentExpenses={expenses} onClose={() => { setShowAddExpense(false); void reload(); }} />
       <EditGroupExpenseModal open={!!editExpense} group={group} expense={editExpense} onClose={() => { setEditExpense(null); void reload(); }} />
       <SettleUpModal open={showSettle} group={group} debts={shownDebts} currentMemberId={currentMember?.id} onClose={() => { setShowSettle(false); void reload(); }} />
-      <GroupSettleUpModal open={showSettleShare} group={group} debts={shownDebts} expenses={expenses} simplify={simplify} currentMemberId={currentMember?.id} onClose={() => setShowSettleShare(false)} />
+      <GroupSettleUpModal open={showSettleShare} group={group} debts={shownDebts} expenses={expenses} simplify={effectiveSimplify} currentMemberId={currentMember?.id} onClose={() => setShowSettleShare(false)} />
+      {/* Who-changed-what (audit G5/O10). actorNames/memberNames reuse the
+          same group.members shape the header avatars and reconcile logic
+          already derive from — no extra fetch. */}
+      <EditHistorySheet
+        open={!!historyFor}
+        onClose={() => setHistoryFor(null)}
+        table={historyFor?.table ?? 'group_expenses'}
+        recordId={historyFor?.id ?? ''}
+        currency={group.currency}
+        actorNames={Object.fromEntries(group.members.filter((m) => m.profileId).map((m) => [m.profileId!, m.name]))}
+        memberNames={Object.fromEntries(group.members.map((m) => [m.id, m.name]))}
+      />
       <GroupInviteModal open={showInvite} group={group} onClose={() => { setShowInvite(false); void reload(); }} />
+
+      {/* Rename a guest seat (docs/guest-members.md §9.4). Owner-only,
+          unclaimed guest seats only — see the isOwner gate on the rename
+          button in the balances-tab member row above. */}
+      <Modal
+        open={!!renamingGuest}
+        onClose={() => setRenamingGuest(null)}
+        title={t('guest_rename_title')}
+        footer={(
+          <button
+            onClick={handleRenameGuest}
+            disabled={renaming || !renameValue.trim()}
+            className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30"
+          >
+            {t('save')}
+          </button>
+        )}
+      >
+        <div className="p-5">
+          <input
+            className="w-full border border-cream-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all"
+            value={renameValue}
+            maxLength={40}
+            autoFocus
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRenameGuest(); } }}
+            placeholder={t('guest_name_placeholder')}
+          />
+        </div>
+      </Modal>
 
       {/* Ownership handover — the escape hatch for delete_current_user's
           OWNED_GROUPS_WITH_MEMBERS refusal and for leave_group's
@@ -1447,6 +1818,17 @@ export function GroupDetailPage() {
           )}
         </div>
       </Modal>
+
+      {/* Block / report a fellow group member (audit M17). */}
+      <BlockReportSheet
+        open={!!memberSafety}
+        mode={memberSafety?.mode ?? 'block'}
+        targetUserId={memberSafety?.userId ?? null}
+        targetName={memberSafety?.name ?? ''}
+        contextType="group_member"
+        contextId={group.id}
+        onClose={() => setMemberSafety(null)}
+      />
     </main>
   );
 }

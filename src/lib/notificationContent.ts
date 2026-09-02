@@ -211,6 +211,72 @@ export type NotificationChannel = typeof NOTIFICATION_CHANNELS[number];
 
 const CHANNEL_SET = new Set<string>(NOTIFICATION_CHANNELS);
 
+// Android 8+ requires a channel, and a message naming one the device has never
+// seen is DROPPED SILENTLY — so all four are created before the first
+// notification of either kind can arrive.
+//
+// Creating a channel is idempotent, but Android IGNORES importance changes on
+// an existing channel: that setting belongs to the user once created. Pick
+// carefully the first time; a later revision only reaches fresh installs.
+//   money     HIGH    — a loan request or a repayment to confirm is the reason
+//                       this app sends notifications at all.
+//   groups    DEFAULT — expenses and joins: worth knowing, not worth peeking.
+//   kameti    DEFAULT — a draw or a round is a day-scale event.
+//   reminders HIGH    — device-local bill/EMI/budget reminders, which the user
+//                       opted into explicitly in Settings.
+const CHANNEL_IMPORTANCE: Record<NotificationChannel, 1 | 2 | 3 | 4 | 5> = {
+  money: 4,
+  groups: 3,
+  kameti: 3,
+  reminders: 4,
+};
+
+const CHANNEL_NAME_KEYS: Record<NotificationChannel, I18nKey> = {
+  money: 'notif_channel_money',
+  groups: 'notif_channel_groups',
+  kameti: 'notif_channel_kameti',
+  reminders: 'notif_channel_reminders',
+};
+
+const CHANNEL_DESC_KEYS: Record<NotificationChannel, I18nKey> = {
+  money: 'notif_channel_money_desc',
+  groups: 'notif_channel_groups_desc',
+  kameti: 'notif_channel_kameti_desc',
+  reminders: 'notif_channel_reminders_desc',
+};
+
+export interface NotificationChannelDef {
+  id: NotificationChannel;
+  name: string;
+  description: string;
+  importance: 1 | 2 | 3 | 4 | 5;
+  visibility: 1;
+  vibration: boolean;
+}
+
+/** The four channel descriptors, translated at call time so a language change
+ *  before first creation is honoured.
+ *
+ *  Two callers create these through DIFFERENT Capacitor plugins —
+ *  pushRegistration (PushNotifications) and notificationScheduler
+ *  (LocalNotifications) — because a build with no google-services.json never
+ *  reaches the push path at all. Android channels are app-global, so whichever
+ *  gets there first wins and the other's call is a no-op. The translator is
+ *  passed in to keep this module free of a runtime i18n import. */
+export function notificationChannelDefs(t: NotificationTranslate): NotificationChannelDef[] {
+  return NOTIFICATION_CHANNELS.map((id) => ({
+    id,
+    name: t(CHANNEL_NAME_KEYS[id]),
+    description: t(CHANNEL_DESC_KEYS[id]),
+    importance: CHANNEL_IMPORTANCE[id],
+    // VISIBILITY_PRIVATE: shown on the lock screen, but amounts and names are
+    // hidden until unlocked. These notifications name real people and real
+    // money.
+    visibility: 1 as const,
+    vibration: true,
+  }));
+}
+
 /** Which Android channel a persisted notification belongs to.
  *
  *  MUST stay in step with notification_channel_for() in

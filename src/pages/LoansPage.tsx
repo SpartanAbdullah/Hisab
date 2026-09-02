@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Plus, ChevronRight, Users, Bell, Search, X, AlertCircle, Clock, Link2, FileText } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLoanStore } from '../stores/loanStore';
+import { oldestCreatedAt } from '../lib/historyWindow';
 import { usePersonStore } from '../stores/personStore';
 import { useLinkedRequestStore } from '../stores/linkedRequestStore';
 import { useSettlementRequestStore } from '../stores/settlementRequestStore';
@@ -11,6 +12,7 @@ import { AllocateSettlementModal } from '../components/AllocateSettlementModal';
 import { useEmiStore } from '../stores/emiStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
+import { useSplitStore } from '../stores/splitStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { VerifiedBadge } from '../components/VerifiedBadge';
 import { MoneyDisplay } from '../components/MoneyDisplay';
@@ -23,10 +25,18 @@ import { PaymentReminderModal } from '../components/PaymentReminderModal';
 import { SendStatementModal } from '../components/SendStatementModal';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
+import { WhoOwesMeCard } from '../components/WhoOwesMeCard';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { linkedLoanIdSet } from '../lib/linkedLoanIdSet';
 import { useT } from '../lib/i18n';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
+import {
+  buildAdhocSplitIndex,
+  buildWhoOwesMe,
+  findLikelyDuplicateRows,
+} from '../lib/whoOwesMe';
+import { groupInputsFromNetBalances } from '../lib/whoOwesGroupInputs';
 import {
   getOldestIsoDate,
   getReminderAge,
@@ -71,16 +81,30 @@ export function LoansPage() {
   const loadPersons = usePersonStore((s) => s.loadPersons);
   const { schedules, loadSchedules } = useEmiStore();
   const { transactions, loadTransactions } = useTransactionStore();
+  // This page reads transaction rows for TWO loan-shaped facts — which loans
+  // were funded by a credit card, and which came from an ad-hoc split — and
+  // both live on the loan's ORIGIN row, which can be years old. The default
+  // 12-month window would drop them and quietly re-classify old card debt as a
+  // person's debt. So: widen coverage to the oldest loan we hold, and no
+  // further (docs/performance.md §7).
+  const ensureTransactionHistory = useTransactionStore((s) => s.ensureTransactionHistory);
   const { loadAccounts } = useAccountStore();
   const linkedRequests = useLinkedRequestStore((s) => s.requests);
   const loadLinkedRequests = useLinkedRequestStore((s) => s.loadRequests);
   const settlementRequests = useSettlementRequestStore((s) => s.requests);
   const loadSettlementRequests = useSettlementRequestStore((s) => s.loadRequests);
+  // Groups feed the unified "who owes what" card. Raw slices only — filtering
+  // happens inside useMemo (React #185: a selector returning a fresh array on
+  // every call makes useSyncExternalStore's snapshot unstable).
+  const groups = useSplitStore((s) => s.groups);
+  const groupBalances = useSplitStore((s) => s.balances);
+  const loadGroups = useSplitStore((s) => s.loadGroups);
+  const loadBalances = useSplitStore((s) => s.loadBalances);
   const myId = useSupabaseAuthStore((s) => s.user?.id ?? '');
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const t = useT();
-  const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
+  const primaryCurrency = getPrimaryCurrency();
 
   const [showAdd, setShowAdd] = useState(false);
   const requestedTab = searchParams.get('tab');
@@ -101,8 +125,27 @@ export function LoansPage() {
     // loadLinkedRequests is needed so we can exclude linked loans (which must
     // settle via their own confirm flow) from the multi-loan allocation.
     // loadPersons gives us phone numbers for the WhatsApp reminder deep-link.
-    await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts(), loadLinkedRequests(), loadSettlementRequests(), loadPersons()]);
-  }, [loadAccounts, loadLoans, loadSchedules, loadTransactions, loadLinkedRequests, loadSettlementRequests, loadPersons]);
+    // loadGroups → loadBalances (in that order: loadBalances reads the store's
+    // hydrated groups) gives the who-owes-what card the group side of the
+    // ledger. Two batched queries for every visible expense + settlement, the
+    // same pair the Groups tab already runs — not one fetch per group.
+    await Promise.all([
+      loadLoans(),
+      loadSchedules(),
+      loadTransactions(),
+      loadAccounts(),
+      loadLinkedRequests(),
+      loadSettlementRequests(),
+      loadPersons(),
+      loadGroups().then(loadBalances),
+    ]);
+    // Bounded-history top-up. Runs AFTER the loans land (it needs their dates)
+    // and resolves without a request whenever the window already reaches back
+    // far enough — which it does for every user whose oldest loan is inside a
+    // year, i.e. almost all of them.
+    const oldestLoanAt = oldestCreatedAt(useLoanStore.getState().loans);
+    if (oldestLoanAt) await ensureTransactionHistory({ since: oldestLoanAt });
+  }, [loadAccounts, loadLoans, loadSchedules, loadTransactions, loadLinkedRequests, loadSettlementRequests, loadPersons, loadGroups, loadBalances, ensureTransactionHistory]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   // Loans mirrored to another Hisaab user (accepted linked pair) — excluded
@@ -149,9 +192,43 @@ export function LoansPage() {
     }
     return map;
   }, [transactions]);
-  const peopleLoans = loans.filter((l) => !cardFundedLoanIds.has(l.id));
+  const peopleLoans = useMemo(
+    () => loans.filter((l) => !cardFundedLoanIds.has(l.id)),
+    [loans, cardFundedLoanIds],
+  );
   const activeLoans = peopleLoans.filter((l) => l.status === 'active');
   const settledLoans = peopleLoans.filter((l) => l.status === 'settled');
+
+  // ── Unified "who owes what" (src/lib/whoOwesMe.ts) ─────────────────────────
+  // One row per (person, currency) across loans, linked loans, ad-hoc splits
+  // and group balances. The aggregator has NO account or transaction-as-money
+  // input, so full_tracker and splits_only produce identical rows for the same
+  // loans and groups — ledger-mode loans (no account leg, no transaction row)
+  // are counted exactly like any other loan.
+  //
+  // Transactions are read for ONE purpose: labelling which loans came from an
+  // ad-hoc split. In splits_only mode a split writes no transaction rows at
+  // all, so those loans surface as plain `loan` sources — same money, same
+  // person, only the chip label and deep-link target differ.
+  const adhocByLoanId = useMemo(() => buildAdhocSplitIndex(transactions), [transactions]);
+  const whoOwesGroups = useMemo(
+    () => groupInputsFromNetBalances(groups, groupBalances, myId || null),
+    [groups, groupBalances, myId],
+  );
+  const whoOwesRows = useMemo(
+    () =>
+      buildWhoOwesMe({
+        loans: peopleLoans,
+        groups: whoOwesGroups,
+        contacts: persons,
+        currentProfileId: myId || null,
+        adhocByLoanId,
+      }),
+    [peopleLoans, whoOwesGroups, persons, myId, adhocByLoanId],
+  );
+  // "Bilal the contact" and "Bilal typed by hand" are different keys and stay
+  // different rows — this only offers the user the choice to link them.
+  const whoOwesDuplicates = useMemo(() => findLikelyDuplicateRows(whoOwesRows), [whoOwesRows]);
 
   const sumRemaining = (items: Loan[]) =>
     items.reduce(
@@ -706,6 +783,18 @@ export function LoansPage() {
               ? 'This tab only has other-currency loans right now; review the pocket section below.'
               : 'Switch tabs to review the other side of your IOUs.'}
           </p>
+        )}
+
+        {/* Unified who-owes-what — sits ABOVE the per-direction lists because
+            it is the only surface that nets a person's loans, ad-hoc splits and
+            group balances together. Hidden on the Settled tab, which is about
+            closed history rather than what is outstanding. */}
+        {loadStatus !== 'loading' && tab !== 'settled' && (
+          <WhoOwesMeCard
+            rows={whoOwesRows}
+            duplicateHints={whoOwesDuplicates}
+            defaultExpanded={whoOwesRows.length > 0}
+          />
         )}
 
         {/* Primary-currency people list */}

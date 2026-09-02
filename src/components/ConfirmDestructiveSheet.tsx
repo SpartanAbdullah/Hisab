@@ -122,10 +122,11 @@ export function ConfirmDestructiveSheet() {
   const accent = tone === 'destructive' ? 'text-pay-text' : 'text-warn-600';
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center" onClick={() => answer(false)}>
+    <div className="fixed inset-0 z-[70] flex items-end justify-center" role="presentation" onClick={() => answer(false)}>
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity" />
       <div
         className={`sheet-transient ${show ? 'is-open' : ''}`}
+        role="presentation"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 pt-7 pb-5 text-center">

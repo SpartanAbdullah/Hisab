@@ -9,6 +9,7 @@ import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { SUPPORTED_CURRENCIES, type Currency, type InvestmentMarket } from '../db';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 
 const SUGGESTIONS: { name: string; currency: Currency }[] = [
   { name: 'DFM', currency: 'AED' },
@@ -29,9 +30,7 @@ export function CreateMarketModal({ open, onClose, onCreated }: Props) {
   const submitGuard = useSubmitGuard();
 
   const [name, setName] = useState('');
-  const [currency, setCurrency] = useState<Currency>(
-    (localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED',
-  );
+  const [currency, setCurrency] = useState<Currency>(() => getPrimaryCurrency());
   const [saving, setSaving] = useState(false);
 
   const handleClose = () => {

@@ -13,6 +13,7 @@
 //    the in-app To-do queue, not the lock screen).
 //  - A daily cap keeps Hisaab from feeling like a collections agency.
 import { daysUntilDayOfMonth } from './inboxInfo';
+import { computeBudgetUsages } from '../stores/budgetStore';
 import { daysUntil } from './subscriptionMetrics';
 import { paymentsForRound, roundDate } from './committeeMath';
 import { localIso } from './thisWeek';
@@ -21,11 +22,13 @@ import { formatMoney } from './constants';
 import { tStatic } from './i18n';
 import type {
   Account,
+  Budget,
   Committee,
   CommitteePayment,
   EmiSchedule,
   Loan,
   RecurringTransaction,
+  Transaction,
   UpcomingExpense,
 } from '../db';
 
@@ -50,6 +53,11 @@ export interface PlanInputs {
   upcoming: UpcomingExpense[];
   committees: Committee[];
   committeePayments: CommitteePayment[];
+  // Budget breach (audit N-11) is DEVICE-LOCAL — see section 6 below. Both are
+  // optional so an older caller (or a test fixture) keeps compiling and simply
+  // produces no budget entries.
+  budgets?: Budget[];
+  transactions?: Transaction[];
   cardFundedLoanIds?: Map<string, string>;
   now: Date;
 }
@@ -240,6 +248,62 @@ export function planNotifications(inp: PlanInputs): PlannedNotification[] {
         href: `/kameti/${c.id}`,
         priority: 45,
       });
+    }
+  }
+
+  // 6. Budget breach — DEVICE-LOCAL ONLY.
+  //
+  //    Audit N-11: "Budget breached → Derived Inbox Info card only, visible
+  //    when the user opens the Inbox (inboxInfo.ts:140-152). No push/local
+  //    reminder even when reminders are on. Monarch/banks alert at 80%/100%.
+  //    The planner already has budgets adjacent; a `budget:{id}:80` plan entry
+  //    is cheap."
+  //
+  //    This is deliberately NOT a server trigger and writes NO notifications
+  //    row: budgets are computed entirely on the client
+  //    (computeBudgetUsages over local transactions), so the database has no
+  //    opinion about whether a budget is breached and could not honestly
+  //    author one. Consequences the reader should know:
+  //      · it fires on THIS DEVICE only — a second phone gets its own copy
+  //        derived from its own synced state, and a web-only user gets none;
+  //      · it never becomes a push and never reaches the Inbox or the bell;
+  //      · it is subject to the same opt-in switch as every other reminder.
+  //    Documented as such in docs/notifications.md.
+  //
+  //    Fire time: today at REMIND_HOUR while that is still ahead, otherwise
+  //    tomorrow — a breach found at 14:00 must not silently produce nothing
+  //    (push() drops past times). Never scheduled past the end of the month:
+  //    the budget resets and a stale "over budget" the following month is a
+  //    lie by construction.
+  const budgets = inp.budgets ?? [];
+  if (budgets.length > 0) {
+    const monthEndMs = new Date(inp.now.getFullYear(), inp.now.getMonth() + 1, 1).getTime();
+    const todaySlot = fireTime(inp.now, 0);
+    const atMs = todaySlot > nowMs + 60_000 ? todaySlot : fireTime(inp.now, 1);
+    if (atMs < monthEndMs) {
+      for (const u of computeBudgetUsages(budgets, inp.transactions ?? [], inp.now)) {
+        // Only the strongest state for a given budget — an over-limit budget
+        // is also over-warn, and two entries for one category is nagging.
+        const over = u.overLimit;
+        if (!over && !u.overWarn) continue;
+        const spent = formatMoney(u.spent, u.budget.currency);
+        const cap = formatMoney(u.budget.monthlyAmount, u.budget.currency);
+        push({
+          // The month is part of the key so a new month is a new reminder
+          // rather than a silently-replaced stale one.
+          key: `budget:${u.budget.id}:${over ? 'over' : 'warn'}:${todayIso.slice(0, 7)}`,
+          title: u.budget.category,
+          body: (over ? tStatic('notif_budget_over') : tStatic('notif_budget_warn'))
+            .replace('{spent}', spent)
+            .replace('{limit}', cap)
+            .replace('{pct}', String(Math.round(u.percent))),
+          atMs,
+          href: '/budgets',
+          // Below every hard obligation (bills, EMIs, recurring): a budget is
+          // information, not a due date.
+          priority: over ? 40 : 30,
+        });
+      }
     }
   }
 

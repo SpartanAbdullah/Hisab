@@ -6,6 +6,8 @@ import { useGoalStore } from '../stores/goalStore';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { SUPPORTED_CURRENCIES, type Currency } from '../db';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
+import { localIso } from '../lib/localDate';
 
 interface Props { open: boolean; onClose: () => void; }
 
@@ -21,12 +23,12 @@ export function AddGoalModal({ open, onClose }: Props) {
 
   const [title, setTitle] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
-  const [currency, setCurrency] = useState<Currency>(() => (localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
+  const [currency, setCurrency] = useState<Currency>(() => getPrimaryCurrency());
   const [targetDate, setTargetDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIso(new Date());
 
   // Disable-until-valid: a name and a finite, positive target (a bare `!amt`
   // check lets negatives and "12abc" through).

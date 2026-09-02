@@ -13,6 +13,7 @@ import { useT } from '../lib/i18n';
 import { allocateRepayment, totalRemaining, type Allocation, type AllocationStrategy } from '../lib/repaymentAllocation';
 import { executeAllocatedRepayments } from '../lib/repaymentExecution';
 import { isLoanRemainingConflict } from '../lib/loanRemainingDelta';
+import { track } from '../lib/telemetry';
 import type { Currency, Loan } from '../db';
 
 type Strategy = AllocationStrategy | 'manual';
@@ -138,6 +139,27 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
           applyRepayment,
         },
       );
+      // Catalog #12. This modal IS the cross-loan lump allocator, so
+      // `consolidated` is always true here (see RepaymentModal's comment on
+      // the same event) — a single-loan repayment lump goes through
+      // RepaymentModal/QuickEntry instead, which track their own falses.
+      // `settles_loan` mirrors the group-repayment case in QuickEntry: true
+      // if at least one of the loans actually applied to reached zero.
+      // Each repayment commits independently (repaymentExecution.ts), so
+      // this fires once for whatever prefix committed — nothing if none did.
+      if (result.done > 0) {
+        const remainingById = new Map(loans.map((l) => [l.id, l.remainingAmount]));
+        const settlesAny = result.applied.some((a) => {
+          const remaining = remainingById.get(a.loanId);
+          return remaining != null && a.amount >= remaining - 0.001;
+        });
+        track('repayment_recorded', {
+          consolidated: true,
+          settles_loan: settlesAny,
+          mode: isLedgerOnlyMode ? 'splits_only' : 'full_tracker',
+          currency,
+        });
+      }
       if (!result.failed) {
         toast.show({
           type: 'success',

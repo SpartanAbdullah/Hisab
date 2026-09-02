@@ -43,7 +43,8 @@ function isMuted(n: AppNotification, mutes?: NotificationMuteState): boolean {
   if (!n.groupId) return false;
   const ids = mutes.mutedGroupIds;
   if (!ids) return false;
-  return ids instanceof Set ? ids.has(n.groupId) : ids.includes(n.groupId);
+  if (Array.isArray(ids)) return ids.includes(n.groupId);
+  return (ids as ReadonlySet<string>).has(n.groupId);
 }
 
 /** Is this row something the reader has to be told about?

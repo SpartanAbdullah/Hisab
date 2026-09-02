@@ -244,8 +244,20 @@ export function Modal({ open, onClose, title, children, footer, confirmClose, ar
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center" onClick={requestClose}>
-      <div className={`modal-backdrop ${show ? 'opacity-100' : 'opacity-0'}`} />
+    <div className="fixed inset-0 z-[60] flex items-end justify-center">
+      {/* Decorative backdrop — the actual dismiss-on-outside-tap target. Kept
+          as a sibling (not an ancestor) of the dialog sheet below, so the
+          dialog needs no stopPropagation click-absorber of its own: a click
+          inside the sheet never bubbles through this element in the first
+          place. role="presentation" (not aria-hidden) because it still needs
+          to receive pointer events — aria-hidden elements should generally be
+          inert, and hiding a hit-target from a11y tooling while leaving it
+          clickable is the narrower, more accurate signal here. */}
+      <div
+        className={`modal-backdrop ${show ? 'opacity-100' : 'opacity-0'}`}
+        role="presentation"
+        onClick={requestClose}
+      />
       <div
         ref={dialogRef}
         role="dialog"
@@ -254,7 +266,6 @@ export function Modal({ open, onClose, title, children, footer, confirmClose, ar
         aria-label={ariaLabel}
         tabIndex={-1}
         className={`modal-sheet ${show ? 'translate-y-0' : 'translate-y-full'}`}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Drag handle — Sukoon grabber: 38 × 4.5 ink-200 */}
         <div className="flex justify-center pt-3 pb-1 shrink-0">

@@ -3,7 +3,10 @@ import { Camera, Trash2, Loader2, FileImage } from 'lucide-react';
 import { useToast } from './Toast';
 import { confirmDestructive } from './ConfirmDestructiveSheet';
 import { useT } from '../lib/i18n';
-import { uploadReceipt, getReceiptUrl, deleteReceipt, isImageFile } from '../lib/receiptStorage';
+import {
+  uploadReceipt, getReceiptUrl, deleteReceipt, isImageFile,
+  ReceiptRejectedError,
+} from '../lib/receiptStorage';
 
 interface Props {
   transactionId: string;
@@ -44,8 +47,18 @@ export function ReceiptField({ transactionId, receiptPath, onChange }: Props) {
       const path = await uploadReceipt(transactionId, file);
       onChange(path);
       toast.show({ type: 'success', title: t('receipt_added') });
-    } catch {
-      toast.show({ type: 'error', title: t('receipt_failed') });
+    } catch (err) {
+      // The bucket's 5 MiB cap / MIME allowlist (audit M13) rejects silently at
+      // the API boundary — receiptStorage pre-checks and raises a typed error so
+      // the user gets a sentence they can act on instead of "couldn't save".
+      if (err instanceof ReceiptRejectedError) {
+        toast.show({
+          type: 'error',
+          title: err.code === 'TOO_LARGE' ? t('receipt_too_large') : t('receipt_bad_type'),
+        });
+      } else {
+        toast.show({ type: 'error', title: t('receipt_failed') });
+      }
     } finally {
       setBusy(false);
     }
@@ -122,6 +135,7 @@ export function ReceiptField({ transactionId, receiptPath, onChange }: Props) {
       {viewing && url && (
         <div
           className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+          role="presentation"
           onClick={() => setViewing(false)}
         >
           <img src={url} alt={t('receipt_label')} className="max-w-full max-h-[85vh] rounded-xl" />

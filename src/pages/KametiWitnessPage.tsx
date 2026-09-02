@@ -5,6 +5,7 @@ import { committeesDb } from '../lib/supabaseDb';
 import { CommitteeVerifyDraw } from '../components/CommitteeVerifyDraw';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { track } from '../lib/telemetry';
 import {
   poolAmount, currentRound, roundDate, recipientForRound, hasPaid, paymentsForRound,
 } from '../lib/committeeMath';
@@ -24,7 +25,18 @@ export function KametiWitnessPage() {
     const token = window.location.pathname.split('/').filter(Boolean).pop() ?? '';
     let active = true;
     void committeesDb.getWitness(token)
-      .then((res) => { if (!active) return; if (res) { setData(res); setStatus('ready'); } else setStatus('invalid'); })
+      .then((res) => {
+        if (!active) return;
+        if (res) {
+          setData(res);
+          setStatus('ready');
+          // Catalog #23 — deliberately anonymous. A witness has no session
+          // and is never identify()'d; this is a bare, unidentified event.
+          track('kameti_witness_viewed', {});
+        } else {
+          setStatus('invalid');
+        }
+      })
       .catch(() => { if (active) setStatus('invalid'); });
     return () => { active = false; };
   }, []);
@@ -62,11 +74,27 @@ export function KametiWitnessPage() {
       </div>
 
       <div className="px-5 pt-5 space-y-4">
-        {/* Witness banner */}
+        {/* Witness banner. The expiry and the initials-only notice ride along
+            (audit UX-24): a link that dies in 90 days should say so, and
+            initials must read as a deliberate privacy setting rather than as
+            missing data. */}
         <div className="flex items-start gap-2.5 rounded-2xl bg-receive-50 border border-receive-100 p-3">
           <Shield size={16} className="text-receive-text shrink-0 mt-0.5" strokeWidth={2.2} />
-          <p className="text-[11.5px] text-receive-text leading-relaxed">{t('kameti_witness_banner')}</p>
+          <div className="min-w-0">
+            <p className="text-[11.5px] text-receive-text leading-relaxed">{t('kameti_witness_banner')}</p>
+            {committee.witnessExpiresAt && (
+              <p className="text-[10.5px] text-receive-text/80 mt-1 tabular-nums">
+                {t('kameti_witness_expires_on').replace('{date}', format(new Date(committee.witnessExpiresAt), 'd MMM yyyy'))}
+              </p>
+            )}
+          </div>
         </div>
+
+        {committee.witnessInitialsOnly && (
+          <p className="text-[11px] text-ink-500 leading-relaxed rounded-2xl bg-cream-card border border-cream-border p-3">
+            {t('kameti_witness_initials_note')}
+          </p>
+        )}
 
         {/* Pool */}
         <div className="rounded-2xl bg-cream-card border border-cream-border p-4 flex items-baseline justify-between">

@@ -5,6 +5,7 @@
 // The interface is deliberately minimal so the rest of the app can call
 // `reportError(err, context)` without caring which backend is configured.
 import { notifyStaleChunkLoadError } from './appRecovery';
+import { track } from './telemetry';
 
 export interface ErrorContext {
   /**
@@ -192,9 +193,27 @@ export function resetErrorReportDedupe(): void {
   recentReports.clear();
 }
 
+// Catalog #28 — bridges the error-rate signal into product analytics without
+// ever sending a message string: `feature` is bucketed into the closed set
+// the schema allows, `kind` is fixed by which function was called. This is
+// the ONLY place `error_surfaced` fires — reportMessage() stays a breadcrumb.
+function errorSurfacedFeature(
+  feature: string | undefined,
+): 'react.render' | 'window.onerror' | 'window.unhandledrejection' | 'money_mutation' | 'other' {
+  if (feature === 'react.render' || feature === 'window.onerror' || feature === 'window.unhandledrejection') {
+    return feature;
+  }
+  // mutationSafety.ts (src/lib/mutationSafety.ts) is the single wrapper every
+  // money-moving flow's compensation/rollback logic goes through — its
+  // feature strings are always prefixed 'mutationSafety.'.
+  if (feature?.startsWith('mutationSafety.')) return 'money_mutation';
+  return 'other';
+}
+
 export function reportError(error: unknown, context?: ErrorContext): void {
   try {
     if (!shouldSend('err', context?.feature, signatureOf(error))) return;
+    track('error_surfaced', { feature: errorSurfacedFeature(context?.feature) });
     if (queueWhilePending({ kind: 'err', payload: error, context })) return;
     activeReporter.captureException(error, context);
   } catch {

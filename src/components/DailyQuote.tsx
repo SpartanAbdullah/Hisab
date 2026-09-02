@@ -1,34 +1,47 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Lightbulb, Share2, X } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { quoteForDay } from '../lib/financeQuotes';
 import { buildWhatsAppUrl } from '../lib/whatsappReminder';
+import {
+  QUOTE_ENABLED_KEY,
+  QUOTE_SHOWN_KEY,
+  disableDailyQuote,
+  markDailyQuoteShown,
+} from '../lib/dailyQuotePrefs';
 
-export const QUOTE_SHOWN_KEY = 'hisaab_quote_last_shown';
-export const QUOTE_ENABLED_KEY = 'hisaab_daily_quote_enabled';
+// Re-exported for the (few) callers that used to import the storage keys from
+// here. Their single definition now lives in src/lib/dailyQuotePrefs.ts so the
+// lazy-mount gate in src/App.tsx can read them without pulling this chunk.
+export { QUOTE_SHOWN_KEY, QUOTE_ENABLED_KEY };
 
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+interface Props {
+  /**
+   * Called once the user has dismissed (or disabled) the popup, so the gate
+   * that mounted it can unmount it again. Optional so the component still
+   * renders standalone in a story/test.
+   */
+  onDismiss?: () => void;
 }
 
 // Once-a-day money-wisdom popup. Shows on the first app open of each calendar
-// day (after a short delay so it doesn't fight the first paint), is easy to
-// dismiss, shareable, and can be turned off entirely (here or in Settings).
-export function DailyQuote() {
+// day, is easy to dismiss, shareable, and can be turned off entirely (here or
+// in Settings).
+//
+// Audit 03-performance H1 / P2 M2c: this component is now LAZY, mounted by the
+// gate in src/App.tsx only once `shouldShowDailyQuote()` says it is due and the
+// post-paint delay has elapsed. The "is it due?" + delay logic therefore lives
+// in the gate (src/lib/dailyQuotePrefs.ts), not here — mounting this component
+// AT ALL now means "show it", so it opens immediately.
+export function DailyQuote({ onDismiss }: Props) {
   const t = useT();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [quote] = useState(() => quoteForDay());
 
-  useEffect(() => {
-    if (localStorage.getItem(QUOTE_ENABLED_KEY) === 'false') return;
-    if (localStorage.getItem(QUOTE_SHOWN_KEY) === todayStr()) return;
-    const timer = setTimeout(() => setOpen(true), 700);
-    return () => clearTimeout(timer);
-  }, []);
-
   const dismiss = () => {
-    try { localStorage.setItem(QUOTE_SHOWN_KEY, todayStr()); } catch { /* storage off — just close */ }
+    markDailyQuoteShown();
     setOpen(false);
+    onDismiss?.();
   };
 
   const share = () => {
@@ -41,7 +54,7 @@ export function DailyQuote() {
   };
 
   const turnOff = () => {
-    try { localStorage.setItem(QUOTE_ENABLED_KEY, 'false'); } catch { /* ignore */ }
+    disableDailyQuote();
     dismiss();
   };
 
@@ -54,7 +67,7 @@ export function DailyQuote() {
       aria-modal="true"
       aria-labelledby="daily-wisdom-title"
     >
-      <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm animate-fade-in" onClick={dismiss} />
+      <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm animate-fade-in" aria-hidden="true" onClick={dismiss} />
 
       {/* Rainbow frame. The drifting spectrum lives in this box and the cream
           card sits on top of it, so all that shows through is the 3px gutter

@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText, Merge, QrCode, Clock, Phone } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Ban, Flag, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText, Merge, QrCode, Clock, Phone, Link2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { QRScanner } from '../components/QRScanner';
 import { formatConnectCode } from '../lib/connectQr';
@@ -22,10 +22,13 @@ import { markMirrorStale } from '../lib/mirrorCache';
 import { VerifiedBadge } from '../components/VerifiedBadge';
 import { isConsentVerifiedLink } from '../lib/contactVerification';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
+import { useBlockStore } from '../stores/blockStore';
+import { BlockReportSheet, type BlockReportMode } from '../components/BlockReportSheet';
 import type { Person } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { SendStatementModal } from '../components/SendStatementModal';
+import { ShareKhataLinkSheet } from '../components/ShareKhataLinkSheet';
 import { useT } from '../lib/i18n';
 import { getActionLabel } from '../lib/transactionLabel';
 import type { Transaction } from '../db';
@@ -78,7 +81,16 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [phoneDraft, setPhoneDraft] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
+  const [showKhataLink, setShowKhataLink] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  // Trust & safety (audit M17). Only meaningful for a LINKED contact — an
+  // unlinked row is a private note in this user's own ledger, with no account
+  // on the other end to block.
+  const [safetyMode, setSafetyMode] = useState<BlockReportMode | null>(null);
+  const blocks = useBlockStore((s) => s.blocks);
+  const loadBlocks = useBlockStore((s) => s.loadBlocks);
+  const unblock = useBlockStore((s) => s.unblock);
+  const unblockGuard = useSubmitGuard();
 
   // Double-tap guards (audit C10/F-8) — one per independent money/request
   // mutating action on this sheet. See src/lib/useSubmitGuard.ts.
@@ -122,9 +134,17 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       setArchiving(false);
       setEditingPhone(false);
       setShowStatement(false);
+      setShowKhataLink(false);
       setShowScanner(false);
+      setSafetyMode(null);
     }
   }, [open]);
+
+  // Warm the block list so the sheet opens showing Block or Unblock, never the
+  // wrong one. Store-level freshness gate makes a re-open free.
+  useEffect(() => {
+    if (open) void loadBlocks();
+  }, [open, loadBlocks]);
 
   // Check this contact's saved number against opted-in Hisaab accounts, so
   // an unlinked contact who is already a user can be linked in one tap
@@ -186,6 +206,36 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     }
     return [...byCurrency.entries()].filter(([, value]) => Math.abs(value) > 0.00001);
   })();
+  // Trust & safety derivations. `isBlocked` reads MY block list only — there is
+  // deliberately no way to ask whether THEY blocked ME (docs/trust-and-safety
+  // RULE 1), and nothing here should ever try.
+  const isBlocked = !!person.linkedProfileId && blocks.some((b) => b.blockedId === person.linkedProfileId);
+  // RULE 2's nudge: a live balance means "settle to zero, then block" is the
+  // cleaner sequence. Blocking with money open is still allowed — freezing an
+  // existing debt would turn a safety feature into a collection weapon.
+  const openBalanceText = (() => {
+    const first = relationshipBalances.find(([, value]) => Math.abs(value) > 0.00001);
+    return first ? formatMoney(Math.abs(first[1]), first[0]) : null;
+  })();
+
+  const handleUnblock = () => unblockGuard.run(async () => {
+    if (!person.linkedProfileId) return;
+    const ok = await confirmDestructive({
+      title: t('blk_unblock_confirm_title').replace('{name}', person.name),
+      description: t('blk_unblock_confirm_body'),
+      confirmLabel: t('blk_action_unblock'),
+      cancelLabel: t('cancel'),
+      tone: 'warning',
+    });
+    if (!ok) return;
+    try {
+      await unblock(person.linkedProfileId);
+      toast.show({ type: 'success', title: t('blk_unblocked_toast').replace('{name}', person.name) });
+    } catch {
+      toast.show({ type: 'error', title: t('blk_failed') });
+    }
+  });
+
   // All of this contact's loans (personId, with a name fallback for legacy
   // loans created before the contact record existed) — the raw material for a
   // statement that spans every loan direction and currency with this person.
@@ -508,6 +558,21 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             className="w-full py-3 rounded-2xl bg-accent-100 text-accent-600 text-[13px] font-bold flex items-center justify-center gap-2 press"
           >
             <FileText size={14} strokeWidth={2.2} /> {t('soa_cta')}
+          </button>
+        )}
+
+        {/* Khata link — the always-live shareable balance page (audit P3 L2).
+            Distinct from the statement above: this is a standing link, not a
+            one-off send. Archived contacts can't open this sheet in the normal
+            flow, but the guard is kept explicit here since ContactDetailSheet
+            can be handed an archived Person directly. */}
+        {!person.archivedAt && (
+          <button
+            type="button"
+            onClick={() => setShowKhataLink(true)}
+            className="w-full py-3 rounded-2xl bg-cream-soft border border-cream-border text-ink-700 text-[13px] font-bold flex items-center justify-center gap-2 press"
+          >
+            <Link2 size={14} strokeWidth={2.2} /> {t('khata_share_open_cta')}
           </button>
         )}
 
@@ -913,8 +978,44 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             </p>
           </div>
         )}
+
+        {/* Block / report — audit M17. Sits below Archive/Unlink because it is
+            the last resort, not a routine action. Linked contacts only: an
+            unlinked row has no account on the other end. */}
+        {isLinked && person.linkedProfileId && (
+          <div className="pt-1 border-t border-cream-hairline space-y-2">
+            <button
+              type="button"
+              onClick={isBlocked ? handleUnblock : () => setSafetyMode('block')}
+              className={`w-full mt-3 py-3 rounded-2xl text-[12.5px] font-bold flex items-center justify-center gap-1.5 ${
+                isBlocked ? 'bg-cream-soft border border-cream-hairline text-ink-700' : 'bg-pay-50 text-pay-text'
+              }`}
+            >
+              <Ban size={13} strokeWidth={2.2} />
+              {isBlocked ? t('blk_action_unblock') : t('blk_action_block')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSafetyMode('report')}
+              className="w-full py-3 rounded-2xl bg-cream-soft border border-cream-hairline text-ink-700 text-[12.5px] font-bold flex items-center justify-center gap-1.5"
+            >
+              <Flag size={13} strokeWidth={2.2} />
+              {t('blk_action_report')}
+            </button>
+          </div>
+        )}
       </div>
     </Modal>
+    <BlockReportSheet
+      open={!!safetyMode}
+      mode={safetyMode ?? 'block'}
+      targetUserId={person.linkedProfileId ?? null}
+      targetName={person.name}
+      contextType="contact"
+      contextId={person.id}
+      openBalanceText={openBalanceText}
+      onClose={() => setSafetyMode(null)}
+    />
     <QuickEntry
       open={showMoneyEntry}
       preset={moneyPreset}
@@ -935,6 +1036,13 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
       loans={personLoans}
       transactions={transactions}
       scope="contact"
+      phone={person.phone}
+    />
+    <ShareKhataLinkSheet
+      open={showKhataLink}
+      onClose={() => setShowKhataLink(false)}
+      personId={person.id}
+      personName={person.name}
       phone={person.phone}
     />
     {/* Scanner overlays the whole screen, so it lives outside the Modal's

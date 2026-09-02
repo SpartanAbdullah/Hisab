@@ -316,7 +316,13 @@ export type GroupEventType =
   | 'member_account_deleted'
   // Written by transfer_group_ownership (account-deletion.sql §5). Payload:
   // { newOwnerMemberId, newOwnerProfileId, previousOwnerMemberId }
-  | 'group_ownership_transferred';
+  | 'group_ownership_transferred'
+  // Written by add_group_guest (supabase-migration-p2-guest-members.sql §4a)
+  // when a member adds a named seat for someone who is not on Hisaab.
+  // Payload: { memberId, displayName, groupId, groupName, currency, actorName }.
+  // Deliberately fanned out with an EMPTY recipient list: adding a guest is a
+  // group FACT the shared activity feed must record, but nobody's push.
+  | 'guest_added';
 
 export interface GroupInvite {
   id: string;
@@ -505,6 +511,12 @@ export type CommitteeStatus = 'active' | 'completed';
 export interface Committee {
   id: string;
   name: string;
+  /**
+   * Optional decoration for the kameti card (UX-25 / p2-kameti-editing). Pure
+   * label: no money meaning, editable in every lifecycle state alongside the
+   * name. Absent on rows written before the migration.
+   */
+  emoji?: string | null;
   currency: Currency;
   contributionAmount: number;
   memberCount: number;        // N slots
@@ -519,7 +531,20 @@ export interface Committee {
   drawSeed?: string | null;
   drawCommitment?: string | null;
   // Read-only "witness link" token (phase 2 transparency).
+  //
+  // AUDIT M19 / supabase-migration-p2-trust-safety.sql §7: the raw token is no
+  // longer stored — the server keeps only its SHA-256 and hands the plaintext
+  // back exactly once, from `rotate_committee_witness_token`. `shareToken` is
+  // therefore ALWAYS null now (the migration nulls the column) and is kept only
+  // so old rows in the local mirror still typecheck. Never write it: a trigger
+  // raises WITNESS_TOKEN_IS_SERVER_ONLY.
   shareToken?: string | null;
+  /** When the current witness link stops working (90 days from the rotate). */
+  witnessExpiresAt?: string | null;
+  /** Set by revoke_committee_witness_token — the organiser's "stop sharing". */
+  witnessRevokedAt?: string | null;
+  /** UX-24: show member INITIALS instead of names on the public witness page. */
+  witnessInitialsOnly?: boolean;
   createdAt: string;
   updatedAt?: string;
 }

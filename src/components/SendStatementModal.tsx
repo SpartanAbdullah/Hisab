@@ -5,11 +5,13 @@ import { useToast } from './Toast';
 import { useT } from '../lib/i18n';
 import { moneyFormatter } from '../lib/maskMoney';
 import { buildStatement } from '../lib/statementOfAccount';
+import { useTransactionStore } from '../stores/transactionStore';
 import { renderStatementText, netBalanceLabel, greetingLine, type GreetingStyle } from '../lib/statementText';
 import { generateStatementPdf } from '../lib/statementPdf';
 import { shareStatementFile } from '../lib/shareStatement';
 import { buildWhatsAppUrl, hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { buildReceiptText } from '../lib/receiptText';
+import { track } from '../lib/telemetry';
 import type { Loan, Transaction } from '../db';
 
 interface Props {
@@ -82,6 +84,33 @@ export function SendStatementModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // ── The completeness gate (docs/performance.md §7) ────────────────────────
+  // A statement of account is a LEDGER the user sends to another person as a
+  // record of what is owed. `transactionStore.loadTransactions()` returns a
+  // bounded window now, so building this from whatever happens to be in the
+  // store would quietly drop older repayments and overstate a debt — the one
+  // class of bug this whole file exists to avoid.
+  //
+  // The gate lives HERE, not at the three call sites (LoansPage,
+  // LoanDetailPage, ContactDetailSheet), because this is the single place
+  // `buildStatement` is reached from and all three pass store-derived rows: the
+  // fetch lands, the parent re-renders, richer `transactions` arrive as props.
+  const ensureTransactionHistory = useTransactionStore((s) => s.ensureTransactionHistory);
+  const historyComplete = useTransactionStore((s) => s.historyCoverage.complete);
+  const historyLoading = useTransactionStore((s) => s.historyLoading);
+  const [historyFailed, setHistoryFailed] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setHistoryFailed(false);
+    void ensureTransactionHistory({ all: true }).catch(() => setHistoryFailed(true));
+  }, [open, ensureTransactionHistory]);
+
+  // Not "is it still spinning" — "is the set provably complete". A fetch that
+  // failed leaves this false, and the sheet says so rather than rendering a
+  // confident-looking ledger built on a partial history.
+  const historyReady = historyComplete;
+
   // The user's own name (set at onboarding, used across groups/committees)
   // signs the statement off; an explicit fromName prop can override it.
   const myName = useMemo(() => (localStorage.getItem('hisaab_user_name') ?? '').trim(), []);
@@ -89,8 +118,10 @@ export function SendStatementModal({
 
   const statement = useMemo(() => {
     if (!asOf) return null;
+    // Never build on a partial history — see the completeness gate above.
+    if (!historyReady) return null;
     return buildStatement({ partyName, loans, transactions, asOf, scope });
-  }, [asOf, partyName, loans, transactions, scope]);
+  }, [asOf, historyReady, partyName, loans, transactions, scope]);
 
   const greeting = useMemo(() => greetingLine(greetingStyle, partyName), [greetingStyle, partyName]);
   const receiptText = useMemo(
@@ -125,6 +156,11 @@ export function SendStatementModal({
         title: `${t('soa_title')} — ${partyName}`,
         text: `${partyName} · ${t('soa_title')} (Hisaab)`,
       });
+      if (outcome === 'downloaded' || outcome === 'shared') {
+        // Catalog #26. 'statement' is the only doc_type this PDF path can
+        // produce — the receipt toggle only ever generates the text message.
+        track('statement_shared', { doc_type: 'statement', channel: outcome === 'shared' ? 'share_sheet' : 'other' });
+      }
       if (outcome === 'downloaded') {
         toast.show({ type: 'success', title: t('soa_downloaded') });
       } else if (outcome === 'shared') {
@@ -143,6 +179,7 @@ export function SendStatementModal({
     setCopying(true);
     try {
       await copyWithFallback(message);
+      track('statement_shared', { doc_type: mode === 'receipt' ? 'receipt' : 'statement', channel: 'copy' });
       toast.show({ type: 'success', title: t('soa_copied') });
     } catch {
       toast.show({ type: 'error', title: t('soa_copy_failed') });
@@ -176,7 +213,10 @@ export function SendStatementModal({
               href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => toast.show({ type: 'success', title: t('reminder_wa_opening') })}
+              onClick={() => {
+                track('statement_shared', { doc_type: mode === 'receipt' ? 'receipt' : 'statement', channel: 'whatsapp' });
+                toast.show({ type: 'success', title: t('reminder_wa_opening') });
+              }}
               className={`flex-1 rounded-2xl py-3 text-[13px] font-bold flex items-center justify-center gap-2 ${hasContent ? '' : 'pointer-events-none opacity-40'} press`}
               style={{ background: '#1FA855', color: '#fff' }}
             >
@@ -254,6 +294,17 @@ export function SendStatementModal({
                 </div>
               );
             })}
+          </div>
+        ) : !historyReady ? (
+          // "No activity with Ahmed" while the older half of the ledger is
+          // still in flight would be a false statement of account, so the two
+          // are worded apart: still loading, or loaded-but-short.
+          <div className="rounded-2xl bg-cream-soft border border-cream-hairline p-4">
+            <p className="text-[13px] text-ink-600">
+              {historyFailed && !historyLoading ? t('tx_history_partial')
+                .replace('{n}', String(transactions.length))
+                .replace('{m}', '—') : t('tx_history_loading')}
+            </p>
           </div>
         ) : (
           <div className="rounded-2xl bg-cream-soft border border-cream-hairline p-4">

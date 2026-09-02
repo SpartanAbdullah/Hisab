@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { notificationId, planNotifications, type PlanInputs } from './notificationPlanner';
-import type { Account, Committee, EmiSchedule, Loan, RecurringTransaction, UpcomingExpense } from '../db';
+import type { Account, Budget, Committee, EmiSchedule, Loan, RecurringTransaction, Transaction, UpcomingExpense } from '../db';
 
 // 09:00 on 24 Jul — before the 10:00 fire slot, so same-day (T-0) entries
 // are still schedulable.
@@ -119,5 +119,89 @@ describe('planNotifications', () => {
       })),
     }));
     expect(collected.find((p) => p.key === 'kameti:k1:1')).toBeUndefined();
+  });
+});
+
+// ── Budget breach — DEVICE-LOCAL (audit 08-notifications.md N-11) ───────────
+// "Budget breached → Derived Inbox Info card only, visible when the user opens
+//  the Inbox. No push/local reminder even when reminders are on."
+// These entries never become a notifications row and never become a push; they
+// exist only in this phone's local schedule. See notificationPlanner section 6.
+describe('planNotifications — budget breach', () => {
+  const budget = (over: Partial<Budget> = {}): Budget => ({
+    id: 'b1', category: 'Groceries', monthlyAmount: 1000, currency: 'AED',
+    warnAtPercent: 80, createdAt: '2026-07-01T00:00:00Z', ...over,
+  });
+
+  const spend = (amount: number, over: Partial<Transaction> = {}): Transaction => ({
+    id: `t-${amount}`, type: 'expense', amount, currency: 'AED',
+    category: 'Groceries', description: '', sourceAccountId: null,
+    destinationAccountId: null, createdAt: '2026-07-10T00:00:00Z', ...over,
+  } as Transaction);
+
+  it('says nothing while spending is under the warn threshold', () => {
+    const plan = planNotifications(inputs({
+      budgets: [budget()], transactions: [spend(500)],
+    }));
+    expect(plan.filter((p) => p.key.startsWith('budget:'))).toHaveLength(0);
+  });
+
+  it('warns once at the warn threshold', () => {
+    const plan = planNotifications(inputs({
+      budgets: [budget()], transactions: [spend(850)],
+    }));
+    const entries = plan.filter((p) => p.key.startsWith('budget:'));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('budget:b1:warn:2026-07');
+    expect(entries[0].href).toBe('/budgets');
+    expect(entries[0].title).toBe('Groceries');
+  });
+
+  it('escalates to over-limit and never emits BOTH for one budget', () => {
+    const plan = planNotifications(inputs({
+      budgets: [budget()], transactions: [spend(1200)],
+    }));
+    const entries = plan.filter((p) => p.key.startsWith('budget:'));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('budget:b1:over:2026-07');
+    // Below every hard obligation — a budget is information, not a due date.
+    expect(entries[0].priority).toBeLessThan(45);
+  });
+
+  it('ignores spending in another category or another currency', () => {
+    const plan = planNotifications(inputs({
+      budgets: [budget()],
+      transactions: [
+        spend(2000, { category: 'Fuel' }),
+        spend(2000, { currency: 'PKR' } as Partial<Transaction>),
+      ],
+    }));
+    expect(plan.filter((p) => p.key.startsWith('budget:'))).toHaveLength(0);
+  });
+
+  it('schedules tomorrow when today\'s 10:00 slot has already passed', () => {
+    // 14:00 — past REMIND_HOUR. Without the tomorrow fallback the entry would
+    // be silently dropped by the never-schedule-into-the-past guard.
+    const afternoon = new Date(2026, 6, 24, 14, 0, 0);
+    const plan = planNotifications(inputs({
+      now: afternoon, budgets: [budget()], transactions: [spend(1200)],
+    }));
+    const entry = plan.find((p) => p.key.startsWith('budget:'));
+    expect(entry).toBeDefined();
+    expect(new Date(entry!.atMs).getDate()).toBe(25);
+  });
+
+  it('never schedules past the end of the month — the budget resets', () => {
+    // 31 Jul at 14:00: the only remaining slot would be 1 Aug, in a new
+    // budget month, where "over budget" would be a lie.
+    const lastDay = new Date(2026, 6, 31, 14, 0, 0);
+    const plan = planNotifications(inputs({
+      now: lastDay, budgets: [budget()], transactions: [spend(1200, { createdAt: '2026-07-30T00:00:00Z' })],
+    }));
+    expect(plan.filter((p) => p.key.startsWith('budget:'))).toHaveLength(0);
+  });
+
+  it('produces nothing when the caller passes no budgets (older callers)', () => {
+    expect(planNotifications(inputs()).filter((p) => p.key.startsWith('budget:'))).toHaveLength(0);
   });
 });

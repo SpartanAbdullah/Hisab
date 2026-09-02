@@ -4,8 +4,14 @@ import { getCurrentDatabaseUserId } from '../db/database';
 import {
   DEFAULT_FRESH_MS,
   DEFAULT_FULL_REFRESH_MS,
+  coverageSurvives,
+  noPersistedCoverage,
+  normalizePersistedCoverage,
   planMirrorRefresh,
+  seedCoverage,
   type MirrorCursor,
+  type MirrorWriteOutcome,
+  type PersistedCoverage,
 } from './mirrorSyncPolicy';
 import { reportError } from './errorReporter';
 
@@ -28,6 +34,32 @@ export interface MirrorSyncSnapshot {
 export interface RemoteFetchResult<T> {
   rows: T[];
   truncated?: boolean;
+  /**
+   * Bounded-window fetches (see `src/lib/historyWindow.ts`): the result is the
+   * COMPLETE set only for rows at/after this instant.
+   *
+   * Present ⇒ the mirror merges instead of replacing (a windowed result is
+   * partial by construction, and clearing on a partial result is exactly how a
+   * year of history used to vanish from Dexie — audit 04-supabase F-FE1) AND
+   * reconciles inside the window: a mirror row at/after `completeFrom` that the
+   * fetch did not return was deleted elsewhere, so it is pruned. Rows OLDER
+   * than `completeFrom` are outside what this fetch can speak for and are left
+   * exactly as they are.
+   *
+   * Requires `windowKeyOf` on the options to read a row's ordering timestamp.
+   */
+  completeFrom?: string | null;
+  /**
+   * The SERVER under-reported — `fetchAllPages`' max-rows probe fired.
+   *
+   * Distinct from `truncated`, which a *windowed* caller sets to mean "this is
+   * a partial set by construction, do not clear the mirror" and which is
+   * therefore always true on that path. Only this flag is a reason to distrust
+   * what came back, and only this flag invalidates the persisted coverage floor
+   * (see `serverUnderReported`). Unwindowed callers have no need for it: for
+   * them `truncated` already means exactly this.
+   */
+  serverTruncated?: boolean;
 }
 
 interface CacheFirstOptions<T> {
@@ -46,6 +78,13 @@ interface CacheFirstOptions<T> {
    * rendering the pre-refresh snapshot (audit 04-supabase F-RT1, low-finding 3).
    */
   onRefreshed?: (rows: T[]) => void;
+  /**
+   * The row's ordering timestamp (`createdAt` for transactions). Only read when
+   * `fetchRemote` returns `completeFrom`; without it a windowed fetch degrades
+   * to a plain merge with no in-window pruning, which is safe but lets a row
+   * deleted on another device linger until `fetchDeletedSince` catches it.
+   */
+  windowKeyOf?: (row: T) => string;
 }
 
 export function mirrorSyncKey(key: string, userId = getCurrentDatabaseUserId()): string {
@@ -129,6 +168,13 @@ async function writeSyncState(
       lastSyncedAt,
       lastFullRefreshAt: options.lastFullRefreshAt ?? previous?.lastFullRefreshAt ?? null,
       dirtyAt: stillDirty ? (previous?.dirtyAt ?? new Date().toISOString()) : null,
+      // Carried forward, never re-derived here. This row is written on every
+      // sync; rebuilding it from an object literal without these two fields
+      // would silently drop the coverage floor on the next successful poll.
+      // Invalidation is explicit and happens BEFORE this write (see
+      // `applyCoverageOutcome`), so `previous` already reflects it.
+      coverageSince: previous?.coverageSince ?? null,
+      coverageComplete: previous?.coverageComplete === true,
     });
   } catch (error) {
     reportMirrorError('sync-state write', error);
@@ -136,13 +182,158 @@ async function writeSyncState(
   localStorage.setItem(cacheKey(key), String(new Date(lastSyncedAt).getTime()));
 }
 
+// ── The persisted coverage floor (docs/performance.md §7.1) ────────────────
+// The I/O half. Every RULE lives in `mirrorSyncPolicy.ts` and is unit-tested
+// there; nothing below decides anything on its own.
+//
+// The floor rides on the sync row rather than a table of its own so it can
+// never outlive the cursors that vouch for it: the row is per-user-scoped, it
+// goes when the per-user Dexie database is deleted at sign-out, and a mirror
+// with no cursor row has no floor by construction.
+
+export type { PersistedCoverage } from './mirrorSyncPolicy';
+
+/** The floor exactly as stored — believe it only via `readMirrorCoverageSeed`. */
+export async function readMirrorCoverage(key: string): Promise<PersistedCoverage> {
+  try {
+    return normalizePersistedCoverage(await db.mirrorSync.get(mirrorSyncKey(key)));
+  } catch (error) {
+    reportMirrorError('coverage read', error);
+    return noPersistedCoverage();
+  }
+}
+
+export interface CoverageSeedOptions {
+  /** Whether the local mirror table has rows to serve. */
+  hasCache: boolean;
+  /** Whether an incremental fetcher is wired for this key. */
+  canIncremental: boolean;
+  now?: number;
+  freshMs?: number;
+  fullRefreshMs?: number;
+}
+
+/**
+ * The floor a session may ADOPT on boot — the persisted one when the cursors
+ * say an incremental sync is what runs next, otherwise nothing proven.
+ *
+ * Returns "nothing proven" on any storage failure too: a device with no usable
+ * IndexedDB has no mirror to vouch for, so claiming a floor there would be a
+ * pure invention.
+ */
+export async function readMirrorCoverageSeed(
+  key: string,
+  options: CoverageSeedOptions,
+): Promise<PersistedCoverage> {
+  try {
+    const [persisted, cursor] = await Promise.all([
+      readMirrorCoverage(key),
+      readSyncState(key),
+    ]);
+    return seedCoverage(persisted, {
+      cursor,
+      hasCache: options.hasCache,
+      canIncremental: options.canIncremental,
+      now: options.now,
+      freshMs: options.freshMs,
+      fullRefreshMs: options.fullRefreshMs,
+    });
+  } catch (error) {
+    reportMirrorError('coverage seed', error);
+    return noPersistedCoverage();
+  }
+}
+
+/**
+ * Record what the mirror now provably holds.
+ *
+ * REPLACES the stored floor rather than widening it. The caller's floor is the
+ * live one — seeded from disk only when it was trustworthy — so writing it back
+ * verbatim is what lets an invalidation actually stick: a session that started
+ * without trusting a five-year claim overwrites it with the twelve months it
+ * just proved, instead of resurrecting the old claim through a union.
+ *
+ * Only ever updates an EXISTING sync row. A floor with no cursor beside it
+ * could never be trusted anyway (`planMirrorRefresh` returns `'full'` with no
+ * watermark), and inventing a cursor row here would fabricate one.
+ *
+ * MUST be called after the rows are in the mirror, never before.
+ */
+export async function writeMirrorCoverage(key: string, coverage: PersistedCoverage): Promise<void> {
+  const scopedKey = mirrorSyncKey(key);
+  try {
+    const previous = await db.mirrorSync.get(scopedKey);
+    if (!previous) return;
+    const next = normalizePersistedCoverage({
+      coverageSince: coverage.since,
+      coverageComplete: coverage.complete,
+    });
+    if (previous.coverageSince === next.since && previous.coverageComplete === next.complete) return;
+    await db.mirrorSync.put({ ...previous, coverageSince: next.since, coverageComplete: next.complete });
+  } catch (error) {
+    reportMirrorError('coverage write', error);
+  }
+}
+
+/** Drop the floor back to "nothing proven". */
+export async function clearMirrorCoverage(key: string): Promise<void> {
+  const scopedKey = mirrorSyncKey(key);
+  try {
+    const previous = await db.mirrorSync.get(scopedKey);
+    if (!previous) return;
+    if (previous.coverageSince == null && previous.coverageComplete !== true) return;
+    await db.mirrorSync.put({ ...previous, coverageSince: null, coverageComplete: false });
+  } catch (error) {
+    reportMirrorError('coverage clear', error);
+  }
+}
+
+/**
+ * Apply a refresh's outcome to the floor. Awaited BEFORE `writeSyncState`, so
+ * a floor is never left standing next to a cursor that has already moved past
+ * the event which invalidated it.
+ */
+async function applyCoverageOutcome(key: string, outcome: MirrorWriteOutcome): Promise<void> {
+  if (coverageSurvives(outcome)) return;
+  await clearMirrorCoverage(key);
+}
+
 function sortRows<T>(rows: T[], sort?: (a: T, b: T) => number): T[] {
   return sort ? [...rows].sort(sort) : rows;
 }
 
-function normalizeRemote<T>(value: T[] | RemoteFetchResult<T>): { rows: T[]; truncated: boolean } {
-  if (Array.isArray(value)) return { rows: value, truncated: false };
-  return { rows: value.rows, truncated: value.truncated === true };
+interface NormalizedRemote<T> {
+  rows: T[];
+  truncated: boolean;
+  completeFrom: string | null | undefined;
+  serverTruncated: boolean | undefined;
+}
+
+function normalizeRemote<T>(value: T[] | RemoteFetchResult<T>): NormalizedRemote<T> {
+  if (Array.isArray(value)) {
+    return { rows: value, truncated: false, completeFrom: undefined, serverTruncated: undefined };
+  }
+  return {
+    rows: value.rows,
+    truncated: value.truncated === true,
+    completeFrom: value.completeFrom,
+    serverTruncated: value.serverTruncated,
+  };
+}
+
+/**
+ * Did the SERVER fail to hand back what it was asked for?
+ *
+ * The explicit flag when the caller set one; otherwise `truncated` — but only
+ * for an unwindowed caller, for whom that is what `truncated` has always meant.
+ * A windowed caller sets `truncated` on every single fetch (a window is partial
+ * by construction), so reading it as a truncation warning there would drop the
+ * persisted coverage floor on every daily refresh and make persisting one
+ * worthless.
+ */
+function serverUnderReported<T>(result: NormalizedRemote<T>): boolean {
+  if (result.serverTruncated !== undefined) return result.serverTruncated;
+  return result.completeFrom == null && result.truncated;
 }
 
 function isStorageUnavailable(error: unknown): boolean {
@@ -195,16 +386,95 @@ function maxSyncedAt<T>(
   return timestamps.sort().at(-1) ?? new Date().toISOString();
 }
 
+/**
+ * The merge paths (truncated, and the bounded window) answer from the mirror,
+ * because it is the only place that holds BOTH the rows just fetched and the
+ * older ones the fetch could not speak for. On a device with no usable
+ * IndexedDB — private mode, a locked-down WebView, a quota failure — every
+ * mirror write silently no-ops and that read comes back empty, which would hand
+ * the caller an empty list while a perfectly good server response sat in hand.
+ * Never return less than we just fetched.
+ */
+function preferMirror<T>(fromMirror: T[], remote: T[]): T[] {
+  return fromMirror.length >= remote.length ? fromMirror : remote;
+}
+
+/**
+ * Reconcile a bounded-window fetch against the mirror.
+ *
+ * Merge the rows in, then delete the mirror rows INSIDE the window that the
+ * server did not return — those are tombstones the incremental
+ * `fetchDeletedSince` path may have missed (it is what the daily full refresh's
+ * clear-and-replace used to repair). Rows outside the window are untouched:
+ * this fetch has no opinion about them.
+ *
+ * Returns how many rows it pruned — the persisted coverage floor is dropped
+ * when that is non-zero, because a short page inside the window is
+ * indistinguishable from a genuine tombstone here and would leave a hole above
+ * the floor (see `coverageSurvives`).
+ */
+async function reconcileWindow<T>(
+  table: Table<T, string>,
+  remote: T[],
+  completeFrom: string,
+  windowKeyOf: (row: T) => string,
+  idOf: (row: T) => string,
+): Promise<number> {
+  try {
+    if (remote.length > 0) await table.bulkPut(remote);
+    const seen = new Set(remote.map(idOf));
+    const stale: string[] = [];
+    for (const row of await table.toArray()) {
+      const at = windowKeyOf(row);
+      if (!at || at < completeFrom) continue;
+      const id = idOf(row);
+      if (!seen.has(id)) stale.push(id);
+    }
+    if (stale.length > 0) await table.bulkDelete(stale);
+    return stale.length;
+  } catch (error) {
+    reportMirrorError('window reconcile', error);
+    return 0;
+  }
+}
+
 async function refreshMirror<T>({
   key,
   table,
   fetchRemote,
   sort,
   getUpdatedAt,
+  windowKeyOf,
 }: CacheFirstOptions<T>): Promise<T[]> {
   const markSnapshot = currentMark(mirrorSyncKey(key));
   const result = normalizeRemote(await fetchRemote());
   const remote = sortRows(result.rows, sort);
+
+  if (result.completeFrom !== undefined && result.completeFrom !== null && windowKeyOf) {
+    // Bounded window: merge + reconcile inside it, never clear.
+    const prunedRowCount = await reconcileWindow(
+      table,
+      remote,
+      result.completeFrom,
+      windowKeyOf,
+      // Dexie tables here are all keyed by a string `id`.
+      (row) => (row as unknown as { id: string }).id,
+    );
+    await applyCoverageOutcome(key, {
+      // NOT `result.truncated` — see `serverUnderReported`. On this path the
+      // floor is threatened by the reconcile's pruning, not by the window being
+      // a window.
+      truncated: serverUnderReported(result),
+      replacedWholeMirror: false,
+      prunedRowCount,
+    });
+    const syncedAtWindow = maxSyncedAt(remote, getUpdatedAt);
+    await writeSyncState(key, syncedAtWindow, {
+      lastFullRefreshAt: new Date().toISOString(),
+      markSnapshot,
+    });
+    return preferMirror(await readMirror(table, sort), remote);
+  }
 
   if (result.truncated) {
     // The server did not hand us the whole table. Clearing here is exactly how
@@ -219,12 +489,22 @@ async function refreshMirror<T>({
     await replaceMirror(table, remote);
   }
 
+  // Both branches here can leave the mirror unable to back a stored floor: a
+  // truncated response is a server that just under-reported, and the replace
+  // branch cleared the table outright. The load that issued this fetch writes
+  // back whatever it actually proved, immediately after.
+  await applyCoverageOutcome(key, {
+    truncated: serverUnderReported(result),
+    replacedWholeMirror: !result.truncated,
+    prunedRowCount: 0,
+  });
+
   const syncedAt = maxSyncedAt(remote, getUpdatedAt);
   await writeSyncState(key, syncedAt, {
     lastFullRefreshAt: new Date().toISOString(),
     markSnapshot,
   });
-  return result.truncated ? await readMirror(table, sort) : remote;
+  return result.truncated ? preferMirror(await readMirror(table, sort), remote) : remote;
 }
 
 /** Returns the refreshed rows, or `null` when nothing changed since the cursor. */
@@ -249,6 +529,11 @@ async function refreshMirrorIncremental<T>({
     return null;
   }
   await mirrorBulkPut(table, changed);
+  // Deliberately does NOT touch the persisted coverage floor. `fetchDeletedSince`
+  // is an explicit tombstone feed — it names the ids the server says are gone and
+  // removes exactly those, leaving no hole above the floor. Dropping the floor
+  // here would drop it every time the user deletes an expense, which would make
+  // persisting one pointless. (`coverageSurvives` states the same rule.)
   await Promise.all(deleted.map((row) => mirrorDelete(table, row.id)));
   await writeSyncState(key, maxSyncedAt(changed, getUpdatedAt, deleted), { markSnapshot });
   return sortRows(await readMirror(table), sort);

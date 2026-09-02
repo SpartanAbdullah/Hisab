@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { memberSettleUp, buildMemberCardText, buildFullPlanText } from './groupSettleUp';
 import type { GroupDebt } from './groupDebts';
+import { MONEY_TOLERANCE } from './moneyTolerance';
 
 // A owes B 120; C owes A 30. So A: owes 120, owed 30 → net −90 (pays 90 overall).
 const debts: GroupDebt[] = [
@@ -40,6 +41,24 @@ describe('buildMemberCardText', () => {
   it('says settled when the member has no transfers', () => {
     const text = buildMemberCardText(memberSettleUp(debts, 'Z'), { groupName: 'Dubai Trip', currency: 'AED' });
     expect(text).toContain("You're all settled up in Dubai Trip.");
+  });
+
+  // Boundary check for MONEY_TOLERANCE (moneyTolerance.ts), now imported
+  // instead of the old inline `0.005` literal — same threshold, same strict
+  // `>`, so a net exactly AT the tolerance still reads as settled.
+  it('treats a net exactly at MONEY_TOLERANCE as settled, not a payable', () => {
+    const zeroed: GroupDebt[] = [];
+    const su = memberSettleUp(zeroed, 'Z');
+    expect(su.net).toBe(0);
+    expect(MONEY_TOLERANCE).toBe(0.005);
+    const text = buildMemberCardText({ ...su, net: MONEY_TOLERANCE }, { groupName: 'Dubai Trip', currency: 'AED' });
+    expect(text).toContain("You're all settled up in Dubai Trip.");
+  });
+
+  it('treats a net just above MONEY_TOLERANCE as a real payable', () => {
+    const su = memberSettleUp(debts, 'A');
+    const text = buildMemberCardText({ ...su, net: -(MONEY_TOLERANCE + 0.001) }, { groupName: 'Dubai Trip', currency: 'AED' });
+    expect(text).toContain('You need to pay');
   });
 
   it('masks every amount when hideAmounts is on, keeping names and structure', () => {

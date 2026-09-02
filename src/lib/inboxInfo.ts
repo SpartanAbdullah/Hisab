@@ -19,7 +19,7 @@ import { tStatic } from './i18n';
 // via your code"). Group fan-out notifications have their own home on the
 // Activity page; linked request/settlement pings are actioned on Incoming.
 export function isInboxInfoNotification(n: AppNotification): boolean {
-  return !n.readAt && (n.type === 'contact_linked' || n.type === 'system' || n.type === 'invite');
+  return !n.readAt && (n.type === 'contact_linked' || n.type === 'system' || n.type === 'invite' || n.type === 'kameti');
 }
 
 export type InfoTone = 'pay' | 'warn' | 'info' | 'accent' | 'receive';

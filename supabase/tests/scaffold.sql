@@ -195,6 +195,32 @@ BEGIN
 END;
 $$;
 
+-- 5b. REALTIME BROADCAST STUB (realtime.send / realtime.topic / realtime.messages)
+--     Supabase's Realtime extension ships these; a bare postgres image does not.
+--     supabase-migration-p2-realtime-broadcast.sql guards on their presence, so
+--     without this stub its triggers would be created but never exercised. The
+--     stub mirrors the shapes documented at the end of that migration.
+CREATE SCHEMA IF NOT EXISTS realtime;
+CREATE TABLE IF NOT EXISTS realtime.messages (
+  id          BIGSERIAL PRIMARY KEY,
+  topic       TEXT,
+  event       TEXT,
+  payload     JSONB,
+  private     BOOLEAN,
+  extension   TEXT,
+  inserted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION realtime.send(payload JSONB, event TEXT, topic TEXT, private BOOLEAN DEFAULT true)
+RETURNS VOID LANGUAGE sql SECURITY DEFINER AS $$
+  INSERT INTO realtime.messages (topic, event, payload, private, extension)
+  VALUES (topic, event, payload, private, 'broadcast');
+$$;
+CREATE OR REPLACE FUNCTION realtime.topic() RETURNS TEXT
+LANGUAGE sql STABLE AS $$ SELECT current_setting('realtime.topic', true) $$;
+GRANT USAGE ON SCHEMA realtime TO anon, authenticated, service_role;
+GRANT SELECT ON realtime.messages TO anon, authenticated, service_role;
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- 6. PUBLIC-SCHEMA GRANTS
 --    Supabase ships default privileges that hand every new public table to

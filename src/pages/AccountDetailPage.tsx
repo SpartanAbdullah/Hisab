@@ -116,6 +116,7 @@ export function AccountDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { accounts, loadAccounts, renameAccount, deleteAccount, updateMetadata } = useAccountStore();
   const { loadTransactions, getByAccount } = useTransactionStore();
+  const ensureTransactionHistory = useTransactionStore((s) => s.ensureTransactionHistory);
   const transactions = useTransactionStore((s) => s.transactions);
   const loans = useLoanStore((s) => s.loans);
   const emiSchedules = useEmiStore((s) => s.schedules);
@@ -132,7 +133,7 @@ export function AccountDetailPage() {
   const [quickPreset, setQuickPreset] = useState<QuickEntryPreset | null>(null);
   const [showOpeningBalance, setShowOpeningBalance] = useState(false);
   const [openingAmount, setOpeningAmount] = useState('');
-  const [openingDate, setOpeningDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [openingDate, setOpeningDate] = useState(() => localIso(new Date()));
   const [openingNote, setOpeningNote] = useState('');
   const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
@@ -159,7 +160,15 @@ export function AccountDetailPage() {
       useLoanStore.getState().loadLoans(),
       useEmiStore.getState().loadSchedules(),
     ]);
-  }, [loadAccounts, loadTransactions, loadExpenses]);
+    // This page is an account's STATEMENT: it lists every entry that touched
+    // the account and, for a credit card, derives the cycle's debt from the
+    // cash-advance and bill-payment rows — origin rows that can be years old.
+    // The store's default 12-month window would silently shorten both, so this
+    // screen asks for the whole history (docs/performance.md §7). It is a
+    // user-initiated navigation, not a boot path, and it is a no-op once
+    // coverage is already complete.
+    await ensureTransactionHistory({ all: true });
+  }, [loadAccounts, loadTransactions, loadExpenses, ensureTransactionHistory]);
   const { status: loadStatus, error: loadError, retry: retryLoad } = useAsyncLoad(load);
 
   const account = accounts.find((a) => a.id === id);
@@ -294,7 +303,7 @@ export function AccountDetailPage() {
   const closeOpeningBalance = () => {
     setShowOpeningBalance(false);
     setOpeningAmount('');
-    setOpeningDate(new Date().toISOString().slice(0, 10));
+    setOpeningDate(localIso(new Date()));
     setOpeningNote('');
   };
 
@@ -352,6 +361,7 @@ export function AccountDetailPage() {
                   <>
                     <div
                       className="fixed inset-0 z-40"
+                      role="presentation"
                       onClick={() => setShowMenu(false)}
                     />
                     <div className="absolute right-0 top-11 z-50 bg-cream-card rounded-2xl shadow-xl shadow-navy-900/15 border border-cream-border py-1.5 w-44 animate-fade-in">
@@ -756,10 +766,12 @@ export function AccountDetailPage() {
         {showRename && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/50 backdrop-blur-sm animate-fade-in"
+            role="presentation"
             onClick={() => setShowRename(false)}
           >
             <div
               className="bg-cream-card rounded-2xl p-5 w-[90%] max-w-sm shadow-xl border border-cream-border"
+              role="presentation"
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-[15px] font-semibold text-ink-900 mb-3">{t('adp_rename_title')}</h3>
@@ -800,10 +812,12 @@ export function AccountDetailPage() {
         {showCardSettings && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/50 backdrop-blur-sm animate-fade-in"
+            role="presentation"
             onClick={() => setShowCardSettings(false)}
           >
             <div
               className="bg-cream-card rounded-2xl p-5 w-[90%] max-w-sm shadow-xl border border-cream-border"
+              role="presentation"
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-[15px] font-semibold text-ink-900 mb-3">{t('cc_settings_title')}</h3>
@@ -874,10 +888,12 @@ export function AccountDetailPage() {
         {showCorrect && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/50 backdrop-blur-sm animate-fade-in"
+            role="presentation"
             onClick={() => setShowCorrect(false)}
           >
             <div
               className="bg-cream-card rounded-2xl p-5 w-[90%] max-w-sm shadow-xl border border-cream-border"
+              role="presentation"
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-[15px] font-semibold text-ink-900 mb-1.5">{t('acct_correct_title')}</h3>

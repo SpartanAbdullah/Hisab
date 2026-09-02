@@ -406,14 +406,24 @@ order by tablename;
 --      within a minute. Zero rows means the triggers are not producing
 --      broadcasts — do not enable the client flag.
 --      (realtime.messages is partitioned by day and retained briefly.)
-select
-  'V6 recent broadcasts' as check,
-  topic, event, payload, inserted_at
-from realtime.messages
-where event in ('transactions', 'accounts', 'loans')
-  and inserted_at > now() - interval '10 minutes'
-order by inserted_at desc
-limit 20;
+--      Guarded so the file also applies on an instance (or the CI harness)
+--      without the Realtime schema: a bare SELECT against a missing relation
+--      fails at parse time and would abort the whole file.
+do $$
+declare v_n bigint;
+begin
+  if to_regclass('realtime.messages') is null then
+    raise notice 'V6 recent broadcasts: realtime.messages missing — skipped';
+    return;
+  end if;
+  execute $q$
+    select count(*) from realtime.messages
+     where event in ('transactions', 'accounts', 'loans')
+       and inserted_at > now() - interval '10 minutes'
+  $q$ into v_n;
+  raise notice 'V6 recent broadcasts (last 10 min): %', v_n;
+end
+$$;
 
 -- Docker note: on a bare `postgres:15` image V1 reports MISSING and V4/V6
 -- error with "schema realtime does not exist" — that is expected and is

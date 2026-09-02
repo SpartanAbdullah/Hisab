@@ -15,6 +15,7 @@ import { computeFlexBudget, FLEX_INCOME_KEY } from '../lib/flexBudget';
 import { EXPENSE_CATEGORIES, formatMoney } from '../lib/constants';
 import { useCategoryOptions } from '../lib/mergedCategories';
 import { SUPPORTED_CURRENCIES, type Currency, type Budget } from '../db';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
@@ -60,7 +61,7 @@ export function BudgetsPage() {
   // "Left to spend this month" up front — the envelope mental model. Budgets are
   // per-currency, so we total each currency separately (primary first) rather
   // than mixing them into one meaningless number.
-  const primaryCurrency = (localStorage.getItem('hisaab_primary_currency') as Currency) ?? 'AED';
+  const primaryCurrency = getPrimaryCurrency();
   const leftSummary = useMemo(() => {
     const byCurrency = new Map<Currency, { budget: number; spent: number }>();
     for (const u of usages) {
@@ -461,9 +462,7 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
   const t = useT();
   const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState<Currency>(
-    (localStorage.getItem('hisaab_primary_currency') as Currency) ?? 'AED',
-  );
+  const [currency, setCurrency] = useState<Currency>(() => getPrimaryCurrency());
   const [warnAt, setWarnAt] = useState(80);
   const [saving, setSaving] = useState(false);
   // Merged built-in + custom expense categories, so a user can budget against

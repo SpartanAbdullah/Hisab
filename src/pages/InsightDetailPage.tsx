@@ -10,9 +10,10 @@ import { useT } from '../lib/i18n';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { parseInternalNote } from '../lib/internalNotes';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 
 function primaryCurrency(): string {
-  return localStorage.getItem('hisaab_primary_currency') || 'AED';
+  return getPrimaryCurrency();
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

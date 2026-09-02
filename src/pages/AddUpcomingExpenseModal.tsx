@@ -10,6 +10,7 @@ import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { GraduationCap, HeartPulse, PartyPopper, Plane, Home, Zap, MoreHorizontal } from 'lucide-react';
 import type { Currency } from '../db';
+import { localIso } from '../lib/localDate';
 
 interface Props {
   open: boolean;
@@ -100,7 +101,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
     <button
       onClick={() => setStep(s => s + 1)}
       disabled={!canNext()}
-      className="w-full bg-ink-900 text-white rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20 transition-all"
+      className="w-full bg-accent-600 text-white rounded-2xl py-4 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20 transition-all"
     >
       {t('quick_next')} &rarr;
     </button>
@@ -112,7 +113,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
       <button
         onClick={handleSubmit}
         disabled={saving || !canNext()}
-        className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
+        className="flex-1 bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20"
       >
         {saving ? t('upcoming_creating') : t('upcoming_create')}
       </button>
@@ -198,7 +199,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
               {t('upcoming_due')}
             </label>
             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-              min={new Date().toISOString().split('T')[0]}
+              min={localIso(new Date())}
               className="input-field" autoFocus />
           </div>
           <button onClick={() => setStep(1)}

@@ -29,7 +29,7 @@
 --   the profiles table with name + is_deleted (audit-p0-account-deletion.sql)
 --
 -- ── BREAKING CHANGES FOR THE CLIENT ─────────────────────────────────────────
--- NONE. Everything here is additive: two new tables, three new functions, one
+-- NONE. Everything here is additive: two new tables, four new functions, one
 -- new trigger. No existing function, policy, trigger, column or grant is
 -- touched. An un-updated client is completely unaware of it, and the new
 -- public route is inert until a link is minted.
@@ -72,7 +72,7 @@
 -- owner can revoke or rotate at any time. Two more are added, because a khata
 -- is more personal than a committee ledger:
 --
---   1. STRICT PROJECTION. get_khata_view returns exactly six things:
+--   1. STRICT PROJECTION. get_khata_view returns exactly seven things:
 --        · the owner's display name (profiles.name)
 --        · the person's name AS THE OWNER RECORDED IT (persons.name)
 --        · per-currency net balance
@@ -80,7 +80,9 @@
 --          note, dates)
 --        · the repayment/disbursement transaction rows on those loans
 --          (id, type, amount, currency, loan id, note, date)
---        · the link's own expiry + initials-only flag
+--        · the link's own expiry + initials-only flag + show-notes flag
+--        · whether notes are being shown at all (showNotes), so the page can
+--          say so instead of silently rendering nothing
 --      It NEVER returns: any other person, any account or balance, any phone
 --      number, any email, any user id / profile id, any group, kameti,
 --      budget, goal or investment, and no id at all beyond the loan and
@@ -93,6 +95,18 @@
 --      the ledger without publishing who owes whom by name. It covers both
 --      names on purpose: the counterparty already knows both, so hiding only
 --      one buys nothing against the forwarding threat this option exists for.
+--
+--   3. NOTES ARE OFF BY DEFAULT. A loan or transaction `notes` field is free
+--      text the OWNER wrote for themselves — it was never written with a
+--      forwardable public page in mind, and it is unbounded (an address, a
+--      phone number typed into a note, anything). `khata_links.show_notes`
+--      (owner-writable, default false — mirrors initials_only exactly) gates
+--      it: false means every note in the projection is NULL, full stop. When
+--      true, `khata_cap_note()` still hard-caps each note at 140 characters
+--      with a trailing ellipsis before it ever leaves the database — the cap
+--      applies even when the owner opted in, because "I want my notes shown"
+--      is not "I want an essay published". Rotating a link keeps the previous
+--      choice unless the caller overrides it, same as initials_only.
 --
 -- Freshness is the point (it is a LIVING balance): the view is computed at
 -- read time, so a repayment recorded in the app is visible on the next
@@ -256,6 +270,12 @@ CREATE TABLE IF NOT EXISTS public.khata_links (
   -- public page render as initials. Ordinary owner-writable preference —
   -- toggling it does NOT invalidate the link (see the column grant below).
   initials_only BOOLEAN NOT NULL DEFAULT false,
+  -- Off by default. A loan/transaction `notes` field is free text the owner
+  -- wrote for themselves, unbounded; get_khata_view returns NULL for every
+  -- note unless this is true, and even then caps each one at 140 chars
+  -- (khata_cap_note). Owner-writable like initials_only — see the column
+  -- grant below — and toggling it does NOT invalidate the link.
+  show_notes BOOLEAN NOT NULL DEFAULT false,
   expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '90 days'),
   revoked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -294,10 +314,10 @@ CREATE POLICY khata_links_update_own ON public.khata_links
 -- a client that could read it could verify guesses offline against its own
 -- copy, which is precisely what hashing at rest exists to prevent.
 REVOKE ALL ON public.khata_links FROM PUBLIC, anon, authenticated;
-GRANT SELECT (id, owner_id, person_id, initials_only, expires_at, revoked_at, created_at)
+GRANT SELECT (id, owner_id, person_id, initials_only, show_notes, expires_at, revoked_at, created_at)
   ON public.khata_links TO authenticated;
--- The ONLY column a client may write directly. Everything else is RPC-only.
-GRANT UPDATE (initials_only) ON public.khata_links TO authenticated;
+-- The ONLY columns a client may write directly. Everything else is RPC-only.
+GRANT UPDATE (initials_only, show_notes) ON public.khata_links TO authenticated;
 
 -- Belt and braces behind the column grant: if a future migration widens that
 -- GRANT by accident, this still refuses to let a client mint, extend or
@@ -338,11 +358,13 @@ CREATE TRIGGER trg_khata_links_guard
   FOR EACH ROW EXECUTE FUNCTION public.tg_khata_links_guard();
 
 COMMENT ON TABLE public.khata_links IS
-  'Audit L2/O2/G3: the per-counterparty living-balance link. One ACTIVE row per (owner, person); rotating revokes the previous. Only sha256(token) is stored and the raw token is returned exactly once. Owner-readable except token_hash (column grant), owner-writable only for initials_only; minting and revoking are RPC-only.';
+  'Audit L2/O2/G3: the per-counterparty living-balance link. One ACTIVE row per (owner, person); rotating revokes the previous. Only sha256(token) is stored and the raw token is returned exactly once. Owner-readable except token_hash (column grant), owner-writable only for initials_only and show_notes; minting and revoking are RPC-only.';
 COMMENT ON COLUMN public.khata_links.token_hash IS
   'SHA-256 (lowercase hex) of the raw khata token. NOT granted to any client role — reading it would let a holder verify guesses offline.';
 COMMENT ON COLUMN public.khata_links.initials_only IS
   'When true the public khata page renders BOTH names as initials (public.witness_initials), so a forwarded link proves the ledger without naming who owes whom.';
+COMMENT ON COLUMN public.khata_links.show_notes IS
+  'Default false. When true, get_khata_view includes loan/transaction notes (still capped at 140 chars by khata_cap_note); when false every note in the projection is NULL. Free text the owner wrote for themselves is not published on a forwardable link unless they opt in.';
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- SECTION 2. khata_link_lookups — the hit / miss ledger
@@ -403,13 +425,36 @@ REVOKE ALL ON FUNCTION public.hash_khata_token(TEXT) FROM PUBLIC, anon, authenti
 COMMENT ON FUNCTION public.hash_khata_token(TEXT) IS
   'Audit L2: SHA-256 lowercase hex of a khata-link token. Revoked from every client role — the only callers that matter run as the definer.';
 
+-- The notes gate: NULL unless the owner opted in, hard-capped at 140 chars
+-- with an ellipsis either way. One function so get_khata_view cannot apply
+-- the rule to a loan's note and forget it for a transaction's (or vice versa).
+CREATE OR REPLACE FUNCTION public.khata_cap_note(p_notes TEXT, p_show BOOLEAN)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT CASE
+           WHEN NOT COALESCE(p_show, false) THEN NULL
+           WHEN p_notes IS NULL OR btrim(p_notes) = '' THEN NULL
+           WHEN length(btrim(p_notes)) > 140 THEN left(btrim(p_notes), 140) || '…'
+           ELSE btrim(p_notes)
+         END;
+$$;
+
+REVOKE ALL ON FUNCTION public.khata_cap_note(TEXT, BOOLEAN) FROM PUBLIC, anon, authenticated;
+
+COMMENT ON FUNCTION public.khata_cap_note(TEXT, BOOLEAN) IS
+  'Audit L2: the khata-link notes gate. Returns NULL when p_show is false (or the note is empty), otherwise the note capped at 140 characters with a trailing ellipsis. Revoked from every client role — get_khata_view is the only caller that matters.';
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- SECTION 4. create / revoke  (owner-only)
 -- ════════════════════════════════════════════════════════════════════════════
 
--- create_khata_link(p_person_id TEXT, p_initials_only BOOLEAN DEFAULT NULL) -> JSONB
+-- create_khata_link(p_person_id TEXT, p_initials_only BOOLEAN DEFAULT NULL,
+--                    p_show_notes BOOLEAN DEFAULT NULL) -> JSONB
 --   {"status":"ok","token":"<64 hex>","expires_at":"…","initials_only":bool,
---    "replaced_previous":bool}
+--    "show_notes":bool,"replaced_previous":bool}
 --   {"status":"NOT_AUTHENTICATED"}
 --   {"status":"NOT_FOUND"}         -- not the caller's contact (owner-only)
 --   {"status":"CONTACT_ARCHIVED"}  -- restore the contact first
@@ -419,11 +464,13 @@ COMMENT ON FUNCTION public.hash_khata_token(TEXT) IS
 -- link. That is the correct semantics for a capability URL and it is the same
 -- contract rotate_committee_witness_token already has.
 --
--- p_initials_only: NULL keeps whatever the previous link for this person had
--- (so a rotate does not silently un-hide names); true/false sets it.
+-- p_initials_only / p_show_notes: NULL keeps whatever the previous link for
+-- this person had (so a rotate does not silently un-hide names or notes);
+-- true/false sets it.
 CREATE OR REPLACE FUNCTION public.create_khata_link(
   p_person_id     TEXT,
-  p_initials_only BOOLEAN DEFAULT NULL
+  p_initials_only BOOLEAN DEFAULT NULL,
+  p_show_notes    BOOLEAN DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -431,14 +478,15 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 DECLARE
-  v_uid      UUID := auth.uid();
-  v_now      TIMESTAMPTZ := now();
-  v_person   public.persons%ROWTYPE;
-  v_token    TEXT;
-  v_expires  TIMESTAMPTZ;
-  v_initials BOOLEAN;
-  v_prev     BOOLEAN := false;
-  v_revoked  INTEGER := 0;
+  v_uid       UUID := auth.uid();
+  v_now       TIMESTAMPTZ := now();
+  v_person    public.persons%ROWTYPE;
+  v_token     TEXT;
+  v_expires   TIMESTAMPTZ;
+  v_initials  BOOLEAN;
+  v_notes     BOOLEAN;
+  v_prev      BOOLEAN := false;
+  v_revoked   INTEGER := 0;
 BEGIN
   IF v_uid IS NULL THEN
     RETURN jsonb_build_object('status', 'NOT_AUTHENTICATED');
@@ -458,14 +506,15 @@ BEGIN
     RETURN jsonb_build_object('status', 'CONTACT_ARCHIVED');
   END IF;
 
-  -- Carry the previous link's preference forward unless the caller said.
-  SELECT k.initials_only INTO v_initials
+  -- Carry the previous link's preferences forward unless the caller said.
+  SELECT k.initials_only, k.show_notes INTO v_initials, v_notes
     FROM public.khata_links k
    WHERE k.owner_id = v_uid
      AND k.person_id = p_person_id
      AND k.revoked_at IS NULL
    LIMIT 1;
   v_initials := COALESCE(p_initials_only, v_initials, false);
+  v_notes    := COALESCE(p_show_notes, v_notes, false);
 
   PERFORM set_config('hisaab.khata_link', 'on', true);
 
@@ -484,8 +533,8 @@ BEGIN
   v_token   := encode(gen_random_bytes(32), 'hex');
   v_expires := v_now + INTERVAL '90 days';
 
-  INSERT INTO public.khata_links (owner_id, person_id, token_hash, initials_only, expires_at, created_at)
-  VALUES (v_uid, p_person_id, public.hash_khata_token(v_token), v_initials, v_expires, v_now);
+  INSERT INTO public.khata_links (owner_id, person_id, token_hash, initials_only, show_notes, expires_at, created_at)
+  VALUES (v_uid, p_person_id, public.hash_khata_token(v_token), v_initials, v_notes, v_expires, v_now);
 
   PERFORM set_config('hisaab.khata_link', 'off', true);
 
@@ -494,16 +543,17 @@ BEGIN
     'token', v_token,
     'expires_at', v_expires,
     'initials_only', v_initials,
+    'show_notes', v_notes,
     'replaced_previous', v_prev
   );
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.create_khata_link(TEXT, BOOLEAN) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.create_khata_link(TEXT, BOOLEAN) TO authenticated;
+REVOKE ALL ON FUNCTION public.create_khata_link(TEXT, BOOLEAN, BOOLEAN) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.create_khata_link(TEXT, BOOLEAN, BOOLEAN) TO authenticated;
 
-COMMENT ON FUNCTION public.create_khata_link(TEXT, BOOLEAN) IS
-  'Audit L2/O2: owner-only. Mints a fresh 256-bit khata-link token server-side, stores only its SHA-256, sets a 90-day expiry, and REVOKES any previous link for that contact (one active link per person). Returns the raw token exactly once — it is never stored and cannot be re-read.';
+COMMENT ON FUNCTION public.create_khata_link(TEXT, BOOLEAN, BOOLEAN) IS
+  'Audit L2/O2: owner-only. Mints a fresh 256-bit khata-link token server-side, stores only its SHA-256, sets a 90-day expiry, and REVOKES any previous link for that contact (one active link per person). Returns the raw token exactly once — it is never stored and cannot be re-read. p_show_notes gates whether get_khata_view will ever include this contact''s loan/transaction notes (default/NULL carries forward the previous link''s choice, default false).';
 
 -- revoke_khata_link(p_person_id TEXT) -> JSONB
 --   {"status":"ok","was_active":bool} | NOT_AUTHENTICATED | NOT_FOUND
@@ -686,6 +736,9 @@ BEGIN
     'owner', json_build_object('name', v_owner_nm),
     'person', json_build_object('name', v_person_nm),
     'initialsOnly', v_link.initials_only,
+    -- So the page can say "notes hidden by owner" instead of rendering a
+    -- silent gap when every note in the payload below is NULL.
+    'showNotes', v_link.show_notes,
     'expiresAt', v_link.expires_at,
     'asOf', v_now,
     -- Signed the same way src/lib/statementOfAccount.ts signs a statement:
@@ -711,7 +764,9 @@ BEGIN
                'remainingAmount', sl.remaining_amount,
                'currency', sl.currency,
                'status', sl.status,
-               'notes', COALESCE(sl.notes, ''),
+               -- NULL unless the owner opted in (show_notes), and capped at
+               -- 140 chars even then. See "NOTES ARE OFF BY DEFAULT" above.
+               'notes', public.khata_cap_note(sl.notes, v_link.show_notes),
                'createdAt', sl.created_at,
                'updatedAt', sl.updated_at
              ) ORDER BY sl.created_at)
@@ -727,7 +782,7 @@ BEGIN
                'amount', t.amount,
                'currency', t.currency,
                'relatedLoanId', t.related_loan_id,
-               'notes', COALESCE(t.notes, ''),
+               'notes', public.khata_cap_note(t.notes, v_link.show_notes),
                'createdAt', t.created_at
              ) ORDER BY t.created_at)
         FROM public.transactions AS t
@@ -746,7 +801,7 @@ REVOKE ALL ON FUNCTION public.get_khata_view(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_khata_view(TEXT) TO anon, authenticated;
 
 COMMENT ON FUNCTION public.get_khata_view(TEXT) IS
-  'Audit L2/O2/G3: the public per-counterparty ledger. Matches the SHA-256 of the presented token; returns ONE uniform NULL for unknown / revoked / expired / owner-deleted / blocked / rate-limited. Projects ONLY: owner name, contact name (both as initials when initials_only), per-currency net, that contact''s loans, and the loan_given/loan_taken/repayment rows on them. Never any other person, account, balance, phone, email or user id.';
+  'Audit L2/O2/G3: the public per-counterparty ledger. Matches the SHA-256 of the presented token; returns ONE uniform NULL for unknown / revoked / expired / owner-deleted / blocked / rate-limited. Projects ONLY: owner name, contact name (both as initials when initials_only), showNotes, per-currency net, that contact''s loans, and the loan_given/loan_taken/repayment rows on them — every note NULL unless show_notes is true, and capped at 140 chars via khata_cap_note either way. Never any other person, account, balance, phone, email or user id.';
 
 COMMIT;
 
@@ -757,26 +812,27 @@ COMMIT;
 -- V1. The objects exist and are wired.
 SELECT to_regclass('public.khata_links')            IS NOT NULL AS links_table,
        to_regclass('public.khata_link_lookups')     IS NOT NULL AS lookups_table,
-       to_regprocedure('public.create_khata_link(text, boolean)') IS NOT NULL AS fn_create,
+       to_regprocedure('public.create_khata_link(text, boolean, boolean)') IS NOT NULL AS fn_create,
        to_regprocedure('public.revoke_khata_link(text)')          IS NOT NULL AS fn_revoke,
        to_regprocedure('public.get_khata_view(text)')             IS NOT NULL AS fn_view,
-       to_regprocedure('public.hash_khata_token(text)')           IS NOT NULL AS fn_hash;
--- expect: t t t t t t
+       to_regprocedure('public.hash_khata_token(text)')           IS NOT NULL AS fn_hash,
+       to_regprocedure('public.khata_cap_note(text, boolean)')    IS NOT NULL AS fn_cap_note;
+-- expect: t t t t t t t
 
 -- V2. THE PRIVACY INVARIANT: no client role can read token_hash, and only
---     initials_only is client-writable.
+--     initials_only / show_notes are client-writable.
 SELECT string_agg(DISTINCT column_name, ',' ORDER BY column_name) AS readable_columns
   FROM information_schema.column_privileges
  WHERE table_schema = 'public' AND table_name = 'khata_links'
    AND grantee IN ('anon', 'authenticated') AND privilege_type = 'SELECT';
--- expect: created_at,expires_at,id,initials_only,owner_id,person_id,revoked_at
+-- expect: created_at,expires_at,id,initials_only,owner_id,person_id,revoked_at,show_notes
 --         (token_hash MUST NOT appear)
 
 SELECT string_agg(DISTINCT column_name, ',' ORDER BY column_name) AS writable_columns
   FROM information_schema.column_privileges
  WHERE table_schema = 'public' AND table_name = 'khata_links'
    AND grantee IN ('anon', 'authenticated') AND privilege_type = 'UPDATE';
--- expect: initials_only
+-- expect: initials_only,show_notes
 
 -- V3. The lookup ledger is invisible to every client role.
 SELECT count(*) AS lookup_grants
@@ -786,25 +842,40 @@ SELECT count(*) AS lookup_grants
 -- expect: 0
 
 -- V4. anon may call the view and NOTHING else.
-SELECT has_function_privilege('anon', 'public.get_khata_view(text)', 'EXECUTE')             AS anon_can_view,
-       has_function_privilege('anon', 'public.create_khata_link(text, boolean)', 'EXECUTE') AS anon_can_create,
-       has_function_privilege('anon', 'public.revoke_khata_link(text)', 'EXECUTE')          AS anon_can_revoke,
-       has_function_privilege('anon', 'public.hash_khata_token(text)', 'EXECUTE')           AS anon_can_hash;
--- expect: t f f f
+SELECT has_function_privilege('anon', 'public.get_khata_view(text)', 'EXECUTE')                     AS anon_can_view,
+       has_function_privilege('anon', 'public.create_khata_link(text, boolean, boolean)', 'EXECUTE') AS anon_can_create,
+       has_function_privilege('anon', 'public.revoke_khata_link(text)', 'EXECUTE')                  AS anon_can_revoke,
+       has_function_privilege('anon', 'public.hash_khata_token(text)', 'EXECUTE')                   AS anon_can_hash,
+       has_function_privilege('anon', 'public.khata_cap_note(text, boolean)', 'EXECUTE')            AS anon_can_cap_note;
+-- expect: t f f f f
 
 -- V5. The projection contains no forbidden column. A grep over the compiled
 --     function body is crude but it is the check that would have caught a
 --     copy-paste of an account or phone column into the json_build_object.
-SELECT (pg_get_functiondef('public.get_khata_view(text)'::regprocedure) LIKE '%hash_khata_token%')      AS hashes_input,
-       (pg_get_functiondef('public.get_khata_view(text)'::regprocedure) LIKE '%is_blocked_either_way%') AS honours_blocks,
-       (pg_get_functiondef('public.get_khata_view(text)'::regprocedure) LIKE '%witness_initials%')      AS honours_initials,
-       (pg_get_functiondef('public.get_khata_view(text)'::regprocedure) NOT LIKE '%account_id%')        AS no_account_ids,
-       (pg_get_functiondef('public.get_khata_view(text)'::regprocedure) NOT LIKE '%phone%')             AS no_phone,
+--     `--` comments are stripped first: this file's own prose says the words
+--     "account" and "phone" while explaining why neither is selected, and a
+--     naive LIKE would fail on the documentation instead of on the code.
+WITH src AS (
+  SELECT regexp_replace(pg_get_functiondef('public.get_khata_view(text)'::regprocedure),
+                        '--[^\n]*', '', 'g') AS body
+)
+SELECT (body LIKE '%hash_khata_token%')      AS hashes_input,
+       (body LIKE '%is_blocked_either_way%') AS honours_blocks,
+       (body LIKE '%witness_initials%')      AS honours_initials,
+       -- The notes gate must be applied through khata_cap_note, not a raw
+       -- COALESCE(*.notes, ...) that would leak an un-capped, un-gated note.
+       (body LIKE '%khata_cap_note%')        AS honours_notes_gate,
+       (body NOT LIKE '%COALESCE(sl.notes%') AS no_raw_loan_notes,
+       (body NOT LIKE '%COALESCE(t.notes%')  AS no_raw_txn_notes,
+       (body NOT LIKE '%account_id%')        AS no_account_ids,
+       (body NOT LIKE '%phone%')             AS no_phone,
+       (body NOT LIKE '%email%')             AS no_email,
        -- No identity key is ever built into the JSON payload.
-       (pg_get_functiondef('public.get_khata_view(text)'::regprocedure) NOT LIKE '%''ownerId''%')       AS no_owner_id_key,
-       (pg_get_functiondef('public.get_khata_view(text)'::regprocedure) NOT LIKE '%''personId''%')      AS no_person_id_key,
-       (pg_get_functiondef('public.get_khata_view(text)'::regprocedure) NOT LIKE '%''profileId''%')     AS no_profile_id_key;
--- expect: t t t t t t t t
+       (body NOT LIKE '%''ownerId''%')       AS no_owner_id_key,
+       (body NOT LIKE '%''personId''%')      AS no_person_id_key,
+       (body NOT LIKE '%''profileId''%')     AS no_profile_id_key
+  FROM src;
+-- expect: t t t t t t t t t t t t
 
 -- V6. One active link per person is enforced by an index, not by hope.
 SELECT indexdef FROM pg_indexes
@@ -812,7 +883,7 @@ SELECT indexdef FROM pg_indexes
 -- expect: ... UNIQUE ... (owner_id, person_id) WHERE (revoked_at IS NULL)
 
 -- V7. Operator view: live links and how hard each is being hit today.
-SELECT k.id, k.owner_id, k.person_id, k.initials_only, k.expires_at,
+SELECT k.id, k.owner_id, k.person_id, k.initials_only, k.show_notes, k.expires_at,
        count(l.id) FILTER (WHERE l.looked_up_at > now() - INTERVAL '24 hours') AS views_24h
   FROM public.khata_links k
   LEFT JOIN public.khata_link_lookups l ON l.link_id = k.id
@@ -840,7 +911,14 @@ SELECT date_trunc('hour', looked_up_at) AS hour, count(*) AS misses
 --        select public.get_khata_view('<token>');
 --     -> the owner name, the contact name, per-currency net, the loans and the
 --        loan/repayment rows. NOTHING else — diff it against the PRIVACY
---        CONTRACT list in the header.
+--        CONTRACT list in the header. Every `notes` field is NULL by default
+--        (show_notes defaults false) even if the loan/transaction has one.
+--
+--  2b. Notes opt-in: select public.create_khata_link('<person_id>', NULL, true);
+--      then re-read as anon.
+--      -> `showNotes` is true and each `notes` field carries the real note,
+--         capped at 140 chars with '…' if longer. Rotating again with
+--         p_show_notes NULL keeps it true; passing false turns it back off.
 --
 --  3. Ledger-only mode: record a repayment as a splits_only user (both account
 --     ids NULL) and re-read.
@@ -855,11 +933,19 @@ SELECT date_trunc('hour', looked_up_at) AS hour, count(*) AS misses
 --        Calling it again -> {"was_active":false}. Nothing else changed:
 --        the loans, the contact and the in-app statement are untouched.
 --
---  6. Expiry:    update khata_links set expires_at = now() - interval '1 day'
---                  where id = '<id>';   -- as service_role; a client cannot
---     -> the token returns NULL. (A client trying that UPDATE gets
---        "permission denied for column expires_at", and if the grant were ever
---        widened, KHATA_LINK_IS_SERVER_ONLY from the guard trigger.)
+--  6. Expiry. The guard trigger refuses this even for service_role and even
+--     for a superuser (a trigger is not RLS), so the escape hatch is required
+--     and BOTH statements must run in ONE transaction:
+--        begin;
+--          select set_config('hisaab.khata_link','on',true);
+--          update khata_links set expires_at = now() - interval '1 day'
+--           where id = '<id>';
+--        commit;
+--     -> the token now returns NULL.
+--     A client attempting the same UPDATE never gets that far: it fails at
+--     "permission denied for table khata_links" (only initials_only and
+--     show_notes are granted), and if that grant were ever widened the trigger still raises
+--     KHATA_LINK_IS_SERVER_ONLY. That belt-and-braces pair is the point.
 --
 --  7. Block:     link the contact to a real profile, then insert a block row
 --                in either direction.

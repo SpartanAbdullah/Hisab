@@ -43,3 +43,12 @@ android/*.iml
 android/keystore.properties
 android/app/*.jks
 android/app/*.keystore
+
+# Playwright (e2e/) — local run artifacts and the saved login session.
+# e2e/.auth/*.json is a live Supabase storageState (session tokens) written by
+# e2e/global-setup.ts — never committed, even for a staging-only account.
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+e2e/.auth/

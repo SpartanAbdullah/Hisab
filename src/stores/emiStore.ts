@@ -1,10 +1,9 @@
 import { create } from 'zustand';
-import { v4 as uuid } from 'uuid';
 import { emiSchedulesDb } from '../lib/supabaseDb';
 import type { EmiSchedule, EmiStatus } from '../db';
-import { addMonths, format } from 'date-fns';
 import { useActivityStore } from './activityStore';
 import { uncoveredToPaidIds } from '../lib/emiCoverage';
+import { planEmiRows } from '../lib/emiPlan';
 import { reportError } from '../lib/errorReporter';
 
 interface GenerateEmiInput {
@@ -59,29 +58,26 @@ export const useEmiStore = create<EmiState>((set, get) => ({
     }
   },
 
+  // COMPUTE + WRITE. The computation itself lives in src/lib/emiPlan.ts as a
+  // pure function so the atomic loan-create path (L4 step 3) can plan the same
+  // rows BEFORE the loan exists and hand them to `create_loan_with_leg` as
+  // `p_emi`, inside the same Postgres transaction. This method is the legacy
+  // half — same arithmetic, same ids, same order, just delegated — and stays
+  // the only path in ledger-only (splits_only) mode, which has no RPC.
   generateSchedule: async (input) => {
-    const emiAmount = Math.round((input.totalAmount / input.installments) * 100) / 100;
-    const entries: EmiSchedule[] = [];
-    const startDate = new Date(input.startDate);
-    // Explicit statement-anchored dates take precedence; otherwise monthly
-    // from the typed start date (human loans).
-    const dueDateFor = (i: number): string =>
-      input.dueDates && input.dueDates[i]
-        ? input.dueDates[i]
-        : format(addMonths(startDate, i), 'yyyy-MM-dd');
-
-    for (let i = 0; i < input.installments; i++) {
-      entries.push({
-        id: uuid(),
-        loanId: input.loanId,
-        installmentNumber: i + 1,
-        dueDate: dueDateFor(i),
-        amount: i === input.installments - 1
-          ? Math.round((input.totalAmount - emiAmount * (input.installments - 1)) * 100) / 100
-          : emiAmount,
-        status: 'upcoming' as EmiStatus,
-      });
-    }
+    const entries: EmiSchedule[] = planEmiRows({
+      totalAmount: input.totalAmount,
+      installments: input.installments,
+      startDate: input.startDate,
+      dueDates: input.dueDates,
+    }).map((row) => ({
+      id: row.id,
+      loanId: input.loanId,
+      installmentNumber: row.installmentNumber,
+      dueDate: row.dueDate,
+      amount: row.amount,
+      status: 'upcoming' as EmiStatus,
+    }));
     await emiSchedulesDb.bulkAdd(entries);
     set((s) => ({ schedules: [...s.schedules, ...entries] }));
   },

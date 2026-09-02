@@ -6,6 +6,7 @@ import { useNotificationStore } from '../stores/notificationStore';
 import { useContactLinkStore } from '../stores/contactLinkStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { isInboxInfoNotification } from '../lib/inboxInfo';
+import { countIncomingPending } from '../lib/notificationCounts';
 
 interface InboxActionProps {
   tone?: 'on-navy' | 'on-cream';
@@ -15,22 +16,10 @@ interface InboxActionProps {
 export function InboxAction({ tone = 'on-navy', className = '' }: InboxActionProps) {
   const navigate = useNavigate();
   const userId = useSupabaseAuthStore((s) => s.user?.id ?? '');
-  const linkedPending = useLinkedRequestStore(
-    (s) =>
-      s.requests.filter(
-        (r) =>
-          r.status === 'pending' &&
-          (r.toUserId === userId || r.fromUserId === userId),
-      ).length,
-  );
-  const settlementPending = useSettlementRequestStore(
-    (s) =>
-      s.requests.filter(
-        (r) =>
-          r.status === 'pending' &&
-          (r.toUserId === userId || r.fromUserId === userId),
-      ).length,
-  );
+  // N-7: only requests waiting on THIS user to decide light the bell — a
+  // request the user themselves sent is Outgoing-tab material, not attention.
+  const linkedPending = useLinkedRequestStore((s) => countIncomingPending(s.requests, userId));
+  const settlementPending = useSettlementRequestStore((s) => countIncomingPending(s.requests, userId));
   // Unread informational pings (e.g. "someone added you via your code") also
   // light up the bell so the user knows to open the Inbox.
   const unreadInfoNotifs = useNotificationStore(

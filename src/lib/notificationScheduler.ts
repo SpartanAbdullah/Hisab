@@ -4,6 +4,9 @@
 // paid five minutes ago can never ring, by construction. No-op on web.
 import { isNativeRuntime } from './runtime';
 import { planNotifications } from './notificationPlanner';
+import { notificationChannelDefs } from './notificationContent';
+import { tStatic } from './i18n';
+import { useBudgetStore } from '../stores/budgetStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
@@ -38,7 +41,29 @@ async function ensureLoaded(): Promise<void> {
   if (useUpcomingExpenseStore.getState().expenses.length === 0) jobs.push(useUpcomingExpenseStore.getState().loadExpenses());
   if (useCommitteeStore.getState().committees.length === 0) jobs.push(useCommitteeStore.getState().loadAll());
   if (useTransactionStore.getState().transactions.length === 0) jobs.push(useTransactionStore.getState().loadTransactions());
+  // Budgets drive the device-local breach reminder (planner section 6).
+  if (useBudgetStore.getState().budgets.length === 0) jobs.push(useBudgetStore.getState().loadBudgets());
   await Promise.all(jobs.map((j) => j.catch(() => {})));
+}
+
+// Android 8+ routes every notification through a channel, and one naming a
+// channel the device has never seen is dropped silently. pushRegistration
+// creates the same four through the PushNotifications plugin, but a build with
+// no google-services.json never reaches that path — so the local path creates
+// them too. Both are idempotent at the OS level (audit N-10).
+let localChannelsCreated = false;
+async function ensureLocalChannels(): Promise<void> {
+  if (localChannelsCreated) return;
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications');
+    if (typeof LocalNotifications.createChannel !== 'function') return;
+    for (const def of notificationChannelDefs(tStatic)) {
+      await LocalNotifications.createChannel(def);
+    }
+    localChannelsCreated = true;
+  } catch (err) {
+    console.error('[notifications] channel setup failed (non-fatal)', err);
+  }
 }
 
 // Drops every pending local notification. Shared by the reschedule path
@@ -66,6 +91,7 @@ async function runReschedule(): Promise<void> {
     if (perm.display !== 'granted') return;
 
     await ensureLoaded();
+    await ensureLocalChannels();
 
     // Cash-advance loans keyed to their funding card (loan_taken origin) —
     // same derivation as HomePage/InboxPage.
@@ -84,6 +110,10 @@ async function runReschedule(): Promise<void> {
       upcoming: useUpcomingExpenseStore.getState().expenses,
       committees: useCommitteeStore.getState().committees,
       committeePayments: useCommitteeStore.getState().payments,
+      // Device-local budget breach reminders (audit N-11). Nothing here
+      // reaches the server: no notifications row, no push, this phone only.
+      budgets: useBudgetStore.getState().budgets,
+      transactions: useTransactionStore.getState().transactions,
       cardFundedLoanIds,
       now: new Date(),
     });
@@ -97,6 +127,10 @@ async function runReschedule(): Promise<void> {
         schedule: { at: new Date(p.atMs) },
         extra: { href: p.href },
         smallIcon: 'ic_stat_hisaab',
+        // Every planned entry is a device-local reminder the user opted into
+        // in Settings — its own channel, separate from cross-user money and
+        // group traffic, so the two can be tuned independently (audit N-10).
+        channelId: 'reminders',
       })),
     });
   } catch (err) {

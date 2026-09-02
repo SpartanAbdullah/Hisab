@@ -165,7 +165,7 @@ export function PWAInstallPrompt() {
 
   return (
     <div className="fixed top-4 left-4 right-4 z-[60] animate-fade-in max-w-[448px] mx-auto">
-      <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-4 flex items-start gap-3 text-white shadow-xl shadow-indigo-500/30">
+      <div className="bg-gradient-to-r from-accent-500 to-accent-600 rounded-2xl p-4 flex items-start gap-3 text-white shadow-xl shadow-accent-600/30">
         <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 backdrop-blur-sm mt-0.5">
           <PromptIcon size={18} />
         </div>
@@ -176,7 +176,7 @@ export function PWAInstallPrompt() {
         </div>
         <button
           onClick={handleInstall}
-          className="px-4 py-2 rounded-xl bg-white text-indigo-600 text-[12px] font-bold active:scale-95 transition-all shrink-0"
+          className="px-4 py-2 rounded-xl bg-white text-accent-600 text-[12px] font-bold active:scale-95 transition-all shrink-0"
         >
           {installMode === 'native' ? t('pwa_install_cta') : t('pwa_install_show_steps')}
         </button>

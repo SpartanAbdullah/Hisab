@@ -509,7 +509,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
           <button
             onClick={handleSave}
             disabled={saving || !canSave}
-            className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20"
+            className="flex-1 bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20"
           >
             {saving ? t('quick_processing') : t('save')}
           </button>
@@ -627,7 +627,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
                   type="button"
                   onClick={() => setCashAdvanceCardId(account.id)}
                   className={`w-full p-3.5 rounded-2xl border-2 flex items-center justify-between text-left transition-all active:scale-[0.98] ${
-                    selectedCashAdvanceCard?.id === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
+                    selectedCashAdvanceCard?.id === account.id ? 'border-accent-500 bg-accent-50 shadow-sm shadow-accent-500/5' : 'border-cream-border bg-cream-card'
                   }`}
                 >
                   <div>

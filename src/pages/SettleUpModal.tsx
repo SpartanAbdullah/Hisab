@@ -8,6 +8,7 @@ import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { formatMoney } from '../lib/constants';
 import type { SplitGroup } from '../db';
 import { friendlyGroupParticipantError, validateNewSettlementParticipants } from '../lib/groupActiveMembers';
+import { isGuestMember, settlementIsOnBehalf } from '../lib/groupGuests';
 
 interface Debt { from: string; fromName: string; to: string; toName: string; amount: number; }
 interface Props {
@@ -64,6 +65,21 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
       <span>{name}</span>
     );
 
+  // A guest has no Hisaab account, so a settlement on their edge is one the
+  // signed-in member is RECORDING FOR them — nobody is going to confirm it from
+  // the other side, and no notification will reach them. The server enforces
+  // exactly this shape (record_group_settlement requires the CALLER to be a
+  // connected member and a guest can never be one), so the label is the truth
+  // of the write, not a nicety. Audit G6 / O4.
+  const guestName = (memberId: string): string | null => {
+    const member = group.members.find((m) => m.id === memberId);
+    return member && isGuestMember(member) ? member.name : null;
+  };
+  const onBehalfOf = (debt: Debt): string | null =>
+    settlementIsOnBehalf(group, debt.from, debt.to)
+      ? guestName(debt.from) ?? guestName(debt.to)
+      : null;
+
   // Directional subtitle from the current user's point of view. "You pay {name}"
   // when the user is the debtor, "{name} pays you" when they're the creditor,
   // and a neutral "{from} pays {to}" for debts between two other members.
@@ -111,7 +127,7 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
     finally { setSaving(false); }
   };
 
-  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all";
+  const inputClass = "w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all";
 
   // Live "remaining after this" figure for the amount step.
   const enteredAmount = Number(amount);
@@ -147,12 +163,12 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
     <Modal open={open} onClose={onClose} title={t('group_settle_title')} footer={
       selectedDebt ? (
         <button onClick={handleSettle} disabled={saving || !canSettle}
-          className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
+          className="w-full bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20">
           {saving ? t('quick_processing') : t('group_settle_save')}
         </button>
       ) : activeDebts.length === 0 ? (
         <button onClick={onClose}
-          className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-indigo-500/20">
+          className="w-full bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold shadow-md shadow-accent-600/20">
           {t('settle_done')}
         </button>
       ) : undefined
@@ -185,6 +201,9 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
                       {renderParty(d.to, d.toName)}
                     </p>
                     <p className="text-[10.5px] text-ink-500 mt-0.5">{directionalSubtitle(d)}</p>
+                    {onBehalfOf(d) && (
+                      <p className="text-[10px] text-ink-400 mt-0.5">{t('guest_on_behalf')}</p>
+                    )}
                   </div>
                   <p className="text-[14px] font-bold text-ink-900 tabular-nums shrink-0">{formatMoney(d.amount, group.currency)}</p>
                 </button>
@@ -202,6 +221,12 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
               <p className="text-[11px] text-accent-600/80 mt-0.5">{directionalSubtitle(selectedDebt)}</p>
               <p className="text-xl font-bold text-accent-600 mt-1.5">{formatMoney(selectedDebt.amount, group.currency)}</p>
             </div>
+
+            {onBehalfOf(selectedDebt) && (
+              <p className="text-[11.5px] text-ink-600 bg-cream-soft border border-cream-hairline rounded-xl px-3 py-2 leading-relaxed">
+                {t('guest_settle_note').replace('{name}', onBehalfOf(selectedDebt) ?? '')}
+              </p>
+            )}
 
             {/* Full / Partial selector. Full is the default and prefills the
                 whole outstanding amount; Partial clears it for a custom slice. */}

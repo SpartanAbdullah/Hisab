@@ -171,8 +171,9 @@ SELECT test.assert(
            '(none missing)'));
 
 -- A table with RLS on and zero policies is a deliberate service-role lockbox
--- (app_push_config, the *_attempts ledgers). Assert the set is exactly the
--- known one, so a NEW silent lockbox fails the build.
+-- (app_push_config; khata_link_lookups from p3-khata-link; reconciliation_runs
+-- and reconciliation_findings from p3-invariant-monitoring). Assert the set is
+-- exactly the known one, so a NEW silent lockbox fails the build.
 SELECT test.assert(
   NOT EXISTS (
     SELECT 1 FROM pg_class c
@@ -180,11 +181,11 @@ SELECT test.assert(
      WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity
        AND NOT EXISTS (SELECT 1 FROM pg_policies p
                         WHERE p.schemaname = 'public' AND p.tablename = c.relname)
-       AND c.relname NOT IN ('app_push_config')),
+       AND c.relname NOT IN ('app_push_config', 'khata_link_lookups', 'reconciliation_runs', 'reconciliation_findings')),
   'the only policy-less RLS table is the documented app_push_config lockbox',
   COALESCE((SELECT string_agg(c.relname, ', ') FROM pg_class c
               JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity
                AND NOT EXISTS (SELECT 1 FROM pg_policies p
                                 WHERE p.schemaname='public' AND p.tablename=c.relname)
-               AND c.relname NOT IN ('app_push_config')), '(none)'));
+               AND c.relname NOT IN ('app_push_config', 'khata_link_lookups', 'reconciliation_runs', 'reconciliation_findings')), '(none)'));

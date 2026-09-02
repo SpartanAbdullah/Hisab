@@ -81,4 +81,30 @@ describe('computePairwiseDebts', () => {
     expect(debts[0]).toMatchObject({ from: 'C', toName: 'Ali', amount: 80 });
     expect(debts[1]).toMatchObject({ from: 'B', fromName: 'Bilal', amount: 10 });
   });
+
+  // ── Server-boundary tolerance (moneyTolerance.ts: GROUP_SETTLEMENT_TOLERANCE) ──
+  // record_group_settlement (supabase-migration-audit-p0-group-concurrency.sql:381)
+  // treats an outstanding cap of exactly 0.01 as ALREADY_SETTLED, and
+  // leave_group (supabase-migration-safe-leave-group.sql:142) treats an exact
+  // 0.01 net as square-enough-to-leave. Both draw the line at ONE CENT, not
+  // half a cent — so this net-drop threshold must stay at 0.01, not the
+  // looser 0.005 used by settleUpMinimize/whoOwesMe/statementOfAccount. See
+  // moneyTolerance.test.ts's "server boundary" block for the full proof.
+  it('drops an exact one-cent net position (matches the server zero cutoff)', () => {
+    const debts = computePairwiseDebts(
+      members,
+      [{ paidBy: 'A', splits: [{ memberId: 'A', amount: 0 }, { memberId: 'B', amount: 0.01 }] }],
+      [],
+    );
+    expect(debts).toEqual([]);
+  });
+
+  it('keeps a net position of two cents (clears the one-cent boundary)', () => {
+    const debts = computePairwiseDebts(
+      members,
+      [{ paidBy: 'A', splits: [{ memberId: 'A', amount: 0 }, { memberId: 'B', amount: 0.02 }] }],
+      [],
+    );
+    expect(debts[0]).toMatchObject({ from: 'B', to: 'A', amount: 0.02 });
+  });
 });

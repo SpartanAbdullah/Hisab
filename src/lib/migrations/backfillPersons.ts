@@ -116,8 +116,16 @@ async function ensureStoresLoaded(): Promise<void> {
   // idempotent either way.
   tasks.push(personStore.loadPersons());
   if (loanStore.loans.length === 0) tasks.push(loanStore.loadLoans());
+  // The backfill rewrites `person_id` on EVERY historical row that names a
+  // person — a one-shot migration that runs once and marks itself done. Running
+  // it over the store's default 12-month window would leave every older row
+  // unlinked and then never look again, so this is a "must be complete"
+  // consumer (docs/performance.md §7). The cache-first load still runs first so
+  // a warm mirror serves the rows; `ensureTransactionHistory` only pays for
+  // whatever the window did not already prove.
   if (transactionStore.transactions.length === 0) tasks.push(transactionStore.loadTransactions());
   await Promise.all(tasks);
+  await useTransactionStore.getState().ensureTransactionHistory({ all: true });
 }
 
 function needsBackfill(): boolean {

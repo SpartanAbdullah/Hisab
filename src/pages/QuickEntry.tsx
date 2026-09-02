@@ -6,7 +6,7 @@ import {
   Search, X, CreditCard,
 } from 'lucide-react';
 import { useAccountStore } from '../stores/accountStore';
-import { useTransactionStore, type TransactionInput } from '../stores/transactionStore';
+import { useTransactionStore, loanScheduleAlreadyCreated, type TransactionInput } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
 import { useGoalStore } from '../stores/goalStore';
 import { useEmiStore } from '../stores/emiStore';
@@ -38,12 +38,16 @@ import { useToast } from '../components/Toast';
 import { buildPayeeProfiles, matchPayee, mismatchedTxnIds, normalizePayee } from '../lib/payeeMemory';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { statementInstalmentDates } from '../lib/cardStatement';
+import { planEmiRows } from '../lib/emiPlan';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { localIso } from '../lib/thisWeek';
 import { CategoryPicker } from '../components/CategoryPicker';
+import { ShareKhataLinkSheet } from '../components/ShareKhataLinkSheet';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { track } from '../lib/telemetry';
 import { bucketAmount } from '../lib/telemetryEvents';
+import { shouldOfferKhataShareNudge, snoozeKhataShareNudge } from '../lib/khataLinkStatus';
 import { SUPPORTED_CURRENCIES, type Currency, type TransactionType, type SplitGroup, type Loan } from '../db';
 import { AddAccountStepper } from './AddAccountStepper';
 
@@ -142,7 +146,7 @@ export function QuickEntry({
   const [loanSearch, setLoanSearch] = useState('');
   const [goalId, setGoalId] = useState('');
   const [conversionRate, setConversionRate] = useState('');
-  const [ledgerCurrency, setLedgerCurrency] = useState<Currency>((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
+  const [ledgerCurrency, setLedgerCurrency] = useState<Currency>(() => getPrimaryCurrency());
   const [hasEmi, setHasEmi] = useState(false);
   const [emiInstallments, setEmiInstallments] = useState('');
   const [emiStartDate, setEmiStartDate] = useState('');
@@ -207,6 +211,22 @@ export function QuickEntry({
     }
   }, [open]);
 
+  // L2 share-at-save nudge (audit 2026-09 P3): offered at most once every 14
+  // days per person. See offerKhataNudge below and trackSaved's loan branch.
+  const [khataNudge, setKhataNudge] = useState<{ personId: string; personName: string; phone: string | null } | null>(null);
+  const offerKhataNudge = (recipient: { id: string; name: string; phone: string | null }) => {
+    if (!shouldOfferKhataShareNudge(recipient.id)) return;
+    snoozeKhataShareNudge(recipient.id);
+    toast.show({
+      type: 'info',
+      title: t('khata_nudge_toast_title').replace('{name}', recipient.name),
+      action: {
+        label: t('khata_nudge_toast_action'),
+        onPress: () => setKhataNudge({ personId: recipient.id, personName: recipient.name, phone: recipient.phone }),
+      },
+    });
+  };
+
   // One place where a saved entry is reported. Amount travels as a BUCKET and
   // the note/contact/account names never leave the device (enforced by the
   // schema in src/lib/telemetryEvents.ts).
@@ -216,7 +236,12 @@ export function QuickEntry({
     entryCurrency: string,
     amountValue: number,
     extra?: {
-      loan?: { direction: 'given' | 'taken'; linked: boolean; hasSchedule: boolean };
+      loan?: {
+        direction: 'given' | 'taken'; linked: boolean; hasSchedule: boolean;
+        // L2 share-at-save nudge (audit 2026-09 P3): who to offer the khata
+        // link for. Omitted callers simply skip the nudge.
+        person?: { id: string; name: string; phone: string | null };
+      };
       repayment?: { consolidated: boolean; settles: boolean };
     },
   ) => {
@@ -238,6 +263,7 @@ export function QuickEntry({
         currency: entryCurrency,
         mode,
       });
+      if (extra.loan.person) offerKhataNudge(extra.loan.person);
     }
     if (extra?.repayment) {
       track('repayment_recorded', {
@@ -569,7 +595,7 @@ export function QuickEntry({
   // Active currency for the amount step + quick-amount presets. Prefer the
   // preset account's currency (when QuickEntry was launched pinned to an
   // account); otherwise the user's primary currency.
-  const primaryCurrency = (localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED';
+  const primaryCurrency = getPrimaryCurrency();
   const presetAccountId = preset?.accountId ?? preset?.cashAdvanceCardId;
   const presetAccount = presetAccountId ? accounts.find(a => a.id === presetAccountId) : undefined;
   const activeCurrency: Currency = presetAccount?.currency ?? primaryCurrency;
@@ -824,7 +850,7 @@ export function QuickEntry({
             });
             if (branch.branch === true && (LINKED_REQUEST_CURRENCIES as readonly string[]).includes(ledgerCurrency)) {
               const guard = await confirmCrossUserRequest({ amount: amt, currency: branch.currency, personName: resolvedPerson!.name });
-              if (guard.blockedReason) { toast.show({ type: 'error', title: 'Check the amount', subtitle: guard.blockedReason }); return; }
+              if (guard.blockedReason) { toast.show({ type: 'error', title: t('qe_err_check_amount'), subtitle: guard.blockedReason }); return; }
               if (!guard.ok) return;
               await useLinkedRequestStore.getState().createRequest({
                 toUserId: branch.toUserId,
@@ -838,7 +864,10 @@ export function QuickEntry({
               // Ledger-only mirror of a loan to a linked Hisaab user. It is a
               // real created entry from the user's point of view, so it counts.
               trackSaved('linked_request', branch.currency, amt, {
-                loan: { direction: type === 'loan_given' ? 'given' : 'taken', linked: true, hasSchedule: false },
+                loan: {
+                  direction: type === 'loan_given' ? 'given' : 'taken', linked: true, hasSchedule: false,
+                  person: { id: resolvedPerson!.id, name: resolvedPerson!.name, phone: resolvedPerson!.phone ?? null },
+                },
               });
               toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
               reset();
@@ -855,7 +884,10 @@ export function QuickEntry({
             notes,
           });
           trackSaved(type === 'loan_given' ? 'loan_given' : 'loan_taken', ledgerCurrency, amt, {
-            loan: { direction: loan.type, linked: false, hasSchedule: false },
+            loan: {
+              direction: loan.type, linked: false, hasSchedule: false,
+              person: { id: loan.personId ?? resolvedPerson!.id, name: loan.personName, phone: resolvedPerson!.phone ?? null },
+            },
           });
           setConfirmData({
             title: t('confirm_loan_saved'),
@@ -887,7 +919,7 @@ export function QuickEntry({
         if (branch.branch === true) {
           // Deliberate confirm before mirroring a currency-locked record to them.
           const guard = await confirmCrossUserRequest({ amount: amt, currency: branch.currency, personName: resolvedPerson!.name });
-          if (guard.blockedReason) { toast.show({ type: 'error', title: 'Check the amount', subtitle: guard.blockedReason }); return; }
+          if (guard.blockedReason) { toast.show({ type: 'error', title: t('qe_err_check_amount'), subtitle: guard.blockedReason }); return; }
           if (!guard.ok) return;
           await useLinkedRequestStore.getState().createRequest({
             toUserId: branch.toUserId,
@@ -905,7 +937,10 @@ export function QuickEntry({
             requestId: nextRequestId(),
           });
           trackSaved('linked_request', branch.currency, amt, {
-            loan: { direction: type === 'loan_given' ? 'given' : 'taken', linked: true, hasSchedule: false },
+            loan: {
+              direction: type === 'loan_given' ? 'given' : 'taken', linked: true, hasSchedule: false,
+              person: { id: resolvedPerson!.id, name: resolvedPerson!.name, phone: resolvedPerson!.phone ?? null },
+            },
           });
           toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
           reset();
@@ -1075,6 +1110,36 @@ export function QuickEntry({
         return;
       }
 
+      // ── L4 step 3: the instalment plan, computed BEFORE the money call ────
+      // A cash advance's instalments are statement-native: they anchor to the
+      // funding card's statement day (dueDay), not a typed start date. Human
+      // loans keep the typed start date. This is the same derivation the
+      // post-commit block below has always run — kept as a factory, and called
+      // TWICE by design, so the legacy path still reads its clock at exactly
+      // the moment it always did rather than inheriting a value hoisted above
+      // a network round-trip.
+      const emiCard = cashAdvance ? selectedCashAdvanceCard : null;
+      const emiCardDueDay = emiCard ? parseInt(emiCard.metadata?.dueDay ?? '', 10) : NaN;
+      const emiStatementDatesNow = (): string[] | null => (
+        emiCard && Number.isFinite(emiCardDueDay) && emiCardDueDay >= 1 && emiInstallments
+          ? statementInstalmentDates(emiCardDueDay, parseInt(emiInstallments), localIso(new Date()))
+          : null
+      );
+
+      // Planned unconditionally; the store honours it only on the atomic path
+      // (VITE_ATOMIC_LOAN_CREATE) and only for a loan the entry creates. With
+      // the flag off these rows are discarded and the post-commit
+      // generateSchedule below is still the only writer.
+      const plannedEmiDates = emiStatementDatesNow();
+      const loanEmiPlan = hasEmi && emiInstallments && (plannedEmiDates || emiStartDate)
+        ? planEmiRows({
+            totalAmount: amt,
+            installments: parseInt(emiInstallments),
+            startDate: emiStartDate || localIso(new Date()),
+            ...(plannedEmiDates ? { dueDates: plannedEmiDates } : {}),
+          })
+        : null;
+
       switch (type) {
         case 'income': { const d = accounts.find(a => a.id === destId)!; changes.push({ accountName: d.name, currency: d.currency, before: d.balance, after: d.balance + amt }); input = { type: 'income', amount: amt, destinationAccountId: destId, category, notes }; break; }
         case 'expense': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'expense', amount: amt, sourceAccountId: sourceId, category, notes }; break; }
@@ -1088,7 +1153,7 @@ export function QuickEntry({
           input = { type: 'transfer', amount: amt, sourceAccountId: sourceId, destinationAccountId: destId, conversionRate: s.currency !== d.currency ? rate : undefined, notes };
           break;
         }
-        case 'loan_given': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'loan_given', amount: amt, sourceAccountId: sourceId, personName: resolvedPerson!.name, personId: resolvedPerson!.id, notes }; break; }
+        case 'loan_given': { const s = accounts.find(a => a.id === sourceId)!; changes.push({ accountName: s.name, currency: s.currency, before: s.balance, after: s.balance - amt }); input = { type: 'loan_given', amount: amt, sourceAccountId: sourceId, personName: resolvedPerson!.name, personId: resolvedPerson!.id, notes, emiPlan: loanEmiPlan }; break; }
         case 'loan_taken': {
           const d = accounts.find(a => a.id === destId)!;
           if (selectedCashAdvanceCard) {
@@ -1105,6 +1170,7 @@ export function QuickEntry({
             personName: cashAdvance && selectedCashAdvanceCard ? selectedCashAdvanceCard.name : resolvedPerson!.name,
             personId: cashAdvance ? null : resolvedPerson!.id,
             notes,
+            emiPlan: loanEmiPlan,
           };
           break;
         }
@@ -1187,16 +1253,16 @@ export function QuickEntry({
       // has already moved and a retry would duplicate the transaction. Surface
       // a distinct "partial success" toast instead and still confirm the txn.
       let emiFailed = false;
-      // A cash advance's instalments are statement-native: they anchor to the
-      // funding card's statement day (dueDay), not a typed start date. Human
-      // loans keep the typed start date.
-      const emiCard = cashAdvance ? selectedCashAdvanceCard : null;
-      const emiCardDueDay = emiCard ? parseInt(emiCard.metadata?.dueDay ?? '', 10) : NaN;
-      const emiStatementDates = emiCard && Number.isFinite(emiCardDueDay) && emiCardDueDay >= 1 && emiInstallments
-        ? statementInstalmentDates(emiCardDueDay, parseInt(emiInstallments), localIso(new Date()))
-        : null;
+      // See emiStatementDatesNow above — recomputed HERE, at the same moment it
+      // always was, so the legacy path is unchanged.
+      const emiStatementDates = emiStatementDatesNow();
       const emiReady = emiStatementDates ? true : !!emiStartDate;
-      if (hasEmi && resultTx.relatedLoanId && emiInstallments && emiReady) {
+      // The atomic path already inserted the schedule inside the loan's own
+      // Postgres transaction; generating a second one here would double it.
+      // Anything else — flag off, a plan the store declined to forward — still
+      // generates it, exactly as it always has.
+      if (hasEmi && resultTx.relatedLoanId && emiInstallments && emiReady
+        && !loanScheduleAlreadyCreated(resultTx.relatedLoanId)) {
         try {
           await generateSchedule({
             loanId: resultTx.relatedLoanId,
@@ -1218,7 +1284,7 @@ export function QuickEntry({
       }
 
       const typeLabel = cashAdvance ? t('intent_cash_advance') : (TX_TYPES.find(tx => tx.value === type)?.label ?? type);
-      const confirmationCurrency = changes[0]?.currency ?? localStorage.getItem('hisaab_primary_currency') ?? 'PKR';
+      const confirmationCurrency = changes[0]?.currency ?? getPrimaryCurrency();
       const resultDescription = (() => {
         const first = changes[0];
         if (type === 'expense' && first) return t('qe_done_deducted').replace('{amount}', formatMoney(amt, first.currency)).replace('{account}', first.accountName);
@@ -1256,7 +1322,15 @@ export function QuickEntry({
         confirmationCurrency,
         amt,
         (type === 'loan_given' || type === 'loan_taken')
-          ? { loan: { direction: type === 'loan_given' ? 'given' : 'taken', linked: false, hasSchedule: hasEmi && !emiFailed && !!resultTx.relatedLoanId } }
+          ? {
+              loan: {
+                direction: type === 'loan_given' ? 'given' : 'taken', linked: false,
+                hasSchedule: hasEmi && !emiFailed && !!resultTx.relatedLoanId,
+                // Cash advance has no human counterparty (the card is the
+                // lender) — resolvedPerson is null there; skip the nudge.
+                person: resolvedPerson ? { id: resolvedPerson.id, name: resolvedPerson.name, phone: resolvedPerson.phone ?? null } : undefined,
+              },
+            }
           : type === 'repayment'
             ? { repayment: { consolidated: false, settles: amt >= repayCap - 0.00001 } }
             : undefined,
@@ -1275,7 +1349,7 @@ export function QuickEntry({
       // the picker's remaining figures — and the overpayment cap built from
       // them — reflect the truth the user must re-enter against.
       if (isLoanRemainingConflict(err)) void loadLoans();
-      toast.show({ type: 'error', title: 'Transaction Failed', subtitle: err instanceof Error ? err.message : t('toast_error_generic') });
+      toast.show({ type: 'error', title: t('qe_err_txn_failed_title'), subtitle: err instanceof Error ? err.message : t('toast_error_generic') });
     } finally { setSaving(false); }
   };
 
@@ -1411,10 +1485,10 @@ export function QuickEntry({
             </div>
 
             {/* Numpad — Sukoon: white cells, 1px cream-border, radius 14 */}
-            <div className="grid grid-cols-3 gap-2" aria-label="Number pad" role="group">
+            <div className="grid grid-cols-3 gap-2" aria-label={t('qe_numpad_label')} role="group">
               {['1','2','3','4','5','6','7','8','9','.','0','del'].map(key => (
                 <button key={key} onClick={() => numpadPress(key)}
-                  aria-label={key === 'del' ? 'Delete last digit' : undefined}
+                  aria-label={key === 'del' ? t('qe_numpad_delete') : undefined}
                   className={`h-12 rounded-[14px] text-[19px] font-medium transition-all active:scale-95 flex items-center justify-center border ${
                     key === 'del' ? 'bg-pay-50 text-pay-text border-pay-100 active:bg-pay-100' : 'bg-cream-card text-ink-900 border-cream-border active:bg-cream-soft'
                   }`}
@@ -1624,10 +1698,10 @@ export function QuickEntry({
                 ) : groups.length === 0 ? (
                   <div className="rounded-2xl bg-cream-card border border-cream-border p-4 text-center space-y-2">
                     <p className="text-[12.5px] text-ink-700 font-medium">
-                      You don't have any groups yet.
+                      {t('qe_no_groups_title')}
                     </p>
                     <p className="text-[11px] text-ink-500 leading-relaxed">
-                      Create one to split this expense with friends or flatmates.
+                      {t('qe_no_groups_body')}
                     </p>
                   </div>
                 ) : (
@@ -1649,7 +1723,10 @@ export function QuickEntry({
                               {g.name}
                             </p>
                             <p className="text-[10.5px] text-ink-500 mt-0.5">
-                              {connected}/{g.members.length} members · {g.currency}
+                              {t('qe_group_member_count')
+                                .replace('{connected}', String(connected))
+                                .replace('{total}', String(g.members.length))
+                                .replace('{currency}', g.currency)}
                             </p>
                           </div>
                           <ChevronRight size={14} className="text-ink-300 shrink-0" />
@@ -1663,10 +1740,10 @@ export function QuickEntry({
                   onClick={handleCreateNewGroup}
                   className="w-full rounded-2xl border-2 border-dashed border-cream-border bg-transparent text-ink-700 py-3 text-[12.5px] font-semibold active:bg-cream-soft transition-colors flex items-center justify-center gap-2"
                 >
-                  <Plus size={13} strokeWidth={2.4} /> Create new group
+                  <Plus size={13} strokeWidth={2.4} /> {t('qe_create_new_group')}
                 </button>
                 <p className="text-[11px] text-ink-500 leading-relaxed bg-cream-card border border-cream-border rounded-2xl p-3">
-                  Picking a group opens the full expense form — you'll choose who paid, how to split, and the category there. Your amount carries over.
+                  {t('qe_group_pick_hint')}
                 </p>
               </div>
             )}
@@ -1961,7 +2038,7 @@ export function QuickEntry({
                           <button
                             type="button"
                             onClick={() => setLoanSearch('')}
-                            aria-label="Clear search"
+                            aria-label={t('a11y_clear_search')}
                             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 active:text-ink-600"
                           >
                             <X size={15} />
@@ -2239,6 +2316,13 @@ export function QuickEntry({
         expense={nearestUpcoming}
         onContinue={() => handleSubmit()}
         onCancel={() => setShowSpendingWarning(false)}
+      />
+      <ShareKhataLinkSheet
+        open={!!khataNudge}
+        onClose={() => setKhataNudge(null)}
+        personId={khataNudge?.personId ?? ''}
+        personName={khataNudge?.personName ?? ''}
+        phone={khataNudge?.phone ?? null}
       />
     </>
   );

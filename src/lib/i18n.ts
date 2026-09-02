@@ -437,6 +437,21 @@ const S = {
     ur: "Settlement save nahi ho saki. Dobara koshish karein.",
     en: "Settlement could not be saved. Please try again.",
   },
+  // Server trigger mirrors (supabase-migration-p1-money-bounds.sql) surfaced
+  // via friendlyGroupParticipantError — raw RAISE EXCEPTION codes on a group
+  // expense/split write.
+  grp_err_splits_mismatch: {
+    ur: "Hisson ka total kharche ki raqam se match nahi karta. Dono barabar hone chahiye.",
+    en: "The shares don't add up to the expense amount. They have to match.",
+  },
+  grp_err_invalid_split_amount: {
+    ur: "Har hisse ki raqam zero se zyada honi chahiye.",
+    en: "Every split share must be greater than zero.",
+  },
+  grp_err_invalid_split_member: {
+    ur: "Har hissa is group ke kisi member ka hona chahiye.",
+    en: "Every split must name a member of this group.",
+  },
   // ── Group notification templates ──
   // Server triggers write a template key + params; these render it in the
   // user's language (audit N-1: cross-user notification text used to be
@@ -880,6 +895,10 @@ const S = {
   receipt_removed: { ur: "Receipt hata di", en: "Receipt removed" },
   receipt_failed: { ur: "Receipt save nahi hui", en: "Couldn't save receipt" },
   receipt_not_image: { ur: "Sirf tasveer lagayein", en: "Please choose an image" },
+  // Bucket limits — 5 MiB cap + MIME allowlist (audit M13). These used to fail
+  // silently at the Storage API with no user-facing message at all.
+  receipt_too_large: { ur: "Ye tasveer bohat bari hai. 5 MB se chhoti tasveer chunein.", en: "This photo is too large. Please choose one under 5 MB." },
+  receipt_bad_type: { ur: "Ye file support nahi hoti. JPG, PNG ya WEBP tasveer chunein.", en: "This file type isn't supported. Choose a JPG, PNG or WEBP photo." },
   receipt_remove_title: { ur: "Receipt hata dein?", en: "Remove receipt?" },
   balance_changes: { ur: "Paisa Kahan Gaya", en: "Balance Changes" },
   updated: { ur: "Updated", en: "Updated" },
@@ -1134,6 +1153,24 @@ const S = {
   group_members: { ur: "Members", en: "Members" },
   group_add_member: { ur: "Member Add Karo", en: "Add Member" },
   group_member_name: { ur: "Naam", en: "Name" },
+  // CreateGroupModal — add-by-user-code flow
+  group_code_err_empty: { ur: "User code likhein", en: "Enter a user code" },
+  group_code_err_dup: { ur: "Pehle se add hai", en: "Already added" },
+  group_code_err_not_found: { ur: "User nahi mila", en: "User not found" },
+  group_code_err_not_found_sub: { ur: "Code check karein aur dobara koshish karein.", en: "Check the code and try again." },
+  group_code_err_self: { ur: "Yeh to aapka apna code hai", en: "That's your own code" },
+  group_code_err_self_sub: { ur: "Aap hamesha shamil hain.", en: "You're always included." },
+  group_code_err_lookup_failed: { ur: "Lookup nahi ho saka", en: "Lookup failed" },
+  group_code_hint: {
+    ur: "User code se add karein. Unse Settings → My Account se apna code share karne ko kahein.",
+    en: "Add by user code. Ask them to share theirs from Settings → My Account.",
+  },
+  group_code_placeholder: { ur: "HSB-XXXXXX", en: "HSB-XXXXXX" },
+  group_owner_you_tag: { ur: "(aap)", en: "(you)" },
+  group_no_members_yet_hint: {
+    ur: "Group pehle bana kar join code baad mein share bhi kar sakte hain.",
+    en: "You can also create the group first and share the join code later.",
+  },
   group_create: { ur: "Group Banao", en: "Create Group" },
   group_creating: { ur: "Bana Rahe Hain...", en: "Creating..." },
   group_created: { ur: "Group Ban Gaya!", en: "Group Created!" },
@@ -1141,6 +1178,18 @@ const S = {
   group_you_owe: { ur: "Aapne denay hain", en: "You owe" },
   group_settled: { ur: "Barabar, Khalas", en: "All settled" },
   group_members_count: { ur: "members", en: "members" },
+  // SplitsPage hero + list
+  grp_hero_across: { ur: "Sab groups mein · {currency}", en: "Across all groups · {currency}" },
+  grp_unit_split: { ur: "split", en: "split" },
+  grp_unit_splits: { ur: "splits", en: "splits" },
+  grp_other_currencies: { ur: "· +{n} doosri currencies mein", en: "· +{n} in other currencies" },
+  grp_no_splits_title: { ur: "Abhi koi split nahi", en: "No splits yet" },
+  grp_no_splits_body: {
+    ur: "Dosto ke sath kharche split karne ke liye ek banayein, ya code se join karein.",
+    en: "Create one to split expenses with friends, or join one with a code.",
+  },
+  grp_search_placeholder: { ur: "Groups talash karein", en: "Search groups" },
+  grp_no_matches_for: { ur: '"{q}" ke liye kuch nahi mila', en: 'No matches for "{q}"' },
   group_empty: { ur: "Koi group nahi", en: "No groups yet" },
   group_empty_desc: {
     ur: "Dosto ke saath kharche share karne ke liye group banao",
@@ -1289,6 +1338,7 @@ const S = {
   group_settle: { ur: "Settle Karo", en: "Settle Up" },
   group_expenses: { ur: "Kharche", en: "Expenses" },
   group_balances: { ur: "Balances", en: "Balances" },
+  group_activity: { ur: "Activity", en: "Activity" },
   group_no_expenses: { ur: "Abhi koi kharcha nahi", en: "No expenses yet" },
   group_paid_by: { ur: "kisne pay kia?", en: "Paid By?" },
   group_expense_meta: {
@@ -1576,6 +1626,12 @@ const S = {
   auth_word_committees: { ur: "Kameti", en: "Committees" },
   auth_word_splits: { ur: "Splits", en: "Splits" },
   auth_word_savings: { ur: "Bachat", en: "Savings" },
+  // Brand wordmark on the auth hero — identical in both languages on purpose.
+  auth_brand_name: { ur: "Hisaab", en: "Hisaab" },
+  // Login/Sign Up mode toggle and the matching footer switch link — both
+  // spots use the exact same two words, so one pair of keys covers both.
+  auth_tab_login: { ur: "Login", en: "Login" },
+  auth_tab_signup: { ur: "Sign Up", en: "Sign Up" },
   // ── Auth: action-oriented CTA copy ──
   auth_cta_signup: { ur: "Mera Free Account banao", en: "Create my Free Account" },
   auth_cta_login: { ur: "Mujhe log in karao", en: "Log me in" },
@@ -1591,6 +1647,8 @@ const S = {
   // ── Auth: pinned field labels + password success ──
   auth_label_email: { ur: "Email", en: "Email" },
   auth_label_password: { ur: "Password", en: "Password" },
+  auth_show_password: { ur: "Password dikhayein", en: "Show password" },
+  auth_hide_password: { ur: "Password chupayein", en: "Hide password" },
   pw_check_done: { ur: "Password mazboot hai", en: "Strong password" },
   // ── Auth: "detour, not dead-end" error copy + inline recovery actions ──
   err_invalid_credentials: {
@@ -1706,6 +1764,7 @@ const S = {
     en: "We'll greet you by name — and keep your ledger personal",
   },
   onboard_name_label: { ur: "Aapka Naam", en: "Your Name" },
+  onboard_name_placeholder: { ur: "e.g. Ahmed, Faizan, Bilal", en: "e.g. Ahmed, Faizan, Bilal" },
   onboard_currency_label: { ur: "Primary Currency", en: "Primary Currency" },
   onboard_currency_help: {
     ur: "Apni main currency chunein. Baaki currencies ko alag alag track kar sakte hain.",
@@ -2246,6 +2305,120 @@ const S = {
   clink_err_discovery_no_match: { ur: "Ye number ab un ke Hisaab account se match nahi karta — number badal gaya ho ga ya unhon ne discovery band kar di hai. Un se Hisaab code maang kar link karein.", en: "That number no longer matches their Hisaab account — they may have changed it or turned discovery off. Ask them for their Hisaab code instead." },
   clink_err_discovery_rate_limited: { ur: "Bohat zyada number check ho chuke. {minutes} minute baad dobara koshish karein.", en: "Too many number lookups. Try again in {minutes} minutes." },
 
+  // ── Khata link — the per-counterparty living-balance page ──
+  // Audit P3 / L2 (00-executive-summary.md:157), 11-competitive-analysis O2+G3:
+  // the khata category's proven retention + acquisition engine is a shareable
+  // "your khata with X" balance link the counterparty can open without
+  // installing anything. Backed by supabase-migration-p3-khata-link.sql.
+  // Owner-side copy (the share sheet) first, then the PUBLIC page — whose
+  // reader may never have used Hisaab, so its copy explains itself.
+  khata_share_title: { ur: "Khata link", en: "Khata link" },
+  // Trigger button on the contact sheet (audit P3 L2 wiring) — opens
+  // ShareKhataLinkSheet. Distinct from soa_cta ("Send statement", a one-off
+  // PDF/text) — this is the always-live link.
+  khata_share_open_cta: { ur: "Inka khata link share karein", en: "Share their khata link" },
+  khata_share_desc: {
+    ur: "{name} ko ek link bhejein jis par unka poora khata — kitna liya, kitna wapas kiya, kitna baaki — khud nazar aata rahe. App install karne ki zaroorat nahi.",
+    en: "Send {name} a link that always shows their side of the khata — what was given, what came back, what's left. They don't need to install anything.",
+  },
+  khata_share_create_cta: { ur: "Link banayein", en: "Create link" },
+  khata_share_rotate_cta: { ur: "Naya link banayein", en: "Create a new link" },
+  khata_share_revoke_cta: { ur: "Link band karein", en: "Turn the link off" },
+  khata_share_working: { ur: "Ho raha hai…", en: "Working…" },
+  khata_share_link_label: { ur: "Link", en: "Link" },
+  khata_share_copy: { ur: "Copy", en: "Copy" },
+  khata_share_copied: { ur: "Link copy ho gaya", en: "Link copied" },
+  khata_share_copy_failed: { ur: "Copy nahi ho saka", en: "Couldn't copy" },
+  khata_share_whatsapp: { ur: "WhatsApp par bhejein", en: "Send on WhatsApp" },
+  // {name} = the contact, {url} = the khata link. Sent by the OWNER.
+  khata_share_wa_text: {
+    ur: "Assalam-o-alaikum {name}. Hamara khata is link par live hai — jab chahein dekh lein: {url}",
+    en: "Hi {name}. Here's our running khata — you can open it any time: {url}",
+  },
+  khata_share_expires: { ur: "Ye link {days} din baad khud band ho jayega", en: "This link stops working in {days} days" },
+  // Shown ONLY when a rotate actually killed an older link the user may
+  // already have sent. Silence here would leave them wondering why an old
+  // WhatsApp link stopped opening.
+  khata_share_replaced: {
+    ur: "Purana link ab kaam nahi karega. Jise pehle bheja tha, usay ye naya link dobara bhejein.",
+    en: "The old link has stopped working. Send this new one to anyone you shared the old link with.",
+  },
+  khata_share_revoked_toast: { ur: "Link band kar diya gaya", en: "Link turned off" },
+  khata_share_initials_label: { ur: "Naam ki jagah sirf initials dikhayein", en: "Show initials instead of names" },
+  khata_share_initials_sub: {
+    ur: "Agar link aage forward ho jaye to bhi kisi ka poora naam samne na aaye — hisaab phir bhi poora nazar aata hai.",
+    en: "If the link gets forwarded on, nobody's full name is published — the ledger still reads in full.",
+  },
+  khata_share_notes_label: { ur: "Apne notes bhi link par dikhayein", en: "Show my notes on the link" },
+  khata_share_notes_sub: {
+    ur: "Aap ne loan ya payment ke saath jo notes likhe hain wo bhi is link par nazar aayenge — default mein chhupe rehte hain.",
+    en: "Any notes you've written on a loan or payment will also appear on this link — hidden by default.",
+  },
+  khata_share_privacy: {
+    ur: "Link par sirf isi shakhs ka hisaab dikhta hai. Aap ke accounts, balance, phone number, ya baqi log kabhi nahi dikhte. Aap jab chahein link band kar sakte hain.",
+    en: "The link shows only this one person's khata. Your accounts, balances, phone number and every other contact are never on it. You can turn it off whenever you want.",
+  },
+  khata_share_capability_warning: {
+    ur: "Jis ke paas ye link hoga, wo hisaab dekh sakta hai — koi login nahi lagta. Sirf usi ko bhejein jise dikhana hai.",
+    en: "Anyone holding this link can see the khata — there's no sign-in. Only send it to the person it's for.",
+  },
+  khata_err_unavailable: {
+    ur: "Khata link abhi is account par available nahi. Thori dair baad dobara koshish karein.",
+    en: "Khata links aren't available on this account yet. Please try again later.",
+  },
+  khata_err_unknown: { ur: "Link nahi ban saka. Thori dair baad dobara koshish karein.", en: "Couldn't create the link. Please try again in a moment." },
+
+  // Share-at-save nudge (audit 2026-09 P3 L2): offered right after a loan is
+  // recorded, from AddLoanModal and QuickEntry.
+  khata_nudge_toast_title: { ur: "{name} ka khata link share karein?", en: "Share {name}'s khata link?" },
+  khata_nudge_toast_action: { ur: "Share karein", en: "Share" },
+
+  // ── The PUBLIC khata page (/khata/:token) — no account, no sign-in ──
+  khata_page_eyebrow: { ur: "Khata", en: "Khata" },
+  khata_page_loading: { ur: "Khul raha hai…", en: "Opening…" },
+  khata_page_invalid: { ur: "Ye link ab kaam nahi karta", en: "This link no longer works" },
+  khata_page_invalid_sub: {
+    ur: "Ho sakta hai link band kar diya gaya ho, ya us ki muddat khatam ho gayi ho. Jis ne bheja tha, un se naya link maang lein.",
+    en: "It may have been turned off, or it may have expired. Ask whoever sent it for a fresh link.",
+  },
+  khata_page_banner: {
+    ur: "Ye {owner} ke record ka read-only aks hai. Yahan kuch badla nahi ja sakta.",
+    en: "This is a read-only view of {owner}'s records. Nothing here can be edited.",
+  },
+  khata_page_between: { ur: "{owner} aur {person}", en: "{owner} and {person}" },
+  khata_net_person_owes: { ur: "{person} ne {owner} ko dene hain", en: "{person} owes {owner}" },
+  khata_net_owner_owes: { ur: "{owner} ne {person} ko dene hain", en: "{owner} owes {person}" },
+  khata_net_settled: { ur: "Sab clear — kuch baaki nahi", en: "All settled — nothing pending" },
+  khata_page_entries: { ur: "Tafseel", en: "Entries" },
+  khata_page_no_activity: { ur: "Is khaate mein abhi koi entry nahi.", en: "There's nothing in this khata yet." },
+  khata_page_col_date: { ur: "Tareekh", en: "Date" },
+  khata_page_col_detail: { ur: "Tafseel", en: "Detail" },
+  khata_page_col_balance: { ur: "Balance", en: "Balance" },
+  khata_page_as_of: { ur: "{date} tak", en: "As of {date}" },
+  khata_page_expires: { ur: "Ye link {days} din baad band ho jayega", en: "This link stops working in {days} days" },
+  khata_page_initials_note: {
+    ur: "Naam ki jagah initials dikhaye ja rahe hain — ye {owner} ne khud chuna hai.",
+    en: "Names are shown as initials — {owner} chose that.",
+  },
+  khata_page_notes_hidden: {
+    ur: "{owner} ne is link par notes chhupa rakhe hain.",
+    en: "{owner} has kept notes hidden on this link.",
+  },
+  khata_page_estimated_note: {
+    ur: "★ walay lines purana record hain jinki alag entry mojood nahi — total phir bhi poora hai.",
+    en: "★ marks older amounts with no individual entry behind them — the total still adds up.",
+  },
+  khata_page_disagree: {
+    ur: "Kuch ghalat lag raha hai? Seedha {owner} se baat karein — tabdeeli sirf wohi kar sakte hain.",
+    en: "Something look wrong? Talk to {owner} directly — only they can change it.",
+  },
+  khata_page_cta: { ur: "Apna hisaab Hisaab par rakhein", en: "Keep your own khata on Hisaab" },
+  khata_page_cta_sub: {
+    ur: "Muft. Udhaar, kharche aur kameti — sab ek jagah, roman Urdu mein.",
+    en: "Free. Loans, expenses and kameti in one place, in roman Urdu.",
+  },
+  khata_page_cta_button: { ur: "Hisaab kholein", en: "Open Hisaab" },
+
   // ── Phone discovery (opt-in, no address-book access) ──
   disc_badge: { ur: "Hisaab User", en: "Hisaab User" },
   disc_found: { ur: "Ye number Hisaab par hai — {name}", en: "This number is on Hisaab — {name}" },
@@ -2383,6 +2556,21 @@ const S = {
     ur: "Yeh qarz ab mojood nahi — shayad kisi aur device par delete hua hai.",
     en: "This loan no longer exists — it may have been deleted on another device.",
   },
+  // L4 step 4. The goal twin of err_loan_gone: contribute_to_goal refuses a
+  // goal that is unknown or not yours, and the client never retries it.
+  err_goal_gone: {
+    ur: "Yeh goal ab mojood nahi — shayad kisi aur device par delete hua hai.",
+    en: "This goal no longer exists — it may have been deleted on another device.",
+  },
+  // L4 step 4. pay_card_bill re-validated the settlement plan and refused it
+  // (it settled more than the payment covered, credited the card past its
+  // limit, or named an instalment belonging to another loan). The plan is
+  // wrong, not stale — retrying it would refuse again, so the honest ask is a
+  // refresh. Nothing was written.
+  err_card_bill_plan: {
+    ur: "Card bill ka hisaab match nahi hua — kuch aur device par badal gaya hai. Screen refresh karke dobara try karein.",
+    en: "The card bill didn't add up — something changed on another device. Refresh and try again.",
+  },
   err_repayment_amount_invalid: {
     ur: "Payment ki raqam sahi nahi. Zero se zyada amount likhein.",
     en: "That payment amount isn't valid. Enter an amount greater than zero.",
@@ -2492,6 +2680,20 @@ const S = {
   splits_home_new_iou_sub: { ur: "Diya, liya, ya wapsi", en: "Gave, borrowed, paid back" },
   splits_home_new_group: { ur: "Naya Group", en: "New group" },
   splits_home_new_group_sub: { ur: "Friends ke sath split", en: "Split with friends" },
+
+  // SplitsPage NextStepHint (ternary-assigned, so the bare-English lint
+  // missed these).
+  splits_hint_search_match_one: { ur: "{n} group aap ki search se match karta hai.", en: "{n} group matches your search." },
+  splits_hint_search_match_many: { ur: "{n} groups aap ki search se match karte hain.", en: "{n} groups match your search." },
+  splits_hint_settled: { ur: "Aap ke primary-currency groups clear hain.", en: "Your primary-currency groups are settled." },
+  splits_hint_receive: { ur: "Groups mein, aap ko {amount} milne chahiye.", en: "Across groups, you should receive {amount}." },
+  splits_hint_pay: { ur: "Groups mein, aap ko {amount} dene chahiye.", en: "Across groups, you should pay {amount}." },
+  splits_hint_next_search: { ur: "Sab splits dobara dekhne ke liye search clear karein.", en: "Clear search to see every split again." },
+  splits_hint_next_open: {
+    ur: "Koi bhi group kholein — expense add karein, activity reconcile karein, ya balance settle karein.",
+    en: "Open any group to add an expense, reconcile activity, or settle the balance.",
+  },
+  splits_hint_clear_search: { ur: "Search clear karein", en: "Clear search" },
 
   // Time-of-day greetings. English stays neutral; Roman Urdu keeps the
   // warm/Islamic greetings. Selected via the active language by useT().
@@ -2767,6 +2969,7 @@ const S = {
   kameti_method_ballot_desc: { ur: "App parchi nikalega — sab dekh sakte hain", en: "App draws it — everyone can verify" },
   kameti_members: { ur: "Members", en: "Members" },
   kameti_add_member: { ur: "Member add karein", en: "Add member" },
+  kameti_remove_member: { ur: "Hataein", en: "Remove" },
   kameti_member_name_ph: { ur: "Naam", en: "Name" },
   kameti_member_phone_ph: { ur: "WhatsApp number (optional)", en: "WhatsApp number (optional)" },
   kameti_you_organizer: { ur: "Aap (organizer)", en: "You (organizer)" },
@@ -2824,15 +3027,191 @@ const S = {
   kameti_draw_failed: { ur: "Parchi nahi nikal saki. Dobara koshish karein.", en: "Couldn't run the draw. Please try again." },
   kameti_draw_too_few: { ur: "Parchi ke liye kam se kam 2 members chahiye", en: "You need at least 2 members to draw" },
   kameti_draw_not_organizer: { ur: "Sirf organiser parchi nikal sakta hai", en: "Only the organiser can run the draw" },
+  // Ballot/slot server guards (supabase-migration-audit-p0-kameti-draw.sql) —
+  // hand-picked slots and a server-drawn ballot never coexist on one kameti.
+  kameti_err_slots_already_set: {
+    ur: "Kuch members ki baari pehle se hand-pick ki gayi hai — parchi nikalne se pehle unhe clear karein.",
+    en: "Some members already have a hand-picked turn — clear those before drawing the ballot.",
+  },
+  kameti_err_ballot_slots_server_only: {
+    ur: "Is kameti mein baari sirf parchi se tay hoti hai — direct set nahi ho sakti.",
+    en: "This kameti's turn order is set only by the ballot draw — it can't be assigned directly.",
+  },
+  kameti_err_ballot_switch_needs_clear_slots: {
+    ur: "Kuch members ki baari hand-pick ki hui hai — parchi mode par jaane se pehle unhe clear karein.",
+    en: "Some members have a hand-picked turn — clear those before switching this kameti to ballot mode.",
+  },
   kameti_draw_server_note: { ur: "Parchi Hisaab ke server ne nikali — number kisi ke phone se nahi aaya, isliye koi ise dobara nahi chala sakta.", en: "The draw was made on Hisaab's server — the random number never came from anyone's phone, so nobody can re-roll it." },
   kameti_draw_seed: { ur: "Parchi ka number (seed)", en: "Draw number (seed)" },
   kameti_draw_recompute_how: { ur: "Khud check karna hai? Har member ka SHA-256 nikalein: seed:member-id — phir in hashes ko chhote se bade tarteeb dein. Wohi baari ki tarteeb hai.", en: "Want to check it yourself? Take SHA-256 of seed:member-id for each member, then sort those hashes smallest to largest. That is the payout order." },
   kameti_share_witness: { ur: "Witness link share karein", en: "Share witness link" },
   kameti_witness_title: { ur: "Committee record", en: "Committee record" },
   kameti_witness_banner: { ur: "Ye shared committee record hai. Hisaab paisa nahi rakhta — ye woh sachcha record hai jo sab members dekhte hain.", en: "A shared committee record. Hisaab never holds the money — this is the honest ledger every member sees." },
-  kameti_witness_invalid: { ur: "Ye committee link ghalat hai ya hata diya gaya.", en: "This committee link is invalid or was removed." },
+  // Covers all three cases on purpose — wrong, revoked, and expired links are
+  // deliberately indistinguishable (get_committee_witness returns NULL for each).
+  kameti_witness_invalid: { ur: "Ye committee link ab kaam nahi karta — ghalat hai, muddat khatam ho gayi, ya organiser ne band kar diya. Un se naya link maangein.", en: "This committee link no longer works — it's wrong, expired, or the organiser turned it off. Ask them for a new one." },
   kameti_witness_msg: { ur: "{committee} ka committee record dekhein: {url}", en: "See the {committee} committee record: {url}" },
   kameti_get_app: { ur: "Hisaab istemal karein", en: "Open in Hisaab" },
+
+  // ── Kameti post-creation editing (audit UX-25) ───────────────────────────
+  // Before this, a typo'd amount or a member who never joined cost the
+  // organiser the whole kameti — delete was the only structural action. Every
+  // string below has to say WHY a field is locked, not just that it is: the
+  // lock is a promise to the other members, and it reads as a bug otherwise.
+  kameti_edit: { ur: "Kameti edit karein", en: "Edit kameti" },
+  kameti_edit_saved: { ur: "Tabdeeliyan mehfooz ho gayin", en: "Changes saved" },
+  kameti_emoji: { ur: "Nishan", en: "Icon" },
+  kameti_notes: { ur: "Note (optional)", en: "Note (optional)" },
+  kameti_notes_ph: { ur: "e.g. har mahine 5 tareekh ko", en: "e.g. collect on the 5th" },
+  kameti_edit_open_note: {
+    ur: "Abhi sab kuch badla ja sakta hai. Jaise hi kisi ne pehli qist di ya parchi nikli, raqam aur tareekhein pakki ho jayengi.",
+    en: "Everything is still editable. The moment someone's first contribution is recorded — or the ballot is drawn — the amount and dates lock.",
+  },
+  kameti_edit_locked_payments: {
+    ur: "Qisten aani shuru ho chuki hain, is liye raqam, currency, tareekh aur baari ka tareeqa ab band hain — warna jo record pehle se hai uska matlab hi badal jata. Naam, nishan aur note kabhi band nahi hote.",
+    en: "Contributions have started, so the amount, currency, dates and payout method are locked — changing them would quietly re-price the record that already exists. The name, icon and note are never locked.",
+  },
+  kameti_edit_locked_draw: {
+    ur: "Parchi nikal chuki hai. Members ne jo tarteeb dekhi, wohi rahegi — sirf naam, nishan aur note badle ja sakte hain.",
+    en: "The ballot has been drawn. What the members were shown is what stands — only the name, icon and note can change.",
+  },
+  kameti_field_locked: { ur: "Band", en: "Locked" },
+  kameti_status_completed: { ur: "Kameti mukammal ho gayi", en: "Kameti finished" },
+  kameti_status_completed_note: {
+    ur: "Mukammal mark karne se reminders band ho jate hain. Record wahi rehta hai.",
+    en: "Marking it finished stops the reminders. The record stays exactly as it is.",
+  },
+  kameti_roster: { ur: "Members", en: "Members" },
+  kameti_member_add_title: { ur: "Naya member", en: "Add a member" },
+  kameti_member_added: { ur: "Member add ho gaya", en: "Member added" },
+  kameti_member_removed: { ur: "Member hata diya", en: "Member removed" },
+  kameti_member_add_note: {
+    ur: "Naya member add karne se ek baari (round) barh jati hai aur pool barh jata hai. Jo baariyan guzar chuki hain, un ki qist un par baqi rahegi.",
+    en: "Adding a member adds one more round and raises the pool. They start behind for the rounds that already passed.",
+  },
+  kameti_remove_member_confirm: {
+    ur: "{name} ko is kameti se hata dein? Un ke baad wali baariyan ek ek karke aage aa jayengi.",
+    en: "Remove {name} from this kameti? Everyone after them moves up one round.",
+  },
+  // Why the Add button is off. Each maps to one refusal in
+  // add_committee_member (supabase-migration-p2-kameti-editing.sql §4).
+  kameti_add_blocked_drawn: { ur: "Parchi nikalne ke baad koi naya member add nahi ho sakta", en: "No one can be added after the ballot draw" },
+  kameti_add_blocked_payout: {
+    ur: "Kisi ki baari aa kar paisa mil chuka hai — ab member add karne se baaqi logon ka pool badal jata",
+    en: "Someone has already received their pool — adding a member now would change what everyone else receives",
+  },
+  kameti_add_blocked_cycle_over: { ur: "Is kameti ki saari baariyan guzar chuki hain", en: "Every round of this kameti has already passed" },
+  kameti_add_blocked_completed: { ur: "Ye kameti mukammal mark hai", en: "This kameti is marked finished" },
+  kameti_add_blocked_too_many: { ur: "Ek kameti mein zyada se zyada 60 members", en: "A kameti can hold at most 60 members" },
+  // Why the Remove button is off (remove_committee_member §5).
+  kameti_remove_blocked_drawn: { ur: "Parchi nikal chuki hai — ab koi member hata nahi sakte", en: "The ballot is drawn — members can no longer be removed" },
+  kameti_remove_blocked_organizer: { ur: "Organiser khud ko nahi hata sakta", en: "The organiser can't remove themselves" },
+  kameti_remove_blocked_too_few: { ur: "Kameti ke liye kam az kam 2 members chahiye", en: "A kameti needs at least 2 members" },
+  kameti_remove_blocked_payments: { ur: "In ki qisten record ho chuki hain", en: "Contributions are already recorded for them" },
+  kameti_remove_blocked_payout: { ur: "Inhein apni baari ka paisa mil chuka hai", en: "They have already received their pool" },
+  kameti_remove_blocked_rounds: {
+    ur: "In ki baari ya us ke baad wali baari ki qisten aa chuki hain — hataane se guzri hui baariyan badal jatin",
+    en: "Their round (or a later one) already has contributions — removing them would re-number a round that already happened",
+  },
+  // The three server refusals, as toasts. The UI disables what it can predict;
+  // these are what a stale screen or a second device gets back.
+  kameti_err_locked_payments: {
+    ur: "Ye tabdeeli nahi ho sakti — qisten record ho chuki hain",
+    en: "That can't change — contributions are already recorded",
+  },
+  kameti_err_locked_draw: {
+    ur: "Ye tabdeeli nahi ho sakti — parchi nikal chuki hai",
+    en: "That can't change — the ballot has been drawn",
+  },
+  kameti_err_invalid_patch: {
+    ur: "Ye tabdeeli qabool nahi hui. Values check kar ke dobara koshish karein.",
+    en: "That change wasn't accepted. Check the values and try again.",
+  },
+
+  // ── Kameti witness link lifecycle (audit M19 / UX-24) ────────────────────
+  // The link is now server-minted, shown ONCE, expires in 90 days, and can be
+  // revoked. Every string here has to be honest about all four of those.
+  kwt_section_title: { ur: "Witness link", en: "Witness link" },
+  kwt_state_none: { ur: "Abhi koi link chalu nahi hai", en: "No active link right now" },
+  kwt_state_active: { ur: "{date} tak chalega", en: "Works until {date}" },
+  kwt_state_revoked: { ur: "Sharing band hai — purana link ab nahi chalta", en: "Sharing is off — the old link no longer works" },
+  kwt_state_expired: { ur: "Link ki muddat khatam ho gayi", en: "This link has expired" },
+  kwt_create_cta: { ur: "Witness link banayein", en: "Create witness link" },
+  kwt_replace_cta: { ur: "Naya link banayein", en: "Replace link" },
+  kwt_replace_warn: { ur: "Naya link banate hi purana link kaam karna band kar dega.", en: "Creating a new link immediately kills the old one." },
+  kwt_revoke_cta: { ur: "Sharing band karein", en: "Stop sharing" },
+  kwt_revoke_confirm_title: { ur: "Witness link band karein?", en: "Stop sharing this link?" },
+  kwt_revoke_confirm_body: { ur: "Jis jis ke paas ye link hai, un sab ke liye band ho jayega. Baad mein naya link bana sakte hain.", en: "It stops working for everyone who has it. You can create a new one later." },
+  kwt_revoked_toast: { ur: "Witness link band ho gaya", en: "Witness link turned off" },
+  kwt_privacy_title: { ur: "Share karne se pehle ye jaan lein", en: "Before you share this" },
+  kwt_privacy_1: { ur: "Jis ke paas bhi link ho ga, use har member ka naam, baari aur paid/unpaid nazar aayega.", en: "Anyone who opens it sees every member's name, slot and paid/unpaid status." },
+  kwt_privacy_2: { ur: "Link aage forward ho sakta hai — Hisaab ise rok nahi sakta.", en: "The link can be forwarded — Hisaab cannot stop that." },
+  kwt_privacy_3: { ur: "Link 90 din chalta hai, phir khud band ho jata hai. Aap kisi bhi waqt band kar sakte hain.", en: "It works for 90 days, then stops on its own. You can turn it off any time." },
+  kwt_token_once_title: { ur: "Ye link sirf abhi dikhaya ja raha hai", en: "This link is shown only once" },
+  kwt_token_once_body: { ur: "Abhi copy ya share kar lein. Hisaab ise dobara nahi dikha sakta — bhool gaye to naya banana pare ga (aur purana band ho jaye ga).", en: "Copy or share it now. Hisaab cannot show it again — if you lose it you'll have to create a new one, which kills this one." },
+  kwt_replaced_previous: { ur: "Purana link band kar diya gaya hai.", en: "The previous link has been turned off." },
+  kwt_copy_cta: { ur: "Link copy karein", en: "Copy link" },
+  kwt_copied_toast: { ur: "Link copy ho gaya", en: "Link copied" },
+  kwt_share_cta: { ur: "WhatsApp par bhejein", en: "Send on WhatsApp" },
+  kwt_done_cta: { ur: "Ho gaya", en: "Done" },
+  kwt_initials_title: { ur: "Sirf initials dikhayein", en: "Show initials only" },
+  kwt_initials_sub: { ur: "Naam ki jagah initials. Baari aur paid/unpaid phir bhi nazar aayenge, taake record sabit rahe.", en: "Initials instead of names. Slots and paid/unpaid stay visible, so the ledger is still provable." },
+  kwt_initials_preview: { ur: "Misaal: {name} → {initials}", en: "Preview: {name} → {initials}" },
+  kwt_failed: { ur: "Ye ho nahi saka. Dobara koshish karein.", en: "That didn't work. Please try again." },
+  kwt_not_organiser: { ur: "Sirf organiser hi witness link bana ya band kar sakta hai.", en: "Only the organiser can create or stop a witness link." },
+  kameti_witness_expires_on: { ur: "Ye link {date} tak chalta hai", en: "This link works until {date}" },
+  kameti_witness_initials_note: { ur: "Organiser ne naam chhupaye hain — sirf initials dikh rahe hain. Baari aur paid/unpaid poore hain.", en: "The organiser chose to hide names — only initials are shown. Slots and paid/unpaid are complete." },
+
+  // ── Block & report (audit M17 · docs/trust-and-safety.md) ────────────────
+  // The confirm copy must state the asymmetric, silent model out loud: they are
+  // never told, existing money is untouched, and a shared group still shows
+  // them. Users who believe block does more than it does are the failure mode.
+  blk_action_block: { ur: "Block karein", en: "Block" },
+  blk_action_unblock: { ur: "Unblock karein", en: "Unblock" },
+  blk_action_report: { ur: "Report karein", en: "Report" },
+  blk_menu_aria: { ur: "Is shakhs ke liye options", en: "Options for this person" },
+  blk_sheet_title: { ur: "{name} ko block karein?", en: "Block {name}?" },
+  blk_what_happens: { ur: "Block karne se kya hoga", en: "What blocking does" },
+  blk_point_silent: { ur: "Unhein bataya nahi jayega. Hisaab kabhi nahi kehta ke aap ne block kiya hai.", en: "They are never told. Hisaab never says you blocked them." },
+  blk_point_new_stops: { ur: "Un ki nayi qarz requests, contact requests aur apne group mein add karna — sab ruk jayega.", en: "Their new loan requests, contact requests and adding you to their groups all stop." },
+  blk_point_existing: { ur: "Jo hisaab pehle se hai woh chalta rahega — aap ab bhi settle up kar sakte hain. Block sirf nayi cheezein rokta hai.", en: "You can still settle up what's already between you. Block only stops anything new." },
+  blk_point_shared_group: { ur: "Agar aap kisi mushtarak group mein hain to woh wahan nazar aate rahenge aur ledger mein bhi. Block sirf aap dono ke darmiyan notifications band karta hai.", en: "In a group you already share, they stay visible in the member list and the ledger. Block only stops notifications between you." },
+  blk_point_not_delete: { ur: "Block delete nahi hai. Purane record, contact aur ledger sab waise hi rehte hain, aur unblock karne par sab wapas normal.", en: "Block is not a delete. Past records, contacts and ledger stay exactly as they are, and unblocking restores everything." },
+  blk_point_new_account: { ur: "Agar woh naya account banayein to woh naya account bhi block karna hoga.", en: "If they make a new account, you'd have to block that account too." },
+  blk_settle_first_title: { ur: "Pehle hisaab barabar karein?", en: "Settle up first?" },
+  blk_settle_first_body: { ur: "{name} ke sath {amount} ka hisaab abhi khula hai. Block ke baad bhi settle ho sakta hai, lekin sab se saaf tareeqa ye hai: pehle zero par lein, phir block karein.", en: "You still have {amount} open with {name}. You can settle after blocking too, but the cleanest order is: settle to zero, then block." },
+  blk_reason_label: { ur: "Wajah (apne liye, optional)", en: "Reason (for you, optional)" },
+  blk_reason_ph: { ur: "Sirf aap ko nazar aayegi", en: "Only you will see this" },
+  blk_confirm_cta: { ur: "Block karein", en: "Block them" },
+  blk_blocked_toast: { ur: "{name} block ho gaye", en: "{name} is blocked" },
+  blk_already_toast: { ur: "{name} pehle se block hain", en: "{name} was already blocked" },
+  blk_unblock_confirm_title: { ur: "{name} ko unblock karein?", en: "Unblock {name}?" },
+  blk_unblock_confirm_body: { ur: "Woh dobara aap ko requests bhej sakenge aur contact add kar sakenge.", en: "They'll be able to send you requests and add you as a contact again." },
+  blk_unblocked_toast: { ur: "{name} unblock ho gaye", en: "{name} is unblocked" },
+  blk_failed: { ur: "Block nahi ho saka. Dobara koshish karein.", en: "Couldn't block. Please try again." },
+  blk_self: { ur: "Apne aap ko block nahi kar sakte.", en: "You can't block yourself." },
+  blk_list_title: { ur: "Blocked log", en: "Blocked people" },
+  blk_list_sub: { ur: "Jinhein aap ne block kiya — dekhein aur wapas kholein", en: "People you blocked — review and undo" },
+  blk_list_empty: { ur: "Aap ne kisi ko block nahi kiya.", en: "You haven't blocked anyone." },
+  blk_list_since: { ur: "{date} se", en: "Since {date}" },
+  blk_unknown_person: { ur: "Hisaab user", en: "Hisaab user" },
+  blk_hidden_note: { ur: "Blocked logon ki purani requests chhupa di gayi hain.", en: "Older requests from people you blocked are hidden." },
+  rep_sheet_title: { ur: "{name} ko report karein", en: "Report {name}" },
+  rep_intro: { ur: "Report Hisaab ki team ko jati hai. Ye block se alag hai — report karne se woh block nahi hote, aur unhein pata nahi chalta.", en: "A report goes to the Hisaab team. It is separate from blocking — reporting does not block them, and they are not told." },
+  rep_reason_label: { ur: "Masla kya hai?", en: "What's the problem?" },
+  rep_reason_harassment: { ur: "Tang kar rahe hain / dhamki", en: "Harassment or threats" },
+  rep_reason_spam: { ur: "Spam ya faltu requests", en: "Spam or junk requests" },
+  rep_reason_impersonation: { ur: "Kisi aur ka naam istemal kar rahe hain", en: "Pretending to be someone else" },
+  rep_reason_wrong_amounts: { ur: "Ghalat raqam ya jhoota hisaab", en: "Wrong amounts or a false record" },
+  rep_reason_other: { ur: "Koi aur baat", en: "Something else" },
+  rep_details_label: { ur: "Tafseel (optional)", en: "Details (optional)" },
+  rep_details_ph: { ur: "Kya hua? Jitna bata sakein.", en: "What happened? As much as you can share." },
+  rep_submit_cta: { ur: "Report bhejein", en: "Send report" },
+  rep_also_block: { ur: "Sath hi block bhi kar dein", en: "Block them as well" },
+  rep_sent_toast: { ur: "Report bhej di gayi. Shukriya.", en: "Report sent. Thank you." },
+  rep_rate_limited: { ur: "Aaj ke liye reports ki had poori ho gayi. Kal dobara bhej sakte hain.", en: "You've hit today's report limit. You can send more tomorrow." },
+  rep_failed: { ur: "Report nahi ja saki. Dobara koshish karein.", en: "Couldn't send the report. Please try again." },
+  rep_self: { ur: "Apne aap ko report nahi kar sakte.", en: "You can't report yourself." },
   budget_over_by_short: { ur: "{amount} over", en: "{amount} over" },
   budget_over_by: { ur: "{amount} se zyada ho gaya", en: "over by {amount}" },
   // Loan / QuickEntry helpers
@@ -2849,6 +3228,15 @@ const S = {
   analytics_no_change: { ur: "lagbhag barabar", en: "about the same" },
   analytics_empty_desc: { ur: "Thoda kharcha aur amdani likho, phir aapke spend trends, categories aur net flow yahan dikhne lagenge.", en: "Log a few expenses and income, and your spend trends, categories and net flow show up here." },
   analytics_empty_cta: { ur: "Transaction add karo", en: "Add a transaction" },
+  // Transactions list — recent window + truncation honesty (audit P2 M2 / H4)
+  tx_window_recent: { ur: "Sirf pichlay {d} din dikha rahe hain", en: "Showing the last {d} days" },
+  tx_window_older: { ur: "{n} purani entries chhupi hui hain", en: "{n} older entries are hidden" },
+  tx_load_older: { ur: "Poori history dikhao", en: "Show full history" },
+  tx_history_partial: { ur: "Is device par {m} mein se {n} entries hain — baqi server par mehfooz hain", en: "{n} of {m} entries are loaded on this device — the rest are safe on the server" },
+  // Bounded history load (docs/performance.md §7): the default fetch is a
+  // window now, so "older entries" may be on the server rather than hidden.
+  tx_window_server: { ur: "Is se purani entries server par hain", en: "Older entries are on the server" },
+  tx_history_loading: { ur: "History aa rahi hai…", en: "Loading history…" },
   // Group expense split
   split_allocated: { ur: "Allocated {a} / {b}", en: "Allocated {a} / {b}" },
   split_total_pct: { ur: "Total {n}%", en: "Total {n}%" },
@@ -3131,8 +3519,27 @@ const S = {
   loan_done_owes_you: { ur: "{person} ne aap ko {amount} dena hai.", en: "{person} owes you {amount}." },
   loan_done_you_owe: { ur: "Aap ne {person} ko {amount} dena hai.", en: "You owe {person} {amount}." },
   qe_which_group: { ur: "Kaun sa group?", en: "Which group?" },
+  qe_err_check_amount: { ur: "Amount check karein", en: "Check the amount" },
+  qe_err_txn_failed_title: { ur: "Lenden Save Nahi Hua", en: "Transaction Failed" },
+  qe_numpad_label: { ur: "Number pad", en: "Number pad" },
+  qe_numpad_delete: { ur: "Aakhri digit hataein", en: "Delete last digit" },
+  qe_no_groups_title: { ur: "Abhi koi group nahi hai.", en: "You don't have any groups yet." },
+  qe_no_groups_body: {
+    ur: "Dosto ya flatmates ke sath yeh kharcha split karne ke liye ek banayein.",
+    en: "Create one to split this expense with friends or flatmates.",
+  },
+  qe_group_member_count: { ur: "{connected}/{total} members · {currency}", en: "{connected}/{total} members · {currency}" },
+  qe_create_new_group: { ur: "Naya group banayein", en: "Create new group" },
+  qe_group_pick_hint: {
+    ur: "Group chunne se poora expense form khulega — wahan aap decide karenge kisne diya, kaise split hoga, aur category. Aapki amount carry ho jayegi.",
+    en: "Picking a group opens the full expense form — you'll choose who paid, how to split, and the category there. Your amount carries over.",
+  },
   emi_schedule_failed_title: { ur: "EMI schedule nahi bana", en: "EMI schedule not created" },
   emi_schedule_failed_sub: { ur: "Transaction save ho gayi, lekin qiston ka plan nahi ban saka. Loan khol kar dobara koshish karein.", en: "Your transaction was saved, but setting up the installment plan failed. Open the loan to retry." },
+  // L4 step 3: the server refused the instalment plan sent with a loan. The
+  // whole creation is atomic, so NOTHING was saved — say that, or the user
+  // retries a loan they think already exists.
+  err_emi_plan_rejected: { ur: "Qiston ka plan loan ki raqam se mel nahi khata — kuch bhi save nahi hua. Qiston ki tadaad check kar ke dobara koshish karein.", en: "The installment plan doesn't add up to the loan amount — nothing was saved. Check the number of installments and try again." },
   // Loan detail page — hero, EMI schedule & reconcile
   loan_hero_owes_you: { ur: "{name} ne dena hai", en: "{name} owes you" },
   loan_hero_you_owe: { ur: "Aap ne {name} ko dena hai", en: "You owe {name}" },
@@ -3296,6 +3703,34 @@ const S = {
     ur: "Notification ki ijazat nahi mili — phone ki settings se allow karein.",
     en: "Notification permission was denied — allow it in your phone settings.",
   },
+
+  // Global mute (M5, docs/notifications.md §8.2, §3 — the global prefs row,
+  // group_id null). Suppresses the notification row itself, not just the
+  // ring: in-app Inbox still receives every item, only push stops.
+  settings_mute_all: { ur: "Sab notifications rok dein", en: "Pause all notifications" },
+  settings_mute_all_desc: {
+    ur: "Inbox mein har cheez phir bhi aati rahegi — sirf push notifications band ho jayengi.",
+    en: "The in-app inbox still receives everything — only pushes stop.",
+  },
+  settings_mute_all_failed: { ur: "Update nahi ho saka", en: "Could not update" },
+
+  // Quiet hours (M5, docs/notifications.md §8.2, §3). In-app Inbox always
+  // gets every item regardless — this only softens how a PUSH rings.
+  settings_quiet_hours: { ur: "Chup ke ghantay", en: "Quiet hours" },
+  settings_quiet_hours_desc: {
+    ur: "Is waqt ke doran push khamoshi se pohanchti hai — Inbox mein har cheez phir bhi aati rahegi.",
+    en: "During this window pushes arrive silently — the in-app Inbox still gets everything.",
+  },
+  settings_quiet_hours_start: { ur: "Shuru", en: "Starts" },
+  settings_quiet_hours_end: { ur: "Khatam", en: "Ends" },
+  settings_quiet_hours_tz: { ur: "{tz} ke waqt ke mutabiq", en: "Based on {tz} time" },
+  settings_quiet_hours_failed: { ur: "Update nahi ho saka", en: "Could not update" },
+
+  // Dedicated push opt-in (audit N-6) — push_title/push_desc already existed
+  // unused; this section is what they were written for.
+  push_status_on: { ur: "Chalu hai", en: "On" },
+  push_status_denied: { ur: "Band hai", en: "Denied" },
+  push_enable_cta: { ur: "Chalu karein", en: "Enable" },
   // Contextual notification-permission ask (NotificationPermissionPrompt),
   // shown at high-intent moments instead of only the buried Settings toggle.
   notif_prompt_title: {
@@ -3318,6 +3753,42 @@ const S = {
     en: "Due today — {amount}. Confirm it in Hisaab.",
   },
   notif_kameti_round: { ur: "Round {r} aaj — {amount} fi member", en: "Round {r} today — {amount} each" },
+  // Device-local budget breach reminders (notificationPlanner section 6,
+  // audit 08-notifications.md N-11). These never leave the phone.
+  notif_budget_warn: {
+    ur: "{spent} kharch ho chuke — budget {limit} ka {pct}%.",
+    en: "{spent} spent — {pct}% of your {limit} budget.",
+  },
+  notif_budget_over: {
+    ur: "Budget se upar: {spent} kharch, limit {limit} thi.",
+    en: "Over budget: {spent} spent against a {limit} limit.",
+  },
+  // Burst summaries — instantNotify collapses instead of dropping (N-9).
+  notif_summary_updates: { ur: "Hisaab mein {n} nayi updates", en: "{n} new updates in Hisaab" },
+  notif_summary_from: { ur: "{who} ki taraf se {n} updates", en: "{n} updates from {who}" },
+  // Android notification channel names + descriptions (N-10). These appear in
+  // the phone's own Settings → Apps → Hisaab → Notifications screen, which is
+  // where a user demotes group chatter without losing loan requests.
+  notif_channel_money: { ur: "Paise aur requests", en: "Money & requests" },
+  notif_channel_money_desc: {
+    ur: "Udhaar aur wapsi ki requests jinhe aap ne confirm karna hai.",
+    en: "Loan and repayment requests waiting for you to confirm.",
+  },
+  notif_channel_groups: { ur: "Groups", en: "Groups" },
+  notif_channel_groups_desc: {
+    ur: "Shared groups mein kharchay, settlements aur members ki tabdeeliyan.",
+    en: "Expenses, settlements and member changes in shared groups.",
+  },
+  notif_channel_kameti: { ur: "Kameti", en: "Kameti" },
+  notif_channel_kameti_desc: {
+    ur: "Kameti ka draw, round ki tareekh aur aap ki baari.",
+    en: "Kameti draws, round dates and your turn to receive.",
+  },
+  notif_channel_reminders: { ur: "Reminders", en: "Reminders" },
+  notif_channel_reminders_desc: {
+    ur: "Bill, EMI aur budget ke reminders jo sirf is phone par bante hain.",
+    en: "Bill, EMI and budget reminders built on this phone only.",
+  },
   // Contacts merge + archive.
   merge_button: { ur: "Kisi aur contact mein merge karo", en: "Merge into another contact" },
   merge_pick_title: { ur: "Kis mein merge karein?", en: "Merge into which contact?" },
@@ -3524,6 +3995,22 @@ const S = {
   grp_archive_failed: { ur: "Group archive nahi ho saka", en: "Could not archive this group" },
   grp_unarchive_failed: { ur: "Group dobara khul nahi saka", en: "Could not reopen this group" },
 
+  // Per-group mute (M5 / docs/notifications.md §8.1). Silent and one-sided —
+  // the group's expenses/settlements/activity keep writing normally; this only
+  // stops notifications (and any push) from reaching this device.
+  grp_mute: { ur: "Group mute karein", en: "Mute group" },
+  grp_unmute: { ur: "Group unmute karein", en: "Unmute group" },
+  grp_mute_sub: {
+    ur: "Sirf notifications band hongi — sab kuch group mein nazar aata rahega, aur baaqi members ko pata nahi chalega.",
+    en: "Only notifications stop — everything still shows in the group, and other members won't know.",
+  },
+  grp_mute_failed: { ur: "Mute update nahi ho saka", en: "Could not update mute" },
+
+  // Leave-group menu button (distinct from the confirm-sheet CTA
+  // gdp_leave_confirm_cta): the loading label needs its own key too.
+  grp_leave_cta: { ur: "Group chhorein", en: "Leave group" },
+  grp_leaving: { ur: "Chhora ja raha hai…", en: "Leaving…" },
+
   // Ownership transfer — the escape hatch for OWNED_GROUPS_WITH_MEMBERS and
   // leave_group's ONLY_OWNER_ADMIN.
   grp_transfer_action: { ur: "Kisi aur ko admin banayein", en: "Assign another admin" },
@@ -3577,6 +4064,32 @@ const S = {
   ntf_group_unarchived_body: {
     ur: "{actor} ne {group} dobara khol diya. Ab kharchay add ho sakte hain.",
     en: "{actor} reopened {group}. You can add expenses again.",
+  },
+
+  // ── M5 event gaps (audit 08-notifications.md N-11) ────────────────────────
+  // member_left: tg_group_members_notify_left, and the three kameti templates:
+  // notify_committee_members — both in
+  // supabase-migration-p2-notification-maturity.sql.
+  ntf_the_kameti: { ur: "kameti", en: "the kameti" },
+  ntf_member_left_title: { ur: "{actor} ne {group} chhod diya", en: "{actor} left {group}" },
+  ntf_member_left_body: {
+    ur: "{actor} ab {group} mein nahi hain. Un ke purane kharchay aur settlements record mein rahenge.",
+    en: "{actor} is no longer in {group}. Their past expenses and settlements stay in the ledger.",
+  },
+  ntf_kameti_draw_title: { ur: "{kameti} ka draw ho gaya", en: "{kameti} draw is done" },
+  ntf_kameti_draw_body: {
+    ur: "Aap ki baari round {slot} par hai. Kameti khol kar draw khud verify karein.",
+    en: "Your turn is round {slot}. Open the kameti to see the order and verify the draw.",
+  },
+  ntf_kameti_round_due_title: { ur: "{kameti} — round {round} aaj", en: "{kameti} — round {round} today" },
+  ntf_kameti_round_due_body: {
+    ur: "Round {round} aaj due hai: {amount} fi member.",
+    en: "Round {round} is due today: {amount} per member.",
+  },
+  ntf_kameti_payout_title: { ur: "Aap ki baari — {kameti}", en: "Your turn — {kameti}" },
+  ntf_kameti_payout_body: {
+    ur: "Round {round} ki poori raqam aap ko milni hai. Milne par organiser se confirm kar lein.",
+    en: "Round {round} pays out to you. Confirm with the organiser once you receive it.",
   },
 
   // A creator who has LEFT can no longer edit or delete even their own rows —
@@ -3985,6 +4498,8 @@ const S = {
   a11y_prev_round: { ur: "Pichla round", en: "Previous round" },
   a11y_next_round: { ur: "Agla round", en: "Next round" },
   a11y_close: { ur: "Band karein", en: "Close" },
+  a11y_join_with_code: { ur: "Code se join karein", en: "Join with code" },
+  a11y_create_group: { ur: "Group banayein", en: "Create group" },
   common_add: { ur: "Add", en: "Add" },
   common_view_all: { ur: "Sab dekhein", en: "View all" },
   common_member_one: { ur: "1 member", en: "1 member" },
@@ -4113,6 +4628,41 @@ const S = {
     ur: "Kharche add hona, badalna, delete hona, naye members aur settlement — sab yahan sab ko nazar aayega.",
     en: "Adds, edits, deletes, joins, and settlements will appear here for everyone.",
   },
+
+  // "Who owes whom" debts card header + the Simplify/direct toggle
+  // (settleUpMinimize.ts SettlePlans — direct vs. minimized transfer plans).
+  gdp_plan_simplified: { ur: "Simplified", en: "Simplified" },
+  gdp_plan_direct: { ur: "Kis par kitna baaqi hai", en: "Who owes whom" },
+  gdp_show_direct: { ur: "Direct dikhayein", en: "Show direct" },
+  // Shows the actual saving so the offer is concrete, not just a label —
+  // {direct}/{minimized} are the two plans' transfer counts.
+  gdp_simplify: { ur: "{direct} transfers → {minimized}", en: "{direct} transfers → {minimized}" },
+  // Honesty warning (settleUpMinimize.ts `rerouted`): a minimized plan can pay
+  // someone who never actually split a bill with you. Shown only while that
+  // plan is in effect and only when it truly reroutes at least one transfer.
+  gdp_reroute_warning_one: {
+    ur: "1 payment un logon se guzrega jin se aap ne kharcha split nahi kiya.",
+    en: "1 payment routes through someone you didn't split a bill with.",
+  },
+  gdp_reroute_warning_many: {
+    ur: "{n} payments un logon se guzrenge jin se aap ne kharcha split nahi kiya.",
+    en: "{n} payments route through people you didn't split a bill with.",
+  },
+
+  // Reconcile toggle on an expense row — aria-label (screen reader) and title
+  // (hover tooltip) pairs, split by whether the current user is the payer
+  // (canReconcile) and by the current reconciled state.
+  gdp_reconcile_aria_mark: { ur: "Kharcha reconciled mark karein", en: "Mark expense reconciled" },
+  gdp_reconcile_aria_unmark: { ur: "Kharcha unreconciled mark karein", en: "Mark expense unreconciled" },
+  gdp_reconcile_aria_done_by_payer: { ur: "Payer ne reconcile kar diya hai", en: "Expense reconciled by payer" },
+  gdp_reconcile_aria_payer_only: {
+    ur: "Sirf payer hi is kharche ko reconcile kar sakta hai",
+    en: "Only the payer can reconcile this expense",
+  },
+  gdp_reconcile_title_mark: { ur: "Reconciled mark karein", en: "Mark reconciled" },
+  gdp_reconcile_title_reconciled: { ur: "Reconciled", en: "Reconciled" },
+  gdp_reconcile_title_done_by_payer: { ur: "Payer ne reconcile kiya", en: "Reconciled by payer" },
+  gdp_reconcile_title_payer_only: { ur: "Sirf payer reconcile kar sakta hai", en: "Only the payer can reconcile" },
 
   // ── SettingsPage ──────────────────────────────────────────────────────────
   set_import_warn_body: {
@@ -4311,6 +4861,52 @@ const S = {
   loan_status_active: { ur: "Chal raha hai", en: "Active" },
   loan_status_settled: { ur: "Barabar", en: "Settled" },
 
+  // ── Edit history sheet (audit G5/O10 — "who changed what") ────────────────
+  // The SENTENCES ("Ali changed amount 500 → 450") are templates in
+  // src/lib/editHistory.ts, which indexes them by field name and stays pure.
+  // Only the sheet's own chrome lives here.
+  eh_row_title: { ur: "Tabdeeliyon ka record", en: "Edit history" },
+  eh_row_sub: { ur: "Kis ne kya badla", en: "Who changed what" },
+  eh_view_changes: { ur: "Kya badla dekhein", en: "See what changed" },
+  eh_title: { ur: "Tabdeeliyon ka record", en: "Edit history" },
+  eh_subtitle: {
+    ur: "Har tabdeeli server par record hoti hai — koi bhi ise edit nahi kar sakta.",
+    en: "Every change is recorded on the server and cannot be edited by anyone.",
+  },
+  eh_empty: { ur: "Abhi tak koi tabdeeli record nahi hui.", en: "No changes recorded yet." },
+  eh_unavailable: {
+    ur: "Tabdeeliyon ka record abhi available nahi hai.",
+    en: "Edit history isn't available yet.",
+  },
+  eh_unavailable_sub: {
+    ur: "Yeh feature server update ke baad chalega. Purani tabdeeliyan record nahi hongi.",
+    en: "It starts working after the server update. Earlier changes won't be recorded.",
+  },
+  eh_err: { ur: "Record load nahi ho saka", en: "Couldn't load the history" },
+  eh_actor_you: { ur: "Aap", en: "You" },
+  eh_actor_someone: { ur: "Koi", en: "Someone" },
+  eh_actor_removed: { ur: "Ek purana member", en: "A former member" },
+  eh_actor_system: { ur: "Hisaab", en: "Hisaab" },
+
+  // ── WhoOwesMeCard (unified who-owes-me: loans + groups + ad-hoc splits) ────
+  wom_title: { ur: "Kis ka kitna hisaab", en: "Who owes what" },
+  wom_subtitle: { ur: "Qarz, group aur split — sab ek jagah", en: "Loans, groups and splits together" },
+  wom_they_owe: { ur: "Aap ko dene hain", en: "Owes you" },
+  wom_you_owe: { ur: "Aap ne dene hain", en: "You owe" },
+  wom_net_square: { ur: "Hisaab barabar", en: "All square" },
+  wom_name_only: { ur: "sirf naam se milaya", en: "name match only" },
+  wom_more_sources: { ur: "+{n} aur", en: "+{n} more" },
+  wom_same_person: {
+    ur: "Kya yeh wohi {name} hai? Contact link karein taake dono hisaab jur jayein.",
+    en: "Same person as {name}? Link the contact to join both balances.",
+  },
+  wom_src_loan: { ur: "Qarz", en: "Loan" },
+  wom_src_group: { ur: "Group", en: "Group" },
+  wom_src_adhoc: { ur: "Split", en: "Split" },
+  // A group chip that names the counterparty too, once the per-person pairwise
+  // attribution is available: "Dubai Trip · Bilal".
+  wom_src_group_person: { ur: "{group} · {name}", en: "{group} · {name}" },
+
   // ── GroupInviteModal ──────────────────────────────────────────────────────
   ginv_title: { ur: "Members bulayein", en: "Invite members" },
   ginv_link_copied: { ur: "Invite link copy ho gaya", en: "Invite link copied" },
@@ -4333,6 +4929,63 @@ const S = {
   ginv_invite_ready: { ur: "Invite tayyar", en: "Invite ready" },
   ginv_copy: { ur: "Copy", en: "Copy" },
   ginv_invite: { ur: "Bulayein", en: "Invite" },
+
+  // ── Guest members (G6 / O4, supabase-migration-p2-guest-members.sql) ──────
+  // A "guest" is a named seat in a group with no Hisaab account behind it.
+  // Vocabulary rule: never say "member vs guest" as if a guest were lesser —
+  // they carry real shares and real settlements. The word only answers "will
+  // they see this in their own app?", which is No.
+  guest_tag: { ur: "App par nahin", en: "Not on Hisaab" },
+  guest_add_cta: { ur: "Kisi ko app ke baghair add karein", en: "Add someone without the app" },
+  guest_add_title: { ur: "App ke baghair", en: "Without the app" },
+  guest_add_hint: {
+    ur: "Sirf naam kaafi hai. Unka hissa aur settlement aap record karenge — unhein app ki zaroorat nahin.",
+    en: "A name is enough. You record their share and their settlements — they never need the app.",
+  },
+  guest_name_placeholder: { ur: "Naam (misal: Ali)", en: "Name (e.g. Ali)" },
+  guest_phone_placeholder: { ur: "Phone (marzi ka) — baad mein match ke liye", en: "Phone (optional) — to match them later" },
+  guest_phone_hint: {
+    ur: "Phone sirf hash karke rakha jata hai. Jab yeh shakhs Hisaab par aaye aur isi group ka code istemal kare, unki seat khud jur jaye gi.",
+    en: "The number is stored only as a hash. If they later join Hisaab with this group's code, their seat attaches to them automatically.",
+  },
+  guest_added: { ur: "Add ho gaye", en: "Added" },
+  guest_removed: { ur: "Hata diya gaya", en: "Removed" },
+  guest_remove_cta: { ur: "Hatayein", en: "Remove" },
+  guest_invite_cta: { ur: "Hisaab par bulayein", en: "Invite them to Hisaab" },
+  guest_assign_cta: { ur: "Yeh seat kisi member ko dein", en: "Assign this seat to a member" },
+  guest_assign_hint: {
+    ur: "Link bhejein. Jo bhi is link se join kare ga, is seat ka poora hisaab usay mil jaye ga.",
+    en: "Send them the link. Whoever opens it takes over this seat and its whole history.",
+  },
+  guest_invite_share_text: {
+    ur: "Salam {name}! Main \"{group}\" ka hisaab Hisaab app par rakh raha hoon. Aap bhi aa jayein: {url}",
+    en: "Hi {name}! I'm keeping the \"{group}\" accounts on Hisaab. Join me here: {url}",
+  },
+  guest_on_behalf: { ur: "Unki taraf se record hoga", en: "Recorded on their behalf" },
+  guest_settle_note: {
+    ur: "{name} app par nahin hain — yeh settlement aap unki taraf se record kar rahe hain.",
+    en: "{name} is not on Hisaab — you are recording this settlement on their behalf.",
+  },
+  guest_err_invalid_name: { ur: "Naam likhein (60 harf tak)", en: "Enter a name (up to 60 characters)" },
+  guest_err_duplicate_name: { ur: "Is group mein yeh naam pehle se hai", en: "Someone in this group already uses that name" },
+  guest_err_too_many: { ur: "Is group mein aur guests nahin aa sakte", en: "This group cannot hold any more guests" },
+  guest_err_not_member: { ur: "Aap is group ke active member nahin", en: "You are not an active member of this group" },
+  guest_err_archived: { ur: "Yeh group archive ho chuka hai", en: "This group is archived" },
+  guest_err_has_ledger: {
+    ur: "Inke kharche ya settlement mojood hain — seat hatai nahin ja sakti",
+    en: "Their expenses or settlements exist — this seat cannot be removed",
+  },
+  guest_err_not_allowed: { ur: "Sirf owner ya jisne add kiya woh hata sakta hai", en: "Only the owner or whoever added them can remove this seat" },
+  guest_err_generic: { ur: "Add nahi ho saka", en: "Could not add them" },
+  // Rename a guest seat (docs/guest-members.md §9.4) — owner-only, unclaimed
+  // seats only. guest_err_duplicate_name and guest_err_archived above are
+  // reused as-is for the rename flow's failures; only the length error needs
+  // its own copy since the add flow's bound (60) differs from rename's (40).
+  guest_rename_cta: { ur: "Naam badlein", en: "Rename" },
+  guest_rename_title: { ur: "Guest ka naam badlein", en: "Rename guest" },
+  guest_err_rename_invalid: { ur: "Sahi naam likhein (1-40 harf)", en: "Enter a valid name (1-40 characters)" },
+  guest_renamed: { ur: "Naam badal diya gaya", en: "Renamed" },
+  gev_guest_added: { ur: "App ke baghair member add hua", en: "Added someone without the app" },
 } as const;
 
 type Key = keyof typeof S;
@@ -4364,10 +5017,39 @@ function syncProfileLang(lang: Language) {
     .catch(() => {});
 }
 
+/**
+ * Map the app's `Language` to a BCP-47 tag for `document.documentElement.lang`
+ * (audit 2026-09, 13-engineering-standards.md §2.5: `index.html` hardcodes
+ * `lang="en"` on a Urdu-default app).
+ *
+ * `ur` here is roman Urdu — Latin script, not the Perso-Arabic script the
+ * bare `ur` subtag implies. A screen reader picking its Urdu voice/phoneme
+ * set for `lang="ur"` would mispronounce every word, since the text is
+ * actually transliterated Latin-alphabet Urdu. `ur-Latn` (the `Latn` script
+ * subtag, IANA-registered under BCP 47 / ISO 15924) tells assistive tech and
+ * spell/grammar tooling "Urdu language, Latin script" so they fall back to
+ * Latin-script handling instead of guessing from the (wrong) base subtag.
+ * `en` needs no script subtag — Latin is English's default script.
+ */
+export function documentLangFor(lang: Language): string {
+  return lang === "ur" ? "ur-Latn" : "en";
+}
+
+/**
+ * Node-safe: `document` does not exist under vitest (vitest.config.ts runs
+ * the pure-function suite in the `node` environment, no jsdom/happy-dom) —
+ * guard rather than crash every test that imports this module.
+ */
+function applyDocumentLang(lang: Language) {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = documentLangFor(lang);
+}
+
 export const useI18nStore = create<I18nState>((set) => ({
   lang: readStoredLang(),
   setLang: (lang) => {
     localStorage.setItem("hisaab_lang", lang);
+    applyDocumentLang(lang);
     set({ lang });
     syncProfileLang(lang);
     // Scheduled Android reminders freeze their text at plan time — rebuild
@@ -4378,6 +5060,13 @@ export const useI18nStore = create<I18nState>((set) => ({
       .catch(() => {});
   },
 }));
+
+// Correct `index.html`'s hardcoded `lang="en"` at boot, for both the
+// language a stored preference resolves to and the "ur" first-paint default
+// (readStoredLang() above) — index.html itself is out of this pass's file
+// ownership (see docs/accessibility-contrast.md item 5's note), so the
+// runtime is the only place left to fix it before first paint reads happen.
+applyDocumentLang(useI18nStore.getState().lang);
 
 /**
  * Boot-time reconcile for `profiles.lang` (audit N-1).

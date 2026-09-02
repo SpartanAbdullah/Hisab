@@ -459,7 +459,7 @@ export function GoalsPage() {
                   </button>
                   {menuGoalId === g.id && (
                     <>
-                      <div className="fixed inset-0 z-40" onClick={() => setMenuGoalId(null)} />
+                      <div className="fixed inset-0 z-40" role="presentation" onClick={() => setMenuGoalId(null)} />
                       <div className="absolute right-0 top-9 z-50 bg-cream-card rounded-2xl shadow-xl shadow-navy-900/15 border border-cream-border py-1.5 w-52 animate-fade-in">
                         <button
                           onClick={() => {

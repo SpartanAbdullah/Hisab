@@ -1,5 +1,21 @@
 import { supabase } from './supabase';
 import { tStatic } from './i18n';
+// Trust & safety (audit M17): pure error→outcome mapping and the server-side
+// text caps, kept out of this file so they stay unit-testable in Node.
+import {
+  BLOCK_REASON_MAX,
+  REPORT_CONTEXT_ID_MAX,
+  REPORT_CONTEXT_TYPE_MAX,
+  REPORT_DETAILS_MAX,
+  REPORT_REASON_MAX,
+  blockOutcomeFromError,
+  normalizeFreeText,
+  reportOutcomeFromError,
+  type BlockOutcome,
+  type ReportContextType,
+  type ReportOutcome,
+  type ReportReason,
+} from './blockStatus';
 import {
   joinStatusFromThrown,
   parseJoinByCodeResponse,
@@ -23,7 +39,12 @@ import {
   type ContactUnlinkResult,
 } from './contactLinkStatus';
 import { fetchAllPages, type PagedFetchResult } from './pagedFetch';
+import { shouldStopWindowPaging } from './historyWindow';
+import type { DailySeriesRow, MonthlySummaryRow, TopExpenseRow } from './analytics';
 import type { RecordSettlementResult } from './groupSettlementResult';
+// Audit G5/O10 edit history. Types only — the renderer is pure and stays out
+// of this module (see the `editHistoryDb` section at the end of the file).
+import type { EditHistoryEntry, EditHistoryTable } from './editHistory';
 import type {
   Account, Transaction, Loan, EmiSchedule, Goal,
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
@@ -145,6 +166,20 @@ export const accountsDb = {
 // genuinely means "end of table" rather than "the server stopped early".
 const TRANSACTION_PAGE_SIZE = 500;
 
+/**
+ * A bounded history read. `rows` is the newest slice of the table; the two
+ * extra fields say what that slice PROVES (see `src/lib/historyWindow.ts`).
+ */
+export interface TransactionWindowResult extends PagedFetchResult<Transaction> {
+  /**
+   * The result contains every non-deleted row with `createdAt >= coveredSince`.
+   * `null` only when `complete` is true (the walk reached the end of the table).
+   */
+  coveredSince: string | null;
+  /** The walk reached the end of the table: this IS the whole history. */
+  complete: boolean;
+}
+
 export const transactionsDb = {
   async get(id: string): Promise<Transaction | null> {
     const { data, error } = await supabase
@@ -178,6 +213,120 @@ export const transactionsDb = {
         // Inclusive bound — rows sharing a created_at can straddle a page
         // boundary; fetchAllPages de-duplicates the overlap by id.
         if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return (data ?? []).map(mapTransaction);
+      },
+    });
+  },
+  /**
+   * The DEFAULT history read: the newest slice, bounded by a date floor AND a
+   * row floor (12 months / 1000 rows — `src/lib/historyWindow.ts` owns both
+   * numbers and the reasoning).
+   *
+   * Same keyset walk as `getAllPaged`, with one difference: it stops as soon as
+   * BOTH floors are satisfied. `since` is NOT pushed into the SQL as a
+   * `gte('created_at', …)` filter, because the row floor has to be able to
+   * reach PAST it — a user with 200 lifetime entries gets their whole history
+   * (and `complete: true`) rather than 12 months of it.
+   *
+   * The stop is implemented by making `fetchPage` return an empty page once the
+   * floors are met, which is `fetchAllPages`' normal end-of-table signal. That
+   * keeps this on the audited pager — id de-duplication, the inclusive cursor
+   * bound, and H4's truncation detection all still apply — instead of forking a
+   * second keyset loop that would have to re-earn that trust.
+   *
+   * No predicate on either account id: a `splits_only` row with BOTH account
+   * ids null is windowed by date exactly like a full-tracker row.
+   */
+  async getWindowPaged(options: { since: string; minRows?: number }): Promise<TransactionWindowResult> {
+    const userId = getUserId();
+    const minRows = options.minRows ?? 0;
+    let stopped = false;
+    let reachedEnd = false;
+    let fetched = 0;
+    let oldestFetched: string | null = null;
+
+    const result = await fetchAllPages<Transaction>({
+      label: 'transactions.getWindow',
+      pageSize: TRANSACTION_PAGE_SIZE,
+      idOf: (t) => t.id,
+      cursorOf: (t) => t.createdAt,
+      fetchPage: async (cursor, limit) => {
+        if (stopped) return [];
+        let query = supabase
+          .from('transactions').select('*')
+          .eq('user_id', userId)
+          .is('deleted_at', null);
+        // Inclusive bound — rows sharing a created_at can straddle a page
+        // boundary; fetchAllPages de-duplicates the overlap by id.
+        if (cursor) query = query.lte('created_at', cursor);
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        const page = (data ?? []).map(mapTransaction);
+        fetched += page.length;
+        const last = page[page.length - 1];
+        if (last) oldestFetched = last.createdAt;
+        // A short page normally means end-of-table — EXCEPT when its length is
+        // a round hundred, which is far more likely a PostgREST max-rows cap
+        // (the same heuristic `fetchAllPages` uses to decide whether to probe).
+        // Normally the pager's own probe would settle it, but once we have
+        // stopped, the probe comes back empty and cannot; so a suspicious short
+        // page is simply never accepted as proof that we saw the whole table.
+        if (page.length < limit && !(page.length > 0 && page.length % 100 === 0)) {
+          reachedEnd = true;
+        }
+        stopped = shouldStopWindowPaging({
+          oldestFetched,
+          rowsFetched: fetched,
+          since: options.since,
+          minRows,
+        });
+        return page;
+      },
+    });
+
+    // `reachedEnd` can only be true if a page came back short, which means the
+    // walk saw the oldest row the user owns. Truncation (H4) is the opposite
+    // claim, so it vetoes completeness.
+    const complete = reachedEnd && !result.truncated;
+    return {
+      ...result,
+      complete,
+      // On truncation the pager could not advance its cursor, so the floor we
+      // can honestly claim is the last row it managed to read — not `since`.
+      coveredSince: complete ? null : (result.truncated ? oldestFetched : options.since),
+    };
+  },
+  /**
+   * The on-demand older-history read: every non-deleted row in
+   * `[from, to]` (both inclusive). Backs `ensureTransactionHistory({ since })`,
+   * which only ever asks for the gap BELOW the coverage floor it already has —
+   * so this is a bounded fetch, not a second front door to the whole table.
+   */
+  async getRangePaged(from: string, to?: string | null): Promise<PagedFetchResult<Transaction>> {
+    const userId = getUserId();
+    return fetchAllPages<Transaction>({
+      label: 'transactions.getRange',
+      pageSize: TRANSACTION_PAGE_SIZE,
+      idOf: (t) => t.id,
+      cursorOf: (t) => t.createdAt,
+      fetchPage: async (cursor, limit) => {
+        let query = supabase
+          .from('transactions').select('*')
+          .eq('user_id', userId)
+          .is('deleted_at', null)
+          .gte('created_at', from);
+        // The cursor tightens the upper bound as we walk down; `to` is the
+        // initial one. Inclusive on both, as everywhere else in this file.
+        const upper = cursor ?? to ?? null;
+        if (upper) query = query.lte('created_at', upper);
         const { data, error } = await query
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
@@ -1955,6 +2104,79 @@ export const groupMembershipDb = {
   },
 };
 
+/** Result of add_group_guest / remove_group_guest
+ *  (supabase-migration-p2-guest-members.sql §4a/§4b).
+ *
+ *  Both RPCs return failures as DATA, never as exceptions — the repo-wide rule
+ *  from audit H1: a RAISE rolls back everything the call already committed,
+ *  which is how the join-code rate limiter became a no-op once. So `status` is
+ *  always present and 'ok' is the only success (plus the idempotent replays,
+ *  ALREADY_ADDED). src/lib/groupGuests.ts owns the code -> copy mapping. */
+export interface GuestSeatResult {
+  status: string;
+  memberId: string | null;
+  displayName: string | null;
+  hasPhone: boolean;
+}
+
+function parseGuestSeatShape(data: unknown): GuestSeatResult {
+  const row = (data ?? {}) as Record<string, unknown>;
+  return {
+    status: String(row.status ?? 'UNKNOWN'),
+    memberId: row.member_id ? String(row.member_id) : null,
+    displayName: row.display_name ? String(row.display_name) : null,
+    hasPhone: Boolean(row.has_phone),
+  };
+}
+
+/**
+ * Guest seats — named group members with no Hisaab account (audit G6 / O4).
+ *
+ * There is no direct-table equivalent of these two calls and there must not be:
+ *   * the INSERT could be done raw by the group OWNER only (the group_members
+ *     INSERT policy, supabase-schema.sql:365-374), which would leave every
+ *     non-owner member unable to add a guest and would skip the phone hashing
+ *     entirely — group_guest_identities is unreachable from a client role;
+ *   * group_members has had NO client DELETE path since safe-leave-group.sql,
+ *     so removal has to be a definer RPC that first proves the seat carries no
+ *     ledger rows.
+ */
+export const groupGuestsDb = {
+  /**
+   * `memberId` is minted by the CALLER (uuid, like every other group write in
+   * splitStore) so a double tap or a retry after a dropped response replays
+   * onto the same row instead of creating a twin — the same idempotency
+   * contract record_group_settlement has on p_settlement_id.
+   *
+   * `phone` is the RAW string the user typed. The server normalises it through
+   * phone_e164_candidates and stores only SHA-256 digests; the number itself
+   * never lands in a column and can never be read back, by anyone.
+   */
+  async add(groupId: string, memberId: string, displayName: string, phone?: string | null): Promise<GuestSeatResult> {
+    const { data, error } = await supabase.rpc('add_group_guest', {
+      p_group_id: groupId,
+      p_display_name: displayName,
+      p_phone: phone ?? null,
+      p_member_id: memberId,
+    });
+    if (error) throw error;
+    return parseGuestSeatShape(data);
+  },
+
+  /** Only an UNUSED seat, and only for the owner or whoever added it. Returns
+   *  GUEST_HAS_LEDGER the moment any expense, split share or settlement — soft
+   *  deleted ones included — references the member id, because deleting it
+   *  would dangle paid_by / from_member / splits[].memberId. */
+  async remove(groupId: string, memberId: string): Promise<GuestSeatResult> {
+    const { data, error } = await supabase.rpc('remove_group_guest', {
+      p_group_id: groupId,
+      p_member_id: memberId,
+    });
+    if (error) throw error;
+    return parseGuestSeatShape(data);
+  },
+};
+
 /** archive_group / unarchive_group return leave_group's shape plus the new
  *  archived_at, so the client can update its mirror without a re-fetch. */
 export interface GroupArchiveResult {
@@ -2476,9 +2698,18 @@ function mapCustomCategory(r: Record<string, unknown>): CustomCategory {
 // supabase-migration-audit-p0-kameti-draw.sql). PostgREST surfaces the RAISE
 // text verbatim in error.message, so we match on the token rather than on
 // Postgres error codes.
+// The three KAMETI_* codes join the same list on purpose: the editing RPCs
+// (supabase-migration-p2-kameti-editing.sql) reuse this file's NOT_ORGANISER /
+// NOT_FOUND / NOT_AUTHENTICATED verbatim, and its guard trigger fires on the
+// same ORDINARY table writes the draw guards do. One list means one mapper
+// (`toCommitteeDrawError`) and one exhaustive `Record` in the UI — adding a
+// code here is a TYPE ERROR at every mapping site until it is translated,
+// which is what keeps a new refusal from degrading to "something went wrong".
 export const COMMITTEE_DRAW_ERRORS = [
   'ALREADY_DRAWN', 'NOT_ORGANISER', 'NOT_FOUND', 'NOT_ACTIVE',
   'TOO_FEW_MEMBERS', 'NOT_AUTHENTICATED', 'DRAW_LOCKED', 'DRAW_FIELDS_ARE_SERVER_ONLY',
+  'SLOTS_ALREADY_SET', 'BALLOT_SLOTS_SERVER_ONLY', 'BALLOT_SWITCH_NEEDS_CLEAR_SLOTS',
+  'KAMETI_LOCKED_PAYMENTS', 'KAMETI_LOCKED_DRAW', 'KAMETI_INVALID_PATCH',
 ] as const;
 export type CommitteeDrawErrorCode = (typeof COMMITTEE_DRAW_ERRORS)[number];
 
@@ -2491,8 +2722,19 @@ export class CommitteeDrawError extends Error {
   }
 }
 
-function toCommitteeDrawError(err: unknown): CommitteeDrawError {
-  const message = (err as { message?: string })?.message ?? String(err);
+/**
+ * Map a raw Postgres/PostgREST failure onto one of the stable draw/slot codes.
+ *
+ * Exported because the ballot guards fire on ORDINARY table writes too, not
+ * just `perform_committee_draw`: `committee_members.slot` raises
+ * BALLOT_SLOTS_SERVER_ONLY and `committees.payout_method` raises
+ * BALLOT_SWITCH_NEEDS_CLEAR_SLOTS. Callers of those plain updates need the same
+ * mapping, or the user gets a raw Postgres string.
+ */
+export function toCommitteeDrawError(err: unknown): CommitteeDrawError {
+  if (err instanceof CommitteeDrawError) return err;
+  const raw = err as { message?: string; details?: string; hint?: string } | null;
+  const message = [raw?.message, raw?.details, raw?.hint].filter(Boolean).join(' ') || String(err);
   const code = COMMITTEE_DRAW_ERRORS.find((c) => message.includes(c));
   return new CommitteeDrawError(code ?? 'UNKNOWN', message);
 }
@@ -2506,6 +2748,62 @@ export interface CommitteeDrawResult {
   order: string[];
 }
 
+/**
+ * Result of `rotate_committee_witness_token`. `token` is the ONLY time the raw
+ * value exists on this device — show it, let the user copy/share it, and let it
+ * fall out of scope. Never persist it (see docs/trust-and-safety.md §4.5).
+ */
+export type CommitteeWitnessRotation =
+  | {
+      status: 'ok';
+      token: string;
+      expiresAt: string | null;
+      initialsOnly: boolean;
+      /** True when this rotate killed a link that was already out there. */
+      replacedPrevious: boolean;
+    }
+  | { status: 'NOT_FOUND' | 'NOT_AUTHENTICATED' | 'UNKNOWN' };
+
+export type CommitteeWitnessRevocation =
+  | { status: 'ok'; wasActive: boolean }
+  | { status: 'NOT_FOUND' | 'NOT_AUTHENTICATED' | 'UNKNOWN' };
+
+/**
+ * The only fields `update_committee` accepts (UX-25 /
+ * supabase-migration-p2-kameti-editing.sql). Anything else — the derived
+ * counters, every draw column, every witness column — is refused as
+ * KAMETI_INVALID_PATCH rather than silently dropped, so a client bug surfaces
+ * as an error instead of an edit that appears to work and doesn't.
+ *
+ * name / emoji / notes / status are editable in every lifecycle state; the
+ * rest only while nothing has been collected and the ballot is undrawn.
+ * `emoji: null` clears it.
+ */
+export interface CommitteePatch {
+  name?: string;
+  emoji?: string | null;
+  notes?: string;
+  status?: Committee['status'];
+  currency?: Currency;
+  contributionAmount?: number;
+  cadence?: Committee['cadence'];
+  startDate?: string;
+  payoutMethod?: Committee['payoutMethod'];
+}
+
+export interface CommitteeMemberAddResult {
+  member: CommitteeMember;
+  memberCount: number;
+  totalRounds: number;
+}
+
+export interface CommitteeMemberRemoveResult {
+  /** The slot the removed member held, if any — everything above it shifted down by one. */
+  removedSlot: number | null;
+  memberCount: number;
+  totalRounds: number;
+}
+
 export const committeesDb = {
   async getAll(): Promise<Committee[]> {
     const { data, error } = await supabase
@@ -2517,7 +2815,7 @@ export const committeesDb = {
   },
   async add(c: Committee) {
     const { error } = await supabase.from('committees').insert({
-      id: c.id, user_id: getUserId(), name: c.name, currency: c.currency,
+      id: c.id, user_id: getUserId(), name: c.name, emoji: c.emoji ?? null, currency: c.currency,
       contribution_amount: c.contributionAmount, member_count: c.memberCount,
       cadence: c.cadence, total_rounds: c.totalRounds, start_date: c.startDate,
       payout_method: c.payoutMethod, status: c.status, notes: c.notes,
@@ -2532,12 +2830,19 @@ export const committeesDb = {
     if (changes.status !== undefined) row.status = changes.status;
     if (changes.notes !== undefined) row.notes = changes.notes;
     if (changes.drawnAt !== undefined) row.drawn_at = changes.drawnAt;
+    // `witness_initials_only` is an ordinary owner-writable preference (the
+    // p2 guard trigger deliberately leaves it alone), so it rides along here.
+    if (changes.witnessInitialsOnly !== undefined) row.witness_initials_only = changes.witnessInitialsOnly;
     // drawSeed / drawCommitment are deliberately NOT writable from here. Audit
     // 2026-09 M10: a client-written seed lets the organiser brute-force one that
     // yields a hand-picked order. Only perform_committee_draw() may set them,
     // and a trigger rejects any other write — see
     // supabase-migration-audit-p0-kameti-draw.sql.
-    if (changes.shareToken !== undefined) row.share_token = changes.shareToken;
+    //
+    // `shareToken` is likewise gone (audit M19 / p2-trust-safety §7.3): the
+    // witness token is server-minted, only its SHA-256 is stored, and any
+    // plaintext write raises WITNESS_TOKEN_IS_SERVER_ONLY. Use
+    // rotateWitnessToken / revokeWitnessToken below.
     const { error } = await supabase.from('committees').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
@@ -2565,8 +2870,144 @@ export const committeesDb = {
       order,
     };
   },
+  // ── Post-creation editing (UX-25) ───────────────────────────────────────
+  // `committees` carries a plain owner UPDATE policy, so PostgREST would
+  // happily take `contribution_amount = 1` on a kameti whose members have
+  // already paid three rounds at 5000 — nothing Postgres can see would be
+  // corrupted, and every historical payment would silently start meaning
+  // something else. So the whole edit goes through one RPC that validates the
+  // patch against the committee's lifecycle state BEFORE touching anything
+  // (all-or-nothing: a patch with one illegal key changes not even its legal
+  // ones), and a trigger refuses the same writes when they arrive raw.
+  //
+  // Returns the fields the server echoed back — merge, don't replace: the
+  // payload deliberately omits the witness/draw columns it must never touch.
+  async patch(id: string, patch: CommitteePatch): Promise<Partial<Committee> & { id: string }> {
+    const { data, error } = await supabase.rpc('update_committee', {
+      p_committee_id: id,
+      p_patch: patch,
+    });
+    if (error) throw toCommitteeDrawError(error);
+    const c = (data as { committee?: Record<string, unknown> } | null)?.committee;
+    if (!c) throw new CommitteeDrawError('UNKNOWN', 'update_committee returned no committee');
+    return {
+      id: c.id as string,
+      name: c.name as string,
+      emoji: (c.emoji as string) ?? null,
+      currency: c.currency as Currency,
+      contributionAmount: Number(c.contributionAmount),
+      memberCount: Number(c.memberCount),
+      cadence: c.cadence as Committee['cadence'],
+      totalRounds: Number(c.totalRounds),
+      startDate: c.startDate as string,
+      payoutMethod: c.payoutMethod as Committee['payoutMethod'],
+      status: c.status as Committee['status'],
+      notes: (c.notes as string) ?? '',
+      drawnAt: (c.drawnAt as string) ?? null,
+      updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+    };
+  },
+  /**
+   * Appends a member AND a round (member_count + 1, total_rounds + 1). The two
+   * counters are derived, so they are RPC-only in every state — a client that
+   * could move member_count on its own would change what
+   * `poolAmount() = contribution × memberCount` promises every member while
+   * the roster stood still.
+   */
+  async addMember(
+    committeeId: string,
+    input: { name: string; phone?: string | null; personId?: string | null },
+  ): Promise<CommitteeMemberAddResult> {
+    const { data, error } = await supabase.rpc('add_committee_member', {
+      p_committee_id: committeeId,
+      p_name: input.name,
+      p_phone: input.phone ?? null,
+      p_person_id: input.personId ?? null,
+    });
+    if (error) throw toCommitteeDrawError(error);
+    const raw = (data ?? {}) as { member?: Record<string, unknown>; memberCount?: number; totalRounds?: number };
+    if (!raw.member) throw new CommitteeDrawError('UNKNOWN', 'add_committee_member returned no member');
+    const m = raw.member;
+    return {
+      member: {
+        id: m.id as string,
+        committeeId,
+        name: m.name as string,
+        phone: (m.phone as string) ?? null,
+        personId: (m.personId as string) ?? null,
+        slot: m.slot != null ? Number(m.slot) : null,
+        isOrganizer: false,
+        payoutReceivedAt: null,
+        exitedAt: null,
+        createdAt: (m.createdAt as string) ?? new Date().toISOString(),
+      },
+      memberCount: Number(raw.memberCount),
+      totalRounds: Number(raw.totalRounds),
+    };
+  },
+  /**
+   * Removes a member, compacts every slot above theirs DOWN by one and drops a
+   * round. Refused once the ballot is drawn, for the organiser, below two
+   * members, and whenever a contribution touches the member or any round from
+   * their slot onwards (the compaction would re-number a round that already
+   * happened).
+   */
+  async removeMember(committeeId: string, memberId: string): Promise<CommitteeMemberRemoveResult> {
+    const { data, error } = await supabase.rpc('remove_committee_member', {
+      p_committee_id: committeeId,
+      p_member_id: memberId,
+    });
+    if (error) throw toCommitteeDrawError(error);
+    const raw = (data ?? {}) as Record<string, unknown>;
+    if (raw.status !== 'ok') throw new CommitteeDrawError('UNKNOWN', 'remove_committee_member did not confirm');
+    return {
+      removedSlot: raw.removedSlot != null ? Number(raw.removedSlot) : null,
+      memberCount: Number(raw.memberCount),
+      totalRounds: Number(raw.totalRounds),
+    };
+  },
+  // ── Witness link lifecycle (audit M19 / UX-24) ──────────────────────────
+  // BREAKING vs. the old client-minted token: `rotate_committee_witness_token`
+  // generates 256 bits of SERVER entropy, stores only the SHA-256, resets the
+  // 90-day expiry, clears any revocation, and INVALIDATES the previous link.
+  // The raw token comes back exactly once and is never re-readable — so the
+  // caller must show/share it immediately and must NOT persist it anywhere.
+  async rotateWitnessToken(committeeId: string): Promise<CommitteeWitnessRotation> {
+    const { data, error } = await supabase.rpc('rotate_committee_witness_token', {
+      p_committee_id: committeeId,
+    });
+    if (error) throw error;
+    const raw = (data ?? {}) as Record<string, unknown>;
+    const status = String(raw.status ?? 'UNKNOWN');
+    if (status !== 'ok' || typeof raw.token !== 'string') {
+      // NOT_FOUND covers "not the organiser" as well as "no such kameti" —
+      // deliberately indistinguishable, so the client must not guess which.
+      return { status: status === 'NOT_FOUND' || status === 'NOT_AUTHENTICATED' ? status : 'UNKNOWN' };
+    }
+    return {
+      status: 'ok',
+      token: raw.token,
+      expiresAt: typeof raw.expires_at === 'string' ? raw.expires_at : null,
+      initialsOnly: raw.initials_only === true,
+      replacedPrevious: raw.replaced_previous === true,
+    };
+  },
+  /** The "stop sharing" kill switch. Idempotent; a revoked link reads as a bad one. */
+  async revokeWitnessToken(committeeId: string): Promise<CommitteeWitnessRevocation> {
+    const { data, error } = await supabase.rpc('revoke_committee_witness_token', {
+      p_committee_id: committeeId,
+    });
+    if (error) throw error;
+    const raw = (data ?? {}) as Record<string, unknown>;
+    const status = String(raw.status ?? 'UNKNOWN');
+    if (status !== 'ok') {
+      return { status: status === 'NOT_FOUND' || status === 'NOT_AUTHENTICATED' ? status : 'UNKNOWN' };
+    }
+    return { status: 'ok', wasActive: raw.was_active === true };
+  },
   // Read-only witness snapshot via the anon SECURITY DEFINER RPC. No auth
-  // required — used by the public witness page. Returns null for a bad token.
+  // required — used by the public witness page. Returns null for a bad token
+  // AND for a revoked or expired one: the three are deliberately identical.
   async getWitness(token: string): Promise<{ committee: Committee; members: CommitteeMember[]; payments: CommitteePayment[] } | null> {
     const { data, error } = await supabase.rpc('get_committee_witness', { p_token: token });
     if (error) throw error;
@@ -2581,6 +3022,11 @@ export const committeesDb = {
       status: c.status as Committee['status'], notes: '',
       drawnAt: (c.drawnAt as string) ?? null, drawSeed: (c.drawSeed as string) ?? null,
       drawCommitment: (c.drawCommitment as string) ?? null,
+      // [W4] the payload now carries the link's own expiry and whether the
+      // organiser chose initials-only, so the public page can present both as
+      // deliberate settings instead of missing data.
+      witnessExpiresAt: (c.witnessExpiresAt as string) ?? null,
+      witnessInitialsOnly: c.initialsOnly === true,
       createdAt: c.createdAt as string,
     };
     const members: CommitteeMember[] = raw.members.map((m) => ({
@@ -2659,6 +3105,7 @@ function mapCommittee(r: Record<string, unknown>): Committee {
   return {
     id: r.id as string,
     name: r.name as string,
+    emoji: (r.emoji as string) ?? null,
     currency: r.currency as Currency,
     contributionAmount: Number(r.contribution_amount),
     memberCount: Number(r.member_count),
@@ -2671,7 +3118,14 @@ function mapCommittee(r: Record<string, unknown>): Committee {
     drawnAt: (r.drawn_at as string) ?? null,
     drawSeed: (r.draw_seed as string) ?? null,
     drawCommitment: (r.draw_commitment as string) ?? null,
+    // Always null after p2-trust-safety; kept so pre-migration mirrors map.
     shareToken: (r.share_token as string) ?? null,
+    // Lifecycle columns the organiser's share card reads. `select('*')` picks
+    // them up; they are simply absent (undefined → null) on an un-migrated DB,
+    // which witnessLinkState() reads as "no active link".
+    witnessExpiresAt: (r.witness_token_expires_at as string) ?? null,
+    witnessRevokedAt: (r.witness_token_revoked_at as string) ?? null,
+    witnessInitialsOnly: r.witness_initials_only === true,
     createdAt: r.created_at as string,
     updatedAt: (r.updated_at as string) ?? (r.created_at as string),
   };
@@ -3140,6 +3594,433 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// ── L4 step 2: the full-tracker loan repayment ──────────────────────────────
+// supabase-migration-p3-atomic-repayment.sql. THREE tables and TWO optimistic
+// locks in one transaction: the account leg, loans.remaining_amount + status,
+// the covered EMI status marks, and the transactions row.
+export interface AtomicRepaymentInput {
+  transactionId: string;
+  loanId: string;
+  /**
+   * The ONE account this repayment touches. Destination for a loan you GAVE
+   * (money comes in), source for one you TOOK (money goes out) — the server
+   * derives which from loans.type, so this is a single id either way.
+   * Never null: a ledger-mode (splits_only) repayment has no account and
+   * belongs to loanStore.applyRepayment, not here.
+   */
+  accountId: string;
+  /** Loan-currency amount, exactly as it is stored on the transaction row. */
+  amount: number;
+  /**
+   * The ACCOUNT-currency figure the client computed. Cross-checked by the
+   * server (0.01 tolerance), never trusted. Note the convention is asymmetric:
+   * `amount * rate` for a loan given, `amount / rate` for one taken.
+   */
+  accountAmount: number;
+  /** Null for same-currency, else exactly what the client stamps on the row. */
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  /** ISO string. The row's created_at, so a backdated entry stays backdated. */
+  createdAt: string;
+  /** The two compare-and-swap expectations — the locally-known values. */
+  expectedAccountBalance: number;
+  expectedLoanRemaining: number;
+  /**
+   * Instalments this repayment covers (src/lib/repaymentAtomicPlan.ts). The
+   * server re-validates ownership + loan membership before marking any of
+   * them, and silently skips ones already paid.
+   */
+  emiScheduleIds: string[];
+  /**
+   * Skip the insufficient-balance guard. TRUE only where the client's own
+   * checkBalanceForTransaction is a no-op — i.e. splits_only mode, which
+   * deliberately lets these entries make an account negative
+   * (isSimpleModeBalanceBypassAllowed). Full tracker always sends false.
+   */
+  allowNegative?: boolean;
+}
+
+export interface AtomicRepaymentResult {
+  /** True when the server recognised the id and did NOT move money again. */
+  replay: boolean;
+  transactionId: string;
+  /** Server truth after the move — apply these, do not recompute them. */
+  accountBalance: number;
+  loanRemaining: number;
+  loanStatus: string;
+  /** Signed account movement (+ credit, − debit). The inverse negates it. */
+  accountDelta: number;
+  /**
+   * What the LOAN actually moved. Differs from `amount` when the server clamp
+   * bit (an overpayment) — compensations must give back THIS, never the
+   * requested amount. Zero on a replay.
+   */
+  loanApplied: number;
+  /** Only the instalments that genuinely flipped to paid. */
+  emiMarked: string[];
+  conversionRate: number | null;
+}
+
+/** A stale compare-and-swap on either the account or the loan. */
+export interface AtomicRepaymentConflict extends Error {
+  code: 'BALANCE_CONFLICT' | 'LOAN_REMAINING_CONFLICT';
+  accountBalance: number | null;
+  loanRemaining: number | null;
+}
+
+/** The loan is gone — same token and same meaning as the loan CAS. */
+export interface AtomicRepaymentLoanMissing extends Error {
+  code: 'LOAN_NOT_FOUND';
+}
+
+/** The RPC is missing — the migration has not been applied to this project. */
+export interface AtomicRepaymentUnavailable extends Error {
+  code: 'ATOMIC_REPAYMENT_UNAVAILABLE';
+}
+
+// ── L4 step 3: creating a loan (loan_given / loan_taken) ────────────────────
+// supabase-migration-p3-atomic-loan-create.sql. TWO tables and up to TWO
+// account legs in one transaction: the funding/receiving balance, the optional
+// credit-card cash-advance balance, the loans row and the transactions row.
+export interface AtomicLoanCreateInput {
+  transactionId: string;
+  /** The loan this row points at — a fresh uuid when creating, else existing. */
+  loanId: string;
+  /** True to INSERT the loan; false to attach the row to an existing one. */
+  createLoan: boolean;
+  /** loans.type. The server derives the balance direction from it. */
+  direction: 'given' | 'taken';
+  personName: string;
+  personId: string | null;
+  /**
+   * The account that funds a loan you GIVE, or receives one you TAKE.
+   * Never null: a ledger-mode (splits_only) loan has no account and belongs to
+   * loanStore.createLoan, not here.
+   */
+  accountId: string;
+  /**
+   * The credit card a cash advance is drawn on — `loan_taken` only. The server
+   * re-checks that it is a card and that its currency matches the receiver.
+   */
+  cardAccountId: string | null;
+  amount: number;
+  /**
+   * The currency the client believes the account has. Cross-checked by the
+   * server (which takes the loan currency FROM the account), never trusted.
+   */
+  currency: string;
+  note: string;
+  category: string;
+  /** ISO string. The row's created_at, so a backdated entry stays backdated. */
+  createdAt: string;
+  /** Loan.notes — the VISIBLE half only (parseInternalNote strips the meta). */
+  loanNotes: string;
+  /** ISO string. trackedCreateLoan reads its own clock, separate from the row. */
+  loanCreatedAt: string;
+  /**
+   * The instalments to create with the loan, or null when there is no plan.
+   *
+   * L4 step 3 addendum: this is no longer always null. When
+   * VITE_ATOMIC_LOAN_CREATE is on and the user configured an instalment plan,
+   * AddLoanModal / QuickEntry compute the rows with `planEmiRows`
+   * (src/lib/emiPlan.ts) BEFORE the call and the server inserts them in the
+   * same transaction — closing the window where a drop between
+   * `processTransaction` and `emiStore.generateSchedule` orphaned a schedule
+   * (migration verification query V7 is the meter). Snake_case because the
+   * plpgsql reads it back with `e ->> 'installment_number'`; build it with
+   * `toEmiPayload`, never by hand.
+   */
+  emi: Array<{ id: string; installment_number: number; due_date: string; amount: number }> | null;
+  /** The compare-and-swap expectations — the locally-known balances. */
+  expectedAccountBalance: number;
+  expectedCardBalance: number | null;
+  /**
+   * Skip the insufficient-balance guard. TRUE only where the client's own
+   * checkBalanceForTransaction is a no-op — i.e. splits_only mode, which
+   * deliberately lets these entries make an account negative
+   * (isSimpleModeBalanceBypassAllowed). Full tracker always sends false.
+   */
+  allowNegative?: boolean;
+}
+
+export interface AtomicLoanCreateResult {
+  /** True when the server recognised the id and did NOT move money again. */
+  replay: boolean;
+  transactionId: string;
+  loanId: string;
+  /** False on a replay, and when the row attached to an existing loan. */
+  loanCreated: boolean;
+  /** Server truth after the move — apply these, do not recompute them. */
+  accountBalance: number;
+  /** Signed account movement (+ credit, − debit). The inverse negates it. */
+  accountDelta: number;
+  /** Null when there was no cash-advance card. */
+  cardBalance: number | null;
+  cardDelta: number | null;
+  currency: string;
+  /** The instalments the server actually inserted. Empty when emi was null. */
+  emiInserted: string[];
+}
+
+/** A stale compare-and-swap on either account. Same token as the account CAS. */
+export interface AtomicLoanCreateConflict extends Error {
+  code: 'BALANCE_CONFLICT';
+  accountId: string | null;
+  accountBalance: number | null;
+}
+
+/** The loan being ATTACHED to is gone — same token as the loan CAS. */
+export interface AtomicLoanCreateLoanMissing extends Error {
+  code: 'LOAN_NOT_FOUND';
+}
+
+/** The RPC is missing — the migration has not been applied to this project. */
+export interface AtomicLoanCreateUnavailable extends Error {
+  code: 'ATOMIC_LOAN_CREATE_UNAVAILABLE';
+}
+
+/**
+ * The server re-validated the instalment plan and refused it — the union of
+ * EMI_PLAN_INVALID (shape / 1..N numbering), EMI_PLAN_MISMATCH (the sum rule)
+ * and EMI_ID_COLLISION (an id already in the table).
+ *
+ * The important half is what it means, not which of the three fired: the RPC is
+ * atomic, so a refusal wrote NONE of the five artifacts — no balance moved, no
+ * loan exists, no row, no instalments. The message is already the user-facing
+ * bilingual string; the caller must NOT retry without the plan, because that
+ * would create the loan the user was told was not created.
+ */
+export interface AtomicLoanCreateEmiRejected extends Error {
+  code: 'EMI_PLAN_REJECTED';
+  /** The server's own token, for Sentry — never shown to the user. */
+  serverToken: 'EMI_PLAN_INVALID' | 'EMI_PLAN_MISMATCH' | 'EMI_ID_COLLISION';
+}
+
+// ── L4 step 4a: the goal contribution ───────────────────────────────────────
+// supabase-migration-p3-atomic-goal-and-card.sql. TWO tables, up to TWO account
+// legs and the FIRST compare-and-swap goals.saved_amount has ever had, in one
+// transaction: the source debit, the goal, the optional stored-in-account
+// credit and the transactions row.
+export interface AtomicGoalContributionInput {
+  transactionId: string;
+  goalId: string;
+  /**
+   * The funding account. Never null: splits_only mode has no goals at all
+   * (App.tsx routes /goals away), so there is no ledger shape to express.
+   */
+  sourceAccountId: string;
+  /** GOAL currency — exactly as it is stored on the transaction row. */
+  amount: number;
+  /**
+   * The SOURCE-currency figure the client computed. Cross-checked by the server
+   * (0.01 tolerance), never trusted. The convention is DIVIDE
+   * (`amount / rate`), the opposite of the transfer branch's MULTIPLY.
+   * Zero for a self-stored contribution, which moves no money at all.
+   */
+  sourceAmount: number;
+  /** Null for same-currency AND for every self-stored contribution. */
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  /** ISO string. The row's created_at, so a backdated entry stays backdated. */
+  createdAt: string;
+  /**
+   * The goal's stored-in account, when the client found one to credit. NOT
+   * authoritative — the server derives its own from goals.stored_in_account_id
+   * and returns what it used, so a stale local account list is visible as a
+   * disagreement rather than a failed contribution.
+   */
+  linkedAccountId: string | null;
+  /** The three compare-and-swap expectations — the locally-known values. */
+  expectedSourceBalance: number;
+  expectedLinkedBalance: number | null;
+  expectedSavedAmount: number;
+  /**
+   * Skip the insufficient-balance guard. ALWAYS false from the shipped client:
+   * 'goal_contribution' is absent from isSimpleModeBalanceBypassAllowed, so the
+   * branch uses the strict `checkBalance` and there is no ledger bypass to
+   * reproduce. Kept for the future repair queue.
+   */
+  allowNegative?: boolean;
+}
+
+export interface AtomicGoalContributionResult {
+  /** True when the server recognised the id and did NOT move money again. */
+  replay: boolean;
+  transactionId: string;
+  goalId: string;
+  /** Server truth after the move — apply these, do not recompute them. */
+  goalSavedAmount: number;
+  /**
+   * What the GOAL actually moved. Differs from `amount` only if the clamp bit;
+   * compensations must give back THIS. Zero on a replay.
+   */
+  goalApplied: number;
+  sourceBalance: number;
+  /** Signed account movement (− debit). Zero when self-stored. */
+  sourceDelta: number;
+  /** The account the server actually credited, or null. */
+  linkedAccountId: string | null;
+  linkedBalance: number | null;
+  linkedDelta: number | null;
+  currency: string;
+  /** The goal is kept in the very account funding it — no balances moved. */
+  selfStored: boolean;
+}
+
+/**
+ * A stale compare-and-swap on the source account, the goal's stored-in account,
+ * or the GOAL itself.
+ *
+ * The goal conflict deliberately reuses BALANCE_CONFLICT rather than inventing
+ * a token: the template's rule is "reuse what the client already parses"
+ * (docs/server-side-money-engine.md §6), and the branch's ladder refetches
+ * accounts AND goals, which is correct for either source. Unlike a repayment,
+ * the goal write is a pure `+amount` delta, so replaying against a fresh
+ * expectation is always correct — no floor is needed.
+ */
+export interface AtomicGoalConflict extends Error {
+  code: 'BALANCE_CONFLICT';
+  accountId: string | null;
+  accountBalance: number | null;
+  goalSavedAmount: number | null;
+}
+
+/** The goal is gone — the goal twin of LOAN_NOT_FOUND. Never retried. */
+export interface AtomicGoalMissing extends Error {
+  code: 'GOAL_NOT_FOUND';
+}
+
+/** The RPC is missing — the migration has not been applied to this project. */
+export interface AtomicGoalUnavailable extends Error {
+  code: 'ATOMIC_GOAL_UNAVAILABLE';
+}
+
+// ── L4 step 4b: the credit-card story ───────────────────────────────────────
+// supabase-migration-p3-atomic-goal-and-card.sql. FOUR tables in one
+// transaction: the wallet debit, the card credit, every cash-advance loan the
+// payment settles, the instalments it covers, and every row.
+export interface AtomicCardBillLine {
+  loan_id: string;
+  applied: number;
+  expected_remaining: number;
+  emi_ids: string[];
+  /** A uuid for a bill payment's ledger row; null when the MAIN row is it. */
+  row_id: string | null;
+  row_note: string;
+}
+
+export interface AtomicCardBillInput {
+  transactionId: string;
+  /**
+   * 'transfer'   — a bill payment. The main row is the transfer; each plan line
+   *                writes its own ledger-only repayment row (both account ids
+   *                NULL), exactly as the legacy tail does.
+   * 'repayment'  — a cash-advance repayment that credits the card back. The
+   *                main row IS the repayment (source = wallet, destination =
+   *                card) and its single line writes no second row.
+   */
+  rowType: 'transfer' | 'repayment';
+  sourceAccountId: string;
+  cardAccountId: string;
+  /** The ROW's amount: source currency for a transfer, loan currency for a repayment. */
+  amount: number;
+  /** What the wallet loses, in SOURCE currency. Cross-checked by the server. */
+  sourceAmount: number;
+  /**
+   * What the card gains. For a transfer: `amount × rate` (unclamped, by design
+   * — src/lib/cardCredit.ts:7-9). For a repayment: clampCardCredit's `credited`,
+   * which the server re-validates against the card's own headroom.
+   */
+  cardAmount: number;
+  /** The ROW's currency. Cross-checked, never trusted. */
+  currency: string;
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  /** ISO string. The row's created_at, so a backdated entry stays backdated. */
+  createdAt: string;
+  /** The settlement plan (src/lib/cardBillAtomicPlan.ts). May be empty. */
+  plan: AtomicCardBillLine[];
+  expectedSourceBalance: number;
+  expectedCardBalance: number;
+  /**
+   * Skip the insufficient-balance guard. TRUE only where the client's own
+   * checkBalanceForTransaction is a no-op — a splits_only REPAYMENT. A bill
+   * payment is a transfer, which uses the strict `checkBalance`, so it always
+   * sends false.
+   */
+  allowNegative?: boolean;
+}
+
+export interface AtomicCardBillLineResult {
+  loanId: string;
+  /** What the loan ACTUALLY moved — the clamped figure, not the requested one. */
+  applied: number;
+  remaining: number;
+  status: string;
+  /** The loan reached zero on THIS call (drives the 'loan_settled' activity). */
+  settledNow: boolean;
+  personName: string;
+  personId: string | null;
+  currency: string;
+  /** Only the instalments that genuinely flipped to paid. */
+  emiMarked: string[];
+  /** The ledger row the server wrote for this line, or null. */
+  rowId: string | null;
+}
+
+export interface AtomicCardBillResult {
+  replay: boolean;
+  transactionId: string;
+  rowType: string;
+  /** Server truth after the move — apply these, do not recompute them. */
+  sourceBalance: number;
+  sourceDelta: number;
+  cardBalance: number;
+  cardDelta: number;
+  currency: string;
+  /** How many cash-advance records this payment settled. */
+  settled: number;
+  lines: AtomicCardBillLineResult[];
+}
+
+/** A stale compare-and-swap on either account or on any loan in the plan. */
+export interface AtomicCardBillConflict extends Error {
+  code: 'BALANCE_CONFLICT' | 'LOAN_REMAINING_CONFLICT';
+  accountId: string | null;
+  accountBalance: number | null;
+  loanId: string | null;
+  loanRemaining: number | null;
+}
+
+/** A loan in the plan is gone — same token and meaning as the loan CAS. */
+export interface AtomicCardBillLoanMissing extends Error {
+  code: 'LOAN_NOT_FOUND';
+}
+
+/**
+ * The server refused the PLAN — the union of PLAN_INVALID (shape),
+ * PLAN_OVER_PAYMENT (the lockstep invariant: it settles more principal than the
+ * payment credited), CARD_CREDIT_OVER_LIMIT (the headroom clamp) and
+ * EMI_SCHEDULE_INVALID (an instalment that belongs to another loan).
+ *
+ * The important half is what it means, not which fired: the RPC is atomic, so a
+ * refusal wrote NOTHING — no balance moved, no loan moved, no rows. The caller
+ * must NOT retry the same plan; it is wrong, not stale.
+ */
+export interface AtomicCardBillPlanRejected extends Error {
+  code: 'CARD_BILL_PLAN_REJECTED';
+  /** The server's own token, for Sentry — never shown to the user. */
+  serverToken: 'PLAN_INVALID' | 'PLAN_OVER_PAYMENT' | 'CARD_CREDIT_OVER_LIMIT' | 'EMI_SCHEDULE_INVALID';
+}
+
+/** The RPC is missing — the migration has not been applied to this project. */
+export interface AtomicCardBillUnavailable extends Error {
+  code: 'ATOMIC_CARD_BILL_UNAVAILABLE';
+}
+
 export const atomicMoneyDb = {
   /**
    * The whole account→account transfer — both balance legs AND the
@@ -3234,5 +4115,1053 @@ export const atomicMoneyDb = {
       destinationAmount: numberOrNull(row.destination_amount),
       conversionRate: numberOrNull(row.conversion_rate),
     };
+  },
+
+  /**
+   * The whole full-tracker loan repayment — the account leg, the loan
+   * remaining + status leg, the covered EMI marks AND the transactions row —
+   * in ONE Postgres transaction (`record_loan_repayment`).
+   *
+   * This is the branch where a dropped connection used to be worst: the
+   * account CAS and the loan CAS are separate round-trips, so a timeout
+   * between them left a moved balance, an unchanged loan and NO record of
+   * either — the full-tracker form of the 2026-07-18 "vanished payment
+   * records" incident (tasks/lessons.md:6-13).
+   *
+   * Idempotent on `transactionId`: a retry after a dropped reply returns
+   * `{ replay: true }` with the current figures instead of paying twice.
+   *
+   * Throws, with a `code` the caller can branch on:
+   *   BALANCE_CONFLICT             — refetch and retry once (accountStore ladder)
+   *   LOAN_REMAINING_CONFLICT      — refetch and retry once, BUT only when the
+   *                                  fresh remaining still covers the payment
+   *                                  (src/lib/repaymentAtomicPlan.ts)
+   *   LOAN_NOT_FOUND               — never retried; the loan is gone
+   *   INSUFFICIENT_BALANCE         — message is already the user-facing string
+   *   ATOMIC_REPAYMENT_UNAVAILABLE — supabase-migration-p3-atomic-repayment.sql
+   *                                  is not applied; unset the flag
+   * Anything else is rethrown untouched.
+   */
+  async repaymentAtomic(input: AtomicRepaymentInput): Promise<AtomicRepaymentResult> {
+    const { data, error } = await supabase.rpc('record_loan_repayment', {
+      p_transaction_id: input.transactionId,
+      p_loan_id: input.loanId,
+      p_account_id: input.accountId,
+      p_amount: input.amount,
+      p_account_amount: input.accountAmount,
+      p_conversion_rate: input.conversionRate,
+      p_note: input.note,
+      p_category: input.category,
+      p_date: input.createdAt,
+      p_expected_account_balance: input.expectedAccountBalance,
+      p_expected_loan_remaining: input.expectedLoanRemaining,
+      p_emi_schedule_ids: input.emiScheduleIds,
+      p_allow_negative: input.allowNegative === true,
+    });
+
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      const detail = parseRpcDetail(error);
+
+      // Both conflict tokens are byte-identical to the ones
+      // apply_account_balance_delta and apply_loan_remaining_delta already
+      // raise, so nothing downstream needs a new branch.
+      for (const code of ['BALANCE_CONFLICT', 'LOAN_REMAINING_CONFLICT'] as const) {
+        if (message.includes(code)) {
+          const conflict = new Error(code) as AtomicRepaymentConflict;
+          conflict.code = code;
+          conflict.accountBalance = numberOrNull(detail?.account_balance);
+          conflict.loanRemaining = numberOrNull(detail?.loan_remaining);
+          throw conflict;
+        }
+      }
+
+      if (message.includes('LOAN_NOT_FOUND')) {
+        const err = new Error(tStatic('err_loan_gone')) as AtomicRepaymentLoanMissing;
+        err.code = 'LOAN_NOT_FOUND';
+        throw err;
+      }
+
+      if (message.includes('INSUFFICIENT_BALANCE')) {
+        // Rebuild the EXACT string checkBalance produces today
+        // (src/stores/transactionStore.ts:200-209) so the toast is
+        // byte-identical in both languages whichever path raised it.
+        const accountName = typeof detail?.account_name === 'string' ? detail.account_name : '';
+        const available = numberOrNull(detail?.available) ?? 0;
+        const requested = numberOrNull(detail?.requested) ?? 0;
+        const err = new Error(
+          tStatic('err_insufficient')
+            .replace('{account}', accountName)
+            .replace('{available}', available.toLocaleString())
+            .replace('{amount}', requested.toLocaleString()),
+        ) as AtomicTransferInsufficient;
+        err.code = 'INSUFFICIENT_BALANCE';
+        err.accountName = accountName;
+        err.available = available;
+        err.requested = requested;
+        throw err;
+      }
+
+      // PGRST202 = "function not found in the schema cache". The flag was
+      // switched on before the migration was applied — say so, loudly.
+      if ((error as { code?: string })?.code === 'PGRST202' || message.includes('record_loan_repayment')) {
+        const err = new Error(
+          'record_loan_repayment is not available — apply supabase-migration-p3-atomic-repayment.sql or unset VITE_ATOMIC_REPAYMENT.',
+        ) as AtomicRepaymentUnavailable;
+        err.code = 'ATOMIC_REPAYMENT_UNAVAILABLE';
+        throw err;
+      }
+
+      throw error;
+    }
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    const accountBalance = numberOrNull(row.account_balance);
+    const loanRemaining = numberOrNull(row.loan_remaining);
+    if (accountBalance === null || loanRemaining === null) {
+      // A success reply we cannot read is not a success: the caller would
+      // write nonsense into the balance and the loan.
+      throw new Error('record_loan_repayment returned no balances');
+    }
+
+    return {
+      replay: row.replay === true,
+      transactionId: typeof row.transaction_id === 'string' ? row.transaction_id : input.transactionId,
+      accountBalance,
+      loanRemaining,
+      loanStatus: typeof row.loan_status === 'string' ? row.loan_status : '',
+      accountDelta: numberOrNull(row.account_delta) ?? 0,
+      loanApplied: numberOrNull(row.loan_applied) ?? 0,
+      emiMarked: Array.isArray(row.emi_marked)
+        ? (row.emi_marked as unknown[]).filter((id): id is string => typeof id === 'string')
+        : [],
+      conversionRate: numberOrNull(row.conversion_rate),
+    };
+  },
+
+  /**
+   * The whole full-tracker loan CREATION — the funding/receiving account leg,
+   * the optional credit-card cash-advance leg, the loans row and the
+   * transactions row — in ONE Postgres transaction (`create_loan_with_leg`).
+   *
+   * The failure this closes is the ugliest of the three: today a `loan_given`
+   * debits the wallet, and if the `loans` INSERT then times out there is no
+   * loan saying who owes the money and no row saying it ever left. A
+   * `loan_taken` cash advance is worse still — the card's available credit
+   * drops and the cash arrives nowhere.
+   *
+   * Idempotent on `transactionId`: a retry after a dropped reply returns
+   * `{ replay: true }` with the current balances instead of lending twice.
+   *
+   * Throws, with a `code` the caller can branch on:
+   *   BALANCE_CONFLICT               — refetch and retry once (accountStore ladder)
+   *   LOAN_NOT_FOUND                 — never retried; the attached loan is gone
+   *   INSUFFICIENT_BALANCE           — message is already the user-facing string
+   *   EMI_PLAN_REJECTED              — the schedule was refused; NOTHING was
+   *                                    written, message is user-facing, never retry
+   *   ATOMIC_LOAN_CREATE_UNAVAILABLE — supabase-migration-p3-atomic-loan-create.sql
+   *                                    is not applied; unset the flag
+   * Anything else is rethrown untouched.
+   */
+  async loanCreateAtomic(input: AtomicLoanCreateInput): Promise<AtomicLoanCreateResult> {
+    const { data, error } = await supabase.rpc('create_loan_with_leg', {
+      p_transaction_id: input.transactionId,
+      p_loan_id: input.loanId,
+      p_create_loan: input.createLoan,
+      p_type: input.direction,
+      p_person_name: input.personName,
+      p_person_id: input.personId,
+      p_account_id: input.accountId,
+      p_card_account_id: input.cardAccountId,
+      p_amount: input.amount,
+      p_currency: input.currency,
+      // Always null: a created loan takes the funding account's currency, so
+      // there is no second currency to convert between. The server REFUSES a
+      // non-null rate (CONVERSION_RATE_NOT_APPLICABLE) rather than writing one.
+      p_conversion_rate: null,
+      p_note: input.note,
+      p_category: input.category,
+      p_date: input.createdAt,
+      p_loan_notes: input.loanNotes,
+      p_loan_created_at: input.loanCreatedAt,
+      p_emi: input.emi,
+      p_expected_account_balance: input.expectedAccountBalance,
+      p_expected_card_balance: input.expectedCardBalance,
+      p_allow_negative: input.allowNegative === true,
+    });
+
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      const detail = parseRpcDetail(error);
+
+      // Byte-identical to the token apply_account_balance_delta already
+      // raises, so nothing downstream needs a new branch.
+      if (message.includes('BALANCE_CONFLICT')) {
+        const conflict = new Error('BALANCE_CONFLICT') as AtomicLoanCreateConflict;
+        conflict.code = 'BALANCE_CONFLICT';
+        conflict.accountId = typeof detail?.account_id === 'string' ? detail.account_id : null;
+        conflict.accountBalance = numberOrNull(detail?.account_balance);
+        throw conflict;
+      }
+
+      if (message.includes('LOAN_NOT_FOUND')) {
+        const err = new Error(tStatic('err_loan_gone')) as AtomicLoanCreateLoanMissing;
+        err.code = 'LOAN_NOT_FOUND';
+        throw err;
+      }
+
+      // The instalment plan was refused. The client validated the same rules
+      // before calling (loanCreateAtomicPlan.emiPlanProblem), so reaching here
+      // means the two halves disagree OR an id raced into the table — either
+      // way the whole creation was refused as one, and the user must be told
+      // that nothing was saved rather than shown a raw Postgres string.
+      for (const token of ['EMI_PLAN_MISMATCH', 'EMI_PLAN_INVALID', 'EMI_ID_COLLISION'] as const) {
+        if (message.includes(token)) {
+          const err = new Error(tStatic('err_emi_plan_rejected')) as AtomicLoanCreateEmiRejected;
+          err.code = 'EMI_PLAN_REJECTED';
+          err.serverToken = token;
+          throw err;
+        }
+      }
+
+      if (message.includes('INSUFFICIENT_BALANCE')) {
+        // Rebuild the EXACT string checkBalance produces today
+        // (src/stores/transactionStore.ts:206-215) so the toast is
+        // byte-identical in both languages whichever path raised it.
+        const accountName = typeof detail?.account_name === 'string' ? detail.account_name : '';
+        const available = numberOrNull(detail?.available) ?? 0;
+        const requested = numberOrNull(detail?.requested) ?? 0;
+        const err = new Error(
+          tStatic('err_insufficient')
+            .replace('{account}', accountName)
+            .replace('{available}', available.toLocaleString())
+            .replace('{amount}', requested.toLocaleString()),
+        ) as AtomicTransferInsufficient;
+        err.code = 'INSUFFICIENT_BALANCE';
+        err.accountName = accountName;
+        err.available = available;
+        err.requested = requested;
+        throw err;
+      }
+
+      // PGRST202 = "function not found in the schema cache". The flag was
+      // switched on before the migration was applied — say so, loudly.
+      if ((error as { code?: string })?.code === 'PGRST202' || message.includes('create_loan_with_leg')) {
+        const err = new Error(
+          'create_loan_with_leg is not available — apply supabase-migration-p3-atomic-loan-create.sql or unset VITE_ATOMIC_LOAN_CREATE.',
+        ) as AtomicLoanCreateUnavailable;
+        err.code = 'ATOMIC_LOAN_CREATE_UNAVAILABLE';
+        throw err;
+      }
+
+      throw error;
+    }
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    const accountBalance = numberOrNull(row.account_balance);
+    if (accountBalance === null) {
+      // A success reply we cannot read is not a success: the caller would
+      // write nonsense into the balance store.
+      throw new Error('create_loan_with_leg returned no balance');
+    }
+
+    return {
+      replay: row.replay === true,
+      transactionId: typeof row.transaction_id === 'string' ? row.transaction_id : input.transactionId,
+      loanId: typeof row.loan_id === 'string' ? row.loan_id : input.loanId,
+      loanCreated: row.loan_created === true,
+      accountBalance,
+      accountDelta: numberOrNull(row.account_delta) ?? 0,
+      cardBalance: numberOrNull(row.card_balance),
+      cardDelta: numberOrNull(row.card_delta),
+      currency: typeof row.currency === 'string' ? row.currency : input.currency,
+      emiInserted: Array.isArray(row.emi_inserted)
+        ? (row.emi_inserted as unknown[]).filter((id): id is string => typeof id === 'string')
+        : [],
+    };
+  },
+
+  /**
+   * The whole goal contribution — the source account leg, goals.saved_amount,
+   * the optional stored-in-account credit leg AND the transactions row — in ONE
+   * Postgres transaction (`contribute_to_goal`).
+   *
+   * This branch's client compensation is the one the pilot's order table called
+   * out as the worst shape in the switch (docs/server-side-money-engine.md §6,
+   * branch 3): `trackedAddContribution` restores the exact prior savedAmount,
+   * so a rollback on THIS device silently erases a contribution made on
+   * another. The RPC replaces it with a compare-and-swap and a delta.
+   *
+   * Idempotent on `transactionId`: a retry after a dropped reply returns
+   * `{ replay: true }` with the current figures instead of contributing twice.
+   *
+   * Throws, with a `code` the caller can branch on:
+   *   BALANCE_CONFLICT       — the source account, the stored-in account OR the
+   *                            goal was stale. Refetch accounts AND goals,
+   *                            retry once. A goal conflict is safe to replay:
+   *                            the write is a pure delta, so no floor applies.
+   *   GOAL_NOT_FOUND         — never retried; the goal is gone
+   *   INSUFFICIENT_BALANCE   — message is already the user-facing string
+   *   ATOMIC_GOAL_UNAVAILABLE— supabase-migration-p3-atomic-goal-and-card.sql
+   *                            is not applied; unset the flag
+   * Anything else is rethrown untouched.
+   */
+  async goalContributeAtomic(
+    input: AtomicGoalContributionInput,
+  ): Promise<AtomicGoalContributionResult> {
+    const { data, error } = await supabase.rpc('contribute_to_goal', {
+      p_transaction_id: input.transactionId,
+      p_goal_id: input.goalId,
+      p_source_account_id: input.sourceAccountId,
+      p_amount: input.amount,
+      p_source_amount: input.sourceAmount,
+      p_conversion_rate: input.conversionRate,
+      p_note: input.note,
+      p_category: input.category,
+      p_date: input.createdAt,
+      p_linked_account_id: input.linkedAccountId,
+      p_expected_source_balance: input.expectedSourceBalance,
+      p_expected_linked_balance: input.expectedLinkedBalance,
+      p_expected_saved_amount: input.expectedSavedAmount,
+      p_allow_negative: input.allowNegative === true,
+    });
+
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      const detail = parseRpcDetail(error);
+
+      // Byte-identical to the token apply_account_balance_delta already raises,
+      // so nothing downstream needs a new branch. The DETAIL says which side.
+      if (message.includes('BALANCE_CONFLICT')) {
+        const conflict = new Error('BALANCE_CONFLICT') as AtomicGoalConflict;
+        conflict.code = 'BALANCE_CONFLICT';
+        conflict.accountId = typeof detail?.account_id === 'string' ? detail.account_id : null;
+        conflict.accountBalance = numberOrNull(detail?.account_balance);
+        conflict.goalSavedAmount = numberOrNull(detail?.goal_saved_amount);
+        throw conflict;
+      }
+
+      if (message.includes('GOAL_NOT_FOUND')) {
+        const err = new Error(tStatic('err_goal_gone')) as AtomicGoalMissing;
+        err.code = 'GOAL_NOT_FOUND';
+        throw err;
+      }
+
+      if (message.includes('INSUFFICIENT_BALANCE')) {
+        // Rebuild the EXACT string checkBalance produces today so the toast is
+        // byte-identical in both languages whichever path raised it.
+        const accountName = typeof detail?.account_name === 'string' ? detail.account_name : '';
+        const available = numberOrNull(detail?.available) ?? 0;
+        const requested = numberOrNull(detail?.requested) ?? 0;
+        const err = new Error(
+          tStatic('err_insufficient')
+            .replace('{account}', accountName)
+            .replace('{available}', available.toLocaleString())
+            .replace('{amount}', requested.toLocaleString()),
+        ) as AtomicTransferInsufficient;
+        err.code = 'INSUFFICIENT_BALANCE';
+        err.accountName = accountName;
+        err.available = available;
+        err.requested = requested;
+        throw err;
+      }
+
+      // PGRST202 = "function not found in the schema cache". The flag was
+      // switched on before the migration was applied — say so, loudly.
+      if ((error as { code?: string })?.code === 'PGRST202' || message.includes('contribute_to_goal')) {
+        const err = new Error(
+          'contribute_to_goal is not available — apply supabase-migration-p3-atomic-goal-and-card.sql or unset VITE_ATOMIC_GOAL.',
+        ) as AtomicGoalUnavailable;
+        err.code = 'ATOMIC_GOAL_UNAVAILABLE';
+        throw err;
+      }
+
+      throw error;
+    }
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    const goalSavedAmount = numberOrNull(row.goal_saved_amount);
+    const sourceBalance = numberOrNull(row.source_balance);
+    if (goalSavedAmount === null || sourceBalance === null) {
+      // A success reply we cannot read is not a success: the caller would write
+      // nonsense into the goal and the balance store.
+      throw new Error('contribute_to_goal returned no figures');
+    }
+
+    return {
+      replay: row.replay === true,
+      transactionId: typeof row.transaction_id === 'string' ? row.transaction_id : input.transactionId,
+      goalId: typeof row.goal_id === 'string' ? row.goal_id : input.goalId,
+      goalSavedAmount,
+      goalApplied: numberOrNull(row.goal_applied) ?? 0,
+      sourceBalance,
+      sourceDelta: numberOrNull(row.source_delta) ?? 0,
+      linkedAccountId: typeof row.linked_account_id === 'string' ? row.linked_account_id : null,
+      linkedBalance: numberOrNull(row.linked_balance),
+      linkedDelta: numberOrNull(row.linked_delta),
+      currency: typeof row.currency === 'string' ? row.currency : '',
+      selfStored: row.self_stored === true,
+    };
+  },
+
+  /**
+   * The whole credit-card story — the wallet debit, the card credit, every
+   * cash-advance loan the payment settles (remaining + status), every
+   * instalment it covers, and every row — in ONE Postgres transaction
+   * (`pay_card_bill`).
+   *
+   * Two user actions, one shape, selected by `rowType`:
+   *   'transfer'  — paying a card bill. Today this is the LARGEST flow in the
+   *                 switch: 2 balances + 1 row + N × (loan CAS + M instalment
+   *                 writes + 1 ledger row). A drop partway leaves a paid bill
+   *                 whose loans still say the money is owed, so the app asks
+   *                 the user to pay the same debt twice.
+   *   'repayment' — repaying a cash-advance loan, which credits the card back.
+   *                 This is the case supabase-migration-p3-atomic-repayment.sql
+   *                 deliberately left on the legacy path (§8.1), because
+   *                 `record_loan_repayment` takes exactly one account id.
+   *
+   * The ALLOCATION stays in TypeScript (src/lib/cardStatement.ts,
+   * src/lib/cardCredit.ts, src/lib/cardBillAtomicPlan.ts): the client plans, the
+   * server applies AND re-validates.
+   *
+   * Idempotent on `transactionId`, and every ledger `row_id` must be free.
+   *
+   * Throws, with a `code` the caller can branch on:
+   *   BALANCE_CONFLICT          — refetch and retry once (accountStore ladder)
+   *   LOAN_REMAINING_CONFLICT   — refetch, RE-PLAN, retry once — but only when
+   *                               the fresh remaining still covers the payment
+   *                               (src/lib/repaymentAtomicPlan.ts's floor)
+   *   LOAN_NOT_FOUND            — never retried; a loan in the plan is gone
+   *   CARD_BILL_PLAN_REJECTED   — the plan is WRONG, not stale; never retried
+   *   INSUFFICIENT_BALANCE      — message is already the user-facing string
+   *   ATOMIC_CARD_BILL_UNAVAILABLE — the migration is not applied; unset the flag
+   * Anything else is rethrown untouched.
+   */
+  async payCardBillAtomic(input: AtomicCardBillInput): Promise<AtomicCardBillResult> {
+    const { data, error } = await supabase.rpc('pay_card_bill', {
+      p_transaction_id: input.transactionId,
+      p_row_type: input.rowType,
+      p_source_account_id: input.sourceAccountId,
+      p_card_account_id: input.cardAccountId,
+      p_amount: input.amount,
+      p_source_amount: input.sourceAmount,
+      p_card_amount: input.cardAmount,
+      p_currency: input.currency,
+      p_conversion_rate: input.conversionRate,
+      p_note: input.note,
+      p_category: input.category,
+      p_date: input.createdAt,
+      p_plan: input.plan,
+      p_expected_source_balance: input.expectedSourceBalance,
+      p_expected_card_balance: input.expectedCardBalance,
+      p_allow_negative: input.allowNegative === true,
+    });
+
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      const detail = parseRpcDetail(error);
+
+      // Both conflict tokens are byte-identical to the ones
+      // apply_account_balance_delta and apply_loan_remaining_delta already
+      // raise, so nothing downstream needs a new branch.
+      for (const code of ['BALANCE_CONFLICT', 'LOAN_REMAINING_CONFLICT'] as const) {
+        if (message.includes(code)) {
+          const conflict = new Error(code) as AtomicCardBillConflict;
+          conflict.code = code;
+          conflict.accountId = typeof detail?.account_id === 'string' ? detail.account_id : null;
+          conflict.accountBalance = numberOrNull(detail?.account_balance);
+          conflict.loanId = typeof detail?.loan_id === 'string' ? detail.loan_id : null;
+          conflict.loanRemaining = numberOrNull(detail?.loan_remaining);
+          throw conflict;
+        }
+      }
+
+      if (message.includes('LOAN_NOT_FOUND')) {
+        const err = new Error(tStatic('err_loan_gone')) as AtomicCardBillLoanMissing;
+        err.code = 'LOAN_NOT_FOUND';
+        throw err;
+      }
+
+      for (const token of ['PLAN_OVER_PAYMENT', 'CARD_CREDIT_OVER_LIMIT', 'EMI_SCHEDULE_INVALID', 'PLAN_INVALID'] as const) {
+        if (message.includes(token)) {
+          const err = new Error(tStatic('err_card_bill_plan')) as AtomicCardBillPlanRejected;
+          err.code = 'CARD_BILL_PLAN_REJECTED';
+          err.serverToken = token;
+          throw err;
+        }
+      }
+
+      if (message.includes('INSUFFICIENT_BALANCE')) {
+        const accountName = typeof detail?.account_name === 'string' ? detail.account_name : '';
+        const available = numberOrNull(detail?.available) ?? 0;
+        const requested = numberOrNull(detail?.requested) ?? 0;
+        const err = new Error(
+          tStatic('err_insufficient')
+            .replace('{account}', accountName)
+            .replace('{available}', available.toLocaleString())
+            .replace('{amount}', requested.toLocaleString()),
+        ) as AtomicTransferInsufficient;
+        err.code = 'INSUFFICIENT_BALANCE';
+        err.accountName = accountName;
+        err.available = available;
+        err.requested = requested;
+        throw err;
+      }
+
+      if ((error as { code?: string })?.code === 'PGRST202' || message.includes('pay_card_bill')) {
+        const err = new Error(
+          'pay_card_bill is not available — apply supabase-migration-p3-atomic-goal-and-card.sql or unset VITE_ATOMIC_CARD_BILL.',
+        ) as AtomicCardBillUnavailable;
+        err.code = 'ATOMIC_CARD_BILL_UNAVAILABLE';
+        throw err;
+      }
+
+      throw error;
+    }
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    const sourceBalance = numberOrNull(row.source_balance);
+    const cardBalance = numberOrNull(row.card_balance);
+    if (sourceBalance === null || cardBalance === null) {
+      throw new Error('pay_card_bill returned no balances');
+    }
+
+    const rawLines = Array.isArray(row.lines) ? (row.lines as unknown[]) : [];
+    return {
+      replay: row.replay === true,
+      transactionId: typeof row.transaction_id === 'string' ? row.transaction_id : input.transactionId,
+      rowType: typeof row.row_type === 'string' ? row.row_type : input.rowType,
+      sourceBalance,
+      sourceDelta: numberOrNull(row.source_delta) ?? 0,
+      cardBalance,
+      cardDelta: numberOrNull(row.card_delta) ?? 0,
+      currency: typeof row.currency === 'string' ? row.currency : input.currency,
+      settled: numberOrNull(row.settled) ?? 0,
+      lines: rawLines.map((raw) => {
+        const l = (raw ?? {}) as Record<string, unknown>;
+        return {
+          loanId: typeof l.loan_id === 'string' ? l.loan_id : '',
+          applied: numberOrNull(l.applied) ?? 0,
+          remaining: numberOrNull(l.remaining) ?? 0,
+          status: typeof l.status === 'string' ? l.status : '',
+          settledNow: l.settled_now === true,
+          personName: typeof l.person_name === 'string' ? l.person_name : '',
+          personId: typeof l.person_id === 'string' ? l.person_id : null,
+          currency: typeof l.currency === 'string' ? l.currency : input.currency,
+          emiMarked: Array.isArray(l.emi_marked)
+            ? (l.emi_marked as unknown[]).filter((id): id is string => typeof id === 'string')
+            : [],
+          rowId: typeof l.row_id === 'string' ? l.row_id : null,
+        };
+      }),
+    };
+  },
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// KHATA LINKS — the per-counterparty living-balance link (audit P3 / L2,
+// 11-competitive-analysis O2 + G3). Backed by
+// supabase-migration-p3-khata-link.sql.
+//
+// Three RPCs, no table access: `khata_links` is readable by its owner but
+// `token_hash` is withheld by a COLUMN grant, and minting/revoking is
+// SECURITY DEFINER-only. Everything below therefore goes through .rpc().
+//
+// `getView` is the ONLY method here that works without a session — it is what
+// KhataLinkPage calls on the public /khata/:token route.
+//
+// NOTE ON THE IMPORTS BELOW: they sit here, not in the header block at the top
+// of the file, so this whole feature is one contiguous append. ES module
+// imports are hoisted regardless of position, and no lint rule in
+// eslint.config.js orders them. Fold them into the header the next time this
+// file is edited for another reason.
+// ════════════════════════════════════════════════════════════════════════════
+import {
+  isKhataToken,
+  parseCreateKhataLinkResponse,
+  parseRevokeKhataLinkResponse,
+  parseKhataView,
+  khataStatusFromThrown,
+  type KhataLinkCreateResult,
+  type KhataLinkRevokeResult,
+  type KhataView,
+} from './khataLinkStatus';
+import { reportError } from './errorReporter';
+
+export const khataLinksDb = {
+  /**
+   * Mint (or rotate) the public khata link for one contact.
+   *
+   * Rotating is the same call: the server revokes any previous link for that
+   * contact before inserting the new one, so the OLD URL DIES. `replacedPrevious`
+   * says whether that happened, which is the only way the UI can honestly warn
+   * "the link you shared before will stop working".
+   *
+   * The raw token comes back EXACTLY ONCE and is never stored server-side.
+   * Show it, let the user share it, and do not persist it anywhere else — a
+   * lost token is recovered by rotating, not by reading.
+   *
+   * `initialsOnly` / `showNotes` omitted (undefined) keep whatever the
+   * previous link had, so a rotate never silently un-hides names or notes.
+   */
+  async create(personId: string, initialsOnly?: boolean, showNotes?: boolean): Promise<KhataLinkCreateResult> {
+    try {
+      const { data, error } = await supabase.rpc('create_khata_link', {
+        p_person_id: personId,
+        p_initials_only: initialsOnly ?? null,
+        p_show_notes: showNotes ?? null,
+      });
+      if (error) throw error;
+      return parseCreateKhataLinkResponse(data);
+    } catch (err) {
+      return { status: khataStatusFromThrown(err) };
+    }
+  },
+
+  /** Kill the contact's public link. Idempotent — a second call is
+   *  `{ status: 'ok', wasActive: false }`, not an error. */
+  async revoke(personId: string): Promise<KhataLinkRevokeResult> {
+    try {
+      const { data, error } = await supabase.rpc('revoke_khata_link', { p_person_id: personId });
+      if (error) throw error;
+      return parseRevokeKhataLinkResponse(data);
+    } catch (err) {
+      return { status: khataStatusFromThrown(err) };
+    }
+  },
+
+  /**
+   * Resolve a token into the public read-only view. ANON-CALLABLE — this is
+   * the one data-access method on the public route, and it must work with no
+   * session at all.
+   *
+   * Returns null for every refusal the server makes (unknown, revoked,
+   * expired, owner deleted, blocked pair, rate-limited) because the server
+   * answers all of them with ONE uniform NULL on purpose — a status vocabulary
+   * there would be an oracle. A transport failure also lands here as null; the
+   * page's single "link not available" state is the honest answer either way,
+   * and the error is reported for diagnostics rather than shown as a distinct
+   * screen the visitor cannot act on.
+   */
+  async getView(token: string): Promise<KhataView | null> {
+    // Shape-check locally so a mistyped URL never costs a round trip and never
+    // charges the server's miss ledger.
+    if (!isKhataToken(token)) return null;
+    try {
+      const { data, error } = await supabase.rpc('get_khata_view', { p_token: token });
+      if (error) throw error;
+      return parseKhataView(data);
+    } catch (err) {
+      reportError(err, { feature: 'khataLinksDb.getView' });
+      return null;
+    }
+  },
+};
+
+// ══════════════════════════════════════
+// TRUST & SAFETY — BLOCKS + REPORTS
+// Audit 2026-09 M17. See supabase-migration-p2-trust-safety.sql §1 and
+// docs/trust-and-safety.md for the model this data layer must not violate.
+// ══════════════════════════════════════
+
+/** One row of MY block list. The blocked party can never read this row. */
+export interface BlockRow {
+  blockedId: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface ReportInput {
+  reportedId: string;
+  contextType: ReportContextType;
+  contextId: string | null;
+  reason: ReportReason;
+  details?: string | null;
+}
+
+// Both tables are plain PostgREST tables, deliberately: there is NO RPC that
+// answers "is this pair blocked", because such an RPC would hand the blocked
+// party the exact bit the one-sided model exists to withhold (doc RULE 1).
+//
+//   • `blocks` has SELECT/INSERT/DELETE policies pinned to blocker_id =
+//     auth.uid() and NO policy naming blocked_id, and no UPDATE policy at all
+//     — changing a reason is delete + insert, which keeps created_at honest.
+//   • `reports` is INSERT-only. There is no SELECT policy, so reading one back
+//     is impossible by design; the UI must confirm optimistically.
+export const blocksDb = {
+  /**
+   * My block list. Returns only rows where I am the blocker — RLS guarantees
+   * it, and nothing here should ever try to widen that.
+   */
+  async getAll(): Promise<BlockRow[]> {
+    const { data, error } = await supabase
+      .from('blocks')
+      .select('blocked_id, reason, created_at')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      blockedId: r.blocked_id as string,
+      reason: (r.reason as string) ?? null,
+      createdAt: r.created_at as string,
+    }));
+  },
+
+  /**
+   * Block a user. Idempotent by construction: the PK is the pair, so a repeat
+   * collides with 23505 — which `blockOutcomeFromError` maps to
+   * ALREADY_BLOCKED, i.e. success. `blocker_id` must equal auth.uid(); RLS
+   * enforces it, so a spoof is impossible rather than merely discouraged.
+   */
+  async block(blockedId: string, reason?: string | null): Promise<BlockOutcome> {
+    const { error } = await supabase.from('blocks').insert({
+      blocker_id: getUserId(),
+      blocked_id: blockedId,
+      reason: normalizeFreeText(reason, BLOCK_REASON_MAX),
+    });
+    return blockOutcomeFromError(error);
+  },
+
+  /** Unblock. A pure DELETE — RULE 3: it restores everything, side-effect free. */
+  async unblock(blockedId: string): Promise<void> {
+    const { error } = await supabase
+      .from('blocks')
+      .delete()
+      .eq('blocker_id', getUserId())
+      .eq('blocked_id', blockedId);
+    if (error) throw error;
+  },
+};
+
+export const reportsDb = {
+  /**
+   * File an abuse report. Never throws for the two outcomes the UI must speak
+   * to (the 20/day cap, a refused insert) — it returns them, because a report
+   * that failed the cap is not an error the user did anything wrong to cause.
+   *
+   * Reporting does NOT block. The two actions are separate on purpose: block
+   * protects you now, report tells the operator.
+   */
+  async submit(input: ReportInput): Promise<ReportOutcome> {
+    const { error } = await supabase.from('reports').insert({
+      reporter_id: getUserId(),
+      reported_id: input.reportedId,
+      context_type: normalizeFreeText(input.contextType, REPORT_CONTEXT_TYPE_MAX),
+      context_id: normalizeFreeText(input.contextId, REPORT_CONTEXT_ID_MAX),
+      reason: normalizeFreeText(input.reason, REPORT_REASON_MAX),
+      details: normalizeFreeText(input.details, REPORT_DETAILS_MAX),
+    });
+    return reportOutcomeFromError(error);
+  },
+};
+
+// ══════════════════════════════════════
+// ANALYTICS AGGREGATES (audit P2 M2 / 03-performance H3)
+// ══════════════════════════════════════
+// SQL-side replacement for AnalyticsPage's client-side summing of the user's
+// entire transaction history. Backed by `analytics_monthly_summary` in
+// supabase-migration-p2-analytics-aggregates.sql, whose header carries the
+// full rule-port table; the TypeScript twin of the same aggregation (and the
+// tests that pin the two together) lives in src/lib/analytics.ts.
+//
+// Gated by VITE_ANALYTICS_RPC — the caller decides; this module just speaks to
+// the RPC. With the flag off nothing here is ever called.
+
+export class AnalyticsRpcUnavailableError extends Error {
+  readonly code = 'ANALYTICS_RPC_UNAVAILABLE';
+  constructor(message: string) {
+    super(message);
+    this.name = 'AnalyticsRpcUnavailableError';
+  }
+}
+
+export const analyticsDb = {
+  /**
+   * Grouped (month, currency, type, category) sums for the window `[from, to]`,
+   * INCLUSIVE at both ends — the same comparison every function in
+   * src/lib/analytics.ts makes.
+   *
+   * `tz` is the IANA zone the MONTH buckets are cut in. It defaults to the
+   * device's own zone so a UTC+4 user's "April" is their April, matching the
+   * client aggregation's use of local `Date` arithmetic. An unresolvable zone
+   * falls back to UTC on both sides.
+   *
+   * Both app modes: the RPC reads no account id, so a splits_only ledger row
+   * (BOTH account ids null) is aggregated exactly like a full_tracker row.
+   *
+   * Throws AnalyticsRpcUnavailableError when the migration has not been applied
+   * (PGRST202), so the caller can fall back to the client aggregation instead
+   * of showing a finance app an empty chart.
+   */
+  async monthlySummary(from: Date, to: Date, tz?: string): Promise<MonthlySummaryRow[]> {
+    let zone = tz;
+    if (!zone) {
+      try {
+        zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      } catch {
+        zone = 'UTC';
+      }
+    }
+    const { data, error } = await supabase.rpc('analytics_monthly_summary', {
+      p_from: from.toISOString(),
+      p_to: to.toISOString(),
+      p_tz: zone,
+    });
+    if (error) {
+      const code = (error as { code?: string })?.code;
+      const message = error.message ?? '';
+      if (code === 'PGRST202' || message.includes('analytics_monthly_summary')) {
+        throw new AnalyticsRpcUnavailableError(
+          'analytics_monthly_summary is not available — apply supabase-migration-p2-analytics-aggregates.sql or unset VITE_ANALYTICS_RPC.',
+        );
+      }
+      throw error;
+    }
+    const rows = (data ?? []) as {
+      month_start: string;
+      currency: string;
+      type: string;
+      category: string;
+      total: number | string;
+      tx_count: number | string;
+      latest_at: string;
+    }[];
+    return rows.map((r) => ({
+      monthStart: r.month_start,
+      currency: r.currency as Currency,
+      type: r.type as Transaction['type'],
+      category: r.category,
+      // NUMERIC / BIGINT arrive as strings over PostgREST when they are wide
+      // enough; Number() is safe for both shapes and matches what every other
+      // money read in this file does.
+      total: Number(r.total),
+      txCount: Number(r.tx_count),
+      latestAt: r.latest_at,
+    }));
+  },
+
+  /**
+   * Per-(local day, currency, type) sums for the window `[from, to]`, INCLUSIVE
+   * at both ends. Backs the daily-spend chart —
+   * `analytics_daily_series` in supabase-migration-p2-analytics-aggregates-2.sql
+   * (rules D1-D8 in that file's header), TypeScript twin
+   * `dailySeriesFromTransactions` in src/lib/analytics.ts.
+   *
+   * The SQL returns real calendar DATES. The chart's quirk — day-of-month bar
+   * keys, 31 bars max, April 5 and May 5 sharing a bar — is applied afterwards
+   * by `dailySpendingFromSeries`, using the exact helper the client path uses.
+   *
+   * Same `tz` and both-app-modes notes as `monthlySummary` above.
+   */
+  async dailySeries(from: Date, to: Date, tz?: string): Promise<DailySeriesRow[]> {
+    const { data, error } = await supabase.rpc('analytics_daily_series', {
+      p_from: from.toISOString(),
+      p_to: to.toISOString(),
+      p_tz: tz ?? resolvedTimeZone(),
+    });
+    if (error) throw analyticsRpcError(error, 'analytics_daily_series');
+    const rows = (data ?? []) as {
+      day: string;
+      currency: string;
+      type: string;
+      total: number | string;
+      tx_count: number | string;
+    }[];
+    return rows.map((r) => ({
+      day: r.day,
+      currency: r.currency as Currency,
+      type: r.type as Transaction['type'],
+      // NUMERIC / BIGINT arrive as strings over PostgREST when they are wide
+      // enough; Number() is safe for both shapes.
+      total: Number(r.total),
+      txCount: Number(r.tx_count),
+    }));
+  },
+
+  /**
+   * The top `limit` expense ROWS **per currency** in `[from, to]`, ranked
+   * amount DESC, created_at DESC, id DESC — `analytics_top_expenses`
+   * (rules T1-T7 in the same migration header), TypeScript twin
+   * `topExpensesFromTransactions`.
+   *
+   * Per-currency rather than per-call-currency on purpose: the page lets the
+   * user flip currency chips without re-fetching, so one call has to answer
+   * every chip. `topExpensesFromRows` does the (unchanged) client-side filter.
+   *
+   * This is the only analytics RPC that returns row-level data; it therefore
+   * returns exactly the six columns the list renders and nothing else — no
+   * account ids, no person, no loan/goal links.
+   */
+  async topExpenses(from: Date, to: Date, limit = 5): Promise<TopExpenseRow[]> {
+    const { data, error } = await supabase.rpc('analytics_top_expenses', {
+      p_from: from.toISOString(),
+      p_to: to.toISOString(),
+      p_limit: limit,
+    });
+    if (error) throw analyticsRpcError(error, 'analytics_top_expenses');
+    const rows = (data ?? []) as {
+      id: string;
+      created_at: string;
+      amount: number | string;
+      currency: string;
+      category: string | null;
+      notes: string | null;
+    }[];
+    return rows.map((r) => ({
+      id: r.id,
+      createdAt: r.created_at,
+      amount: Number(r.amount),
+      currency: r.currency as Currency,
+      category: r.category ?? '',
+      notes: r.notes ?? '',
+    }));
+  },
+
+  /**
+   * How many non-deleted transactions the SERVER holds for this user.
+   *
+   * A `head: true` count — PostgREST returns the number in a Content-Range
+   * header and NO rows, so this costs one tiny request regardless of history
+   * size. It exists so TransactionsPage can be honest about H4/F-FE1
+   * TRUNCATION: `fetchAllPages` already detects a partial fetch, but it reports
+   * it to Sentry only (`reportMessage`), and the path that would carry the flag
+   * to the UI runs through mirrorCache + transactionStore, which this task does
+   * not own. Comparing this count with what the store actually holds is the
+   * ownership-safe equivalent, and it is arguably the stronger signal: it also
+   * catches a mirror that is short for reasons pagedFetch never saw.
+   *
+   * Lives in `analyticsDb` because it is a read-only aggregate with no entity
+   * shape, not because Analytics uses it (it does not).
+   *
+   * Returns null instead of throwing — a page must never fail to render its
+   * list because a count request failed.
+   */
+  async transactionHistoryCount(): Promise<number | null> {
+    try {
+      const { count, error } = await supabase
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', getUserId())
+        .is('deleted_at', null);
+      if (error || typeof count !== 'number') return null;
+      return count;
+    } catch {
+      return null;
+    }
+  },
+};
+
+/** The device's IANA zone, or UTC when the browser will not resolve one. */
+function resolvedTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * PGRST202 = "function not found in the schema cache" — the flag was switched
+ * on before the migration was applied. Every analytics caller falls back to the
+ * client aggregation on this, so it must be distinguishable from a real error.
+ */
+function analyticsRpcError(error: { code?: string; message?: string }, fn: string): Error {
+  const message = error.message ?? '';
+  if (error.code === 'PGRST202' || message.includes(fn)) {
+    return new AnalyticsRpcUnavailableError(
+      `${fn} is not available — apply supabase-migration-p2-analytics-aggregates-2.sql or unset VITE_ANALYTICS_RPC.`,
+    );
+  }
+  return error as Error;
+}
+
+// ══════════════════════════════════════
+// EDIT HISTORY — "who changed what" (audit 11-competitive-analysis G5 / O10)
+// ══════════════════════════════════════
+// Reads `public.record_edits` from supabase-migration-p2-edit-history.sql.
+// READ-ONLY by construction: that table has one SELECT policy and no write
+// grant for `authenticated`, so there is deliberately no add()/update() here —
+// every row is written by the AFTER triggers inside the same transaction as
+// the money write, the same shape `groupEventsDb` follows.
+//
+// RLS decides visibility, not this module: a group row is readable by any
+// connected member of its group (and its author), a loan/transaction row only
+// by its owner. Both app modes are identical here — the change JSON carries no
+// account id in either, so a splits_only ledger row and a full_tracker row
+// produce the same history for the same act.
+
+export class EditHistoryUnavailableError extends Error {
+  readonly code = 'EDIT_HISTORY_UNAVAILABLE';
+  constructor(message: string) {
+    super(message);
+    this.name = 'EditHistoryUnavailableError';
+  }
+}
+
+/**
+ * PGRST205 = "table not found in the schema cache"; 42P01 = undefined_table.
+ * The migration is applied by hand in Supabase Studio (this repo has no
+ * runner), so a client that ships first MUST degrade to "history isn't
+ * available yet" rather than showing a finance app a red error.
+ */
+function editHistoryError(error: { code?: string; message?: string }): Error {
+  const message = error.message ?? '';
+  if (error.code === 'PGRST205' || error.code === '42P01' || message.includes('record_edits')) {
+    return new EditHistoryUnavailableError(
+      'record_edits is not available — apply supabase-migration-p2-edit-history.sql.',
+    );
+  }
+  return error as Error;
+}
+
+function mapRecordEdit(r: Record<string, unknown>): EditHistoryEntry {
+  const changed = (r.changed as Record<string, { old: unknown; new: unknown }>) ?? {};
+  return {
+    id: Number(r.id),
+    tableName: r.table_name as EditHistoryEntry['tableName'],
+    recordId: r.record_id as string,
+    groupId: (r.group_id as string) ?? null,
+    ownerId: (r.owner_id as string) ?? null,
+    actorId: (r.actor_id as string) ?? null,
+    actorKind: (r.actor_kind as EditHistoryEntry['actorKind']) ?? 'user',
+    action: r.action as EditHistoryEntry['action'],
+    changed,
+    createdAt: r.created_at as string,
+  };
+}
+
+// One record's history is bounded by how often a person edits one expense or
+// loan; a group's is not, so both reads are capped. 200 is far past any real
+// dispute and keeps a runaway row count off a phone.
+const EDIT_HISTORY_LIMIT = 200;
+
+export const editHistoryDb = {
+  /** Newest-first history for ONE record. `id` is the record's own id. */
+  async forRecord(table: EditHistoryTable, id: string): Promise<EditHistoryEntry[]> {
+    const { data, error } = await supabase
+      .from('record_edits').select('*')
+      .eq('table_name', table)
+      .eq('record_id', id)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(EDIT_HISTORY_LIMIT);
+    if (error) throw editHistoryError(error);
+    return (data ?? []).map(mapRecordEdit);
+  },
+
+  /**
+   * Newest-first history for a whole group — every expense and settlement in
+   * it. Personal loans/transactions never carry a group_id, so they can never
+   * appear here even for the same user.
+   */
+  async forGroup(groupId: string): Promise<EditHistoryEntry[]> {
+    const { data, error } = await supabase
+      .from('record_edits').select('*')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(EDIT_HISTORY_LIMIT);
+    if (error) throw editHistoryError(error);
+    return (data ?? []).map(mapRecordEdit);
   },
 };

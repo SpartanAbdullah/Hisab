@@ -10,6 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "check:bundle": "node scripts/check-bundle-size.mjs",
     "cap:sync": "npm run build && npx cap sync android",
     "cap:open:android": "npx cap open android",
     "cap:run:android": "npm run build && npx cap run android"
@@ -44,8 +47,10 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@capacitor/cli": "^8.3.4",
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "1.62.1",
     "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^24.12.0",
@@ -55,6 +60,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9.39.4",
+    "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",

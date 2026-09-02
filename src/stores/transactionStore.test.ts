@@ -40,6 +40,16 @@ vi.mock('../lib/supabaseDb', async () => {
   // between "loan balance moved" and "rollback runs" (audit C10).
   let nextTxAddBefore: (() => void) | null = null;
 
+  // Round-trip counters for the bounded-history reads below.
+  const historyCalls = { all: 0, window: 0, range: 0 };
+  const sortedDesc = () =>
+    Array.from(transactions.values()).sort((a, b) => {
+      const ac = String(a.createdAt ?? '');
+      const bc = String(b.createdAt ?? '');
+      if (ac !== bc) return bc.localeCompare(ac);
+      return String(b.id).localeCompare(String(a.id));
+    });
+
   return {
     __seedAccount: (a: { id: string; balance: number; name?: string; type?: string; currency?: string; metadata?: Record<string, string> }) => {
       accounts.set(a.id, {
@@ -63,6 +73,9 @@ vi.mock('../lib/supabaseDb', async () => {
       loans.set(id, { ...cur, remainingAmount: next, status: next === 0 ? 'settled' : 'active' });
     },
     __reset: () => {
+      historyCalls.all = 0;
+      historyCalls.window = 0;
+      historyCalls.range = 0;
       accounts.clear();
       transactions.clear();
       loans.clear();
@@ -102,8 +115,53 @@ vi.mock('../lib/supabaseDb', async () => {
       async delete(id: string) { accounts.delete(id); },
     },
 
+    // ── Bounded history reads (docs/performance.md §7) ────────────────────
+    // The three paged fetchers the store's load path uses. They reproduce the
+    // real DAL's semantics at row granularity (the real one walks in 500-row
+    // pages, which over-fetches the last block; the STOP RULE is identical and
+    // is what these tests are about). `__historyCalls` counts round-trips so a
+    // test can assert that coverage actually prevents a redundant fetch.
+    __seedTransaction: (t: Record<string, unknown>) => transactions.set(t.id as string, t),
+    __historyCalls: () => ({ ...historyCalls }),
+    __resetHistoryCalls: () => { historyCalls.all = 0; historyCalls.window = 0; historyCalls.range = 0; },
+
     transactionsDb: {
       async getAll() { return Array.from(transactions.values()); },
+      async getAllPaged() {
+        historyCalls.all += 1;
+        return { rows: sortedDesc(), pages: 1, truncated: false };
+      },
+      async getWindowPaged({ since, minRows = 0 }: { since: string; minRows?: number }) {
+        historyCalls.window += 1;
+        const all = sortedDesc();
+        const rows: Record<string, unknown>[] = [];
+        for (const row of all) {
+          rows.push(row);
+          // BOTH floors, exactly as `shouldStopWindowPaging` states them.
+          if (rows.length >= minRows && String(row.createdAt) < since) break;
+        }
+        const complete = rows.length === all.length;
+        return {
+          rows,
+          pages: 1,
+          truncated: false,
+          complete,
+          coveredSince: complete ? null : since,
+        };
+      },
+      async getRangePaged(from: string, to?: string | null) {
+        historyCalls.range += 1;
+        return {
+          rows: sortedDesc().filter((r) => {
+            const at = String(r.createdAt);
+            return at >= from && (!to || at <= to);
+          }),
+          pages: 1,
+          truncated: false,
+        };
+      },
+      async getUpdatedSince() { return []; },
+      async getDeletedSince() { return []; },
       async get(id: string) { return transactions.get(id) ?? null; },
       async add(t: Record<string, unknown>) {
         if (nextTxAddThrows) {
@@ -216,6 +274,36 @@ vi.mock('../lib/supabaseDb', async () => {
       async transferAtomic() {
         throw new Error('atomicMoneyDb.transferAtomic must not be called with the flag off');
       },
+      // Same contract for L4 step 2: VITE_ATOMIC_REPAYMENT is unset here, so
+      // every repayment above still exercises the legacy account-CAS +
+      // loan-CAS + EMI + row sequence. Flagged path:
+      // transactionStoreAtomicRepayment.test.ts.
+      async repaymentAtomic() {
+        throw new Error('atomicMoneyDb.repaymentAtomic must not be called with the flag off');
+      },
+      // Same contract for L4 step 3: VITE_ATOMIC_LOAN_CREATE is unset here, so
+      // every loan_given / loan_taken above still exercises the legacy
+      // balance-delta + loans-INSERT + row sequence. Flagged path:
+      // transactionStoreAtomicLoanCreate.test.ts.
+      async loanCreateAtomic() {
+        throw new Error('atomicMoneyDb.loanCreateAtomic must not be called with the flag off');
+      },
+      // Same contract for L4 step 4: VITE_ATOMIC_GOAL and VITE_ATOMIC_CARD_BILL
+      // are unset here, so every goal contribution, every card-bill transfer
+      // and every cash-advance repayment above still exercises its legacy
+      // multi-round-trip sequence. These throwing stubs are what turns "the
+      // legacy path is byte-for-byte unchanged with the flags off" from a hope
+      // into an assertion — the card-bill tests below (paying a bill settles
+      // its advances, the clamped credit, the Available-over-Limit case,
+      // deleting a bill payment re-opens the loans) would fail loudly if the
+      // hoisted plan had accidentally routed one of them through an RPC.
+      // Flagged path: transactionStoreAtomicGoalCard.test.ts.
+      async goalContributeAtomic() {
+        throw new Error('atomicMoneyDb.goalContributeAtomic must not be called with the flag off');
+      },
+      async payCardBillAtomic() {
+        throw new Error('atomicMoneyDb.payCardBillAtomic must not be called with the flag off');
+      },
     },
   };
 });
@@ -229,6 +317,7 @@ import { useEmiStore } from './emiStore';
 import { useAppModeStore } from './appModeStore';
 import { useActivityStore } from './activityStore';
 import { useInvestmentStore } from './investmentStore';
+import { emptyCoverage } from '../lib/historyWindow';
 
 // Loose-typed accessors on the mock module — these are added by vi.mock above
 // but TypeScript doesn't know about them.
@@ -238,12 +327,20 @@ const failNextTxAdd = (mockDb as unknown as { __failNextTxAdd: (err: Error, befo
 const resetDb = (mockDb as unknown as { __reset: () => void }).__reset;
 const remoteLoanDelta = (mockDb as unknown as { __remoteLoanDelta: (id: string, delta: number) => void }).__remoteLoanDelta;
 const remoteLoan = (mockDb as unknown as { __getLoan: (id: string) => Record<string, unknown> | undefined }).__getLoan;
+const seedTransaction = (mockDb as unknown as { __seedTransaction: (t: Record<string, unknown>) => void }).__seedTransaction;
+const historyCalls = (mockDb as unknown as { __historyCalls: () => { all: number; window: number; range: number } }).__historyCalls;
+const resetHistoryCalls = (mockDb as unknown as { __resetHistoryCalls: () => void }).__resetHistoryCalls;
 
 beforeEach(async () => {
   resetDb();
   // Reset every store touched by processTransaction.
   useAccountStore.setState({ accounts: [], loading: false });
-  useTransactionStore.setState({ transactions: [], loading: false });
+  useTransactionStore.setState({
+    transactions: [],
+    loading: false,
+    historyCoverage: emptyCoverage(),
+    historyLoading: false,
+  });
   useLoanStore.setState({ loans: [], loading: false });
   useGoalStore.setState({ goals: [], loading: false });
   useEmiStore.setState({ schedules: [], loading: false });
@@ -1073,3 +1170,284 @@ describe('processTransaction — investments', () => {
     await expect(useInvestmentStore.getState().deleteTrade(buyTrade!.id)).rejects.toThrow(/delete the newer sell/i);
   });
 });
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Bounded history load (docs/performance.md Â§7)
+//
+// `loadTransactions()` used to be a keyset walk of the user's ENTIRE
+// transactions table, on every boot, every money write and every realtime
+// nudge. It now fetches a window and publishes what that window PROVES, so a
+// consumer that needs the whole history has to ask for it.
+//
+// These run against the same in-memory DAL as everything above. The Dexie
+// mirror is unavailable under Node, which is itself worth exercising: the
+// store must still end up holding the rows the server returned.
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+/** A bare server row, planted directly (never through processTransaction). */
+function historyRow(id: string, createdAt: string, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    type: 'expense',
+    amount: 10,
+    currency: 'AED',
+    sourceAccountId: 'cash-1',
+    destinationAccountId: null,
+    createdAt,
+    updatedAt: createdAt,
+    ...extra,
+  };
+}
+
+const MONTHS_AGO = (n: number) => {
+  const d = new Date();
+  d.setUTCMonth(d.getUTCMonth() - n);
+  return d.toISOString();
+};
+
+/**
+ * 1200 rows inside the window + `ancient` rows well outside it. The count is
+ * deliberate: it clears HISTORY_MIN_ROWS (1000), so the row floor stops
+ * mattering and the DATE floor is what bounds the fetch.
+ */
+function seedHeavyHistory(ancient: number, rowExtra: Record<string, unknown> = {}) {
+  for (let i = 0; i < 1200; i += 1) {
+    // Spread across the last ~6 months, comfortably inside the 12-month window.
+    const at = new Date(Date.now() - i * 4 * 60 * 60 * 1000).toISOString();
+    seedTransaction(historyRow(`recent-${String(i).padStart(4, '0')}`, at, rowExtra));
+  }
+  for (let i = 0; i < ancient; i += 1) {
+    seedTransaction(historyRow(`ancient-${i}`, MONTHS_AGO(30 + i * 6), rowExtra));
+  }
+}
+
+describe('loadTransactions â€” the bounded default', () => {
+  it('a heavy user gets the window, not the whole table, and coverage says so', async () => {
+    seedHeavyHistory(5);
+
+    await useTransactionStore.getState().loadTransactions();
+
+    const state = useTransactionStore.getState();
+    // Everything inside the window, plus the one row the pager had to read to
+    // learn it was past the date floor. NOT the four remaining ancient rows.
+    expect(state.transactions.length).toBeGreaterThanOrEqual(1200);
+    expect(state.transactions.length).toBeLessThan(1205);
+    expect(state.historyCoverage.complete).toBe(false);
+    expect(state.historyCoverage.since).toBeTruthy();
+    expect(historyCalls().window).toBe(1);
+    expect(historyCalls().all).toBe(0);
+  });
+
+  it('a sparse user gets their WHOLE history and coverage comes back complete', async () => {
+    // The row floor reaches past the date floor: three lifetime entries, one of
+    // them five years old, all fetched. This is the common case, and it is why
+    // the bound is not a regression for most users.
+    seedTransaction(historyRow('t-new', new Date().toISOString()));
+    seedTransaction(historyRow('t-mid', MONTHS_AGO(8)));
+    seedTransaction(historyRow('t-old', MONTHS_AGO(60)));
+
+    await useTransactionStore.getState().loadTransactions();
+
+    const state = useTransactionStore.getState();
+    expect(state.transactions.map((t) => t.id).sort()).toEqual(['t-mid', 't-new', 't-old']);
+    expect(state.historyCoverage).toEqual({ since: null, complete: true });
+  });
+
+  it('an explicit `since` widens the fetch for that call', async () => {
+    seedHeavyHistory(5);
+
+    await useTransactionStore.getState().loadTransactions({ since: MONTHS_AGO(120) });
+
+    const state = useTransactionStore.getState();
+    // Reaching past every ancient row means the walk hit the end of the table.
+    expect(state.transactions).toHaveLength(1205);
+    expect(state.historyCoverage.complete).toBe(true);
+  });
+
+  it('never narrows an established floor â€” a reload after "show full history" stays full', async () => {
+    seedHeavyHistory(5);
+    await useTransactionStore.getState().ensureTransactionHistory({ all: true });
+    expect(useTransactionStore.getState().historyCoverage.complete).toBe(true);
+
+    resetHistoryCalls();
+    // The reload a money write or a realtime nudge triggers.
+    await useTransactionStore.getState().loadTransactions();
+
+    const state = useTransactionStore.getState();
+    expect(state.historyCoverage.complete).toBe(true);
+    expect(state.transactions).toHaveLength(1205);
+    // It took the ALL path, not the window path â€” the user is not silently
+    // demoted back to 12 months by a background refresh.
+    expect(historyCalls().all).toBe(1);
+    expect(historyCalls().window).toBe(0);
+  });
+
+  it('reset() drops the coverage claim along with the rows', async () => {
+    seedTransaction(historyRow('t-new', new Date().toISOString()));
+    await useTransactionStore.getState().loadTransactions();
+    expect(useTransactionStore.getState().historyCoverage.complete).toBe(true);
+
+    useTransactionStore.getState().reset();
+
+    expect(useTransactionStore.getState().historyCoverage).toEqual({ since: null, complete: false });
+    expect(useTransactionStore.getState().transactions).toHaveLength(0);
+  });
+});
+
+describe('ensureTransactionHistory', () => {
+  it('merges older rows in WITHOUT dropping the newer ones already held', async () => {
+    seedHeavyHistory(5);
+    await useTransactionStore.getState().loadTransactions();
+    const before = useTransactionStore.getState().transactions;
+    const newestBefore = before[0].id;
+
+    await useTransactionStore.getState().ensureTransactionHistory({ all: true });
+
+    const after = useTransactionStore.getState().transactions;
+    expect(after).toHaveLength(1205);
+    // Every ancient row arrived...
+    for (let i = 0; i < 5; i += 1) {
+      expect(after.some((t) => t.id === `ancient-${i}`)).toBe(true);
+    }
+    // ...and nothing that was already on screen was replaced away.
+    expect(after[0].id).toBe(newestBefore);
+    for (const row of before) {
+      expect(after.some((t) => t.id === row.id)).toBe(true);
+    }
+    expect(useTransactionStore.getState().historyCoverage).toEqual({ since: null, complete: true });
+  });
+
+  it('is a no-op once coverage already answers the request â€” no second round-trip', async () => {
+    seedHeavyHistory(5);
+    await useTransactionStore.getState().ensureTransactionHistory({ all: true });
+    resetHistoryCalls();
+
+    await useTransactionStore.getState().ensureTransactionHistory({ all: true });
+    await useTransactionStore.getState().ensureTransactionHistory({ since: MONTHS_AGO(120) });
+
+    expect(historyCalls()).toEqual({ all: 0, window: 0, range: 0 });
+  });
+
+  it('a `{ since }` request fetches only the GAP below the current floor', async () => {
+    seedHeavyHistory(5);
+    await useTransactionStore.getState().loadTransactions();
+    resetHistoryCalls();
+    const wanted = MONTHS_AGO(37);
+
+    await useTransactionStore.getState().ensureTransactionHistory({ since: wanted });
+
+    // The range fetcher, not the whole-table one.
+    expect(historyCalls().range).toBe(1);
+    expect(historyCalls().all).toBe(0);
+    const state = useTransactionStore.getState();
+    // ancient-0 (30 months) and ancient-1 (36 months) are inside the request;
+    // ancient-2 (42 months) is not and must NOT have been dragged in.
+    expect(state.transactions.some((t) => t.id === 'ancient-0')).toBe(true);
+    expect(state.transactions.some((t) => t.id === 'ancient-1')).toBe(true);
+    expect(state.transactions.some((t) => t.id === 'ancient-2')).toBe(false);
+    // The floor widened to exactly what was asked for, and nobody claimed
+    // completeness on the strength of it.
+    expect(state.historyCoverage.complete).toBe(false);
+    expect(state.historyCoverage.since).toBe(wanted);
+
+    // A later, narrower request is now answered from coverage alone.
+    resetHistoryCalls();
+    await useTransactionStore.getState().ensureTransactionHistory({ since: MONTHS_AGO(2) });
+    expect(historyCalls()).toEqual({ all: 0, window: 0, range: 0 });
+  });
+
+  it('concurrent callers share ONE walk', async () => {
+    seedHeavyHistory(5);
+    await useTransactionStore.getState().loadTransactions();
+    resetHistoryCalls();
+
+    // Home, a statement sheet and the person backfill all mounting at once.
+    await Promise.all([
+      useTransactionStore.getState().ensureTransactionHistory({ all: true }),
+      useTransactionStore.getState().ensureTransactionHistory({ all: true }),
+      useTransactionStore.getState().ensureTransactionHistory({ all: true }),
+    ]);
+
+    expect(historyCalls().all).toBe(1);
+    expect(useTransactionStore.getState().historyCoverage.complete).toBe(true);
+  });
+
+  it('a locally-written row survives an older-history merge', async () => {
+    // The row exists only in the store (mid-mutation); the fetch cannot know
+    // about it. Merging must not delete it.
+    seedHeavyHistory(2);
+    await useTransactionStore.getState().loadTransactions();
+    useTransactionStore.setState((s) => ({
+      transactions: [
+        historyRow('local-only', new Date().toISOString()) as never,
+        ...s.transactions,
+      ],
+    }));
+
+    await useTransactionStore.getState().ensureTransactionHistory({ all: true });
+
+    expect(useTransactionStore.getState().transactions.some((t) => t.id === 'local-only')).toBe(true);
+  });
+});
+
+describe('bounded history â€” both app modes', () => {
+  // A splits_only row has BOTH account ids null. The window is purely
+  // createdAt-based and reads no account id anywhere, so the two modes must
+  // produce identical results from identical rows.
+  const runBoth = async (mode: 'full_tracker' | 'splits_only') => {
+    resetDb();
+    useTransactionStore.setState({
+      transactions: [],
+      loading: false,
+      historyCoverage: emptyCoverage(),
+      historyLoading: false,
+    });
+    useAppModeStore.setState({ mode });
+    const ledgerFields = mode === 'splits_only'
+      ? { sourceAccountId: null, destinationAccountId: null }
+      : {};
+    seedHeavyHistory(5, ledgerFields);
+
+    await useTransactionStore.getState().loadTransactions();
+    const windowed = useTransactionStore.getState();
+    const windowedCount = windowed.transactions.length;
+    const windowedComplete = windowed.historyCoverage.complete;
+
+    await useTransactionStore.getState().ensureTransactionHistory({ all: true });
+    const full = useTransactionStore.getState();
+
+    return {
+      windowedCount,
+      windowedComplete,
+      fullCount: full.transactions.length,
+      fullComplete: full.historyCoverage.complete,
+      hasAncient: full.transactions.some((t) => t.id === 'ancient-4'),
+    };
+  };
+
+  it('windows and merges identically in full_tracker and splits_only', async () => {
+    const tracked = await runBoth('full_tracker');
+    const ledger = await runBoth('splits_only');
+    expect(ledger).toEqual(tracked);
+    expect(ledger.fullCount).toBe(1205);
+    expect(ledger.fullComplete).toBe(true);
+    expect(ledger.hasAncient).toBe(true);
+  });
+
+  it('a ledger-only row with BOTH account ids null is windowed by date, never filtered out', async () => {
+    useAppModeStore.setState({ mode: 'splits_only' });
+    seedTransaction(historyRow('ledger-recent', new Date().toISOString(), {
+      type: 'repayment', sourceAccountId: null, destinationAccountId: null,
+    }));
+    seedTransaction(historyRow('ledger-ancient', MONTHS_AGO(40), {
+      type: 'repayment', sourceAccountId: null, destinationAccountId: null,
+    }));
+
+    await useTransactionStore.getState().loadTransactions();
+
+    const rows = useTransactionStore.getState().transactions;
+    expect(rows.map((t) => t.id).sort()).toEqual(['ledger-ancient', 'ledger-recent']);
+    expect(rows.every((t) => t.sourceAccountId === null && t.destinationAccountId === null)).toBe(true);
+  });
+});
+

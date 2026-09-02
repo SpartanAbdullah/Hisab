@@ -6,8 +6,34 @@ import {
   // L4 pilot — the atomic-transfer RPC gateway (flag-gated, see
   // ATOMIC_TRANSFER_ENABLED below) and the account refetch its retry needs.
   accountsDb, atomicMoneyDb, type AtomicTransferResult,
+  // L4 step 2 — the atomic-repayment RPC result type (ATOMIC_REPAYMENT_ENABLED).
+  type AtomicRepaymentResult,
+  // L4 step 3 — the atomic loan-creation RPC result type
+  // (ATOMIC_LOAN_CREATE_ENABLED).
+  type AtomicLoanCreateResult,
+  // L4 step 4 — the goal-contribution and card-bill RPC result types
+  // (ATOMIC_GOAL_ENABLED / ATOMIC_CARD_BILL_ENABLED).
+  type AtomicGoalContributionResult, type AtomicCardBillResult,
 } from '../lib/supabaseDb';
-import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib/mirrorCache';
+import {
+  clearMirrorCoverage, loadCacheFirst, markMirrorStale, mirrorBulkPut, mirrorDelete, mirrorPut,
+  readMirrorCoverageSeed, writeMirrorCoverage,
+} from '../lib/mirrorCache';
+// The bounded-history contract: window arithmetic, the coverage lattice and the
+// non-destructive merge. Pure + unit-tested (src/lib/historyWindow.test.ts).
+import {
+  HISTORY_MIN_ROWS,
+  coverageSatisfies,
+  emptyCoverage,
+  fullCoverage,
+  historyGap,
+  mergeCoverage,
+  mergeTransactionRows,
+  oldestCreatedAt,
+  planHistoryLoad,
+  type HistoryCoverage,
+  type HistoryRequest,
+} from '../lib/historyWindow';
 import { addMonths, format } from 'date-fns';
 import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType, InvestmentTrade } from '../db';
 import { useAccountStore } from './accountStore';
@@ -21,7 +47,6 @@ import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 import { tStatic } from '../lib/i18n';
 import { statusSyncToPaid, uncoveredToPaidIds } from '../lib/emiCoverage';
 import { clampCardCredit } from '../lib/cardCredit';
-import { allocateBillPayment } from '../lib/cardStatement';
 import { daysUntilDayOfMonth } from '../lib/inboxInfo';
 import { localIso } from '../lib/thisWeek';
 import { assertLinkedLoanDeleteAllowed } from '../lib/linkedLoanGuards';
@@ -30,7 +55,24 @@ import { rateIsSane } from '../lib/conversionMath';
 import { MAX_MONEY_MAGNITUDE, checkMoneyAmount, type MoneyAmountProblem } from '../lib/currencyValidation';
 import { MutationScope, runSafeMutation } from '../lib/mutationSafety';
 import { reportError } from '../lib/errorReporter';
-import { applyLoanRemainingDelta, round2 } from '../lib/loanRemainingDelta';
+import { applyLoanRemainingDelta, loanRemainingConflictError, round2 } from '../lib/loanRemainingDelta';
+import {
+  canRetryRepayment, planRepaymentEmiMarks, repaymentRetryFloor,
+  type RepaymentEmiPlan,
+} from '../lib/repaymentAtomicPlan';
+import {
+  planLoanCreateLegs, emiPlanProblem, toEmiPayload,
+  type LoanDirection, type LoanEmiPlanPayloadRow,
+} from '../lib/loanCreateAtomicPlan';
+// L4 step 3 addendum — the instalment plan the pages compute BEFORE the RPC so
+// the schedule rides into the same transaction as the loan (src/lib/emiPlan.ts).
+import type { EmiPlanRow } from '../lib/emiPlan';
+// L4 step 4 — the pure halves of the goal and credit-card engines.
+import { planGoalContributionLegs } from '../lib/goalContributionPlan';
+import {
+  cardBillPlanExceedsPayment, planCardBillPrincipal, toCardBillPayload,
+  type CardBillPlanLine,
+} from '../lib/cardBillAtomicPlan';
 
 interface BaseTransactionInput {
   amount: number;
@@ -56,7 +98,19 @@ interface TransferInput extends BaseTransactionInput {
   conversionRate?: number;
 }
 
-interface LoanGivenInput extends BaseTransactionInput {
+/**
+ * The instalment schedule to create WITH the loan, planned by the page with
+ * `planEmiRows` (src/lib/emiPlan.ts).
+ *
+ * Honoured ONLY on the flagged atomic path, and only when the entry actually
+ * creates a loan (no `loanId`). With the flag off it is ignored entirely and
+ * the page keeps calling `emiStore.generateSchedule` afterwards, exactly as it
+ * always has — see `loanScheduleAlreadyCreated`, which is how a page knows
+ * which of the two happened.
+ */
+type LoanEmiPlanInput = { emiPlan?: EmiPlanRow[] | null };
+
+interface LoanGivenInput extends BaseTransactionInput, LoanEmiPlanInput {
   type: 'loan_given';
   sourceAccountId: string;
   personName: string;
@@ -64,7 +118,7 @@ interface LoanGivenInput extends BaseTransactionInput {
   loanId?: string;
 }
 
-interface LoanTakenInput extends BaseTransactionInput {
+interface LoanTakenInput extends BaseTransactionInput, LoanEmiPlanInput {
   type: 'loan_taken';
   destinationAccountId: string;
   personName: string;
@@ -159,7 +213,34 @@ export type TransactionInput =
 interface TransactionState {
   transactions: Transaction[];
   loading: boolean;
-  loadTransactions: () => Promise<void>;
+  /**
+   * What the store PROVES it holds — see `src/lib/historyWindow.ts` for the
+   * full contract. Screens read it to be honest about a partial view; screens
+   * that must be complete call `ensureTransactionHistory` instead of guessing.
+   */
+  historyCoverage: HistoryCoverage;
+  /** An `ensureTransactionHistory` fetch is in flight (older rows arriving). */
+  historyLoading: boolean;
+  /**
+   * The default, BOUNDED load: the last 12 months or the newest 1000 rows,
+   * whichever reaches further back (`historyWindow.ts` owns both numbers).
+   *
+   * `since` widens that floor for one call. The floor never narrows: a reload
+   * after the user asked for full history still fetches full history.
+   */
+  loadTransactions: (options?: { since?: string | null }) => Promise<void>;
+  /**
+   * Page older rows in on demand and merge them into the store AND the mirror,
+   * deleting nothing. Resolves immediately when coverage already answers the
+   * request, so it is safe to call on every render path.
+   *
+   * `{ all: true }` — the whole history. Anything that must not compute on a
+   * partial set (statements, the person backfill, the analytics fallback) uses
+   * this and awaits it.
+   * `{ since }` — everything from an instant onward. Cheaper; used when the
+   * caller knows its own horizon (a date filter, the oldest open loan).
+   */
+  ensureTransactionHistory: (request?: HistoryRequest) => Promise<void>;
   processTransaction: (input: TransactionInput) => Promise<Transaction>;
   updateTransaction: (
     id: string,
@@ -189,7 +270,52 @@ interface TransactionState {
 const INITIAL_TRANSACTION_STATE = {
   transactions: [] as Transaction[],
   loading: false,
+  historyCoverage: emptyCoverage(),
+  historyLoading: false,
 };
+
+// ── History coverage plumbing (audit P2 M2 / docs/performance.md §7) ────────
+// One in-flight `ensureTransactionHistory` per shape, shared by every caller.
+// Three screens mounting at once (Home + a statement sheet + the backfill) must
+// cost one keyset walk, not three.
+const inFlightHistory = new Map<string, Promise<void>>();
+
+function historyRequestKey(request: HistoryRequest): string {
+  return request.all ? 'all' : `since:${request.since ?? ''}`;
+}
+
+/** Merge fetched rows into the store without dropping anything it already had. */
+function mergeHistoryIntoStore(rows: Transaction[]) {
+  if (rows.length === 0) return;
+  useTransactionStore.setState((s) => ({
+    transactions: mergeTransactionRows(s.transactions, rows),
+  }));
+}
+
+/** The `mirrorSync` key this store's rows and coverage floor live under. */
+const TRANSACTIONS_MIRROR_KEY = 'transactions';
+
+/**
+ * Widen the store's claim by what a fetch just proved, and persist the result
+ * so the next boot does not start from nothing (docs/performance.md §7.1).
+ *
+ * **Call this only after the fetched rows are in the mirror.** A floor written
+ * before the merge lands would survive a merge that then failed — a claim about
+ * rows that are not there, which is the one failure mode persisting a floor
+ * must never introduce.
+ *
+ * The write REPLACES what is stored (see `writeMirrorCoverage`) rather than
+ * widening it, so a session that started without trusting a stale floor cannot
+ * resurrect it. It is skipped when nothing changed — a no-op load leaves the
+ * stored floor exactly as it was.
+ */
+function adoptHistoryCoverage(earned: HistoryCoverage) {
+  const before = useTransactionStore.getState().historyCoverage;
+  const next = mergeCoverage(before, earned);
+  if (next.since === before.since && next.complete === before.complete) return;
+  useTransactionStore.setState({ historyCoverage: next });
+  void writeMirrorCoverage(TRANSACTIONS_MIRROR_KEY, next);
+}
 
 type BalanceCheckedTransactionType = Extract<TransactionInput['type'], 'expense' | 'loan_given' | 'loan_taken' | 'repayment'>;
 type BalanceCheckedAccount = { name: string; balance: number; type: string; metadata: Record<string, string> };
@@ -552,6 +678,1042 @@ async function trackedApplyRepayment(scope: MutationScope, loanId: string, amoun
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVER-SIDE MONEY ENGINE — L4 step 2: the full-tracker loan repayment
+//
+// audit docs/audit-2026-09/07-mobile-first.md MF-01, 12-qa-review.md F-2/C-1
+// and O-1/F-4, 00-executive-summary.md M1/L4.
+//
+// This is the branch the pilot's order table (docs/server-side-money-engine.md
+// §6) rates highest-risk, because its legs span THREE tables and TWO different
+// optimistic locks, each its own round-trip:
+//     apply_account_balance_delta → apply_loan_remaining_delta →
+//     N × emi_schedules status → transactions INSERT
+// A drop after the first one leaves a moved balance, an unchanged loan and NO
+// record of either. `record_loan_repayment`
+// (supabase-migration-p3-atomic-repayment.sql) does all four in one Postgres
+// transaction.
+//
+// OFF BY DEFAULT. The RPC does not exist until the user applies the migration,
+// so the flag stays false and the legacy path runs byte-for-byte unchanged.
+//
+// NOT COVERED, deliberately: a repayment that also credits a cash-advance
+// CREDIT CARD is a second account leg plus the clampCardCredit business rule,
+// which this one-account RPC cannot express. The branch below keeps that case
+// on the legacy path — see the artifact table in the migration header.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ATOMIC_REPAYMENT_ENABLED = import.meta.env.VITE_ATOMIC_REPAYMENT === 'true';
+
+interface AtomicRepaymentLeg {
+  transactionId: string;
+  loanId: string;
+  /** The single account: destination for a 'given' loan, source for 'taken'. */
+  accountId: string;
+  /** Loan-currency amount — what lands on the row. */
+  amount: number;
+  /** Account-currency amount: amount × rate (given) or amount ÷ rate (taken). */
+  accountAmount: number;
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  createdAt: string;
+  /** The loan's remaining BEFORE this repayment — the CAS expectation. */
+  remainingBefore: number;
+  /** The loan's status BEFORE, so the settled activity fires exactly once. */
+  statusBefore: Loan['status'];
+  personName: string;
+  loanTotalAmount: number;
+  targetedEmiId?: string;
+  /**
+   * True only where the client's own checkBalanceForTransaction is a no-op —
+   * splits_only mode (isSimpleModeBalanceBypassAllowed). Full tracker: false.
+   */
+  allowNegative: boolean;
+}
+
+/** Adopt a loan figure the SERVER computed, and mirror it. */
+function adoptEmiMarks(marked: string[]): void {
+  if (marked.length === 0) return;
+  const ids = new Set(marked);
+  useEmiStore.setState((s) => ({
+    schedules: s.schedules.map((e) => (ids.has(e.id) ? { ...e, status: 'paid' as EmiStatus } : e)),
+  }));
+}
+
+/**
+ * Call the atomic-repayment RPC, adopt the server's figures, and register the
+ * inverse for the rest of the scope.
+ *
+ * The retry ladder is the UNION of the two the legacy path already ran, and
+ * keeps both of their rules:
+ *   · BALANCE_CONFLICT       → refetch the accounts once and retry
+ *                              (accountStore.updateBalance's ladder).
+ *   · LOAN_REMAINING_CONFLICT→ refetch the loan once and retry, but ONLY when
+ *                              the fresh remaining still covers the payment
+ *                              (loanRemainingDelta.ts's requireRemainingAtLeast
+ *                              floor). Retrying past that floor is how a 500
+ *                              payment ends up reducing a 200 loan by 200 while
+ *                              the row still says 500 — audit F-2 exactly.
+ * A conflict means NOTHING moved, so there is nothing to compensate.
+ */
+async function atomicRepayment(scope: MutationScope, leg: AtomicRepaymentLeg): Promise<AtomicRepaymentResult> {
+  const floor = repaymentRetryFloor(leg.amount, leg.remainingBefore);
+
+  const call = async (expectedRemaining: number): Promise<{ result: AtomicRepaymentResult; planned: RepaymentEmiPlan; before: { id: string; status: EmiStatus }[] }> => {
+    const account = useAccountStore.getState().getAccount(leg.accountId);
+    if (!account) throw new Error('Account not found');
+    const schedules = useEmiStore.getState().schedules.filter((e) => e.loanId === leg.loanId);
+    // Recomputed on every attempt: after a conflict refetch the loan's
+    // remaining has changed, so the coverage prefix has too.
+    const planned = planRepaymentEmiMarks({
+      schedules,
+      loanTotalAmount: leg.loanTotalAmount,
+      remainingBefore: expectedRemaining,
+      amount: leg.amount,
+      targetedEmiId: leg.targetedEmiId,
+    });
+    const beforeStatuses = schedules
+      .filter((e) => planned.allIds.includes(e.id))
+      .map((e) => ({ id: e.id, status: e.status }));
+    const result = await atomicMoneyDb.repaymentAtomic({
+      transactionId: leg.transactionId,
+      loanId: leg.loanId,
+      accountId: leg.accountId,
+      amount: leg.amount,
+      accountAmount: leg.accountAmount,
+      conversionRate: leg.conversionRate,
+      note: leg.note,
+      category: leg.category,
+      createdAt: leg.createdAt,
+      expectedAccountBalance: account.balance,
+      expectedLoanRemaining: expectedRemaining,
+      emiScheduleIds: planned.allIds,
+      allowNegative: leg.allowNegative,
+    });
+    return { result, planned, before: beforeStatuses };
+  };
+
+  const deps = loanDeltaDeps(leg.loanId);
+  let attempt: Awaited<ReturnType<typeof call>>;
+  try {
+    attempt = await call(leg.remainingBefore);
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    if (code !== 'BALANCE_CONFLICT' && code !== 'LOAN_REMAINING_CONFLICT') {
+      reportError(err, {
+        feature: 'transactionStore.atomicRepayment.rpcFailed',
+        extra: { transactionId: leg.transactionId, loanId: leg.loanId },
+      });
+      throw err;
+    }
+    // Learn the truth on BOTH sides — either lock may have been the stale one,
+    // and a second attempt has to carry two fresh expectations.
+    const fresh = await accountsDb.getAll();
+    useAccountStore.setState({ accounts: fresh });
+    // refetchRemaining also syncs local state and drops the loan when it is
+    // gone (loanStore.loanDeltaDeps).
+    const freshRemaining = await deps.refetchRemaining();
+    if (freshRemaining === null || freshRemaining === undefined) {
+      throw loanRemainingConflictError(deps.missingMessage);
+    }
+    if (!canRetryRepayment(freshRemaining, floor)) {
+      throw loanRemainingConflictError(deps.conflictMessage);
+    }
+    attempt = await call(round2(freshRemaining));
+  }
+
+  const { result } = attempt;
+
+  // Adopt SERVER truth everywhere. Never recompute it locally.
+  await setKnownBalance(leg.accountId, result.accountBalance);
+  syncLocalRemaining(leg.loanId, result.loanRemaining);
+  adoptEmiMarks(result.emiMarked);
+
+  const markedSet = new Set(result.emiMarked);
+  const restore = attempt.before.filter((e) => markedSet.has(e.id));
+
+  scope.register(async () => {
+    // Reverse each leg the way the legacy path reverses it: the account
+    // through its CAS (delta-based, so a concurrent mutation commutes), the
+    // loan through apply_loan_remaining_delta with the amount that ACTUALLY
+    // moved (`loanApplied`, not the requested amount — they differ when the
+    // server clamp bit), the EMI rows back to their exact prior status
+    // (including 'late'), and the row the server wrote away.
+    if (result.accountDelta !== 0) {
+      await useAccountStore.getState().updateBalance(leg.accountId, -result.accountDelta);
+    }
+    if (result.loanApplied !== 0) {
+      const reversed = await applyLoanRemainingDelta(
+        { expectedRemaining: result.loanRemaining, delta: result.loanApplied },
+        deps,
+      );
+      syncLocalRemaining(leg.loanId, reversed.newRemaining);
+    }
+    if (restore.length > 0) {
+      await Promise.all(restore.map((e) => emiSchedulesDb.update(e.id, { status: e.status })));
+      useEmiStore.setState((s) => ({
+        schedules: s.schedules.map((e) => {
+          const prev = restore.find((r) => r.id === e.id);
+          return prev ? { ...e, status: prev.status } : e;
+        }),
+      }));
+    }
+    // The tail's trackedAddTransaction registers its own delete, which runs
+    // first under LIFO; deleting twice is a no-op.
+    await transactionsDb.delete(leg.transactionId);
+    await mirrorDelete(db.transactions, leg.transactionId);
+    markMirrorStale('transactions');
+    useTransactionStore.setState((s) => ({
+      transactions: s.transactions.filter((t) => t.id !== leg.transactionId),
+    }));
+  });
+
+  // ── Post-commit, best-effort. Byte-for-byte the entries the legacy helpers
+  //    write, and in the same order: the targeted instalment first (its own
+  //    'emi_paid' from trackedMarkEmiPaid), then the covered set (a second
+  //    'emi_paid' from trackedMarkCoveredEmisPaid, which never includes the
+  //    targeted one because it was already flipped), then 'loan_settled'.
+  //    An activity failure must NEVER roll back money that has moved.
+  const schedulesNow = useEmiStore.getState().schedules;
+  const numberOf = (id: string) => schedulesNow.find((e) => e.id === id)?.installmentNumber;
+  const targetedMarked = attempt.planned.targetedId && markedSet.has(attempt.planned.targetedId)
+    ? attempt.planned.targetedId
+    : null;
+  const coveredMarked = attempt.planned.coveredIds.filter((id) => markedSet.has(id));
+
+  if (targetedMarked) {
+    try {
+      await useActivityStore.getState().logActivity(
+        'emi_paid', `EMI #${numberOf(targetedMarked)} paid`, leg.loanId, 'loan',
+      );
+    } catch (err) {
+      reportError(err, { feature: 'transactionStore.atomicRepayment.emiActivity', extra: { loanId: leg.loanId } });
+    }
+  }
+  if (coveredMarked.length > 0) {
+    try {
+      await useActivityStore.getState().logActivity(
+        'emi_paid',
+        coveredMarked.length === 1
+          ? `EMI #${numberOf(coveredMarked[0])} paid`
+          : `${coveredMarked.length} EMIs marked paid after repayment`,
+        leg.loanId,
+        'loan',
+      );
+    } catch (err) {
+      reportError(err, { feature: 'transactionStore.atomicRepayment.emiActivity', extra: { loanId: leg.loanId } });
+    }
+  }
+  if (result.loanRemaining === 0 && leg.statusBefore !== 'settled') {
+    try {
+      await useActivityStore.getState().logActivity(
+        'loan_settled', `Loan with ${leg.personName} fully settled`, leg.loanId, 'loan',
+      );
+    } catch (err) {
+      reportError(err, { feature: 'transactionStore.atomicRepayment.settledActivity', extra: { loanId: leg.loanId } });
+    }
+  }
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVER-SIDE MONEY ENGINE — L4 step 3: creating a loan
+//
+// audit docs/audit-2026-09/07-mobile-first.md MF-01, 12-qa-review.md O-1/F-4,
+// 02-repository-architecture.md H-3/H-4, 00-executive-summary.md M1/L4.
+//
+// This is branch #4 in the pilot's order table
+// (docs/server-side-money-engine.md §6), and the first that brings a new
+// OBLIGATION into existence rather than only moving money:
+//     loan_given  → balance CAS → loans INSERT → transactions INSERT
+//     loan_taken  → [card CAS] → balance CAS → loans INSERT → transactions INSERT
+// A drop after the first leg leaves a wallet lighter with no loan saying who
+// owes it and no row saying it ever happened — and, for a cash advance, a card
+// charged for money that arrived nowhere. `create_loan_with_leg`
+// (supabase-migration-p3-atomic-loan-create.sql) does all of it in one
+// Postgres transaction.
+//
+// OFF BY DEFAULT. The RPC does not exist until the user applies the migration,
+// so the flag stays false and the legacy path runs byte-for-byte unchanged.
+//
+// THE EMI SCHEDULE — now covered (step 3 addendum). It used to be written by
+// the PAGES, after processTransaction resolved and outside the MutationScope
+// entirely, so a drop between the two left a funded loan with a missing
+// schedule and nothing rolled back (migration query V7 counts the existing
+// orphans). The pages now PLAN the rows first (`planEmiRows`, src/lib/emiPlan.ts)
+// and pass them in as `input.emiPlan`; this branch forwards them as `p_emi` and
+// the server inserts them in the SAME transaction. The page then skips its
+// post-commit `generateSchedule` call — it asks `loanScheduleAlreadyCreated`
+// rather than reading the flag, so the two halves can never both fire or both
+// skip. With the flag off nothing here runs and the page's own call is still
+// the only writer. Ledger-only (splits_only) never reaches any of this: it goes
+// through loanStore.createLoan and keeps generating client-side.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ATOMIC_LOAN_CREATE_ENABLED = import.meta.env.VITE_ATOMIC_LOAN_CREATE === 'true';
+
+/**
+ * Did the loan's instalment schedule already land, inside the creation itself?
+ *
+ * The ONE question AddLoanModal / QuickEntry ask before deciding whether to
+ * call `emiStore.generateSchedule`. Deliberately not "is the flag on": it reads
+ * the actual outcome, so a plan that was dropped (an entry attaching to an
+ * existing loan, a server that inserted nothing) still gets its client-side
+ * schedule instead of silently getting none — the failure mode this whole step
+ * exists to kill, reintroduced one level up.
+ *
+ * Always false with the flag off, which is what keeps the legacy path
+ * byte-for-byte.
+ */
+export function loanScheduleAlreadyCreated(loanId: string | null | undefined): boolean {
+  if (!ATOMIC_LOAN_CREATE_ENABLED || !loanId) return false;
+  return useEmiStore.getState().schedules.some((e) => e.loanId === loanId);
+}
+
+interface AtomicLoanCreateLeg {
+  transactionId: string;
+  loanId: string;
+  /** False when the entry attaches to a loan that already exists. */
+  createLoan: boolean;
+  direction: LoanDirection;
+  personName: string;
+  personId: string | null;
+  /** Source for a loan given, destination for one taken. */
+  accountId: string;
+  /** The cash-advance credit card. `loan_taken` only, else null. */
+  cardAccountId: string | null;
+  amount: number;
+  currency: Currency;
+  note: string;
+  category: string;
+  createdAt: string;
+  /** Loan.notes — the visible half only, exactly as trackedCreateLoan stores. */
+  loanNotes: string;
+  /**
+   * The instalments to insert in the same transaction, already validated, or
+   * null. Only ever set when `createLoan` is true — see the branch.
+   */
+  emiRows: EmiPlanRow[] | null;
+  /**
+   * True only where the client's own checkBalanceForTransaction is a no-op —
+   * splits_only mode (isSimpleModeBalanceBypassAllowed). Full tracker: false.
+   */
+  allowNegative: boolean;
+}
+
+/**
+ * The instalment plan, validated and converted to the wire shape — or a throw.
+ *
+ * Validating here as well as in the RPC is not redundancy: on 3G a refusal that
+ * costs a round-trip is a refusal the user waits for, and the message has to be
+ * the same either way. `emiPlanProblem` is the client's copy of the server's
+ * own rules (src/lib/loanCreateAtomicPlan.ts) and the tokens are asserted equal.
+ *
+ * A plan is only ever attached to a loan this call CREATES. Attaching an entry
+ * to a loan that already exists must not smuggle a second schedule onto it, and
+ * the compensation below can only unwind instalments by deleting the whole
+ * loan's schedule — safe for a loan born in this call, destructive for one that
+ * was already there. Dropping the plan is safe because the page then sees
+ * `loanScheduleAlreadyCreated === false` and generates it client-side.
+ */
+function prepareEmiPayload(
+  rows: EmiPlanRow[] | null | undefined,
+  loanAmount: number,
+  createLoan: boolean,
+): { rows: EmiPlanRow[] | null; payload: LoanEmiPlanPayloadRow[] | null } {
+  if (!rows || rows.length === 0 || !createLoan) return { rows: null, payload: null };
+  const problem = emiPlanProblem(rows, loanAmount);
+  if (problem) {
+    const err = new Error(tStatic('err_emi_plan_rejected')) as Error & { code: string };
+    err.code = 'EMI_PLAN_REJECTED';
+    reportError(err, {
+      feature: 'transactionStore.atomicLoanCreate.emiPlanRefusedLocally',
+      extra: { problem, count: rows.length, loanAmount },
+    });
+    throw err;
+  }
+  return { rows, payload: toEmiPayload(rows) };
+}
+
+/**
+ * Call the loan-creation RPC, adopt the server's balances, materialise the loan
+ * locally and register the inverse for the rest of the scope.
+ *
+ * BALANCE_CONFLICT → refetch the accounts once and retry, the same ladder
+ * accountStore.updateBalance already runs against the account CAS. A conflict
+ * means NOTHING was written — no balance moved, no loan exists — so there is
+ * nothing to compensate. Two consecutive conflicts surface to the caller
+ * exactly as they do today.
+ *
+ * The local mirror/store/activity work is byte-for-byte trackedCreateLoan's,
+ * minus the `loansDb.add` the server already did.
+ */
+async function atomicLoanCreate(
+  scope: MutationScope,
+  leg: AtomicLoanCreateLeg,
+): Promise<AtomicLoanCreateResult> {
+  // Validated ONCE, before the first attempt: the plan does not change between
+  // a conflict and its retry (the ids are already minted, and a retry that
+  // re-planned would mint a second set and orphan the first).
+  const { rows: emiRows, payload: emiPayload } = prepareEmiPayload(leg.emiRows, leg.amount, leg.createLoan);
+
+  const call = async (): Promise<AtomicLoanCreateResult> => {
+    const accounts = useAccountStore.getState();
+    const account = accounts.getAccount(leg.accountId);
+    if (!account) throw new Error('Account not found');
+    const card = leg.cardAccountId ? accounts.getAccount(leg.cardAccountId) : null;
+    if (leg.cardAccountId && !card) throw new Error('Source account not found');
+    return atomicMoneyDb.loanCreateAtomic({
+      transactionId: leg.transactionId,
+      loanId: leg.loanId,
+      createLoan: leg.createLoan,
+      direction: leg.direction,
+      personName: leg.personName,
+      personId: leg.personId,
+      accountId: leg.accountId,
+      cardAccountId: leg.cardAccountId,
+      amount: leg.amount,
+      currency: leg.currency,
+      note: leg.note,
+      category: leg.category,
+      createdAt: leg.createdAt,
+      loanNotes: leg.loanNotes,
+      // trackedCreateLoan reads its own clock, separate from the row's.
+      loanCreatedAt: new Date().toISOString(),
+      // The instalments, inserted by the server in THIS transaction. Null when
+      // the user configured no plan, or the flag left the pages generating it.
+      emi: emiPayload,
+      expectedAccountBalance: account.balance,
+      expectedCardBalance: card ? card.balance : null,
+      allowNegative: leg.allowNegative,
+    });
+  };
+
+  let result: AtomicLoanCreateResult;
+  try {
+    result = await call();
+  } catch (err) {
+    if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') {
+      reportError(err, {
+        feature: 'transactionStore.atomicLoanCreate.rpcFailed',
+        extra: { transactionId: leg.transactionId, loanId: leg.loanId },
+      });
+      throw err;
+    }
+    // Another device/tab moved one of these accounts. Learn the truth, retry
+    // once. A conflict means NOTHING was written, so there is nothing to undo.
+    const fresh = await accountsDb.getAll();
+    useAccountStore.setState({ accounts: fresh });
+    result = await call();
+  }
+
+  // Cross-check the server's arithmetic against the client's copy of the same
+  // rule (src/lib/loanCreateAtomicPlan.ts). They are two implementations of one
+  // decision — which account moves which way — and a silent fork between them
+  // would mean the inverse registered below hands money back to the wrong
+  // account, or in the wrong direction. Reported, never thrown: the money has
+  // already committed correctly by the server's own reckoning, and rolling it
+  // back on a disagreement would be the more destructive of the two choices.
+  const expectedLegs = planLoanCreateLegs({
+    direction: leg.direction,
+    amount: leg.amount,
+    accountId: leg.accountId,
+    cardAccountId: leg.cardAccountId,
+  });
+  if (!result.replay
+    && (round2(result.accountDelta) !== expectedLegs.accountDelta
+      || round2(result.cardDelta ?? 0) !== (expectedLegs.cardDelta ?? 0))) {
+    reportError(new Error('ATOMIC_LOAN_CREATE_DELTA_FORK'), {
+      feature: 'transactionStore.atomicLoanCreate.deltaFork',
+      extra: {
+        transactionId: leg.transactionId,
+        serverAccountDelta: result.accountDelta,
+        clientAccountDelta: expectedLegs.accountDelta,
+        serverCardDelta: result.cardDelta,
+        clientCardDelta: expectedLegs.cardDelta,
+      },
+    });
+  }
+
+  // Adopt SERVER truth everywhere. Never recompute it locally.
+  await setKnownBalance(leg.accountId, result.accountBalance);
+  if (leg.cardAccountId && result.cardBalance !== null) {
+    await setKnownBalance(leg.cardAccountId, result.cardBalance);
+  }
+
+  // The loans row is already committed server-side; mirror it locally exactly
+  // as trackedCreateLoan does, and register the same inverse.
+  if (result.loanCreated) {
+    const loan: Loan = {
+      id: result.loanId,
+      personName: leg.personName,
+      personId: leg.personId,
+      type: leg.direction,
+      totalAmount: leg.amount,
+      remainingAmount: leg.amount,
+      currency: leg.currency,
+      status: 'active',
+      notes: leg.loanNotes,
+      createdAt: new Date().toISOString(),
+    };
+    loan.updatedAt = loan.createdAt;
+    await mirrorPut(db.loans, loan);
+    markMirrorStale('loans');
+    useLoanStore.setState((s) => ({ loans: [...s.loans, loan] }));
+  }
+
+  // ── Adopt the instalments the server actually inserted ────────────────────
+  // Driven by result.emiInserted, NOT by the plan we sent: the server is the
+  // only thing that knows which rows exist, and a mirror claiming instalments
+  // Postgres does not have is exactly the desync `reconcileCovered` was built
+  // to clean up after. A replay reports an empty list (the rows are already
+  // there from the original call), so nothing is duplicated on a retry.
+  const adoptedEmis: EmiSchedule[] = [];
+  if (emiRows && result.emiInserted.length > 0) {
+    const byId = new Map(emiRows.map((row) => [row.id, row]));
+    for (const id of result.emiInserted) {
+      const planned = byId.get(id);
+      if (!planned) continue;
+      adoptedEmis.push({
+        id: planned.id,
+        loanId: result.loanId,
+        installmentNumber: planned.installmentNumber,
+        dueDate: planned.dueDate,
+        amount: planned.amount,
+        status: 'upcoming' as EmiStatus,
+      });
+    }
+    if (adoptedEmis.length > 0) {
+      for (const row of adoptedEmis) await mirrorPut(db.emiSchedules, row);
+      markMirrorStale('emiSchedules');
+      useEmiStore.setState((s) => ({ schedules: [...s.schedules, ...adoptedEmis] }));
+    }
+  }
+
+  scope.register(async () => {
+    // Reverse every leg the way the legacy path reverses it: the balances
+    // through the account CAS (delta-based, so a concurrent mutation
+    // commutes), the loan by deletion, and the row the server wrote away.
+    if (result.accountDelta !== 0) {
+      await useAccountStore.getState().updateBalance(leg.accountId, -result.accountDelta);
+    }
+    if (leg.cardAccountId && result.cardDelta) {
+      await useAccountStore.getState().updateBalance(leg.cardAccountId, -result.cardDelta);
+    }
+    if (result.loanCreated) {
+      // The instalments FIRST, and only for a loan this call created — the
+      // schedule points at the loan by foreign key, and `deleteByLoan` is the
+      // only delete emiSchedulesDb exposes. Safe here precisely because a
+      // created loan cannot have carried a pre-existing schedule; a plan is
+      // never attached to a loan that already existed (prepareEmiPayload).
+      if (adoptedEmis.length > 0) {
+        const adoptedIds = new Set(adoptedEmis.map((e) => e.id));
+        await emiSchedulesDb.deleteByLoan(result.loanId);
+        for (const e of adoptedEmis) await mirrorDelete(db.emiSchedules, e.id);
+        markMirrorStale('emiSchedules');
+        useEmiStore.setState((s) => ({ schedules: s.schedules.filter((e) => !adoptedIds.has(e.id)) }));
+      }
+      await loansDb.delete(result.loanId);
+      await mirrorDelete(db.loans, result.loanId);
+      markMirrorStale('loans');
+      useLoanStore.setState((s) => ({ loans: s.loans.filter((l) => l.id !== result.loanId) }));
+    }
+    // The tail's trackedAddTransaction registers its own delete, which runs
+    // first under LIFO; deleting twice is a no-op.
+    await transactionsDb.delete(leg.transactionId);
+    await mirrorDelete(db.transactions, leg.transactionId);
+    markMirrorStale('transactions');
+    useTransactionStore.setState((s) => ({
+      transactions: s.transactions.filter((t) => t.id !== leg.transactionId),
+    }));
+  });
+
+  // Post-commit, best-effort — byte-for-byte trackedCreateLoan's entry. An
+  // activity failure must NEVER roll back money that has moved.
+  if (result.loanCreated) {
+    try {
+      await useActivityStore.getState().logActivity(
+        'loan_created',
+        `Loan ${leg.direction === 'given' ? 'given to' : 'taken from'} ${leg.personName}: ${leg.currency} ${leg.amount}`,
+        result.loanId,
+        'loan',
+      );
+    } catch (err) {
+      reportError(err, {
+        feature: 'transactionStore.atomicLoanCreate.logActivity',
+        extra: { loanId: result.loanId },
+      });
+    }
+  }
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVER-SIDE MONEY ENGINE — L4 step 4a: the goal contribution
+//
+// audit docs/audit-2026-09/07-mobile-first.md MF-01, 12-qa-review.md O-1/F-4,
+// 00-executive-summary.md M1/L4. Branch #3 in the pilot's order table
+// (docs/server-side-money-engine.md §6).
+//
+// Up to FOUR legs today:
+//     account CAS → goals.saved_amount (an ABSOLUTE write) →
+//     stored-in account CAS → transactions INSERT
+// A drop after the first leaves a lighter wallet, an ungrown goal and no row.
+// And leg 2 is the one the order table singles out: its compensation restores
+// the exact prior savedAmount (trackedAddContribution below), so a rollback on
+// THIS device silently erases a contribution made on another.
+// `contribute_to_goal` (supabase-migration-p3-atomic-goal-and-card.sql) does
+// all four in one Postgres transaction, behind the first compare-and-swap
+// goals.saved_amount has ever had.
+//
+// OFF BY DEFAULT. The RPC does not exist until the user applies the migration,
+// so the flag stays false and the legacy path runs byte-for-byte unchanged.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ATOMIC_GOAL_ENABLED = import.meta.env.VITE_ATOMIC_GOAL === 'true';
+
+interface AtomicGoalLeg {
+  transactionId: string;
+  goalId: string;
+  sourceAccountId: string;
+  /** GOAL currency — what lands on the row and on saved_amount. */
+  amount: number;
+  /** SOURCE currency: amount ÷ rate (cross-currency), else amount, else 0. */
+  sourceAmount: number;
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  createdAt: string;
+  /** The client's own decision; the server derives its own and returns it. */
+  linkedAccountId: string | null;
+  /** The goal's saved_amount BEFORE this contribution — the CAS expectation. */
+  savedBefore: number;
+}
+
+/** Adopt a goal figure the SERVER computed. Never recompute it locally. */
+function setKnownGoalSaved(goalId: string, savedAmount: number): void {
+  useGoalStore.setState((s) => ({
+    goals: s.goals.map((g) => (g.id === goalId ? { ...g, savedAmount } : g)),
+  }));
+}
+
+/**
+ * Call the goal-contribution RPC, adopt the server's figures, and register the
+ * inverse for the rest of the scope.
+ *
+ * BALANCE_CONFLICT → refetch the accounts AND the goals once, then retry. The
+ * token covers all three compare-and-swaps (source account, stored-in account,
+ * goal), which is why the ladder refetches both stores. A conflict means
+ * NOTHING moved, so there is nothing to compensate.
+ *
+ * There is deliberately NO retry floor here, unlike the repayment ladder: the
+ * goal write is a pure `+amount` delta, so replaying it against a fresh
+ * expectation adds exactly the same amount to whatever the truth now is. The
+ * floor exists in repaymentAtomicPlan because a loan CLAMPS at zero and a blind
+ * replay would overstate the reduction; a goal contribution cannot.
+ *
+ * The inverse it registers is a strict improvement on the legacy one: a DELTA
+ * (`addContribution(-applied)`), which commutes with a concurrent contribution,
+ * instead of the snapshot restore that clobbers it.
+ */
+async function atomicGoalContribution(
+  scope: MutationScope,
+  leg: AtomicGoalLeg,
+): Promise<AtomicGoalContributionResult> {
+  const call = async (): Promise<AtomicGoalContributionResult> => {
+    const accounts = useAccountStore.getState();
+    const src = accounts.getAccount(leg.sourceAccountId);
+    if (!src) throw new Error('Source account not found');
+    const goal = useGoalStore.getState().getGoal(leg.goalId);
+    if (!goal) throw new Error('Goal not found');
+    const linked = leg.linkedAccountId ? accounts.getAccount(leg.linkedAccountId) : null;
+    return atomicMoneyDb.goalContributeAtomic({
+      transactionId: leg.transactionId,
+      goalId: leg.goalId,
+      sourceAccountId: leg.sourceAccountId,
+      amount: leg.amount,
+      sourceAmount: leg.sourceAmount,
+      conversionRate: leg.conversionRate,
+      note: leg.note,
+      category: leg.category,
+      createdAt: leg.createdAt,
+      linkedAccountId: leg.linkedAccountId,
+      expectedSourceBalance: src.balance,
+      expectedLinkedBalance: linked ? linked.balance : null,
+      expectedSavedAmount: goal.savedAmount,
+      // The branch uses the STRICT checkBalance — 'goal_contribution' is absent
+      // from isSimpleModeBalanceBypassAllowed — so there is no ledger bypass to
+      // reproduce and this is always false.
+      allowNegative: false,
+    });
+  };
+
+  let result: AtomicGoalContributionResult;
+  try {
+    result = await call();
+  } catch (err) {
+    if ((err as { code?: string })?.code !== 'BALANCE_CONFLICT') {
+      reportError(err, {
+        feature: 'transactionStore.atomicGoalContribution.rpcFailed',
+        extra: { transactionId: leg.transactionId, goalId: leg.goalId },
+      });
+      throw err;
+    }
+    // Another device/tab moved one of the accounts or the goal. Learn the truth
+    // on BOTH sides, retry once. A conflict means NOTHING moved.
+    const [freshAccounts] = await Promise.all([
+      accountsDb.getAll(),
+      useGoalStore.getState().loadGoals(),
+    ]);
+    useAccountStore.setState({ accounts: freshAccounts });
+    result = await call();
+  }
+
+  // The server derives the credit leg from the GOAL's own stored_in_account_id;
+  // the client derived it from the local account list. A disagreement means the
+  // local list was stale — reported, never thrown, because the money has
+  // already committed correctly by the server's own reckoning and rolling it
+  // back on a bookkeeping disagreement would be the more destructive choice.
+  if (!result.replay && result.linkedAccountId !== leg.linkedAccountId) {
+    reportError(new Error('ATOMIC_GOAL_LINKED_FORK'), {
+      feature: 'transactionStore.atomicGoalContribution.linkedFork',
+      extra: {
+        transactionId: leg.transactionId,
+        serverLinkedAccountId: result.linkedAccountId,
+        clientLinkedAccountId: leg.linkedAccountId,
+      },
+    });
+  }
+
+  // Adopt SERVER truth everywhere. Never recompute it locally.
+  if (!result.selfStored) await setKnownBalance(leg.sourceAccountId, result.sourceBalance);
+  if (result.linkedAccountId && result.linkedBalance !== null) {
+    await setKnownBalance(result.linkedAccountId, result.linkedBalance);
+  }
+  setKnownGoalSaved(leg.goalId, result.goalSavedAmount);
+
+  scope.register(async () => {
+    // Reverse each leg the way the legacy path reverses it — except the goal,
+    // which is reversed by DELTA rather than by snapshot (see the doc comment).
+    if (result.sourceDelta !== 0) {
+      await useAccountStore.getState().updateBalance(leg.sourceAccountId, -result.sourceDelta);
+    }
+    if (result.linkedAccountId && result.linkedDelta) {
+      await useAccountStore.getState().updateBalance(result.linkedAccountId, -result.linkedDelta);
+    }
+    if (result.goalApplied !== 0) {
+      await useGoalStore.getState().addContribution(leg.goalId, -result.goalApplied);
+    }
+    // The tail's trackedAddTransaction registers its own delete, which runs
+    // first under LIFO; deleting twice is a no-op.
+    await transactionsDb.delete(leg.transactionId);
+    await mirrorDelete(db.transactions, leg.transactionId);
+    markMirrorStale('transactions');
+    useTransactionStore.setState((s) => ({
+      transactions: s.transactions.filter((t) => t.id !== leg.transactionId),
+    }));
+  });
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVER-SIDE MONEY ENGINE — L4 step 4b: the whole credit-card story
+//
+// audit docs/audit-2026-09/07-mobile-first.md MF-01, 12-qa-review.md F-2 and
+// O-1/F-4, 00-executive-summary.md M1/L4. Branch #5 in the pilot's order table
+// (docs/server-side-money-engine.md §6) — the one it deliberately left last,
+// because the allocation is real business logic with its own tested engine.
+//
+// The decision that table asked for is made here: PLAN ON THE CLIENT, APPLY ON
+// THE SERVER. `allocateBillPayment` and `clampCardCredit` stay in TypeScript
+// (they are the source of truth and have 30+ tests behind them); the RPC
+// applies the plan they produce, in one transaction, and RE-VALIDATES every
+// number in it.
+//
+// Two user actions, one shape:
+//   'transfer'  — paying a card bill. The LARGEST flow in the switch:
+//                 2 balances + 1 row + N × (loan CAS + M instalment writes +
+//                 1 ledger row). A drop partway leaves a PAID bill whose loans
+//                 still say the money is owed, so the app asks the user to pay
+//                 the same debt twice — the double-credit disaster reached from
+//                 the other direction.
+//   'repayment' — repaying a cash-advance loan, which credits the card back.
+//                 THIS IS THE CASE STEP 2 DEFERRED (see the comment above
+//                 ATOMIC_REPAYMENT_ENABLED and
+//                 supabase-migration-p3-atomic-repayment.sql §8.1): a second
+//                 account leg plus the clampCardCredit rule, which a
+//                 one-account RPC cannot express. It lands here instead.
+//
+// OFF BY DEFAULT. The RPC does not exist until the user applies the migration,
+// so the flag stays false and BOTH legacy paths run byte-for-byte unchanged.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ATOMIC_CARD_BILL_ENABLED = import.meta.env.VITE_ATOMIC_CARD_BILL === 'true';
+
+interface AtomicCardBillLeg {
+  transactionId: string;
+  rowType: 'transfer' | 'repayment';
+  sourceAccountId: string;
+  cardAccountId: string;
+  /** The ROW's amount. */
+  amount: number;
+  /** What the wallet loses, in SOURCE currency. */
+  sourceAmount: number;
+  /** What the card gains — unclamped for a transfer, clamped for a repayment. */
+  cardAmount: number;
+  currency: Currency;
+  conversionRate: number | null;
+  note: string;
+  category: string;
+  createdAt: string;
+  /**
+   * Recomputed on EVERY attempt: after a conflict refetch the loans' remaining
+   * amounts have changed, so the allocation and the coverage prefix have too.
+   * Returns the lines together with the EMI statuses they are about to
+   * overwrite, so the inverse can restore them exactly (including 'late').
+   */
+  buildPlan: () => Promise<{ lines: CardBillPlanLine[]; emiBefore: { id: string; status: EmiStatus }[] }>;
+  allowNegative: boolean;
+}
+
+/**
+ * Call the card-bill RPC, adopt the server's figures, materialise the ledger
+ * rows it wrote, and register the inverse for the rest of the scope.
+ *
+ * The retry ladder is the UNION of the two the legacy path already ran:
+ *   · BALANCE_CONFLICT        → refetch the accounts, RE-PLAN, retry once.
+ *   · LOAN_REMAINING_CONFLICT → refetch the loans, RE-PLAN, retry once. For a
+ *                               BILL PAYMENT the re-plan is self-limiting
+ *                               (allocateBillPayment caps every line at its
+ *                               loan's remaining, and the ledger row records
+ *                               the recomputed figure), so no floor is needed.
+ *                               For a REPAYMENT the row's amount is FIXED, so
+ *                               the repaymentAtomicPlan floor applies exactly as
+ *                               it does in step 2 — replaying past it is how a
+ *                               500 payment reduces a now-200 loan by 200 while
+ *                               the row still says 500 (audit F-2).
+ * A conflict means NOTHING moved, so there is nothing to compensate.
+ */
+async function atomicPayCardBill(
+  scope: MutationScope,
+  leg: AtomicCardBillLeg,
+): Promise<AtomicCardBillResult> {
+  const loansBefore = new Map(
+    useLoanStore.getState().loans.map((l) => [l.id, { status: l.status, remaining: l.remainingAmount }]),
+  );
+
+  const call = async (): Promise<{
+    result: AtomicCardBillResult;
+    lines: CardBillPlanLine[];
+    emiBefore: { id: string; status: EmiStatus }[];
+  }> => {
+    const accounts = useAccountStore.getState();
+    const src = accounts.getAccount(leg.sourceAccountId);
+    const card = accounts.getAccount(leg.cardAccountId);
+    if (!src || !card) throw new Error('Account not found');
+    const { lines, emiBefore } = await leg.buildPlan();
+    // The client half of the server's lockstep invariant. A refusal that costs
+    // a round-trip on 3G is a refusal the user waits for.
+    if (leg.rowType === 'transfer' && cardBillPlanExceedsPayment(lines, leg.cardAmount)) {
+      throw new Error(tStatic('err_card_bill_plan'));
+    }
+    const result = await atomicMoneyDb.payCardBillAtomic({
+      transactionId: leg.transactionId,
+      rowType: leg.rowType,
+      sourceAccountId: leg.sourceAccountId,
+      cardAccountId: leg.cardAccountId,
+      amount: leg.amount,
+      sourceAmount: leg.sourceAmount,
+      cardAmount: leg.cardAmount,
+      currency: leg.currency,
+      conversionRate: leg.conversionRate,
+      note: leg.note,
+      category: leg.category,
+      createdAt: leg.createdAt,
+      plan: toCardBillPayload(lines),
+      expectedSourceBalance: src.balance,
+      expectedCardBalance: card.balance,
+      allowNegative: leg.allowNegative,
+    });
+    return { result, lines, emiBefore };
+  };
+
+  let attempt: Awaited<ReturnType<typeof call>>;
+  try {
+    attempt = await call();
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    if (code !== 'BALANCE_CONFLICT' && code !== 'LOAN_REMAINING_CONFLICT') {
+      reportError(err, {
+        feature: 'transactionStore.atomicPayCardBill.rpcFailed',
+        extra: { transactionId: leg.transactionId, rowType: leg.rowType },
+      });
+      throw err;
+    }
+    // Learn the truth on BOTH sides — either lock may have been the stale one,
+    // and a second attempt has to carry fresh expectations AND a fresh plan.
+    const [freshAccounts] = await Promise.all([
+      accountsDb.getAll(),
+      useLoanStore.getState().loadLoans(),
+    ]);
+    useAccountStore.setState({ accounts: freshAccounts });
+
+    if (leg.rowType === 'repayment') {
+      // The row's amount is fixed, so the step-2 floor rule applies verbatim.
+      const [only] = (await leg.buildPlan()).lines;
+      const before = loansBefore.get(only?.loanId ?? '');
+      const floor = repaymentRetryFloor(leg.amount, before?.remaining ?? leg.amount);
+      const fresh = useLoanStore.getState().loans.find((l) => l.id === only?.loanId);
+      if (!fresh) throw loanRemainingConflictError(tStatic('err_loan_gone'));
+      if (!canRetryRepayment(fresh.remainingAmount, floor)) {
+        throw loanRemainingConflictError(tStatic('err_loan_gone'));
+      }
+    }
+    attempt = await call();
+  }
+
+  const { result } = attempt;
+
+  // Adopt SERVER truth everywhere. Never recompute it locally.
+  await setKnownBalance(leg.sourceAccountId, result.sourceBalance);
+  await setKnownBalance(leg.cardAccountId, result.cardBalance);
+  for (const line of result.lines) {
+    syncLocalRemaining(line.loanId, line.remaining);
+    adoptEmiMarks(line.emiMarked);
+  }
+
+  // The ledger rows are already committed server-side; mirror them locally
+  // exactly as trackedAddTransaction does, minus the write the server did.
+  const adoptedRows: Transaction[] = [];
+  for (const line of result.lines) {
+    if (!line.rowId) continue;
+    const planned = attempt.lines.find((l) => l.loanId === line.loanId);
+    const row: Transaction = {
+      id: line.rowId,
+      type: 'repayment',
+      amount: planned ? planned.applied : line.applied,
+      currency: line.currency as Currency,
+      sourceAccountId: null,
+      destinationAccountId: null,
+      relatedPerson: line.personName,
+      personId: line.personId,
+      relatedLoanId: line.loanId,
+      relatedGoalId: null,
+      relatedInvestmentId: null,
+      conversionRate: null,
+      category: '',
+      notes: planned ? planned.rowNote : '',
+      createdAt: leg.createdAt,
+      isReconciled: false,
+      reconciledAt: null,
+      reconciledBy: null,
+    };
+    row.updatedAt = row.createdAt;
+    await mirrorPut(db.transactions, row);
+    adoptedRows.push(row);
+  }
+  if (adoptedRows.length > 0) {
+    markMirrorStale('transactions');
+    useTransactionStore.setState((s) => ({ transactions: [...adoptedRows, ...s.transactions] }));
+  }
+
+  const markedSet = new Set(result.lines.flatMap((l) => l.emiMarked));
+  const restore = attempt.emiBefore.filter((e) => markedSet.has(e.id));
+
+  scope.register(async () => {
+    // Reverse every leg the way the legacy path reverses it: the balances
+    // through the account CAS (delta-based, so a concurrent mutation commutes),
+    // each loan through apply_loan_remaining_delta with the amount that
+    // ACTUALLY moved (`applied`, not the requested figure — they differ when
+    // the server clamp bit), the instalments back to their exact prior status
+    // (including 'late'), and every row the server wrote away.
+    if (result.sourceDelta !== 0) {
+      await useAccountStore.getState().updateBalance(leg.sourceAccountId, -result.sourceDelta);
+    }
+    if (result.cardDelta !== 0) {
+      await useAccountStore.getState().updateBalance(leg.cardAccountId, -result.cardDelta);
+    }
+    for (const line of result.lines) {
+      if (line.applied === 0) continue;
+      const deps = loanDeltaDeps(line.loanId);
+      const reversed = await applyLoanRemainingDelta(
+        { expectedRemaining: line.remaining, delta: line.applied },
+        deps,
+      );
+      syncLocalRemaining(line.loanId, reversed.newRemaining);
+    }
+    if (restore.length > 0) {
+      await Promise.all(restore.map((e) => emiSchedulesDb.update(e.id, { status: e.status })));
+      useEmiStore.setState((s) => ({
+        schedules: s.schedules.map((e) => {
+          const prev = restore.find((r) => r.id === e.id);
+          return prev ? { ...e, status: prev.status } : e;
+        }),
+      }));
+    }
+    const doomed = [
+      ...result.lines.map((l) => l.rowId).filter((id): id is string => Boolean(id)),
+      // The tail's trackedAddTransaction registers its own delete for the main
+      // row, which runs first under LIFO; deleting twice is a no-op.
+      leg.transactionId,
+    ];
+    for (const id of doomed) {
+      await transactionsDb.delete(id);
+      await mirrorDelete(db.transactions, id);
+    }
+    markMirrorStale('transactions');
+    const doomedSet = new Set(doomed);
+    useTransactionStore.setState((s) => ({
+      transactions: s.transactions.filter((t) => !doomedSet.has(t.id)),
+    }));
+  });
+
+  // ── Post-commit, best-effort. Byte-for-byte the entries the legacy helpers
+  //    write: trackedMarkCoveredEmisPaid's 'emi_paid' (singular or counted) and
+  //    trackedApplyRepayment's 'loan_settled', once per loan that reached zero
+  //    and was not already settled. An activity failure must NEVER roll back
+  //    money that has moved.
+  const schedulesNow = useEmiStore.getState().schedules;
+  const numberOf = (id: string) => schedulesNow.find((e) => e.id === id)?.installmentNumber;
+  for (const line of result.lines) {
+    if (line.emiMarked.length > 0) {
+      try {
+        await useActivityStore.getState().logActivity(
+          'emi_paid',
+          line.emiMarked.length === 1
+            ? `EMI #${numberOf(line.emiMarked[0])} paid`
+            : `${line.emiMarked.length} EMIs marked paid after repayment`,
+          line.loanId,
+          'loan',
+        );
+      } catch (err) {
+        reportError(err, {
+          feature: 'transactionStore.atomicPayCardBill.emiActivity',
+          extra: { loanId: line.loanId },
+        });
+      }
+    }
+    if (line.settledNow && loansBefore.get(line.loanId)?.status !== 'settled') {
+      try {
+        await useActivityStore.getState().logActivity(
+          'loan_settled', `Loan with ${line.personName} fully settled`, line.loanId, 'loan',
+        );
+      } catch (err) {
+        reportError(err, {
+          feature: 'transactionStore.atomicPayCardBill.settledActivity',
+          extra: { loanId: line.loanId },
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
 async function trackedUpdateLoan(
   scope: MutationScope,
   loanId: string,
@@ -865,6 +2027,122 @@ async function findActiveCashAdvanceLoansForCard(cardId: string): Promise<Loan[]
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+/**
+ * Which of a card's cash advances a bill payment knocks down, and by how much.
+ *
+ * Lifted OUT of the transfer branch's credit-card tail (L4 step 4) so the
+ * legacy path and the flagged atomic path consume the SAME plan rather than two
+ * copies of one rule. The allocation itself lives in
+ * src/lib/cardBillAtomicPlan.ts → src/lib/cardStatement.ts; this is only the
+ * gathering of its inputs.
+ *
+ * Reads PRE-payment state exclusively (`cardBalanceBefore` is the card's
+ * balance before this payment credits it), which is what makes it correct to
+ * call BEFORE the money moves as well as after — the atomic path needs the plan
+ * up front, because the RPC applies it in the same transaction as the transfer
+ * legs.
+ */
+async function prepareCardBillPlan(inp: {
+  cardId: string;
+  cardCurrency: Currency;
+  /** The card's balance BEFORE this payment credits it. */
+  cardBalanceBefore: number;
+  cardMetadata: Record<string, string>;
+  /** The payment, in CARD currency (already converted for a cross-currency move). */
+  pool: number;
+  /** The payment's own date — decides which instalment is "this cycle's". */
+  when: Date;
+}): Promise<Array<{ loan: Loan; applied: number }>> {
+  const cardLimit = parseFloat(inp.cardMetadata?.creditLimit || '0');
+  const cardDueDay = parseInt(inp.cardMetadata?.dueDay ?? '', 10);
+  const statementNative = cardLimit > 0 && Number.isFinite(cardDueDay) && cardDueDay >= 1;
+  const fundedLoans = (await findActiveCashAdvanceLoansForCard(inp.cardId))
+    .filter((l) => l.currency === inp.cardCurrency);
+
+  let revolvingPurchases = 0;
+  let advances = fundedLoans.map((l) => ({
+    loanId: l.id, remaining: l.remainingAmount, dueThisCycle: 0, createdAt: l.createdAt,
+  }));
+
+  if (statementNative && fundedLoans.length > 0) {
+    const dueIn = daysUntilDayOfMonth(cardDueDay, inp.when) ?? 0;
+    const nextStatementIso = localIso(
+      new Date(inp.when.getFullYear(), inp.when.getMonth(), inp.when.getDate() + dueIn),
+    );
+    const schedules = useEmiStore.getState().schedules;
+    const sumRemaining = fundedLoans.reduce((s, l) => s + l.remainingAmount, 0);
+    // cardBalanceBefore is the PRE-credit balance, so this is the true
+    // pre-payment revolving = used − Σ(advance remaining).
+    revolvingPurchases = Math.max(
+      0,
+      Math.round(((cardLimit - inp.cardBalanceBefore) - sumRemaining) * 100) / 100,
+    );
+    advances = fundedLoans.map((l) => {
+      const next = schedules
+        .filter((s2) => s2.loanId === l.id && s2.status !== 'paid')
+        .sort((a, b) => a.installmentNumber - b.installmentNumber)[0];
+      const dueThisCycle = next && next.dueDate <= nextStatementIso ? next.amount : 0;
+      return { loanId: l.id, remaining: l.remainingAmount, dueThisCycle, createdAt: l.createdAt };
+    });
+  }
+
+  const out: Array<{ loan: Loan; applied: number }> = [];
+  for (const line of planCardBillPrincipal({
+    pool: inp.pool, statementNative, revolvingPurchases, advances,
+  })) {
+    const l = fundedLoans.find((f) => f.id === line.loanId);
+    if (l) out.push({ loan: l, applied: line.applied });
+  }
+  return out;
+}
+
+/**
+ * Turn a settlement plan into the lines `pay_card_bill` binds, together with
+ * the instalment statuses they are about to overwrite (so the scope's inverse
+ * can restore them exactly, including 'late').
+ *
+ * The instalment coverage is `planRepaymentEmiMarks` — the same pure function
+ * step 2 uses — which reproduces `trackedMarkCoveredEmisPaid` exactly: the
+ * oldest instalments the paid-down total will fully cover, computed from the
+ * remaining the payment WILL leave, not the one it starts from.
+ *
+ * `rowNote` non-null means "each line writes its own ledger row" (a bill
+ * payment). Null means the MAIN row is the record (a cash-advance repayment),
+ * and a second row would double-count the payment.
+ */
+function toCardBillLines(
+  plan: Array<{ loan: Loan; applied: number }>,
+  rowNote: string | null,
+  targetedEmiId?: string,
+): { lines: CardBillPlanLine[]; emiBefore: { id: string; status: EmiStatus }[] } {
+  const all = useEmiStore.getState().schedules;
+  const lines: CardBillPlanLine[] = [];
+  const emiBefore: { id: string; status: EmiStatus }[] = [];
+  for (const { loan, applied } of plan) {
+    if (applied <= 0.005) continue;
+    const planned = planRepaymentEmiMarks({
+      schedules: all.filter((e) => e.loanId === loan.id),
+      loanTotalAmount: loan.totalAmount,
+      remainingBefore: loan.remainingAmount,
+      amount: applied,
+      targetedEmiId,
+    });
+    for (const id of planned.allIds) {
+      const e = all.find((s) => s.id === id);
+      if (e) emiBefore.push({ id: e.id, status: e.status });
+    }
+    lines.push({
+      loanId: loan.id,
+      applied,
+      expectedRemaining: loan.remainingAmount,
+      emiIds: planned.allIds,
+      rowId: rowNote === null ? null : uuid(),
+      rowNote: rowNote ?? '',
+    });
+  }
+  return { lines, emiBefore };
+}
+
 // Two-way EMI reconcile: sync the schedule's binary statuses to the loan's
 // CURRENT paid-down amount — marking newly covered instalments paid AND
 // un-marking paid instalments the money no longer backs (repayment deleted).
@@ -1025,29 +2303,175 @@ function assertInputAmountsInBounds(input: TransactionInput): void {
 export const useTransactionStore = create<TransactionState>((set, get) => ({
   ...INITIAL_TRANSACTION_STATE,
 
-  reset: () => set(INITIAL_TRANSACTION_STATE),
+  reset: () => {
+    // A user switch must drop the coverage claim with the rows — otherwise the
+    // next account inherits "we hold everything" over an empty store.
+    inFlightHistory.clear();
+    set({ ...INITIAL_TRANSACTION_STATE, historyCoverage: emptyCoverage() });
+    // ...and the PERSISTED floor with it. `resetAllUserStores` runs every
+    // store's reset() before it deletes this user's Dexie partition, so this
+    // still targets the outgoing user's row; the wipe that follows would remove
+    // it anyway. Belt and braces, because the one thing worse than an extra
+    // fetch is the next account inheriting a claim over data it cannot see.
+    void clearMirrorCoverage(TRANSACTIONS_MIRROR_KEY);
+  },
 
-  loadTransactions: async () => {
+  loadTransactions: async (options) => {
+    // The BOUNDED default (docs/performance.md §7). This used to be a keyset
+    // walk of the user's entire transactions table on every boot, every money
+    // write and every realtime nudge; it now asks for the last 12 months or the
+    // newest 1000 rows, whichever reaches further back, and records what that
+    // proves in `historyCoverage`.
+    //
+    // The floor never narrows: `planHistoryLoad` takes the EARLIEST of the
+    // window start, the coverage we already established and any explicit
+    // `since`. A user who tapped "Show full history" and then saved an expense
+    // is not silently demoted back to 12 months by the reload that follows.
+    const plan = planHistoryLoad({
+      coverage: get().historyCoverage,
+      requestedSince: options?.since ?? null,
+    });
+    // Set by fetchRemote — which loadCacheFirst SKIPS on the cache-hit and
+    // incremental plans. Staying null there is correct: no rows were fetched,
+    // so no new guarantee was earned and coverage is left exactly as it was.
+    let fetchedCoverage: HistoryCoverage | null = null;
+
     set({ loading: true });
     try {
-      const { rows: transactions } = await loadCacheFirst({
-        key: 'transactions',
+      const { rows: transactions, fromCache } = await loadCacheFirst<Transaction>({
+        key: TRANSACTIONS_MIRROR_KEY,
         table: db.transactions,
-        // Paged variant: it reports whether PostgREST truncated the result, so
-        // the mirror merges instead of clearing away history it never saw.
-        fetchRemote: transactionsDb.getAllPaged,
+        fetchRemote: async () => {
+          if (plan.all) {
+            // Paged variant: it reports whether PostgREST truncated the result,
+            // so the mirror merges instead of clearing away history it never saw.
+            const result = await transactionsDb.getAllPaged();
+            fetchedCoverage = result.truncated
+              ? { since: oldestCreatedAt(result.rows), complete: false }
+              : fullCoverage();
+            return result;
+          }
+          const result = await transactionsDb.getWindowPaged({
+            since: plan.since,
+            minRows: HISTORY_MIN_ROWS,
+          });
+          fetchedCoverage = result.complete
+            ? fullCoverage()
+            : { since: result.coveredSince, complete: false };
+          return {
+            rows: result.rows,
+            // A window is a PARTIAL set by construction — never let the mirror
+            // clear on it. `completeFrom` additionally lets mirrorCache prune
+            // rows deleted elsewhere INSIDE the window without touching the
+            // older history it is keeping for us.
+            truncated: !result.complete,
+            completeFrom: result.complete ? undefined : result.coveredSince,
+            // The DAL's own max-rows warning, kept separate from the flag
+            // above: `truncated` here only means "a window is partial, do not
+            // clear", and is true on every windowed fetch. This one means the
+            // SERVER under-reported, and it is what drops the persisted
+            // coverage floor (docs/performance.md §7.1).
+            serverTruncated: result.truncated,
+          };
+        },
         fetchUpdatedSince: transactionsDb.getUpdatedSince,
         fetchDeletedSince: transactionsDb.getDeletedSince,
         getUpdatedAt: (transaction) => transaction.updatedAt ?? transaction.createdAt,
+        // Ledger-only rows (BOTH account ids null) are ordered and windowed by
+        // `createdAt` exactly like full-tracker rows — no account id is read
+        // anywhere on this path, in either app mode.
+        windowKeyOf: (transaction) => transaction.createdAt,
         sort: (a, b) => b.createdAt.localeCompare(a.createdAt),
         // A background refresh used to land in Dexie only, leaving the list
         // rendering the pre-refresh snapshot (audit 04-supabase F-RT1).
-        onRefreshed: (rows) => set({ transactions: rows }),
+        onRefreshed: (rows) => {
+          set({ transactions: rows });
+          // The background full refresh DID fetch, so it earned a guarantee —
+          // one that used to be thrown away because `loadTransactions` had
+          // already returned by the time `fetchRemote` ran. It lands here, after
+          // the mirror merge that produced these rows.
+          if (fetchedCoverage) adoptHistoryCoverage(fetchedCoverage);
+        },
       });
       set({ transactions });
+      if (fetchedCoverage) {
+        adoptHistoryCoverage(fetchedCoverage);
+      } else if (fromCache) {
+        // A cache-answered load fetched nothing, so it PROVED nothing on its
+        // own — that is why it earned no coverage before. It may now adopt the
+        // floor the mirror itself carries, but only when the sync cursors say
+        // an incremental diff is what runs next; if the daily full refresh is
+        // due, the stored floor is not believed until that refresh lands and
+        // re-establishes it (`persistedCoverageIsTrustworthy`).
+        const seeded = await readMirrorCoverageSeed(TRANSACTIONS_MIRROR_KEY, {
+          hasCache: transactions.length > 0,
+          canIncremental: true,
+        });
+        if (seeded.complete || seeded.since) {
+          // Merged into state directly, NOT through `adoptHistoryCoverage`:
+          // this is a claim read back off disk, not one this load proved, so it
+          // must not be written back as if it were newly earned.
+          set((s) => ({ historyCoverage: mergeCoverage(s.historyCoverage, seeded) }));
+        }
+      }
     } finally {
       set({ loading: false });
     }
+  },
+
+  ensureTransactionHistory: async (requested = { all: true }) => {
+    // A caller that names no horizon is asking for everything — the same rule
+    // `coverageSatisfies` applies. Normalised HERE so `{ since: undefined }`
+    // (an easy accident at a call site computing a date) can never degrade into
+    // a silent no-op that leaves a statement computing on a window.
+    const request: HistoryRequest =
+      requested.all || requested.since ? requested : { all: true };
+    if (coverageSatisfies(get().historyCoverage, request)) return;
+
+    const key = historyRequestKey(request);
+    const existing = inFlightHistory.get(key);
+    if (existing) return existing;
+
+    const job = (async () => {
+      set({ historyLoading: true });
+      try {
+        if (request.all) {
+          const result = await transactionsDb.getAllPaged();
+          // Merge, never replace: the fetch is authoritative for the rows it
+          // returned, and the store/mirror may hold rows written locally in the
+          // same tick. `mergeTransactionRows` keeps both.
+          await mirrorBulkPut(db.transactions, result.rows);
+          mergeHistoryIntoStore(result.rows);
+          // After the mirror write, never before — the persisted floor this
+          // widens is a promise about rows that are in the mirror.
+          adoptHistoryCoverage(
+            result.truncated
+              ? { since: oldestCreatedAt(result.rows), complete: false }
+              : fullCoverage(),
+          );
+          return;
+        }
+
+        const since = request.since ?? null;
+        if (!since) return;
+        // Only the gap BELOW the floor we already hold — not the whole table.
+        const gap = historyGap(get().historyCoverage, since);
+        const result = await transactionsDb.getRangePaged(gap.from, gap.to);
+        await mirrorBulkPut(db.transactions, result.rows);
+        mergeHistoryIntoStore(result.rows);
+        adoptHistoryCoverage(
+          // A truncated gap walk did not reach `since`; claim only the oldest
+          // row it actually read, so the next request re-tries the remainder.
+          { since: result.truncated ? oldestCreatedAt(result.rows) : since, complete: false },
+        );
+      } finally {
+        set({ historyLoading: false });
+        inFlightHistory.delete(key);
+      }
+    })();
+
+    inFlightHistory.set(key, job);
+    return job;
   },
 
   processTransaction: async (input) => {
@@ -1133,7 +2557,96 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               throw new Error('Conversion rate required for cross-currency move');
             }
 
-            if (ATOMIC_TRANSFER_ENABLED) {
+            // ── L4 STEP 4, branch 5 (audit MF-01 / F-2 / O-1 / F-4) ───────
+            // Paying a card bill is the LARGEST flow in this switch: two
+            // balances and a row, PLUS a loan compare-and-swap, N instalment
+            // writes and a ledger row for every cash advance the card funded.
+            // A drop partway leaves a PAID bill whose loans still say the money
+            // is owed — so the app asks the user to pay the same debt twice.
+            //
+            // The plan is therefore computed BEFORE any money moves, because
+            // `pay_card_bill` applies it in the SAME transaction as the
+            // transfer legs. It reads only PRE-payment state (`dest.balance`
+            // was captured above, before either leg), so hoisting it is
+            // invisible to the legacy path below, which consumes the identical
+            // plan through the identical helper.
+            const payingCardBill = dest.type === 'credit_card';
+            const billPool = src.currency !== dest.currency
+              ? Math.round(input.amount * (input.conversionRate ?? 0) * 100) / 100
+              : input.amount;
+            const cardPlan = payingCardBill
+              ? await prepareCardBillPlan({
+                cardId: dest.id,
+                cardCurrency: dest.currency,
+                cardBalanceBefore: dest.balance,
+                cardMetadata: dest.metadata ?? {},
+                pool: billPool,
+                when: input.createdAt ? new Date(input.createdAt) : new Date(),
+              })
+              : [];
+            // With NOTHING to settle, a card transfer is a plain two-leg move
+            // and step 1 already owns it — routing it here would add a plan
+            // parameter and a second code path for no atomicity gain.
+            const useCardBillAtomic = ATOMIC_CARD_BILL_ENABLED
+              && payingCardBill
+              && cardPlan.some((p) => p.applied > 0.005);
+
+            if (useCardBillAtomic) {
+              // Pin the timestamp BEFORE the server writes the rows, so the
+              // tail's `input.createdAt ?? new Date().toISOString()` produces
+              // the identical value and its idempotent upsert rewrites the same
+              // row rather than a differently-stamped one.
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              const rowNote = buildInternalNote('Covered by card bill payment', {
+                linkedTransactionId: transactionId,
+              });
+
+              const applied = await atomicPayCardBill(scope, {
+                transactionId,
+                rowType: 'transfer',
+                sourceAccountId: input.sourceAccountId,
+                cardAccountId: input.destinationAccountId,
+                amount: input.amount,
+                sourceAmount: input.amount,
+                // A direct transfer's card credit is DELIBERATELY UNCLAMPED
+                // (src/lib/cardCredit.ts:7-9): an explicit "I moved money" is
+                // recorded as typed, and the UI surfaces the overpaid state.
+                cardAmount: billPool,
+                currency,
+                conversionRate: src.currency !== dest.currency ? input.conversionRate! : null,
+                note: input.notes ?? '',
+                category: input.category ?? '',
+                createdAt: input.createdAt,
+                // Re-planned on every attempt: after a conflict refetch the
+                // loans' remaining amounts have changed, so the allocation has.
+                buildPlan: async () => toCardBillLines(
+                  await prepareCardBillPlan({
+                    cardId: dest.id,
+                    cardCurrency: dest.currency,
+                    cardBalanceBefore:
+                      useAccountStore.getState().getAccount(dest.id)?.balance ?? dest.balance,
+                    cardMetadata: dest.metadata ?? {},
+                    pool: billPool,
+                    when: new Date(input.createdAt!),
+                  }),
+                  rowNote,
+                ),
+                // A transfer uses the strict `checkBalance` — there is no
+                // splits_only bypass for it (it is absent from
+                // isSimpleModeBalanceBypassAllowed), so this is always false.
+                allowNegative: false,
+              });
+
+              if (src.currency !== dest.currency) {
+                conversionRate = input.conversionRate!;
+                description = `Moved ${src.currency} ${input.amount} → ${dest.currency} ${billPool} (rate: ${conversionRate})`;
+              } else {
+                description = `Moved ${currency} ${input.amount}: ${src.name} → ${dest.name}`;
+              }
+              if (applied.settled > 0) {
+                description += ` · settled ${applied.settled} cash-advance record${applied.settled > 1 ? 's' : ''}`;
+              }
+            } else if (ATOMIC_TRANSFER_ENABLED) {
               // ── L4 PILOT (audit MF-01 / O-1 / F-4) ──────────────────────
               // ONE server-side transaction moves both legs and writes the
               // row, so a network drop between them can no longer leave the
@@ -1200,59 +2713,14 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             // paying the full balance still clears everything. A card missing
             // a limit or statement day falls back to the legacy greedy settle
             // (no behaviour change for those).
-            if (dest.type === 'credit_card') {
-              const pool = src.currency !== dest.currency
-                ? Math.round(input.amount * (conversionRate ?? 0) * 100) / 100
-                : input.amount;
-              const cardLimit = parseFloat(dest.metadata?.creditLimit || '0');
-              const cardDueDay = parseInt(dest.metadata?.dueDay ?? '', 10);
-              const statementNative = cardLimit > 0 && Number.isFinite(cardDueDay) && cardDueDay >= 1;
-              const fundedLoans = (await findActiveCashAdvanceLoansForCard(dest.id))
-                .filter((l) => l.currency === dest.currency);
-
-              // plan: how much principal to knock off each advance.
-              const plan: Array<{ loan: Loan; applied: number }> = [];
-              if (statementNative && fundedLoans.length > 0) {
-                const when = input.createdAt ? new Date(input.createdAt) : new Date();
-                const dueIn = daysUntilDayOfMonth(cardDueDay, when) ?? 0;
-                const nextStatementIso = localIso(
-                  new Date(when.getFullYear(), when.getMonth(), when.getDate() + dueIn),
-                );
-                const schedules = useEmiStore.getState().schedules;
-                const sumRemaining = fundedLoans.reduce((s, l) => s + l.remainingAmount, 0);
-                // dest.balance is the PRE-credit balance (captured before the
-                // transfer legs above ran), so this is the true pre-payment
-                // revolving = used − Σ(advance remaining).
-                const revolvingPurchases = Math.max(
-                  0,
-                  Math.round(((cardLimit - dest.balance) - sumRemaining) * 100) / 100,
-                );
-                const advances = fundedLoans.map((l) => {
-                  const next = schedules
-                    .filter((s2) => s2.loanId === l.id && s2.status !== 'paid')
-                    .sort((a, b) => a.installmentNumber - b.installmentNumber)[0];
-                  const dueThisCycle = next && next.dueDate <= nextStatementIso ? next.amount : 0;
-                  return { loanId: l.id, remaining: l.remainingAmount, dueThisCycle, createdAt: l.createdAt };
-                });
-                const alloc = allocateBillPayment({ payment: pool, revolvingPurchases, advances });
-                for (const line of alloc.perLoan) {
-                  const l = fundedLoans.find((f) => f.id === line.loanId);
-                  if (l) plan.push({ loan: l, applied: line.principalApplied });
-                }
-              } else {
-                // Legacy greedy fallback (oldest-first, whole remaining).
-                let left = pool;
-                for (const l of fundedLoans) {
-                  if (left <= 0.005) break;
-                  const applied = Math.round(Math.min(l.remainingAmount, left) * 100) / 100;
-                  if (applied <= 0.005) continue;
-                  plan.push({ loan: l, applied });
-                  left = Math.round((left - applied) * 100) / 100;
-                }
-              }
-
+            //
+            // The plan itself is `cardPlan`, computed above — the SAME helper
+            // the atomic path uses, so the two cannot drift. When the atomic
+            // path ran, it already applied all of this inside the RPC's
+            // transaction and this block is skipped entirely.
+            if (payingCardBill && !useCardBillAtomic) {
               let settledCount = 0;
-              for (const { loan: fundedLoan, applied } of plan) {
+              for (const { loan: fundedLoan, applied } of cardPlan) {
                 if (applied <= 0.005) continue;
                 await trackedApplyRepayment(scope, fundedLoan.id, applied);
                 await trackedMarkCoveredEmisPaid(scope, fundedLoan.id);
@@ -1295,25 +2763,71 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             sourceAccountId = input.sourceAccountId;
             relatedPerson = input.personName;
             personId = input.personId ?? null;
-            await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
 
-            if (!input.loanId) {
-              const loan = await trackedCreateLoan(scope, {
+            // Only the human-visible part. Loan.notes is rendered RAW on
+            // LoansPage, LoanDetailPage, the repayment allocators and
+            // statements, so a caller that stamps internal meta into the
+            // transaction note (ad-hoc splits) must not leak
+            // `[[HISAAB_META:…]]` into all of them.
+            const givenLoanNotes = parseInternalNote(input.notes).visibleNote;
+
+            if (ATOMIC_LOAN_CREATE_ENABLED) {
+              // ── L4 STEP 3 (audit MF-01 / O-1 / F-4) ─────────────────────
+              // ONE server-side transaction debits the funding account, brings
+              // the loan into existence AND writes the row — so a network drop
+              // between them can no longer take money out of a wallet with no
+              // loan saying who owes it. Everything below the switch (the
+              // Transaction object, the mirror, the activity entry, the
+              // reminder nudge) is unchanged: see the artifact contract table
+              // in supabase-migration-p3-atomic-loan-create.sql.
+              //
+              // Pin the timestamp BEFORE the server writes the row, so the
+              // tail's `input.createdAt ?? new Date().toISOString()` produces
+              // the identical value and its idempotent upsert rewrites the
+              // same row rather than a differently-stamped one.
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              relatedLoanId = input.loanId ?? uuid();
+
+              await atomicLoanCreate(scope, {
+                transactionId,
+                loanId: relatedLoanId,
+                createLoan: !input.loanId,
+                direction: 'given',
                 personName: input.personName,
                 personId: input.personId ?? null,
-                type: 'given',
-                totalAmount: input.amount,
+                accountId: input.sourceAccountId,
+                cardAccountId: null,
+                amount: input.amount,
                 currency,
-                // Only the human-visible part. Loan.notes is rendered RAW on
-                // LoansPage, LoanDetailPage, the repayment allocators and
-                // statements, so a caller that stamps internal meta into the
-                // transaction note (ad-hoc splits) must not leak
-                // `[[HISAAB_META:…]]` into all of them.
-                notes: parseInternalNote(input.notes).visibleNote,
+                note: input.notes ?? '',
+                category: input.category ?? '',
+                createdAt: input.createdAt,
+                loanNotes: givenLoanNotes,
+                // The instalment plan the page computed BEFORE this call, so
+                // it commits with the loan instead of after it.
+                emiRows: input.emiPlan ?? null,
+                // Ledger mode deliberately lets a loan push an account
+                // negative (isSimpleModeBalanceBypassAllowed waives
+                // checkBalanceForTransaction above); the server guard has to be
+                // waived in exactly the same case, and only that case.
+                allowNegative: isSimpleModeBalanceBypassAllowed('loan_given'),
               });
-              relatedLoanId = loan.id;
             } else {
-              relatedLoanId = input.loanId;
+              await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+
+              if (!input.loanId) {
+                const loan = await trackedCreateLoan(scope, {
+                  personName: input.personName,
+                  personId: input.personId ?? null,
+                  type: 'given',
+                  totalAmount: input.amount,
+                  currency,
+                  notes: givenLoanNotes,
+                });
+                relatedLoanId = loan.id;
+              } else {
+                relatedLoanId = input.loanId;
+              }
             }
             description = `Loan given to ${input.personName}: ${currency} ${input.amount}`;
             break;
@@ -1327,6 +2841,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             relatedPerson = input.personName;
             personId = input.personId ?? null;
 
+            // Every cash-advance guard runs BEFORE any money moves, on both
+            // paths — shared and byte-for-byte unchanged.
             if (input.sourceAccountId) {
               const src = accountStore.getAccount(input.sourceAccountId);
               if (!src) throw new Error('Source account not found');
@@ -1334,25 +2850,70 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               if (src.currency !== dest.currency) throw new Error('Cash advance source card must match the receiving account currency');
               checkBalanceForTransaction(src, input.amount, input.type);
               sourceAccountId = input.sourceAccountId;
-              await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
               description = `Cash advance from ${src.name} into ${dest.name}: ${currency} ${input.amount}`;
             }
 
-            await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+            // Human-visible part only — see the loan_given branch above.
+            const takenLoanNotes = parseInternalNote(input.notes).visibleNote;
 
-            if (!input.loanId) {
-              const loan = await trackedCreateLoan(scope, {
+            if (ATOMIC_LOAN_CREATE_ENABLED) {
+              // ── L4 STEP 3 (audit MF-01 / O-1 / F-4) ─────────────────────
+              // ONE server-side transaction charges the cash-advance card (when
+              // there is one), credits the receiving account, brings the loan
+              // into existence AND writes the row. The four-leg cash advance is
+              // the worst instance of MF-01 in the whole switch: today a drop
+              // after the card leg leaves available credit consumed and the
+              // cash arriving nowhere. See the artifact contract table in
+              // supabase-migration-p3-atomic-loan-create.sql.
+              //
+              // Pin the timestamp BEFORE the server writes the row — see the
+              // loan_given branch.
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+              relatedLoanId = input.loanId ?? uuid();
+
+              await atomicLoanCreate(scope, {
+                transactionId,
+                loanId: relatedLoanId,
+                createLoan: !input.loanId,
+                direction: 'taken',
                 personName: input.personName,
                 personId: input.personId ?? null,
-                type: 'taken',
-                totalAmount: input.amount,
+                accountId: input.destinationAccountId,
+                cardAccountId: input.sourceAccountId ?? null,
+                amount: input.amount,
                 currency,
-                // Human-visible part only — see the loan_given branch above.
-                notes: parseInternalNote(input.notes).visibleNote,
+                note: input.notes ?? '',
+                category: input.category ?? '',
+                createdAt: input.createdAt,
+                loanNotes: takenLoanNotes,
+                // The instalment plan the page computed BEFORE this call. For a
+                // cash advance these are the statement-anchored dates
+                // (statementInstalmentDates), planned by QuickEntry.
+                emiRows: input.emiPlan ?? null,
+                // Ledger mode waives checkBalanceForTransaction on the card
+                // leg above; the server guard is waived in exactly that case.
+                allowNegative: isSimpleModeBalanceBypassAllowed('loan_taken'),
               });
-              relatedLoanId = loan.id;
             } else {
-              relatedLoanId = input.loanId;
+              if (input.sourceAccountId) {
+                await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+              }
+
+              await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+
+              if (!input.loanId) {
+                const loan = await trackedCreateLoan(scope, {
+                  personName: input.personName,
+                  personId: input.personId ?? null,
+                  type: 'taken',
+                  totalAmount: input.amount,
+                  currency,
+                  notes: takenLoanNotes,
+                });
+                relatedLoanId = loan.id;
+              } else {
+                relatedLoanId = input.loanId;
+              }
             }
             if (!description) {
               description = `Loan taken from ${input.personName}: ${currency} ${input.amount}`;
@@ -1368,6 +2929,27 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             personId = loan.personId ?? null;
             currency = loan.currency;
 
+            // ── L4 step 2 (flag-gated) ────────────────────────────────────
+            // When set, the account leg is NOT applied here: it rides into
+            // `record_loan_repayment` together with the loan leg, the EMI
+            // marks and the transactions row. Everything else in this branch —
+            // the guards, the currency arithmetic, the descriptions — is
+            // shared and byte-for-byte unchanged.
+            let atomicLeg: { accountId: string; accountAmount: number } | null = null;
+
+            // ── L4 step 4b (flag-gated) ───────────────────────────────────
+            // The case step 2 deliberately left behind: a repayment that ALSO
+            // credits a cash-advance credit card. Two account legs plus the
+            // clampCardCredit rule, which `record_loan_repayment`'s single
+            // account id cannot express — so it rides into `pay_card_bill`
+            // instead, as a one-line plan whose MAIN row is the record.
+            let cardBillLeg: {
+              accountId: string;
+              sourceAmount: number;
+              cardId: string;
+              credited: number;
+            } | null = null;
+
             if (loan.type === 'given') {
               if (!input.destinationAccountId) throw new Error('Destination account required');
               const dest = accountStore.getAccount(input.destinationAccountId);
@@ -1378,10 +2960,18 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 if (!input.conversionRate) throw new Error('Conversion rate required — different currencies');
                 conversionRate = input.conversionRate;
                 const destAmt = Math.round(input.amount * input.conversionRate * 100) / 100;
-                await trackedBalanceDelta(scope, input.destinationAccountId, destAmt);
+                if (ATOMIC_REPAYMENT_ENABLED) {
+                  atomicLeg = { accountId: input.destinationAccountId, accountAmount: destAmt };
+                } else {
+                  await trackedBalanceDelta(scope, input.destinationAccountId, destAmt);
+                }
                 description = `Received ${loan.currency} ${input.amount} → ${dest.currency} ${destAmt} from ${loan.personName} (rate: ${input.conversionRate})`;
               } else {
-                await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+                if (ATOMIC_REPAYMENT_ENABLED) {
+                  atomicLeg = { accountId: input.destinationAccountId, accountAmount: input.amount };
+                } else {
+                  await trackedBalanceDelta(scope, input.destinationAccountId, input.amount);
+                }
                 description = `Received ${currency} ${input.amount} from ${loan.personName}`;
               }
             } else {
@@ -1404,16 +2994,41 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
                 ? clampCardCredit(cashAdvanceCard, input.amount)
                 : { credited: 0, skipped: 0 };
 
+              // The cash-advance CARD CREDIT is a second account leg plus the
+              // clampCardCredit business rule, and `record_loan_repayment`
+              // takes exactly one account — so step 2 left this case on the
+              // legacy path (see the artifact table in
+              // supabase-migration-p3-atomic-repayment.sql §8.1). L4 STEP 4
+              // picks it up: `pay_card_bill` takes BOTH accounts, and the
+              // clamped figure the client computed is re-validated against the
+              // card's own headroom server-side.
+              const creditsTheCard = Boolean(cashAdvanceCard) && cardCredit.credited > 0;
+              const useCardBillHere = ATOMIC_CARD_BILL_ENABLED && creditsTheCard;
+              const useAtomicHere = ATOMIC_REPAYMENT_ENABLED && !creditsTheCard;
+
               if (src.currency !== loan.currency) {
                 if (!input.conversionRate) throw new Error('Conversion rate required — different currencies');
                 conversionRate = input.conversionRate;
                 const srcDeduct = Math.round(input.amount / input.conversionRate * 100) / 100;
                 checkBalanceForTransaction(src, srcDeduct, input.type);
                 sourceAccountId = input.sourceAccountId;
-                await trackedBalanceDelta(scope, input.sourceAccountId, -srcDeduct);
+                if (useAtomicHere) {
+                  atomicLeg = { accountId: input.sourceAccountId, accountAmount: srcDeduct };
+                } else if (!useCardBillHere) {
+                  await trackedBalanceDelta(scope, input.sourceAccountId, -srcDeduct);
+                }
                 if (cashAdvanceCard && cardCredit.credited > 0) {
                   destinationAccountId = cashAdvanceCard.id;
-                  await trackedBalanceDelta(scope, cashAdvanceCard.id, cardCredit.credited);
+                  if (useCardBillHere) {
+                    cardBillLeg = {
+                      accountId: input.sourceAccountId,
+                      sourceAmount: srcDeduct,
+                      cardId: cashAdvanceCard.id,
+                      credited: cardCredit.credited,
+                    };
+                  } else {
+                    await trackedBalanceDelta(scope, cashAdvanceCard.id, cardCredit.credited);
+                  }
                   description = `Repaid ${loan.currency} ${cardCredit.credited} to ${cashAdvanceCard.name} from ${src.name} (deducted ${src.currency} ${srcDeduct}, rate: ${input.conversionRate})`;
                 } else if (cashAdvanceCard) {
                   description = `Repaid ${loan.currency} ${input.amount} on the ${cashAdvanceCard.name} cash advance from ${src.name} — card bill already covered (rate: ${input.conversionRate})`;
@@ -1423,10 +3038,23 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               } else {
                 checkBalanceForTransaction(src, input.amount, input.type);
                 sourceAccountId = input.sourceAccountId;
-                await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+                if (useAtomicHere) {
+                  atomicLeg = { accountId: input.sourceAccountId, accountAmount: input.amount };
+                } else if (!useCardBillHere) {
+                  await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+                }
                 if (cashAdvanceCard && cardCredit.credited > 0) {
                   destinationAccountId = cashAdvanceCard.id;
-                  await trackedBalanceDelta(scope, cashAdvanceCard.id, cardCredit.credited);
+                  if (useCardBillHere) {
+                    cardBillLeg = {
+                      accountId: input.sourceAccountId,
+                      sourceAmount: input.amount,
+                      cardId: cashAdvanceCard.id,
+                      credited: cardCredit.credited,
+                    };
+                  } else {
+                    await trackedBalanceDelta(scope, cashAdvanceCard.id, cardCredit.credited);
+                  }
                   description = `Repaid ${currency} ${cardCredit.credited} to ${cashAdvanceCard.name} from ${src.name}`;
                 } else if (cashAdvanceCard) {
                   description = `Repaid ${currency} ${input.amount} on the ${cashAdvanceCard.name} cash advance from ${src.name} — card bill already covered`;
@@ -1442,18 +3070,102 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               }
             }
 
-            await trackedApplyRepayment(scope, input.loanId, input.amount);
-            if (input.emiId) {
-              await trackedMarkEmiPaid(scope, input.emiId);
-              // Overpaying against one instalment must also cover the later
-              // instalments the extra money reaches — the amount is editable
-              // now, so a targeted payment is no longer capped at one EMI.
-              await trackedMarkCoveredEmisPaid(scope, input.loanId);
+            if (cardBillLeg) {
+              // ── L4 STEP 4b (audit MF-01 / F-2 / O-1 / F-4) ──────────────
+              // ONE server-side transaction debits the paying account, credits
+              // the cash-advance card by the CLAMPED figure, reduces the loan,
+              // flips the covered instalments AND writes the row — the case
+              // step 2 could not express with a single account id. Everything
+              // below the switch is unchanged.
+              //
+              // Pin the timestamp BEFORE the server writes the row — see the
+              // transfer branch.
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+
+              await atomicPayCardBill(scope, {
+                transactionId,
+                rowType: 'repayment',
+                sourceAccountId: cardBillLeg.accountId,
+                cardAccountId: cardBillLeg.cardId,
+                amount: input.amount,
+                sourceAmount: cardBillLeg.sourceAmount,
+                // clampCardCredit's `credited`, re-validated server-side
+                // against the card's own headroom.
+                cardAmount: cardBillLeg.credited,
+                currency: loan.currency,
+                conversionRate,
+                note: notesOverride ?? input.notes ?? '',
+                category: input.category ?? '',
+                createdAt: input.createdAt,
+                // One line, no ledger row: the MAIN row IS the repayment
+                // record, and a second one would double-count the payment.
+                // Re-planned on every attempt so a conflict retry carries a
+                // fresh remaining and a fresh coverage prefix.
+                buildPlan: async () => {
+                  const fresh = useLoanStore.getState().loans.find((l) => l.id === input.loanId);
+                  if (!fresh) throw loanRemainingConflictError(tStatic('err_loan_gone'));
+                  return toCardBillLines(
+                    [{ loan: fresh, applied: input.amount }], null, input.emiId,
+                  );
+                },
+                // Ledger mode deliberately lets a repayment push an account
+                // negative (isSimpleModeBalanceBypassAllowed waives
+                // checkBalanceForTransaction above); the server guard has to be
+                // waived in exactly the same case, and only that case.
+                allowNegative: isSimpleModeBalanceBypassAllowed('repayment'),
+              });
+            } else if (atomicLeg) {
+              // ── L4 STEP 2 (audit MF-01 / F-2 / O-1 / F-4) ───────────────
+              // ONE server-side transaction applies the account leg, the loan
+              // leg, the covered EMI marks AND writes the row — so a network
+              // drop between them can no longer move a balance without
+              // recording it, or reduce a loan the record never matches.
+              // Everything below the switch (the Transaction object, the
+              // mirror, the activity entry, the reminder nudge) is unchanged:
+              // see the artifact contract table in
+              // supabase-migration-p3-atomic-repayment.sql.
+              //
+              // Pin the timestamp BEFORE the server writes the row, so the
+              // tail's `input.createdAt ?? new Date().toISOString()` produces
+              // the identical value and its idempotent upsert rewrites the
+              // same row rather than a differently-stamped one.
+              input.createdAt = input.createdAt ?? new Date().toISOString();
+
+              await atomicRepayment(scope, {
+                transactionId,
+                loanId: input.loanId,
+                accountId: atomicLeg.accountId,
+                amount: input.amount,
+                accountAmount: atomicLeg.accountAmount,
+                conversionRate,
+                note: notesOverride ?? input.notes ?? '',
+                category: input.category ?? '',
+                createdAt: input.createdAt,
+                remainingBefore: loan.remainingAmount,
+                statusBefore: loan.status,
+                personName: loan.personName,
+                loanTotalAmount: loan.totalAmount,
+                targetedEmiId: input.emiId,
+                // Ledger mode deliberately lets a repayment push an account
+                // negative (isSimpleModeBalanceBypassAllowed waives
+                // checkBalanceForTransaction above); the server guard has to
+                // be waived in exactly the same case, and only that case.
+                allowNegative: isSimpleModeBalanceBypassAllowed('repayment'),
+              });
             } else {
-              // No specific instalment was targeted (generic / partial repayment,
-              // multi-loan allocation, full payoff). Reconcile the schedule to the
-              // new paid-down balance so instalments don't orphan.
-              await trackedMarkCoveredEmisPaid(scope, input.loanId);
+              await trackedApplyRepayment(scope, input.loanId, input.amount);
+              if (input.emiId) {
+                await trackedMarkEmiPaid(scope, input.emiId);
+                // Overpaying against one instalment must also cover the later
+                // instalments the extra money reaches — the amount is editable
+                // now, so a targeted payment is no longer capped at one EMI.
+                await trackedMarkCoveredEmisPaid(scope, input.loanId);
+              } else {
+                // No specific instalment was targeted (generic / partial repayment,
+                // multi-loan allocation, full payoff). Reconcile the schedule to the
+                // new paid-down balance so instalments don't orphan.
+                await trackedMarkCoveredEmisPaid(scope, input.loanId);
+              }
             }
             break;
           }
@@ -1464,61 +3176,141 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             const goal = goalStore.getGoal(input.goalId);
             if (!goal) throw new Error('Goal not found');
 
+            // ── L4 STEP 4a (audit MF-01 / O-1 / F-4) ──────────────────────
+            // Which legs run, and how much leaves the wallet, is one pure
+            // decision (src/lib/goalContributionPlan.ts) shared by BOTH paths
+            // below — so the flagged path and the legacy path cannot disagree
+            // about a self-stored contribution or a cross-currency conversion.
+            // The guards, the balance check and every description string stay
+            // exactly where they were; only the MOVEMENT forks.
+            const goalLegs = planGoalContributionLegs({
+              sourceAccountId: input.sourceAccountId,
+              sourceCurrency: src.currency,
+              goalCurrency: goal.currency,
+              goalStoredInAccountId: goal.storedInAccountId ?? '',
+              // The branch's own `if (linkedAccount)` guard: stored_in_account_id
+              // is a label, not a foreign key, so a goal may name an account
+              // that no longer exists — and that must contribute WITHOUT a
+              // credit leg rather than fail.
+              storedInAccountExists: Boolean(
+                goal.storedInAccountId
+                && goal.storedInAccountId !== input.sourceAccountId
+                && accountStore.getAccount(goal.storedInAccountId),
+              ),
+              amount: input.amount,
+              conversionRate: input.conversionRate,
+            });
+
             // Contributing FROM the account the goal is stored in: the money
             // physically stays where it is — debiting the source (with no
             // credit back) would push its balance below reality. Record-only:
             // savedAmount moves, no balance legs, flagged in the internal note
             // so the delete path skips the refund symmetrically.
-            if (goal.storedInAccountId && goal.storedInAccountId === input.sourceAccountId) {
+            if (goalLegs.selfStored) {
               currency = goal.currency;
               sourceAccountId = input.sourceAccountId;
               relatedGoalId = input.goalId;
-              await trackedAddContribution(scope, input.goalId, input.amount);
+              // Stamped BEFORE the write on both paths, because the server
+              // stores the note verbatim and the flag has to be in it.
               notesOverride = buildInternalNote(input.notes ?? '', { goalSelfStored: '1' });
+              if (ATOMIC_GOAL_ENABLED) {
+                // Pin the timestamp BEFORE the server writes the row — see the
+                // transfer branch.
+                input.createdAt = input.createdAt ?? new Date().toISOString();
+                await atomicGoalContribution(scope, {
+                  transactionId,
+                  goalId: input.goalId,
+                  sourceAccountId: input.sourceAccountId,
+                  amount: input.amount,
+                  sourceAmount: goalLegs.sourceAmount,
+                  conversionRate: goalLegs.conversionRate,
+                  note: notesOverride,
+                  category: input.category ?? '',
+                  createdAt: input.createdAt,
+                  linkedAccountId: goalLegs.linkedAccountId,
+                  savedBefore: goal.savedAmount,
+                });
+              } else {
+                await trackedAddContribution(scope, input.goalId, input.amount);
+              }
               description = `Goal contribution: ${currency} ${input.amount} → "${goal.title}" (kept in ${src.name})`;
               break;
             }
 
+            const linkedAccount = goalLegs.linkedAccountId
+              ? accountStore.getAccount(goalLegs.linkedAccountId)
+              : undefined;
+
             if (src.currency !== goal.currency) {
               if (!input.conversionRate) throw new Error('Conversion rate required — different currencies');
               conversionRate = input.conversionRate;
-              const srcDeduct = Math.round(input.amount / input.conversionRate * 100) / 100;
+              const srcDeduct = goalLegs.sourceAmount;
               checkBalance(src, srcDeduct);
               currency = goal.currency;
               sourceAccountId = input.sourceAccountId;
               relatedGoalId = input.goalId;
-              await trackedBalanceDelta(scope, input.sourceAccountId, -srcDeduct);
-              await trackedAddContribution(scope, input.goalId, input.amount);
+              if (linkedAccount) destinationAccountId = linkedAccount.id;
 
-              if (goal.storedInAccountId && goal.storedInAccountId !== input.sourceAccountId) {
-                const linkedAccount = accountStore.getAccount(goal.storedInAccountId);
-                if (linkedAccount) {
-                  await trackedBalanceDelta(scope, goal.storedInAccountId, input.amount);
-                  destinationAccountId = goal.storedInAccountId;
-                  description = `Goal "${goal.title}": ${src.currency} ${srcDeduct} → ${goal.currency} ${input.amount} (rate: ${input.conversionRate})`;
-                } else {
-                  description = `Goal contribution: ${src.currency} ${srcDeduct} → ${goal.currency} ${input.amount} → "${goal.title}" (rate: ${input.conversionRate})`;
-                }
+              if (ATOMIC_GOAL_ENABLED) {
+                input.createdAt = input.createdAt ?? new Date().toISOString();
+                await atomicGoalContribution(scope, {
+                  transactionId,
+                  goalId: input.goalId,
+                  sourceAccountId: input.sourceAccountId,
+                  amount: input.amount,
+                  sourceAmount: srcDeduct,
+                  conversionRate: goalLegs.conversionRate,
+                  note: input.notes ?? '',
+                  category: input.category ?? '',
+                  createdAt: input.createdAt,
+                  linkedAccountId: goalLegs.linkedAccountId,
+                  savedBefore: goal.savedAmount,
+                });
               } else {
-                description = `Goal contribution: ${src.currency} ${srcDeduct} → ${goal.currency} ${input.amount} → "${goal.title}" (rate: ${input.conversionRate})`;
+                await trackedBalanceDelta(scope, input.sourceAccountId, -srcDeduct);
+                await trackedAddContribution(scope, input.goalId, input.amount);
+                if (linkedAccount) {
+                  await trackedBalanceDelta(scope, linkedAccount.id, input.amount);
+                }
               }
+
+              description = linkedAccount
+                ? `Goal "${goal.title}": ${src.currency} ${srcDeduct} → ${goal.currency} ${input.amount} (rate: ${input.conversionRate})`
+                : `Goal contribution: ${src.currency} ${srcDeduct} → ${goal.currency} ${input.amount} → "${goal.title}" (rate: ${input.conversionRate})`;
             } else {
               checkBalance(src, input.amount);
               currency = src.currency;
               sourceAccountId = input.sourceAccountId;
               relatedGoalId = input.goalId;
-              await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
-              await trackedAddContribution(scope, input.goalId, input.amount);
+              if (linkedAccount) destinationAccountId = linkedAccount.id;
 
-              if (goal.storedInAccountId && goal.storedInAccountId !== input.sourceAccountId) {
-                const linkedAccount = accountStore.getAccount(goal.storedInAccountId);
+              if (ATOMIC_GOAL_ENABLED) {
+                input.createdAt = input.createdAt ?? new Date().toISOString();
+                await atomicGoalContribution(scope, {
+                  transactionId,
+                  goalId: input.goalId,
+                  sourceAccountId: input.sourceAccountId,
+                  amount: input.amount,
+                  sourceAmount: goalLegs.sourceAmount,
+                  conversionRate: goalLegs.conversionRate,
+                  note: input.notes ?? '',
+                  category: input.category ?? '',
+                  createdAt: input.createdAt,
+                  linkedAccountId: goalLegs.linkedAccountId,
+                  savedBefore: goal.savedAmount,
+                });
+              } else {
+                await trackedBalanceDelta(scope, input.sourceAccountId, -input.amount);
+                await trackedAddContribution(scope, input.goalId, input.amount);
                 if (linkedAccount) {
-                  await trackedBalanceDelta(scope, goal.storedInAccountId, input.amount);
-                  destinationAccountId = goal.storedInAccountId;
-                  description = `Goal "${goal.title}": ${currency} ${input.amount} from ${src.name} → ${linkedAccount.name}`;
-                } else {
-                  description = `Goal contribution: ${currency} ${input.amount} → "${goal.title}" (tracked internally)`;
+                  await trackedBalanceDelta(scope, linkedAccount.id, input.amount);
                 }
+              }
+
+              if (linkedAccount) {
+                description = `Goal "${goal.title}": ${currency} ${input.amount} from ${src.name} → ${linkedAccount.name}`;
+              } else if (goal.storedInAccountId && goal.storedInAccountId !== input.sourceAccountId) {
+                description = `Goal contribution: ${currency} ${input.amount} → "${goal.title}" (tracked internally)`;
               } else {
                 description = `Goal contribution: ${currency} ${input.amount} → "${goal.title}"`;
               }

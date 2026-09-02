@@ -13,6 +13,7 @@ import { formatLinkError, retryAfterMinutes } from '../lib/contactLinkStatus';
 import { extractConnectCode } from '../lib/connectQr';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useT } from '../lib/i18n';
+import { track } from '../lib/telemetry';
 
 // Landing page for a scanned Hisaab QR (https://usehisaab.com/u/HSB-XXXXXX).
 //
@@ -94,6 +95,10 @@ export function ConnectByCodePage() {
         setError(formatLinkError(err, t));
         return;
       }
+      // Catalog #13 — this page is the code-lookup landing for a scanned
+      // Hisaab QR, so 'code' regardless of whether the tap that opened the
+      // camera was itself a QR scan or a typed code.
+      track('contact_link_requested', { via: 'code' });
       toast.show({
         type: 'success',
         title: `${found.displayName} added & connected`,

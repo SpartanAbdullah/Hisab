@@ -11,6 +11,7 @@ import { useCategoryOptions, withCurrentValue } from '../lib/mergedCategories';
 import { groupAccountsByType } from '../lib/accountGroups';
 import { useT } from '../lib/i18n';
 import { validateRecurringStart } from '../lib/recurringStartValidation';
+import { localIso } from '../lib/localDate';
 import type { RecurringCadence, RecurringTransaction } from '../db';
 
 // Shared "add a recurring entry" modal. Used by the Subscription Tracker (with
@@ -45,7 +46,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
   const [accountId, setAccountId] = useState('');
   const [category, setCategory] = useState<string>(seedCategory);
   const [cadence, setCadence] = useState<RecurringCadence>('monthly');
-  const [nextDueDate, setNextDueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [nextDueDate, setNextDueDate] = useState(() => localIso(new Date()));
   const [saving, setSaving] = useState(false);
 
   // The modal stays mounted across opens, so hydrate the form whenever it
@@ -67,7 +68,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
       setAccountId('');
       setCategory(seedCategory);
       setCadence('monthly');
-      setNextDueDate(new Date().toISOString().slice(0, 10));
+      setNextDueDate(localIso(new Date()));
     }
   }, [open, template, seedCategory]);
 
@@ -102,7 +103,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
     // template whose date is already in the past shouldn't nag on every edit.
     const dateChanged = !template || nextDueDate !== template.nextDueDate;
     if (dateChanged) {
-      const startCheck = validateRecurringStart(nextDueDate, new Date().toISOString().slice(0, 10));
+      const startCheck = validateRecurringStart(nextDueDate, localIso(new Date()));
       if (startCheck.severity === 'block') {
         toast.show({ type: 'error', title: t('arm_err_start_date'), subtitle: startCheck.reason });
         return;

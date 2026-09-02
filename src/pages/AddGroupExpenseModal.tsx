@@ -6,9 +6,13 @@ import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useSplitStore } from '../stores/splitStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useAppModeStore } from '../stores/appModeStore';
+import { useTransactionStore } from '../stores/transactionStore';
+import { useLoanStore } from '../stores/loanStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
+import { track } from '../lib/telemetry';
+import { bucketAmount, bucketCount } from '../lib/telemetryEvents';
 import type { SplitGroup, SplitType, SplitDetail } from '../db';
 import {
   friendlyGroupParticipantError,
@@ -16,6 +20,7 @@ import {
   getInactiveGroupMembers,
   NEED_TWO_ACTIVE_MEMBERS_MESSAGE,
 } from '../lib/groupActiveMembers';
+import { isGuestMember } from '../lib/groupGuests';
 import { computeShares } from '../lib/splitMath';
 import { SHARE_ERROR_KEYS } from '../lib/shareErrors';
 import { findRecentDuplicate } from '../lib/duplicateExpense';
@@ -204,6 +209,10 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
 
     setSaving(true);
     try {
+      // Read BEFORE the write — after it, the stores are never empty again.
+      const isFirstEver =
+        useTransactionStore.getState().transactions.length === 0 &&
+        useLoanStore.getState().loans.length === 0;
       await addGroupExpense({
         groupId: group.id,
         description: description.trim(),
@@ -213,6 +222,24 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
         splits,
         category,
         paidFromAccountId: (shouldTrackExpense && !dontTrackInAccounts) ? paidFromAccountId : undefined,
+      });
+      // Catalog #9 (source=group) + #19. Amount and participant count both
+      // travel as buckets — never the raw split.
+      const mode = appMode === 'splits_only' ? 'splits_only' : 'full_tracker';
+      track('entry_created', {
+        entry_type: 'expense',
+        source: 'group',
+        is_first_ever: isFirstEver,
+        mode,
+        currency: group.currency,
+        amount_bucket: bucketAmount(amt),
+      });
+      track('group_expense_added', {
+        // The store's SplitType spells the percent variant 'percentage'; the
+        // telemetry catalog's enum spells it 'percent' — translate rather
+        // than let the sanitizer silently drop the property.
+        split_type: splitType === 'percentage' ? 'percent' : splitType,
+        participant_count_bucket: bucketCount(splits.length),
       });
       const payerName = activeMembers.find((member) => member.id === paidBy)?.name ?? t('agem_someone');
       const paidFrom = paidFromAccountId ? accounts.find((account) => account.id === paidFromAccountId)?.name : null;
@@ -240,7 +267,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
     }
   };
 
-  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all';
+  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   return (
     <Modal open={open} onClose={onClose} title={t('group_expense_add')}
@@ -256,7 +283,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
           </p>
         )}
         <button onClick={handleSubmit} disabled={saving || !description.trim() || amt <= 0 || activeMembers.length < 2 || !defaultPayerId || (shouldTrackExpense && !dontTrackInAccounts && !paidFromAccountId)}
-          className="w-full bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
+          className="w-full bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20">
           {saving ? t('quick_processing') : t('group_save_expense')}
         </button>
       </div>
@@ -287,8 +314,18 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
           <div className="flex flex-wrap gap-2 mt-1.5">
             {activeMembers.map(member => (
               <button key={member.id} onClick={() => setPaidBy(member.id)}
-                className={`min-h-[44px] inline-flex items-center px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
+                className={`min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
                 {member.name}
+                {/* Guests are in this list because getActiveGroupMembers keys on
+                    status and a guest seat is 'connected' — the same predicate
+                    the server's paid_by trigger uses (audit G6 / O4). The tag
+                    says which of these people will never see this expense in
+                    their own app. */}
+                {isGuestMember(member) && (
+                  <span className={`text-[8.5px] uppercase tracking-wide font-bold ${paidBy === member.id ? 'text-white/60' : 'text-ink-400'}`}>
+                    {t('guest_tag')}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -303,7 +340,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
               type="button"
               onClick={() => setDontTrackInAccounts(v => !v)}
               className={`w-full mt-1.5 p-3 rounded-2xl border-2 flex items-center justify-between text-left transition-all ${
-                dontTrackInAccounts ? 'border-accent-500 bg-accent-50 shadow-sm shadow-indigo-500/5' : 'border-cream-border bg-cream-card'
+                dontTrackInAccounts ? 'border-accent-500 bg-accent-50 shadow-sm shadow-accent-500/5' : 'border-cream-border bg-cream-card'
               }`}>
               <p className="text-[13px] font-semibold text-ink-800">{t('group_dont_track')}</p>
               <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${dontTrackInAccounts ? 'bg-accent-500 border-accent-500 text-white' : 'border-cream-border text-transparent'}`}>
@@ -326,8 +363,13 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
           <div className="flex flex-wrap gap-2 mt-1.5">
             {activeMembers.map(member => (
               <button key={member.id} onClick={() => toggleMember(member.id)}
-                className={`min-h-[44px] inline-flex items-center px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
+                className={`min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
                 {member.name}
+                {isGuestMember(member) && (
+                  <span className={`text-[8.5px] uppercase tracking-wide font-bold ${selectedMembers.includes(member.id) ? 'text-white/60' : 'text-ink-400'}`}>
+                    {t('guest_tag')}
+                  </span>
+                )}
               </button>
             ))}
           </div>

@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Plus, ArrowLeftRight, Search, X, Users, ChevronDown } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, ArrowLeftRight, Search, X, Users, ChevronDown, History } from 'lucide-react';
 import {
   startOfDay,
   subDays,
@@ -31,13 +31,29 @@ import { ListSkeleton } from '../components/ListSkeleton';
 import { NextStepHint } from '../components/NextStepHint';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { QuickEntry } from './QuickEntry';
+import { deferredBlockStyle, estimateGroupHeight, useProgressiveBlocks } from '../components/VirtualList';
+import { analyticsDb } from '../lib/supabaseDb';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { parseInternalNote } from '../lib/internalNotes';
 import { bundleSplitEvents, type LedgerEntry } from '../lib/splitLedger';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import type { TransactionType, Transaction } from '../db';
 
 type SplitLedgerEntry = Extract<LedgerEntry, { kind: 'split' }>;
+
+// ── The recent window (audit P2 M2 / 03-performance H3) ────────────────────
+// The default view is the last 90 days, not the whole history. This is a
+// RENDERING window, not a fetch window: the store still holds everything (other
+// screens need it), so nothing about search or filtering changes — see
+// `windowActive` below, which switches the window OFF the moment any filter or
+// search is on, so a search always searches the complete history.
+//
+// 90 days is chosen to cover the review loop this screen exists for ("what did
+// I spend recently", "did that repayment land") while bounding the default
+// render on a fresh boot. Anything older is one tap away and the tap says how
+// many entries are behind it.
+const RECENT_WINDOW_DAYS = 90;
 
 // One ad-hoc split shown as the single event it was. Collapsed it reads like a
 // normal expense line carrying the FULL bill (that is what left the account);
@@ -179,12 +195,20 @@ function classifyForFlow(tx: Transaction): 'in' | 'out' | 'neutral' {
 
 export function TransactionsPage() {
   const { transactions, loadTransactions } = useTransactionStore();
+  // The bounded-history contract (docs/performance.md §7). `loadTransactions()`
+  // now brings back a WINDOW, not the whole table, so this page has to ask for
+  // the rest — and it asks at exactly the two moments the user's intent says it
+  // must: tapping "Show full history", and turning on any filter or search
+  // (whose documented promise is that they run over the complete history).
+  const ensureTransactionHistory = useTransactionStore((s) => s.ensureTransactionHistory);
+  const historyCoverage = useTransactionStore((s) => s.historyCoverage);
+  const historyLoading = useTransactionStore((s) => s.historyLoading);
   const { loadAccounts } = useAccountStore();
   const { loadLoans } = useLoanStore();
   const { loadGoals } = useGoalStore();
   const t = useT();
 
-  const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
+  const primaryCurrency = getPrimaryCurrency();
 
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState<TransactionType | 'all'>('all');
@@ -275,12 +299,77 @@ export function TransactionsPage() {
     return result;
   }, [transactions, filter, timeFilter, search]);
 
-  // Day-group the filtered list — Sukoon's per-day section pattern. Each
+  const filtersActive = filter !== 'all' || timeFilter !== 'all' || search.trim().length > 0;
+
+  // ── The recent window ────────────────────────────────────────────────────
+  // Active ONLY on the unfiltered default view. Any type filter, any time
+  // filter, any search text and the window switches off, so search/filter
+  // semantics are byte-identical to before this change: they always run over
+  // the complete loaded history.
+  const [showFullHistory, setShowFullHistory] = useState(false);
+  // "Show full history" is now BOTH a render-window release and a fetch. Before
+  // the store was bounded, every row was already local and this was pure
+  // rendering; a tap that only lifted the render window would now show the same
+  // 12 months back and call it "full history", which is a lie in a finance app.
+  const revealFullHistory = useCallback(() => {
+    setShowFullHistory(true);
+    void ensureTransactionHistory({ all: true }).catch(() => {
+      // A failed older-history fetch must not blank the list: the window is
+      // still lifted, the rows we DO hold still render, and the honest footer
+      // below keeps saying the local copy is short of the server.
+    });
+  }, [ensureTransactionHistory]);
+
+  // Any filter or search is a request for the whole history — §6.6.5 states
+  // outright that "a search always runs over the complete loaded history".
+  // With a bounded store that promise has to be paid for, on demand.
+  useEffect(() => {
+    if (!filtersActive) return;
+    if (historyCoverage.complete) return;
+    void ensureTransactionHistory({ all: true }).catch(() => {});
+  }, [filtersActive, historyCoverage.complete, ensureTransactionHistory]);
+
+  const recentCutoff = useMemo(() => startOfDay(subDays(new Date(), RECENT_WINDOW_DAYS)), []);
+  const windowActive = !showFullHistory && !filtersActive;
+  const windowed = useMemo(
+    () => (windowActive
+      ? filtered.filter((txn) => new Date(txn.createdAt) >= recentCutoff)
+      : filtered),
+    [filtered, windowActive, recentCutoff],
+  );
+  const hiddenByWindow = filtered.length - windowed.length;
+
+  // ── Truncation honesty (audit H4 / 04-supabase F-FE1) ────────────────────
+  // `fetchAllPages` already DETECTS a partial fetch, but it reports it to
+  // Sentry only, and the flag's route to this page runs through mirrorCache and
+  // transactionStore — files this task does not own. A single `head: true`
+  // count (no rows transferred, one request per mount) tells us the same thing
+  // from the other end, and catches a short mirror that pagedFetch never saw.
+  // Fails silently: a count that does not answer must never block the list.
+  const [serverCount, setServerCount] = useState<number | null>(null);
+  const countRequested = useRef(false);
+  useEffect(() => {
+    if (countRequested.current || loadStatus !== 'ready') return;
+    countRequested.current = true;
+    let cancelled = false;
+    void analyticsDb.transactionHistoryCount().then((count) => {
+      if (!cancelled && typeof count === 'number') setServerCount(count);
+    });
+    return () => { cancelled = true; };
+  }, [loadStatus]);
+  // Optimistic local rows can make the store LARGER than the server count; only
+  // the other direction means history is missing from this device.
+  const missingLocally =
+    serverCount !== null && serverCount > transactions.length
+      ? serverCount - transactions.length
+      : 0;
+
+  // Day-group the windowed list — Sukoon's per-day section pattern. Each
   // group carries its own signed total so the user can scan a day at a
   // glance without doing the math.
   const dayGroups = useMemo(() => {
     const groups = new Map<string, { date: Date; items: Transaction[]; signedSum: number }>();
-    const sorted = [...filtered].sort(
+    const sorted = [...windowed].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
     for (const tx of sorted) {
@@ -302,7 +391,16 @@ export function TransactionsPage() {
     // bundled for display — so collapsing a split never changes the day's
     // arithmetic, only how many lines it takes to show it.
     return [...groups.values()].map((g) => ({ ...g, entries: bundleSplitEvents(g.items) }));
-  }, [filtered, primaryCurrency]);
+  }, [windowed, primaryCurrency]);
+
+  // Windowed RENDERING on top of the windowed data: reveal day groups a
+  // screenful at a time as the user scrolls. Grows only, and remembers how far
+  // it grew, so App.tsx's POP scroll restoration (H7/MF-18) still lands on the
+  // right offset when the user comes back from a detail route.
+  const { visible: visibleGroups, hasMore, sentinelRef } = useProgressiveBlocks(
+    dayGroups.length,
+    { memoryKey: 'transactions' },
+  );
 
   const today = new Date();
   const yesterday = subDays(today, 1);
@@ -312,7 +410,6 @@ export function TransactionsPage() {
     return format(d, 'EEE d MMM');
   };
 
-  const filtersActive = filter !== 'all' || timeFilter !== 'all' || search.trim().length > 0;
   // Keep the search box expanded whenever a filter or search is active, so the
   // active query stays visible and editable instead of collapsing away.
   const searchExpanded = showSearch || filtersActive;
@@ -493,6 +590,24 @@ export function TransactionsPage() {
             their real history arrives. */}
         {loadStatus === 'loading' && transactions.length === 0 ? (
           <ListSkeleton rows={4} />
+        ) : windowed.length === 0 && filtered.length > 0 ? (
+          // Everything the filters matched is older than the recent window —
+          // never show "no transactions" when there ARE transactions.
+          <div className="rounded-2xl bg-cream-card border border-cream-border p-4 text-center space-y-2">
+            <p className="text-[12px] text-ink-600">
+              {t('tx_window_recent').replace('{d}', String(RECENT_WINDOW_DAYS))}
+              {' · '}
+              {t('tx_window_older').replace('{n}', String(hiddenByWindow))}
+            </p>
+            <button
+              onClick={revealFullHistory}
+              disabled={historyLoading}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-ink-900 text-white px-3.5 py-2 text-[11.5px] font-semibold min-h-[44px] disabled:opacity-60"
+            >
+              <History size={13} strokeWidth={2.2} />
+              {historyLoading ? t('tx_history_loading') : t('tx_load_older')}
+            </button>
+          </div>
         ) : filtered.length === 0 ? (
           loadStatus === 'ready' ? (
             <EmptyState
@@ -514,8 +629,15 @@ export function TransactionsPage() {
           // Deliberately NOT keyed on `search` — re-animating on every
           // keystroke would make typing feel like the page was thrashing.
           <div className="space-y-4 stagger-in" key={`${filter}-${timeFilter}`}>
-            {dayGroups.map((group) => (
-              <div key={group.date.toISOString()}>
+            {dayGroups.slice(0, visibleGroups).map((group) => (
+              // One day group = one deferred block. Off-screen blocks skip
+              // layout and paint entirely (content-visibility), and blocks past
+              // `visibleGroups` are not mounted at all until the sentinel below
+              // scrolls into view.
+              <div
+                key={group.date.toISOString()}
+                style={deferredBlockStyle(estimateGroupHeight(group.entries.length))}
+              >
                 <div className="flex items-baseline justify-between px-1 mb-1.5">
                   <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
                     {formatDayLabel(group.date)}
@@ -552,7 +674,54 @@ export function TransactionsPage() {
                 </div>
               </div>
             ))}
+
+            {/* Reveal sentinel. Rendered only while blocks remain, and sitting
+                well above the fold of the next batch (rootMargin) so the list
+                never visibly stalls while scrolling. */}
+            {hasMore && <div ref={sentinelRef} aria-hidden className="h-px" />}
           </div>
+        )}
+
+        {/* ── The honest footer ──────────────────────────────────────────────
+            Two DIFFERENT truths, deliberately worded apart:
+              · the recent window is OUR choice and is undoable in one tap;
+              · a short local mirror is a FACT about this device's data and is
+                not something a button can undo. Never conflate them. */}
+        {/* The affordance can no longer be keyed off `hiddenByWindow` alone.
+            The store is bounded now, so a user whose loaded window is entirely
+            inside 90 days hides NOTHING locally while years still sit on the
+            server — and the one tap that would fetch them would have vanished.
+            Incomplete coverage keeps the button on screen, with copy that says
+            which of the two truths applies. */}
+        {windowActive && (hiddenByWindow > 0 || !historyCoverage.complete) && (
+          <div className="rounded-2xl bg-cream-soft border border-cream-hairline px-4 py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-ink-600">
+                {t('tx_window_recent').replace('{d}', String(RECENT_WINDOW_DAYS))}
+              </p>
+              <p className="text-[10.5px] text-ink-500 mt-0.5">
+                {hiddenByWindow > 0
+                  ? t('tx_window_older').replace('{n}', String(hiddenByWindow))
+                  : t('tx_window_server')}
+              </p>
+            </div>
+            <button
+              onClick={revealFullHistory}
+              disabled={historyLoading}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-cream-card border border-cream-border px-3 py-2 text-[11px] font-semibold text-ink-700 min-h-[44px] disabled:opacity-60"
+            >
+              <History size={12} strokeWidth={2.2} />
+              {historyLoading ? t('tx_history_loading') : t('tx_load_older')}
+            </button>
+          </div>
+        )}
+
+        {missingLocally > 0 && (
+          <p className="text-[10.5px] text-ink-500 px-1 leading-snug">
+            {t('tx_history_partial')
+              .replace('{n}', String(transactions.length))
+              .replace('{m}', String(serverCount ?? transactions.length))}
+          </p>
         )}
 
       </div>

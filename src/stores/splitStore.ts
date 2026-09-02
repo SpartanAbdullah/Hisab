@@ -11,6 +11,7 @@ import {
   groupMembershipDb,
   groupArchiveDb,
   groupOwnershipDb,
+  groupGuestsDb,
   transactionsDb,
 } from '../lib/supabaseDb';
 import {
@@ -24,6 +25,7 @@ import type {
   GroupExpenseBalanceRow,
   GroupSettlementBalanceRow,
   GroupArchiveResult,
+  GuestSeatResult,
   LeaveGroupResult,
   PendingGroupInvitation,
 } from '../lib/supabaseDb';
@@ -57,7 +59,11 @@ import { useTransactionStore } from './transactionStore';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 import { tStatic } from '../lib/i18n';
 import { refreshAfterSuccessfulLeave } from '../lib/groupLeave';
-import { computePairwiseDebts } from '../lib/groupDebts';
+import { computePairwiseDebts, type GroupDebt } from '../lib/groupDebts';
+import { groupInputsForWhoOwes } from '../lib/whoOwesGroupInputs';
+import type { WhoOwesGroupInput } from '../lib/whoOwesMe';
+import { guestRpcFailureMessage, isGuestMember } from '../lib/groupGuests';
+import { buildSettlePlans, type SettlePlans } from '../lib/settleUpMinimize';
 import { coreExpenseFieldsChanged } from '../lib/groupExpenseDiff';
 import { isSettlementSuccess, settlementFailureMessage } from '../lib/groupSettlementResult';
 import {
@@ -81,11 +87,39 @@ export interface ResolvedMemberInput {
   publicCode: string;
 }
 
+/**
+ * A person who will never install Hisaab, named at group-creation time
+ * (audit G6 / O4, July blocker B6). No profile, no code, no invitation — just a
+ * name and, optionally, a phone the server stores ONLY as a hash so the seat can
+ * attach itself if they ever do join. See src/lib/groupGuests.ts.
+ */
+export interface GuestMemberInput {
+  name: string;
+  phone?: string;
+}
+
 interface SplitState {
   groups: SplitGroup[];
   loading: boolean;
   balances: Record<string, number>;
   balancesLoaded: boolean;
+  // Per-group DIRECT pairwise debts, filtered to the edges the signed-in user
+  // is actually on. `loadBalances` already nets every visible expense +
+  // settlement per group to produce `balances`; it now keeps the per-PERSON
+  // rows it used to throw away, so the who-owes-me surface can say "Bilal owes
+  // you 400 from Dubai Trip" instead of "Dubai Trip owes you 400" — with ZERO
+  // extra fetches.
+  //
+  // MEMORY: only edges touching me are retained, so a group of n members costs
+  // at most n−1 rows instead of the O(n²) full matrix. Everyone else's
+  // member↔member debts are dropped on the spot: they are not the user's money
+  // (docs/who-owes-me.md §2.3) and nothing in the app renders them from here.
+  //
+  // A group whose key is PRESENT has been computed (an empty array means "you
+  // are square with everyone in it"); a group whose key is ABSENT has not been
+  // computed — either the user has no member seat in it, or balances have not
+  // loaded. Callers must not read absence as "square".
+  pairwiseByGroup: Record<string, GroupDebt[]>;
   // Per-group flag: "the current user paid for an expense in this group that
   // isn't reconciled yet". Drives the small red dot on group cards so the
   // user knows which groups need their attention without opening each one.
@@ -99,7 +133,23 @@ interface SplitState {
   loadGroups: () => Promise<void>;
   loadBalances: () => Promise<void>;
   loadUnreconciledFlags: (currentUserId: string) => Promise<void>;
-  createGroup: (name: string, emoji: string, members: ResolvedMemberInput[], currency: Currency) => Promise<SplitGroup>;
+  createGroup: (name: string, emoji: string, members: ResolvedMemberInput[], currency: Currency, guests?: GuestMemberInput[]) => Promise<SplitGroup>;
+  // Guest seats (audit G6 / O4). Failures come back as a status STRING rather
+  // than a throw, because add_group_guest / remove_group_guest return their
+  // refusals as data (audit H1) — src/lib/groupGuests.ts maps the code to copy.
+  // 'ok' and 'ALREADY_ADDED' are both success.
+  addGroupGuest: (groupId: string, name: string, phone?: string) => Promise<GuestSeatResult>;
+  removeGroupGuest: (groupId: string, memberId: string) => Promise<GuestSeatResult>;
+  // Rename an unclaimed guest seat (docs/guest-members.md §9.4's "no rename UI"
+  // open risk). OWNER-ONLY — the group_members UPDATE RLS policy only lets a
+  // non-profile-owner write through the group-owner branch, so a non-owner's
+  // write would 0-row silently; this checks ownership client-side FIRST and
+  // returns 'NOT_ALLOWED' as data rather than relying on a silent no-op.
+  // Unlike add/remove there is NO server RPC and NO trigger validating this
+  // write (tg_group_members_guest_seat_rules is BEFORE INSERT only), so the
+  // 1-40-char + live-duplicate checks here are the ONLY enforcement — reused
+  // via the same guest_err_* status vocabulary so callers map it identically.
+  renameGroupGuest: (groupId: string, memberId: string, name: string) => Promise<GuestSeatResult>;
   // Throws on refusal. supabase-migration-audit-p0-group-deletion-guard.sql
   // blocks the hard delete of a SHARED group with GROUP_HAS_OTHER_MEMBERS /
   // GROUP_HAS_OUTSTANDING_BALANCES — callers must catch and offer Archive.
@@ -153,6 +203,18 @@ interface SplitState {
   // balance math derives from the settlement rows.
   deleteSettlement: (groupId: string, settlementId: string) => Promise<void>;
 
+  // BOTH settle-up plans for a group, from one pass over its expenses +
+  // settlements: `direct` (pay only the people you actually transacted with —
+  // what the UI shows by default) and `minimized` (fewest transfers, but money
+  // can be rerouted through people you never split with). Carries
+  // `transfersSaved`, `rerouted` and `minimizedFellBackToDirect` so the
+  // simplify toggle can be labelled honestly instead of presented as free
+  // magic. Null when the group can't be read. See src/lib/settleUpMinimize.ts.
+  getSettlePlans: (groupId: string) => Promise<SettlePlans | null>;
+  // The minimized plan's transfers — kept as its own selector because every
+  // existing caller wants exactly this list. Falls back to the DIRECT plan
+  // whenever greedy minimization comes out worse (the module guarantees
+  // `minimized.count <= direct.count`).
   getSimplifiedDebts: (groupId: string) => Promise<SimplifiedDebt[]>;
   // Raw direct "you owe X to Y" debts with no rerouting — the default settle-up view.
   getPairwiseDebts: (groupId: string) => Promise<SimplifiedDebt[]>;
@@ -165,6 +227,7 @@ const INITIAL_SPLIT_STATE = {
   loading: false,
   balances: {} as Record<string, number>,
   balancesLoaded: false,
+  pairwiseByGroup: {} as Record<string, GroupDebt[]>,
   unreconciledFlags: {} as Record<string, boolean>,
   pendingInvitations: [] as PendingGroupInvitation[],
 };
@@ -317,6 +380,29 @@ function isKnownNonMember(group: SplitGroup, userId: string): boolean {
 // per-actor rate limit. See supabase-migration-audit-p0-notifications.sql.
 // Nothing in this file may write notifications or group_events again.
 
+/**
+ * The group half of the who-owes-me surface, straight out of store state.
+ *
+ * Prefers the per-PERSON pairwise rows `loadBalances` retained; falls back to
+ * the coarse "you ↔ the group" edge derived from `balances` for any group the
+ * pairwise pass has not covered. Pure — no fetch, no side effect.
+ *
+ * NOT a Zustand selector in the `useSplitStore(sel)` sense: it returns a fresh
+ * array every call, which would make `useSyncExternalStore`'s snapshot unstable
+ * (React #185). Subscribe to `groups` / `balances` / `pairwiseByGroup` as raw
+ * slices and call this inside a `useMemo`.
+ */
+export function selectWhoOwesGroupInputs(
+  state: Pick<SplitState, 'groups' | 'balances' | 'pairwiseByGroup'>,
+  currentProfileId: string | null | undefined,
+): WhoOwesGroupInput[] {
+  return groupInputsForWhoOwes(
+    state.groups,
+    { pairwiseByGroup: state.pairwiseByGroup, balances: state.balances },
+    currentProfileId,
+  );
+}
+
 export const useSplitStore = create<SplitState>((set, get) => ({
   ...INITIAL_SPLIT_STATE,
 
@@ -358,7 +444,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
   loadBalances: async () => {
     const currentUserId = localStorage.getItem('hisaab_supabase_uid');
     if (!currentUserId) {
-      set({ balances: {}, balancesLoaded: true });
+      set({ balances: {}, pairwiseByGroup: {}, balancesLoaded: true });
       return;
     }
     try {
@@ -382,21 +468,32 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       }
 
       const balances: Record<string, number> = {};
+      // Per-person attribution of that same net, from the SAME rows — see the
+      // `pairwiseByGroup` field comment. No extra fetch: `computePairwiseDebts`
+      // is a pure pass over the two arrays we already downloaded.
+      const pairwiseByGroup: Record<string, GroupDebt[]> = {};
       for (const group of get().groups) {
         const me = group.members.find(m => m.profileId === currentUserId);
         if (!me) { balances[group.id] = 0; continue; }
+        const expenses = expensesByGroup.get(group.id) ?? [];
+        const settlements = settlementsByGroup.get(group.id) ?? [];
         let net = 0;
-        for (const e of expensesByGroup.get(group.id) ?? []) {
+        for (const e of expenses) {
           if (e.paidBy === me.id) net += e.amount;
           for (const s of e.splits) if (s.memberId === me.id) net -= s.amount;
         }
-        for (const s of settlementsByGroup.get(group.id) ?? []) {
+        for (const s of settlements) {
           if (s.fromMember === me.id) net += s.amount;
           if (s.toMember === me.id) net -= s.amount;
         }
         balances[group.id] = Math.round(net * 100) / 100;
+        // DIRECT debts only (no simplification): a rerouted debt would put the
+        // money on a person the user never split with. Kept even when empty, so
+        // "present but empty" reads as square rather than as not-computed.
+        pairwiseByGroup[group.id] = computePairwiseDebts(group.members, expenses, settlements)
+          .filter((d) => d.from === me.id || d.to === me.id);
       }
-      set({ balances, balancesLoaded: true });
+      set({ balances, pairwiseByGroup, balancesLoaded: true });
     } catch (err) {
       reportError(err, { feature: 'splitStore.loadBalances' });
       // Keep existing balances; mark loaded so UI doesn't spin forever.
@@ -441,7 +538,7 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     }
   },
 
-  createGroup: async (name, emoji, resolvedMembers, currency) => {
+  createGroup: async (name, emoji, resolvedMembers, currency, guests = []) => {
     const now = new Date().toISOString();
     const currentUserId = getCurrentUserId();
     const ownerName = getCurrentUserName();
@@ -510,8 +607,28 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     try {
       await splitGroupsDb.add(group);
       await groupMembersDb.addMany(group.id, members);
+
+      // ── Guest seats (audit G6 / O4) ──────────────────────────────────────
+      // Through the RPC, NOT through addMany, even though the owner's raw
+      // insert would be allowed by RLS. Three reasons, all load-bearing:
+      //   * the phone hash lands in group_guest_identities, a table no client
+      //     role can write — only add_group_guest can put it there;
+      //   * name/cap/duplicate validation and the activity-feed row live in one
+      //     place instead of being re-implemented here;
+      //   * the RPC is idempotent on the member id we mint, so a retry of this
+      //     whole flow cannot mint twins.
+      // Inside the same try, so a refusal rolls the phantom group back exactly
+      // like a failed member write does. A refusal IS an error here (unlike the
+      // addGroupGuest action below): the user typed these names into the create
+      // form and silently dropping one would be a lie about who is in the group.
+      for (const guest of guests) {
+        const result = await groupGuestsDb.add(group.id, uuid(), guest.name, guest.phone ?? null);
+        if (result.status !== 'ok' && result.status !== 'ALREADY_ADDED') {
+          throw new Error(guestRpcFailureMessage(result.status));
+        }
+      }
     } catch (err) {
-      reportError(err, { feature: 'splitStore.createGroup.write', extra: { groupId: group.id, memberCount: members.length } });
+      reportError(err, { feature: 'splitStore.createGroup.write', extra: { groupId: group.id, memberCount: members.length, guestCount: guests.length } });
       await splitGroupsDb.delete(group.id).catch((rollbackErr) => {
         reportError(rollbackErr, { feature: 'splitStore.createGroup.rollback', extra: { groupId: group.id } });
       });
@@ -668,6 +785,77 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     return joinCode;
   },
 
+  // Add a named seat for someone who is not on Hisaab. Any CONNECTED member of
+  // the group may do this (the Splitwise model — see the migration's §0b for
+  // why owner-only was rejected). The seat is a live participant the moment it
+  // exists: it can hold split shares, be the payer, and be settled with.
+  addGroupGuest: async (groupId, name, phone) => {
+    const result = await groupGuestsDb.add(groupId, uuid(), name, phone ?? null);
+    if (result.status === 'ok' || result.status === 'ALREADY_ADDED') {
+      // The member list is the whole point of the feature — reload before the
+      // caller closes its sheet, or the new seat is invisible until next paint.
+      await get().loadGroups();
+    }
+    return result;
+  },
+
+  // Undo a typo. Refused (GUEST_HAS_LEDGER) the moment any expense, split share
+  // or settlement references the seat — deleting it then would dangle paid_by /
+  // from_member / splits[].memberId across everyone else's ledger.
+  removeGroupGuest: async (groupId, memberId) => {
+    const result = await groupGuestsDb.remove(groupId, memberId);
+    if (result.status === 'ok') await get().loadGroups();
+    return result;
+  },
+
+  // See the interface comment above for why this is client-validated only.
+  // Optimistic: the local member row is patched immediately (matching
+  // claimPaidByMemberIfMine's pattern above) and rolled back if the write
+  // fails, rather than round-tripping through loadGroups() like add/remove —
+  // a rename touches exactly one field of one already-known row, nothing else
+  // to refetch.
+  renameGroupGuest: async (groupId, memberId, name) => {
+    const fail = (status: string): GuestSeatResult => ({ status, memberId, displayName: null, hasPhone: false });
+
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 40) return fail('INVALID_NAME');
+
+    const group = await hydrateGroup(get().groups.find(item => item.id === groupId) ?? await splitGroupsDb.get(groupId));
+    if (!group) return fail('NOT_ACTIVE_MEMBER');
+
+    const member = group.members.find(item => item.id === memberId);
+    if (!member || !isGuestMember(member)) return fail('NOT_A_GUEST');
+
+    const currentUserId = getCurrentUserId();
+    const ownerMember = group.members.find(item => item.isOwner);
+    if (ownerMember?.profileId !== currentUserId) return fail('NOT_ALLOWED');
+
+    if (trimmed === member.name) {
+      // No-op rename (e.g. reopening the sheet and saving unchanged text).
+      return { status: 'ok', memberId, displayName: trimmed, hasPhone: false };
+    }
+
+    // Live-seat duplicate check — the same scope as the SQL trigger's INSERT-
+    // time rule (status <> 'left'), just run here since UPDATE gets no trigger.
+    const key = trimmed.toLocaleLowerCase();
+    const duplicate = group.members.some(
+      other => other.id !== memberId && other.status !== 'left' && other.name.trim().toLocaleLowerCase() === key,
+    );
+    if (duplicate) return fail('DUPLICATE_NAME');
+
+    const previous = member;
+    patchGroupMemberInState(set, groupId, { ...member, name: trimmed });
+    try {
+      await groupMembersDb.update(memberId, { name: trimmed });
+    } catch (err) {
+      patchGroupMemberInState(set, groupId, previous);
+      reportError(err, { feature: 'splitStore.renameGroupGuest', extra: { groupId, memberId } });
+      return fail('NOT_ALLOWED');
+    }
+
+    return { status: 'ok', memberId, displayName: trimmed, hasPhone: false };
+  },
+
   createInvite: async (groupId, linkedMemberId = null) => {
     const group = await hydrateGroup(get().groups.find(item => item.id === groupId) ?? await splitGroupsDb.get(groupId));
     if (!group) throw new Error('Group not found');
@@ -690,7 +878,20 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     await groupInvitesDb.add(invite);
 
     if (linkedMemberId) {
-      await groupMembersDb.update(linkedMemberId, { status: 'invited' });
+      // A GUEST seat must NOT be flipped to 'invited' (audit G6 / O4).
+      //   * correctness: a guest at 'invited' stops being a connected member,
+      //     so tg_group_expenses_require_connected_members would refuse every
+      //     new split naming them — the seat would go inert the moment its
+      //     owner tried to hand it over, which is the opposite of the intent;
+      //   * it would also THROW: the seat is already 'connected', and
+      //     tg_group_members_protect_membership_fields refuses any client
+      //     status change on a connected row (consent-guards.sql §2.3).
+      // The invite itself is all that is needed — accept_group_invite rebinds a
+      // profile_id-NULL seat by linked_member_id, which IS the assign flow.
+      const linked = group.members.find(member => member.id === linkedMemberId);
+      if (!linked || !isGuestMember(linked)) {
+        await groupMembersDb.update(linkedMemberId, { status: 'invited' });
+      }
       await get().loadGroups();
     }
 
@@ -1168,9 +1369,22 @@ export const useSplitStore = create<SplitState>((set, get) => ({
     return settlement;
   },
 
-  getSimplifiedDebts: async (groupId) => {
+  // Both settle-up plans, computed by the SHARED pure module rather than the
+  // second inline greedy pass this used to hold. That copy had three real
+  // defects (docs/who-owes-me.md §6b):
+  //   · a 0.01 tolerance, disagreeing with the 0.005 used by
+  //     statementOfAccount / groupSettleUp / whoOwesMe;
+  //   · no id tiebreak in its sorts, so its output could vary with Map
+  //     iteration order whenever two members tied;
+  //   · NO count guard — greedy is a heuristic and can genuinely lose to the
+  //     direct graph, so the "simplified" plan could contain MORE transfers
+  //     than the plan it claimed to simplify.
+  // `buildSettlePlans` fixes all three and additionally reports how many
+  // transfers were saved and which of them are rerouted through people the
+  // payer never split with.
+  getSettlePlans: async (groupId) => {
     const group = await getGroupOrFetch(groupId, get().groups);
-    if (!group) return [];
+    if (!group) return null;
 
     // Expenses + settlements in parallel — they don't depend on each other.
     const [expenses, settlements] = await Promise.all([
@@ -1178,56 +1392,18 @@ export const useSplitStore = create<SplitState>((set, get) => ({
       groupSettlementsDb.getByGroup(groupId),
     ]);
 
-    const balances = new Map<string, number>();
-    group.members.forEach(member => balances.set(member.id, 0));
-
-    for (const expense of expenses) {
-      balances.set(expense.paidBy, (balances.get(expense.paidBy) ?? 0) + expense.amount);
-      for (const split of expense.splits) {
-        balances.set(split.memberId, (balances.get(split.memberId) ?? 0) - split.amount);
-      }
-    }
-
-    for (const settlement of settlements) {
-      balances.set(settlement.fromMember, (balances.get(settlement.fromMember) ?? 0) + settlement.amount);
-      balances.set(settlement.toMember, (balances.get(settlement.toMember) ?? 0) - settlement.amount);
-    }
-
-    const creditors: { id: string; amount: number }[] = [];
-    const debtors: { id: string; amount: number }[] = [];
-
-    balances.forEach((balance, id) => {
-      const rounded = Math.round(balance * 100) / 100;
-      if (rounded > 0.01) creditors.push({ id, amount: rounded });
-      else if (rounded < -0.01) debtors.push({ id, amount: Math.abs(rounded) });
+    return buildSettlePlans({
+      currency: group.currency,
+      // DIRECT debts, always: buildSettlePlans derives the net balances it
+      // minimizes from these, and needs them to tell a rerouted transfer from
+      // an honest one.
+      debts: computePairwiseDebts(group.members, expenses, settlements),
     });
+  },
 
-    creditors.sort((a, b) => b.amount - a.amount);
-    debtors.sort((a, b) => b.amount - a.amount);
-
-    const debts: SimplifiedDebt[] = [];
-    let creditorIndex = 0;
-    let debtorIndex = 0;
-    while (creditorIndex < creditors.length && debtorIndex < debtors.length) {
-      const amount = Math.min(creditors[creditorIndex].amount, debtors[debtorIndex].amount);
-      if (amount > 0.01) {
-        const fromMember = group.members.find(member => member.id === debtors[debtorIndex].id);
-        const toMember = group.members.find(member => member.id === creditors[creditorIndex].id);
-        debts.push({
-          from: debtors[debtorIndex].id,
-          fromName: fromMember?.name ?? '?',
-          to: creditors[creditorIndex].id,
-          toName: toMember?.name ?? '?',
-          amount: Math.round(amount * 100) / 100,
-        });
-      }
-      creditors[creditorIndex].amount -= amount;
-      debtors[debtorIndex].amount -= amount;
-      if (creditors[creditorIndex].amount < 0.01) creditorIndex += 1;
-      if (debtors[debtorIndex].amount < 0.01) debtorIndex += 1;
-    }
-
-    return debts;
+  getSimplifiedDebts: async (groupId) => {
+    const plans = await get().getSettlePlans(groupId);
+    return plans ? plans.minimized.transfers : [];
   },
 
   getPairwiseDebts: async (groupId) => {

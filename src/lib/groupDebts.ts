@@ -7,6 +7,8 @@
 // the default view never surprises a low-trust flatmate audience. Simplified
 // stays available as an explicit opt-in. Pure + tested.
 
+import { GROUP_SETTLEMENT_TOLERANCE } from './moneyTolerance';
+
 export interface GroupDebt {
   from: string;
   fromName: string;
@@ -62,9 +64,13 @@ export function computePairwiseDebts(
     const ab = owe.get(`${a}|${b}`) ?? 0;
     const ba = owe.get(`${b}|${a}`) ?? 0;
     const net = Math.round((ab - ba) * 100) / 100;
-    if (net > 0.01) {
+    // Tolerance is GROUP_SETTLEMENT_TOLERANCE (0.01), NOT the looser
+    // MONEY_TOLERANCE (0.005) used elsewhere in this repo — this exact
+    // threshold is what keeps this output in lockstep with the server's
+    // record_group_settlement cap and leave_group gate. See moneyTolerance.ts.
+    if (net > GROUP_SETTLEMENT_TOLERANCE) {
       out.push({ from: a, fromName: nameOf.get(a) ?? '?', to: b, toName: nameOf.get(b) ?? '?', amount: net });
-    } else if (net < -0.01) {
+    } else if (net < -GROUP_SETTLEMENT_TOLERANCE) {
       out.push({ from: b, fromName: nameOf.get(b) ?? '?', to: a, toName: nameOf.get(a) ?? '?', amount: Math.round(-net * 100) / 100 });
     }
   }

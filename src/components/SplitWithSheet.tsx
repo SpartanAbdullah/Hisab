@@ -164,7 +164,7 @@ function SplitWithSheetForm({ open, onClose, total, currency, initial, onApply }
     onClose();
   };
 
-  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all';
+  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   return (
     <Modal

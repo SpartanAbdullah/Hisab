@@ -9,6 +9,7 @@ import { useAppModeStore } from '../stores/appModeStore';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { AccountSelect } from '../components/AccountSelect';
+import { EditHistorySheet, EditHistoryRow } from '../components/EditHistorySheet';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { parseInternalNote } from '../lib/internalNotes';
@@ -19,6 +20,7 @@ import {
   getInactiveGroupMembers,
   NEED_TWO_ACTIVE_MEMBERS_MESSAGE,
 } from '../lib/groupActiveMembers';
+import { isGuestMember } from '../lib/groupGuests';
 
 interface Props {
   open: boolean;
@@ -60,6 +62,10 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   // to '' merely meaning "no account picked yet" while the picker is open.
   const [dontTrack, setDontTrack] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Who-changed-what (audit G5/O10) — especially valuable on the non-creator
+  // banner below: "only {creator} can edit this" is the honest completion of
+  // that sentence with "…here's what they changed."
+  const [showHistory, setShowHistory] = useState(false);
 
   const currentUserId = localStorage.getItem('hisaab_supabase_uid') ?? '';
   const currentUserName = localStorage.getItem('hisaab_user_name') ?? '';
@@ -260,9 +266,10 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
     }
   };
 
-  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-accent-500 bg-cream-card transition-all';
+  const inputClass = 'w-full border border-cream-border rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 bg-cream-card transition-all';
 
   return (
+    <>
     <Modal open={open} onClose={onClose} title={t('egem_title')}
       confirmClose={() => guardClose(!!expense && (
         description !== expense.description ||
@@ -276,7 +283,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
           <Trash2 size={16} />
         </button>
         <button onClick={handleSave} disabled={saving || !isCreator || !description.trim() || amt <= 0}
-          className="flex-1 bg-ink-900 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-indigo-500/20">
+          className="flex-1 bg-accent-600 text-white rounded-2xl py-3.5 text-sm font-bold disabled:opacity-30 shadow-md shadow-accent-600/20">
           {saving ? t('quick_processing') : 'Save Changes'}
         </button>
       </div>
@@ -306,8 +313,16 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
           <div className="flex flex-wrap gap-2 mt-1.5">
             {activeMembers.map(member => (
               <button key={member.id} onClick={() => setPaidBy(member.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-all ${paidBy === member.id ? 'bg-ink-900 text-white' : 'bg-cream-soft text-ink-700'}`}>
                 {member.name}
+                {/* Guests are in this list because getActiveGroupMembers keys on
+                    status and a guest seat is 'connected' — the same predicate
+                    the server's paid_by trigger uses (audit G6 / O4). */}
+                {isGuestMember(member) && (
+                  <span className={`text-[8.5px] uppercase tracking-wide font-bold ${paidBy === member.id ? 'text-white/60' : 'text-ink-400'}`}>
+                    {t('guest_tag')}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -351,8 +366,13 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
           <div className="flex flex-wrap gap-2 mt-1.5">
             {activeMembers.map(member => (
               <button key={member.id} onClick={() => toggleMember(member.id)}
-                className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors active:scale-95 ${selectedMembers.includes(member.id) ? 'bg-receive-600 text-white' : 'bg-cream-soft text-ink-600 border border-cream-border'}`}>
                 {member.name}
+                {isGuestMember(member) && (
+                  <span className={`text-[8.5px] uppercase tracking-wide font-bold ${selectedMembers.includes(member.id) ? 'text-white/60' : 'text-ink-400'}`}>
+                    {t('guest_tag')}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -419,7 +439,25 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
             ))}
           </div>
         </div>
+
+        {/* Who-changed-what (audit G5/O10). Always present — a persistent
+            affordance, not one that appears only when something looks wrong
+            (tasks/lessons.md: never gate a primary capability behind an edge
+            case). */}
+        {expense && <EditHistoryRow onClick={() => setShowHistory(true)} />}
       </div>
     </Modal>
+    {expense && (
+      <EditHistorySheet
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        table="group_expenses"
+        recordId={expense.id}
+        currency={group.currency}
+        actorNames={Object.fromEntries(group.members.filter((m) => m.profileId).map((m) => [m.profileId!, m.name]))}
+        memberNames={Object.fromEntries(group.members.map((m) => [m.id, m.name]))}
+      />
+    )}
+    </>
   );
 }

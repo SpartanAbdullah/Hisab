@@ -1,0 +1,19 @@
+{
+  // Isolated on purpose: NOT referenced from the root tsconfig.json's
+  // "references" array, so `npx tsc -b` (the app build's typecheck step)
+  // never walks into e2e/**. This file exists for editor/IDE type-checking
+  // only. See docs/testing-the-trust-boundary.md's E2E section.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node", "@playwright/test"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  "include": ["**/*.ts"]
+}

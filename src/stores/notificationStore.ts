@@ -5,6 +5,16 @@ import { countAttentionNotifications, type NotificationMuteState } from '../lib/
 import type { AppNotification } from '../db';
 import { reportError } from '../lib/errorReporter';
 
+/** The user's global quiet-hours window, mirrored from the `notification_prefs`
+ *  global row (docs/notifications.md §3). Both null = no window configured. */
+export interface QuietHoursState {
+  start: number | null;
+  end: number | null;
+  tz: string;
+}
+
+const NO_QUIET_HOURS: QuietHoursState = { start: null, end: null, tz: 'Asia/Karachi' };
+
 interface NotificationState {
   notifications: AppNotification[];
   loading: boolean;
@@ -15,9 +25,22 @@ interface NotificationState {
    *  Empty when the M5 migration is not applied yet — which reads as "nothing
    *  muted", i.e. the pre-M5 behaviour. */
   mutes: NotificationMuteState;
+  /** Mirrors quiet_hours_start/_end/tz off the global prefs row. Read-only
+   *  until an M5 migration is applied — then behaves as "no window". */
+  quietHours: QuietHoursState;
+  /** The global (group_id null) row's `muted` flag — same bit as
+   *  `mutes.allMuted`, exposed under its own name so SettingsPage's
+   *  "Pause all notifications" toggle (docs/notifications.md §8.2) doesn't
+   *  need to reach into the mute-count shape used for badge counting. */
+  globalMuted: boolean;
   loadNotifications: () => Promise<void>;
   loadPrefs: () => Promise<void>;
   setGroupMuted: (groupId: string, muted: boolean) => Promise<void>;
+  /** Mute or unmute EVERYTHING (the global prefs row). In-app Inbox/bell keep
+   *  writing and counting as normal — only push delivery stops; see the
+   *  toggle copy in SettingsPage.tsx. */
+  setGlobalMuted: (muted: boolean) => Promise<void>;
+  setQuietHours: (start: number | null, end: number | null, tz?: string) => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markGroupRead: (groupId: string) => Promise<void>;
   markAllRead: () => Promise<void>;
@@ -29,6 +52,8 @@ const INITIAL_NOTIFICATION_STATE = {
   loading: false,
   unreadCount: 0,
   mutes: {} as NotificationMuteState,
+  quietHours: NO_QUIET_HOURS,
+  globalMuted: false,
 };
 
 // Ids the user marked read locally this session. A realtime reload that races
@@ -73,12 +98,36 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           rows.filter((r) => r.muted && r.groupId).map((r) => r.groupId as string),
         ),
       };
+      // Quiet hours live only on the global (group_id IS NULL) row.
+      const globalRow = rows.find((r) => r.groupId === null);
+      const quietHours: QuietHoursState = globalRow
+        ? { start: globalRow.quietHoursStart, end: globalRow.quietHoursEnd, tz: globalRow.tz }
+        : NO_QUIET_HOURS;
       set((state) => ({
         mutes,
+        quietHours,
+        globalMuted: mutes.allMuted ?? false,
         unreadCount: countAttentionNotifications(state.notifications, selfUserId, mutes),
       }));
     } catch (err) {
       reportError(err, { feature: 'notificationStore.loadPrefs' });
+    }
+  },
+
+  setQuietHours: async (start, end, tz) => {
+    const previous = get().quietHours;
+    const zone = tz || previous.tz || (() => {
+      try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'Asia/Karachi'; }
+    })();
+    // Optimistic, same shape as setGroupMuted: the pickers must reflect the
+    // choice instantly, and roll back if the write fails.
+    set({ quietHours: { start, end, tz: zone } });
+    try {
+      await notificationPrefsDb.setQuietHours(start, end, zone);
+    } catch (err) {
+      set({ quietHours: previous });
+      reportError(err, { feature: 'notificationStore.setQuietHours', extra: { start, end, tz: zone } });
+      throw err;
     }
   },
 
@@ -103,6 +152,33 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         unreadCount: countAttentionNotifications(state.notifications, selfUserId, previous),
       }));
       reportError(err, { feature: 'notificationStore.setGroupMuted', extra: { groupId, muted } });
+      throw err;
+    }
+  },
+
+  setGlobalMuted: async (muted) => {
+    // Optimistic, same shape as setGroupMuted: the switch must flip instantly
+    // and roll back if the write fails. Updates both `globalMuted` (the
+    // Settings toggle's own field) and `mutes.allMuted` (what the badge
+    // counter and every per-group check actually read) together so they
+    // never disagree mid-flight.
+    const previousMutes = get().mutes;
+    const previousGlobal = get().globalMuted;
+    const nextMutes: NotificationMuteState = { ...previousMutes, allMuted: muted };
+    set((state) => ({
+      mutes: nextMutes,
+      globalMuted: muted,
+      unreadCount: countAttentionNotifications(state.notifications, selfUserId, nextMutes),
+    }));
+    try {
+      await notificationPrefsDb.setMuted(null, muted);
+    } catch (err) {
+      set((state) => ({
+        mutes: previousMutes,
+        globalMuted: previousGlobal,
+        unreadCount: countAttentionNotifications(state.notifications, selfUserId, previousMutes),
+      }));
+      reportError(err, { feature: 'notificationStore.setGlobalMuted', extra: { muted } });
       throw err;
     }
   },
