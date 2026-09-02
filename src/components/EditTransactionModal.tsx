@@ -2,6 +2,7 @@
 import { Trash2 } from 'lucide-react';
 import { Modal } from './Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { ContactPicker, type ContactValue } from './ContactPicker';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
@@ -34,6 +35,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   const toast = useToast();
   const t = useT();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
 
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState('');
@@ -197,7 +199,15 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
     contact.name.trim() !== '' &&
     originalPersonId !== null;
 
-  const handleSave = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1) shared by save/delete: the
+  // `saving` STATE flag updates asynchronously, so two taps in one frame
+  // both read it as false and would double-apply a balance reversal.
+  // `saving` stays for the disabled/label UI.
+  const handleSave = () => submitGuard.run(runSave);
+  const handleDelete = () => submitGuard.run(runDelete);
+  const handleDeleteSplit = () => submitGuard.run(runDeleteSplit);
+
+  const runSave = async () => {
     if (!canSave) return;
 
     setSaving(true);
@@ -274,7 +284,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
     }
   };
 
-  const handleDelete = async () => {
+  const runDelete = async () => {
     const snapshot = transaction;
     // One-tap Undo is only offered for the types restoreTransaction can
     // faithfully restore (expense/income — row + balance). For everything
@@ -350,7 +360,7 @@ export function EditTransactionModal({ open, transaction, onClose }: Props) {
   // Delete every row of an ad-hoc split as one action: the payer's own share
   // AND each receivable. Removing only some of them would leave the account
   // debited for a bill that no longer exists in the ledger.
-  const handleDeleteSplit = async () => {
+  const runDeleteSplit = async () => {
     if (splitRows.length === 0) return;
     if (splitSettledRow) {
       toast.show({ type: 'error', title: t('split_delete_blocked') });

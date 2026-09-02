@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle, Eye, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Shield, Check, Dices, Share2, Trash2, Crown, Gift, MessageCircle, Eye, Pencil, Lock } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCommitteeStore } from '../stores/committeeStore';
+import { CommitteeDrawError } from '../lib/supabaseDb';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { PageErrorState } from '../components/PageErrorState';
@@ -85,11 +86,19 @@ export function KametiDetailPage() {
   }
 
   const pool = poolAmount(committee.contributionAmount, committee.memberCount);
-  const isDrawn = !!committee.drawnAt && members.some((m) => m.slot != null);
+  // A draw RECORD exists the moment the server stamps drawn_at / draw_seed —
+  // that, not the slots being visible, is what must retire the draw button
+  // (audit 2026-09 F-13: the ballot had no drawn-guard at all, so a double tap
+  // or a stale tab could re-roll an order witnesses had already seen).
+  const hasDrawRecord = !!committee.drawnAt || !!committee.drawSeed;
+  const isDrawn = hasDrawRecord && members.some((m) => m.slot != null);
   const recipient = recipientForRound(members, round);
   const collected = paymentsForRound(payments, round).length;
 
   const handleDraw = async () => {
+    // Belt and braces around the server's ALREADY_DRAWN guard: never even ask
+    // if this device already knows an order exists.
+    if (drawing || hasDrawRecord) return;
     const ok = await confirmDestructive({
       title: t('kameti_draw_confirm_title'),
       description: t('kameti_draw_confirm_body'),
@@ -107,8 +116,15 @@ export function KametiDetailPage() {
       const elapsed = Date.now() - start;
       if (elapsed < 1900) await new Promise((r) => setTimeout(r, 1900 - elapsed));
       toast.show({ type: 'success', title: t('kameti_draw_done') });
-    } catch {
-      toast.show({ type: 'error', title: t('error') });
+    } catch (err) {
+      const code = err instanceof CommitteeDrawError ? err.code : 'UNKNOWN';
+      const title = code === 'ALREADY_DRAWN' ? t('kameti_draw_already')
+        : code === 'TOO_FEW_MEMBERS' ? t('kameti_draw_too_few')
+        : code === 'NOT_ORGANISER' ? t('kameti_draw_not_organizer')
+        : t('kameti_draw_failed');
+      // ALREADY_DRAWN is not a failure to apologise for — the store has already
+      // resynced the real order, so show it as information.
+      toast.show({ type: code === 'ALREADY_DRAWN' ? 'info' : 'error', title });
     } finally {
       setDrawing(false);
     }
@@ -201,8 +217,10 @@ export function KametiDetailPage() {
           </div>
         </div>
 
-        {/* Undrawn ballot → draw CTA */}
-        {!isDrawn && (
+        {/* Undrawn ballot → draw CTA. Gated on hasDrawRecord (not isDrawn) so
+            the button disappears the instant the server records a draw, even if
+            the member slots haven't been re-read yet. */}
+        {!hasDrawRecord && (
           <div className="rounded-2xl bg-accent-50 border border-accent-100 p-4 text-center">
             <Dices size={26} className="text-accent-600 mx-auto" strokeWidth={1.8} />
             <p className="text-[13px] font-semibold text-ink-900 mt-2">{t('kameti_undrawn')}</p>
@@ -210,6 +228,16 @@ export function KametiDetailPage() {
             <button onClick={handleDraw} disabled={drawing} className="mt-3 w-full py-3 rounded-2xl bg-ink-900 text-white text-[13px] font-bold disabled:opacity-50 press">
               {drawing ? t('kameti_drawing') : t('kameti_run_ballot')}
             </button>
+          </div>
+        )}
+
+        {/* Draw recorded on the server but the slots aren't in this device's
+            copy yet (stale tab, or a draw run elsewhere). Never offer a redraw
+            here — say it's locked and let the refresh land. */}
+        {hasDrawRecord && !isDrawn && (
+          <div className="rounded-2xl bg-cream-card border border-cream-border p-4 flex items-start gap-2.5">
+            <Lock size={15} className="text-ink-400 shrink-0 mt-0.5" strokeWidth={2.2} />
+            <p className="text-[11.5px] text-ink-600 leading-relaxed">{t('kameti_draw_locked')}</p>
           </div>
         )}
 

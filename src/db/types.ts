@@ -241,6 +241,17 @@ export interface SplitGroup {
   createdBy?: string | null;
   joinCode?: string | null;
   joinCodeNormalized?: string | null;
+  // Join codes expire 14 days after creation/rotation (trigger in
+  // supabase-migration-audit-p0-join-abuse-limits.sql). Null on a database that
+  // hasn't been migrated yet, and on legacy rows with no code.
+  joinCodeExpiresAt?: string | null;
+  // Wind-down state (supabase-migration-audit-p0-group-deletion-guard.sql §3):
+  // fully readable by every member, but closed to new expenses, settlements and
+  // joins. Written ONLY by the archive_group / unarchive_group RPCs — a direct
+  // PATCH is refused with GROUP_ARCHIVE_RPC_ONLY. Distinct from `settled`,
+  // which is a reversible all-square badge, not a lifecycle state.
+  archivedAt?: string | null;
+  archivedBy?: string | null;
 }
 
 export interface SplitDetail {
@@ -293,12 +304,28 @@ export type GroupEventType =
   | 'expense_updated'
   | 'expense_deleted'
   | 'settlement_added'
-  | 'settlement_deleted';
+  | 'settlement_deleted'
+  // Written by archive_group / unarchive_group
+  // (supabase-migration-audit-p0-group-deletion-guard.sql §6b/§6c).
+  // Payload: { groupId, groupName, currency, actorName, archivedAt|unarchivedAt }
+  | 'group_archived'
+  | 'group_unarchived'
+  // Written by delete_current_user when a member deletes their Hisaab account
+  // (supabase-migration-audit-p0-account-deletion.sql §4b). Payload:
+  // { memberId, displayName, expensesRetained, settlementsRetained, deletedAt }
+  | 'member_account_deleted'
+  // Written by transfer_group_ownership (account-deletion.sql §5). Payload:
+  // { newOwnerMemberId, newOwnerProfileId, previousOwnerMemberId }
+  | 'group_ownership_transferred';
 
 export interface GroupInvite {
   id: string;
   groupId: string;
-  tokenHash: string;
+  // Unreadable by clients since supabase-migration-audit-p0-consent-guards.sql
+  // §3.2 revoked the column grant — the hash is no longer the credential, and
+  // nothing the app renders needs it. Still WRITTEN on create (the owner knows
+  // the raw token at that moment), so it stays on the type as optional.
+  tokenHash?: string;
   createdBy: string;
   linkedMemberId: string | null;
   expiresAt: string | null;
@@ -326,8 +353,22 @@ export interface AppNotification {
   groupId: string | null;
   eventId: string | null;
   type: 'group_update' | 'invite' | 'system' | 'linked_request' | 'linked_settlement' | 'contact_linked';
+  // Server-composed fallback text. Since the fan-out moved into Postgres
+  // triggers (supabase-migration-audit-p0-notifications.sql) these are written
+  // ONLY by the database — a client can no longer author notification text for
+  // anyone (audit 05-security.md H5). They stay the render fallback for legacy
+  // rows and are what the FCM push pipeline sends.
   title: string;
   body: string;
+  // Structured content: `template` names a server template, `params` carries
+  // its variables (actor name, amount, currency, group name, entity ids). The
+  // client renders these through i18n so cross-user notifications finally
+  // appear in the reader's language (audit 08-notifications.md N-1).
+  // null/{} for legacy rows.
+  template: string | null;
+  params: Record<string, unknown>;
+  // Who caused it. Also the key the server-side per-sender rate limit uses.
+  actorId: string | null;
   readAt: string | null;
   createdAt: string;
 }

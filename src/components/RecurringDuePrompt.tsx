@@ -9,6 +9,7 @@ import { formatMoney } from '../lib/constants';
 import { brandIconFor } from '../lib/brandIcon';
 import { buildInternalNote, parseInternalNote } from '../lib/internalNotes';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import type { RecurringTransaction } from '../db';
 import type { RecurringDueDetail } from '../lib/recurringRunner';
 
@@ -26,6 +27,10 @@ export function RecurringDuePrompt() {
   const toast = useToast();
   const t = useT();
   const [working, setWorking] = useState(false);
+  // Declared above the `if (!current) return null` early return — hooks must
+  // run unconditionally. Shared by confirm/skip/pause: all three mutate the
+  // same template, and confirm posts a real transaction.
+  const submitGuard = useSubmitGuard();
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -51,7 +56,13 @@ export function RecurringDuePrompt() {
 
   const pop = () => setQueue((prev) => prev.slice(1));
 
-  const handleConfirm = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): `working` state updates
+  // asynchronously, so two taps in one frame both read it as false.
+  const handleConfirm = () => submitGuard.run(runConfirm);
+  const handleSkip = () => submitGuard.run(runSkip);
+  const handlePause = () => submitGuard.run(runPause);
+
+  const runConfirm = async () => {
     setWorking(true);
     try {
       // Idempotency stamp: (templateId @ dueDate) written into the internal
@@ -134,7 +145,7 @@ export function RecurringDuePrompt() {
     }
   };
 
-  const handleSkip = async () => {
+  const runSkip = async () => {
     setWorking(true);
     const prevDue = current.nextDueDate;
     const templateId = current.id;
@@ -161,7 +172,7 @@ export function RecurringDuePrompt() {
     }
   };
 
-  const handlePause = async () => {
+  const runPause = async () => {
     setWorking(true);
     try {
       await updateTemplate(current.id, { active: false });

@@ -5,8 +5,12 @@ import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
-
-type TFunction = ReturnType<typeof useT>;
+import { useSubmitGuard } from '../lib/useSubmitGuard';
+import {
+  inviteStatusFromThrown,
+  inviteStatusMessageKey,
+  joinStatusMessageKey,
+} from '../lib/joinCodeStatus';
 
 interface Props {
   open: boolean;
@@ -41,31 +45,12 @@ function parseInput(raw: string): ParsedInput {
   return { kind: 'invalid' };
 }
 
-// Map backend error messages to user-friendly keys. Kept narrow and explicit
-// so a new failure mode surfaces the raw message instead of being silently
-// lumped under "unknown".
-function classifyJoinError(err: unknown, tFn: TFunction): string {
-  const raw = err instanceof Error ? err.message : '';
-  const lower = raw.toLowerCase();
-  if (
-    lower.includes('group code not found') ||
-    lower.includes('invite not found') ||
-    lower.includes('invite_not_found_or_expired') ||
-    lower.includes('invalid_or_expired_code')
-  ) {
-    return tFn('join_error_not_found');
-  }
-  if (lower.includes('invite expired')) {
-    return tFn('join_error_expired');
-  }
-  if (lower.includes('not authenticated')) {
-    return tFn('join_error_auth');
-  }
-  if (/network|failed to fetch|load failed/i.test(raw)) {
-    return tFn('join_error_network');
-  }
-  return raw || tFn('join_error_not_found');
-}
+// NOTE: neither branch throws for a business outcome any more. Both
+// join_group_by_code (audit C5) and accept_group_invite (audit H3) return a
+// jsonb status object, because a RAISE rolled back the very rate-limit ledger
+// row each limiter counts. The catch below is the transport/unexpected path
+// only, and it routes through the invite vocabulary — the last remaining thing
+// that can throw here is an unexpected failure inside the store.
 
 export function JoinGroupModal({ open, onClose }: Props) {
   const t = useT();
@@ -81,6 +66,7 @@ export function JoinGroupModal({ open, onClose }: Props) {
   // joining — strict RLS blocks reading a group you're not yet a member of —
   // so the confirm step echoes the verified code + its kind instead.
   const [confirming, setConfirming] = useState<ParsedInput | null>(null);
+  const joinGuard = useSubmitGuard();
 
   const handleClose = () => {
     setInput('');
@@ -100,15 +86,37 @@ export function JoinGroupModal({ open, onClose }: Props) {
     setConfirming(parsed);
   };
 
-  // Step 2 — commit the join for the already-confirmed target.
-  const handleJoin = async () => {
+  // Step 2 — commit the join for the already-confirmed target. Guarded so a
+  // double tap can't fire two redemptions (each counts against a rate window).
+  const handleJoin = () => joinGuard.run(runJoin);
+  const runJoin = async () => {
     if (!confirming || confirming.kind === 'invalid') return;
     setSubmitError(null);
     setLoading(true);
     try {
-      const result = confirming.kind === 'group_code'
-        ? await joinGroupByCode(confirming.code)
-        : await acceptInvite(confirming.token);
+      let groupId: string;
+      if (confirming.kind === 'group_code') {
+        // Failures arrive as data now, so RATE_LIMITED gets its own message
+        // instead of being lumped in with "code not found".
+        const outcome = await joinGroupByCode(confirming.code);
+        if (outcome.status !== 'ok') {
+          setSubmitError(t(joinStatusMessageKey(outcome.status)));
+          setConfirming(null);
+          return;
+        }
+        groupId = outcome.groupId;
+      } else {
+        // Invite links carry their own status vocabulary (a separate rate
+        // window: 10 failed redemptions per 15 minutes, vs 5 wrong codes per
+        // 5 minutes), so they get their own messages rather than the code ones.
+        const outcome = await acceptInvite(confirming.token);
+        if (outcome.status !== 'ok') {
+          setSubmitError(t(inviteStatusMessageKey(outcome.status)));
+          setConfirming(null);
+          return;
+        }
+        groupId = outcome.groupId;
+      }
       toast.show({
         type: 'success',
         title: t('join_success_title'),
@@ -119,10 +127,9 @@ export function JoinGroupModal({ open, onClose }: Props) {
       setSubmitError(null);
       setConfirming(null);
       onClose();
-      navigate(`/group/${result.groupId}`);
+      navigate(`/group/${groupId}`);
     } catch (error) {
-      const message = classifyJoinError(error, t);
-      setSubmitError(message);
+      setSubmitError(t(inviteStatusMessageKey(inviteStatusFromThrown(error))));
       // Drop back to the lookup step so the user can fix the code.
       setConfirming(null);
     } finally {

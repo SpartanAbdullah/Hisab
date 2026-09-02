@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, LogIn, Users, Receipt, Scale, HandCoins, KeyRound, Search, X } from 'lucide-react';
+import { Plus, LogIn, Users, Receipt, Scale, HandCoins, KeyRound, Search, X, Mail, Archive } from 'lucide-react';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
@@ -10,6 +10,8 @@ import { PageErrorState } from '../components/PageErrorState';
 import { NextStepHint } from '../components/NextStepHint';
 import { CreateGroupModal } from './CreateGroupModal';
 import { JoinGroupModal } from './JoinGroupModal';
+import { useToast } from '../components/Toast';
+import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useT } from '../lib/i18n';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
@@ -82,13 +84,134 @@ function GroupsEducationCard() {
   );
 }
 
+// Accept / Decline card for a group the user was added to but has not joined.
+// This section is REQUIRED, not a nicety: an 'invited' member fails
+// is_group_member(), so the split_groups SELECT policy hides the group row
+// entirely (supabase-migration-audit-p0-consent-guards.sql §2.6). Without this
+// list — fed by the list_pending_group_memberships RPC, the invitee's only read
+// window — the invitation is invisible and undecidable, and the 'invite'
+// notification deep-links here for exactly that reason.
+function PendingInvitationsSection() {
+  const t = useT();
+  const toast = useToast();
+  const pendingInvitations = useSplitStore((s) => s.pendingInvitations);
+  const acceptGroupMembership = useSplitStore((s) => s.acceptGroupMembership);
+  const declineGroupMembership = useSplitStore((s) => s.declineGroupMembership);
+  const [busyGroupId, setBusyGroupId] = useState<string | null>(null);
+
+  if (pendingInvitations.length === 0) return null;
+
+  const handleAccept = async (groupId: string) => {
+    if (busyGroupId) return;
+    setBusyGroupId(groupId);
+    try {
+      const result = await acceptGroupMembership(groupId);
+      toast.show({
+        type: result.success ? 'success' : 'error',
+        title: result.success ? t('ginv_accepted') : t('ginv_accept_failed'),
+        subtitle: result.success ? undefined : result.userMessage,
+      });
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('ginv_accept_failed'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setBusyGroupId(null);
+    }
+  };
+
+  const handleDecline = async (groupId: string) => {
+    if (busyGroupId) return;
+    const ok = await confirmDestructive({
+      title: t('ginv_decline_confirm_title'),
+      description: t('ginv_decline_confirm_body'),
+      confirmLabel: t('ginv_decline'),
+      cancelLabel: t('not_now'),
+      tone: 'warning',
+    });
+    if (!ok) return;
+    setBusyGroupId(groupId);
+    try {
+      const result = await declineGroupMembership(groupId);
+      toast.show({
+        type: result.success ? 'success' : 'error',
+        title: result.success ? t('ginv_declined') : t('ginv_decline_failed'),
+        subtitle: result.success ? undefined : result.userMessage,
+      });
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('ginv_decline_failed'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setBusyGroupId(null);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-2.5 px-1">
+        <Mail size={12} className="text-warn-600" />
+        <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+          {t('ginv_pending_heading')}
+        </h2>
+        <span className="text-[11px] text-ink-400 font-semibold tabular-nums ml-auto">
+          {pendingInvitations.length}
+        </span>
+      </div>
+      <div className="space-y-2.5">
+        {pendingInvitations.map((invitation) => (
+          <div
+            key={invitation.groupId}
+            className="rounded-[18px] bg-cream-card border border-warn-100 p-4 animate-fade-in"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-warn-50 border border-warn-100 flex items-center justify-center text-lg shrink-0">
+                {invitation.groupEmoji || '👥'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
+                  {invitation.groupName}
+                </p>
+                <p className="text-[11px] text-ink-500 mt-0.5">
+                  {t('ginv_pending_sub').replace('{name}', invitation.invitedByName)}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => void handleAccept(invitation.groupId)}
+                disabled={busyGroupId !== null}
+                className="flex-1 rounded-[14px] bg-ink-900 text-white px-4 py-2.5 text-[12.5px] font-semibold disabled:opacity-40 press"
+              >
+                {t('ginv_accept')}
+              </button>
+              <button
+                onClick={() => void handleDecline(invitation.groupId)}
+                disabled={busyGroupId !== null}
+                className="rounded-[14px] bg-cream-soft border border-cream-border text-ink-700 px-4 py-2.5 text-[12.5px] font-semibold disabled:opacity-40 press"
+              >
+                {t('ginv_decline')}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SplitsPage() {
-  const { groups, loadGroups, balances, balancesLoaded, loadBalances, unreconciledFlags, loadUnreconciledFlags } = useSplitStore();
+  const { groups, loadGroups, balances, balancesLoaded, loadBalances, unreconciledFlags, loadUnreconciledFlags, loadPendingInvitations } = useSplitStore();
   const { notifications, loadNotifications } = useNotificationStore();
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const navigate = useNavigate();
   const t = useT();
   const primaryCurrency = localStorage.getItem('hisaab_primary_currency') ?? 'AED';
@@ -98,7 +221,8 @@ export function SplitsPage() {
     await Promise.all([loadGroups(), loadNotifications()]);
     void loadBalances();
     void loadUnreconciledFlags(currentUserId);
-  }, [loadGroups, loadNotifications, loadBalances, loadUnreconciledFlags, currentUserId]);
+    void loadPendingInvitations();
+  }, [loadGroups, loadNotifications, loadBalances, loadUnreconciledFlags, loadPendingInvitations, currentUserId]);
 
   const { status, error, retry } = useAsyncLoad(load);
 
@@ -139,9 +263,14 @@ export function SplitsPage() {
     .reduce((acc, g) => acc + (balances[g.id] ?? 0), 0);
   const otherCcyGroups = groups.filter((g) => g.currency !== primaryCurrency);
   const q = searchQuery.trim().toLowerCase();
-  const visibleGroups = q
+  const matchingGroups = q
     ? groups.filter((g) => g.name.toLowerCase().includes(q))
     : groups;
+  // Archived groups stay fully readable but accept nothing new, so they must
+  // not sit among the live ones competing for attention. They get their own
+  // collapsed section below (group-deletion-guard.sql §3).
+  const visibleGroups = matchingGroups.filter((g) => !g.archivedAt);
+  const archivedGroups = matchingGroups.filter((g) => Boolean(g.archivedAt));
 
   return (
     <main className="min-h-dvh bg-cream-bg pb-28">
@@ -291,7 +420,12 @@ export function SplitsPage() {
 
         {isInitialLoading && <GroupsListSkeleton />}
 
-        {hasGroups && (() => {
+        <PendingInvitationsSection />
+
+        {/* When every remaining group is archived, the archived section below
+            carries the list — showing an empty "no matches" above it would be
+            a lie. */}
+        {hasGroups && (visibleGroups.length > 0 || archivedGroups.length === 0) && (() => {
           return (
             <div>
               <div className="flex items-center justify-between mb-2.5 px-1">
@@ -335,6 +469,45 @@ export function SplitsPage() {
             </div>
           );
         })()}
+
+        {archivedGroups.length > 0 && (
+          <div>
+            <button
+              onClick={() => setShowArchived((v) => !v)}
+              className="w-full flex items-center gap-1.5 mb-2.5 px-1 text-left"
+              aria-expanded={showArchived}
+            >
+              <Archive size={12} className="text-ink-400" />
+              <h2 className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
+                {t('grp_archived_section')}
+              </h2>
+              <span className="text-[11px] text-ink-400 font-semibold tabular-nums ml-auto">
+                {archivedGroups.length}
+              </span>
+            </button>
+            {showArchived && (
+              <div className="space-y-2.5">
+                {archivedGroups.map((g) => {
+                  const groupBalance = balances[g.id] ?? 0;
+                  return (
+                    <GroupCard
+                      key={g.id}
+                      group={g}
+                      balance={groupBalance}
+                      balanceLoaded={balancesLoaded}
+                      settledLabel={t('group_settled')}
+                      membersLabel={t('group_members_count')}
+                      hasUnreadActivity={unreadGroupIds.has(g.id)}
+                      hasUnreconciled={Boolean(unreconciledFlags[g.id])}
+                      outstandingCount={Math.abs(groupBalance) > 0.01 ? 1 : 0}
+                      onClick={() => navigate(`/group/${g.id}`)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {showEducation && <GroupsEducationCard />}
       </div>

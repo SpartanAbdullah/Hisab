@@ -1,5 +1,23 @@
 import { supabase } from './supabase';
 import { tStatic } from './i18n';
+import {
+  joinStatusFromThrown,
+  parseJoinByCodeResponse,
+  inviteStatusFromThrown,
+  parseAcceptInviteResponse,
+  type JoinCodeResult,
+  type InviteAcceptResult,
+} from './joinCodeStatus';
+import { isMemberAlreadyExistsError } from './groupGuardErrors';
+import {
+  isMissingFunctionError,
+  linkStatusFromThrown,
+  parseLinkByCodeResponse,
+  parseUnlinkResponse,
+  type ContactLinkResult,
+  type ContactUnlinkResult,
+} from './contactLinkStatus';
+import type { RecordSettlementResult } from './groupSettlementResult';
 import type {
   Account, Transaction, Loan, EmiSchedule, Goal,
   ActivityLog, UpcomingExpense, SplitGroup, GroupExpense, GroupSettlement,
@@ -217,6 +235,13 @@ export const transactionsDb = {
 // LOANS
 // ══════════════════════════════════════
 export const loansDb = {
+  async get(id: string): Promise<Loan | null> {
+    const { data, error } = await supabase
+      .from('loans').select('*')
+      .eq('id', id).eq('user_id', getUserId()).is('deleted_at', null).maybeSingle();
+    if (error) throw error;
+    return data ? mapLoan(data) : null;
+  },
   async getAll(): Promise<Loan[]> {
     const { data, error } = await supabase
       .from('loans').select('*')
@@ -254,7 +279,43 @@ export const loansDb = {
     });
     if (error) throw error;
   },
+  // Optimistic-locked remaining-amount mutation — the loan twin of
+  // accountsDb.applyBalanceDelta. Calls apply_loan_remaining_delta
+  // (supabase-migration-audit-p0-loan-concurrency.sql), which performs
+  // `remaining_amount = round(GREATEST(0, remaining_amount + delta), 2)` ONLY
+  // when remaining_amount still equals p_expected_remaining, and re-derives
+  // status in the same statement. Returns the new remaining amount.
+  // Throws { code: 'LOAN_REMAINING_CONFLICT' } when the row moved under us
+  // (another device/tab) and { code: 'LOAN_NOT_FOUND' } when it is gone or not
+  // ours — src/lib/loanRemainingDelta.ts owns the refetch-and-retry ladder.
+  // Every remainingAmount write must come through here (audit F-2 / C-1); the
+  // absolute `update` path below is for the other columns.
+  async applyRemainingDelta(id: string, expectedRemaining: number, delta: number): Promise<number> {
+    const { data, error } = await supabase.rpc('apply_loan_remaining_delta', {
+      p_loan_id: id,
+      p_delta: delta,
+      p_expected_remaining: expectedRemaining,
+    });
+    if (error) {
+      const message = (error as { message?: string })?.message ?? '';
+      for (const code of ['LOAN_REMAINING_CONFLICT', 'LOAN_NOT_FOUND'] as const) {
+        if (message.includes(code)) {
+          const coded = new Error(code) as Error & { code: string };
+          coded.code = code;
+          throw coded;
+        }
+      }
+      throw error;
+    }
+    return typeof data === 'number' ? data : Number(data);
+  },
   async update(id: string, changes: Partial<Loan>) {
+    // remaining_amount MUST go through applyRemainingDelta (optimistic lock).
+    // It is still accepted here for the linked-loan/backfill paths that write a
+    // whole row, but a bare absolute write is the F-2 lost-update bug.
+    if (changes.remainingAmount !== undefined && import.meta.env.DEV) {
+      console.warn('[loansDb.update] remainingAmount changed without optimistic lock — prefer loansDb.applyRemainingDelta');
+    }
     const row: Record<string, unknown> = {};
     if (changes.personName !== undefined) row.person_name = changes.personName;
     if (changes.personId !== undefined) row.person_id = changes.personId;
@@ -286,6 +347,34 @@ export const loansDb = {
 // ══════════════════════════════════════
 // PERSONS (contacts)
 // ══════════════════════════════════════
+
+// The pre-RPC direct write, kept ONLY for a database that has not had
+// supabase-migration-audit-p0-consent-guards.sql applied yet (PostgREST
+// PGRST202 / 42883: the function isn't there). Migrations in this repo are
+// applied by hand, so a client build can meet either database; on a migrated
+// one this path is rejected by the guard trigger with 42501 and must never be
+// reached. Not exported — both link entry points fall back through here.
+async function legacyDirectContactLink(
+  personId: string,
+  profileId: string,
+  displayName: string,
+): Promise<ContactLinkResult> {
+  const { error } = await supabase
+    .from('persons').update({ linked_profile_id: profileId })
+    .eq('id', personId).eq('user_id', getUserId());
+  if (error) return { status: linkStatusFromThrown(error) };
+  // Best-effort ping, exactly as apply_verified_contact_link does server-side:
+  // a notification failure must never undo a link that already succeeded.
+  try {
+    await personsDb.notifyContactLinked(profileId);
+  } catch (err) {
+    console.error('notifyContactLinked failed (non-fatal)', err);
+  }
+  // The reciprocal side is unknowable from here without another round trip;
+  // 'pending' is the fail-closed answer (it only shows the waiting copy).
+  return { status: 'ok', profileId, displayName: displayName || 'Hisaab user', linkState: 'pending' };
+}
+
 export const personsDb = {
   async getAll(): Promise<Person[]> {
     const { data, error } = await supabase
@@ -296,22 +385,86 @@ export const personsDb = {
     if (error) throw error;
     return (data ?? []).map(mapPerson);
   },
+  // linked_profile_id is deliberately NOT sent (audit 2026-09 C6 / H2): the
+  // consent-guard trigger rejects a non-null value from a client role on
+  // INSERT too, and a link may only be created through link_contact_by_code or
+  // link_contact_by_discovery.
   async add(p: Person) {
     const { error } = await supabase.from('persons').insert({
       id: p.id, user_id: getUserId(), name: p.name, phone: p.phone ?? null,
-      linked_profile_id: p.linkedProfileId ?? null,
       created_at: p.createdAt, updated_at: p.updatedAt,
     });
     if (error) throw error;
   },
-  // Phase 2A: narrow helper — writes ONLY the linked_profile_id column.
-  // Returns the Supabase error object untouched on failure so callers can
-  // detect the unique-index violation (23505) and surface a clean message.
-  async setLinkedProfileId(id: string, linkedProfileId: string | null) {
-    const { error } = await supabase
-      .from('persons').update({ linked_profile_id: linkedProfileId })
-      .eq('id', id).eq('user_id', getUserId());
-    if (error) throw error;
+  // Create a contact link from the OTHER person's public code. The RPC checks
+  // the code server-side (shared 20/hour lookup window), writes the column as
+  // definer, and fires notify_contact_linked itself — so the client no longer
+  // does either. Never throws on a business outcome; read `.status`.
+  //
+  // `legacy` keeps a build that lands BEFORE the migration working: when the
+  // function is absent we fall back to the old direct write (still permitted
+  // there, since the guard trigger arrives in the same file as the RPC).
+  async linkByCode(
+    personId: string,
+    codeNormalized: string,
+    legacy?: { profileId: string; displayName: string } | null,
+  ): Promise<ContactLinkResult> {
+    const { data, error } = await supabase.rpc('link_contact_by_code', {
+      p_person_id: personId,
+      p_code_normalized: codeNormalized,
+    });
+    if (!error) return parseLinkByCodeResponse(data);
+    // A missing link_contact_by_code means the whole consent-guard file is
+    // unapplied, so link_contact_by_discovery is missing too — go straight to
+    // the legacy write instead of burning a round trip discovering that.
+    if (isMissingFunctionError(error) && legacy?.profileId) {
+      return legacyDirectContactLink(personId, legacy.profileId, legacy.displayName);
+    }
+    return { status: linkStatusFromThrown(error) };
+  },
+  // The code-LESS link: a phone-discovery hit carries a profile id and no
+  // public code. The RPC does NOT trust that pairing — it re-runs the discovery
+  // match server-side (this contact's saved phone, normalised the same way
+  // phoneIdentity.toE164Candidates does it, against the target's phone_e164
+  // while their phone_discoverable opt-in still holds), so we can only link
+  // someone lookup_hisaab_users_by_phone would have returned anyway. Charged to
+  // the phone-discovery window (20/hour) on a miss, not on a match.
+  //
+  // Same status vocabulary and same JSON shape as link_contact_by_code, hence
+  // the shared parser. Never throws on a business outcome; read `.status`.
+  async linkByProfileId(
+    personId: string,
+    profileId: string,
+    displayName: string,
+  ): Promise<ContactLinkResult> {
+    const { data, error } = await supabase.rpc('link_contact_by_discovery', {
+      p_person_id: personId,
+      p_profile_id: profileId,
+    });
+    if (!error) return parseLinkByCodeResponse(data);
+    // ONLY "the function isn't there" falls back. A 42501 must NOT: on a
+    // migrated database the discovery RPC is the supported path, so a rejection
+    // is a real answer and retrying the forbidden write would just relabel it.
+    if (isMissingFunctionError(error)) {
+      return legacyDirectContactLink(personId, profileId, displayName);
+    }
+    return { status: linkStatusFromThrown(error) };
+  },
+  // Clears the link. Same semantics as the old PATCH, minus the ability to
+  // point the column anywhere.
+  async unlinkProfile(personId: string): Promise<ContactUnlinkResult> {
+    const { data, error } = await supabase.rpc('unlink_contact_profile', {
+      p_person_id: personId,
+    });
+    if (!error) return parseUnlinkResponse(data);
+    if (isMissingFunctionError(error)) {
+      const { error: legacyError } = await supabase
+        .from('persons').update({ linked_profile_id: null })
+        .eq('id', personId).eq('user_id', getUserId());
+      if (legacyError) return { status: linkStatusFromThrown(legacyError) };
+      return { status: 'ok', wasLinked: true, unlinkedProfileId: null };
+    }
+    return { status: linkStatusFromThrown(error) };
   },
   async setPhone(id: string, phone: string | null) {
     const { error } = await supabase
@@ -912,6 +1065,20 @@ export const splitGroupsDb = {
     const { error } = await supabase.from('split_groups').delete().eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
   },
+  // Owner-only join-code rotation. Join codes expire 14 days after creation or
+  // rotation — trg_split_groups_join_code_expiry
+  // (supabase-migration-audit-p0-join-abuse-limits.sql SECTION 2) re-stamps
+  // join_code_expires_at server-side whenever join_code changes, so this write
+  // deliberately does NOT send an expiry of its own (an explicit value would
+  // win over the trigger). The owner-scoped `user_id` filter mirrors delete().
+  async rotateJoinCode(id: string, joinCode: string, joinCodeNormalized: string) {
+    const { error } = await supabase
+      .from('split_groups')
+      .update({ join_code: joinCode, join_code_normalized: joinCodeNormalized })
+      .eq('id', id)
+      .eq('user_id', getUserId());
+    if (error) throw error;
+  },
 };
 
 // ══════════════════════════════════════
@@ -999,7 +1166,15 @@ export const groupExpensesDb = {
     });
     if (error) throw error;
   },
-  async update(id: string, changes: Partial<GroupExpense>) {
+  // `expectedVersion` turns this into an optimistic-lock write (audit F-6).
+  // The `version` column was written on every edit but NEVER compared, so two
+  // people editing the same expense was last-writer-wins and one person's
+  // splits silently replaced the other's. With it, the losing writer matches
+  // 0 rows and gets a conflict error instead of quietly winning; the DB-side
+  // backstop (group_expenses_version_guard in
+  // supabase-migration-audit-p0-group-concurrency.sql) makes the increment
+  // mandatory so a caller cannot opt out by just not sending a new version.
+  async update(id: string, changes: Partial<GroupExpense>, opts?: { expectedVersion?: number }) {
     const row: Record<string, unknown> = {};
     if (changes.description !== undefined) row.description = changes.description;
     if (changes.amount !== undefined) row.amount = changes.amount;
@@ -1018,9 +1193,27 @@ export const groupExpensesDb = {
     // .select() makes RLS-filtered writes VISIBLE: creator-only policies turn
     // a non-creator's update into 0 affected rows, which supabase-js otherwise
     // reports as success — the "edited but nothing changed" trap.
-    const { data, error } = await supabase.from('group_expenses').update(row).eq('id', id).select('id');
+    let query = supabase.from('group_expenses').update(row).eq('id', id);
+    if (opts?.expectedVersion !== undefined) {
+      query = query.eq('version', opts.expectedVersion);
+    }
+    const { data, error } = await query.select('id');
     if (error) throw error;
     if ((data ?? []).length === 0) {
+      // 0 rows means one of two very different things. Read the live version
+      // back to tell them apart, so a conflict is never reported as "you're
+      // not the creator" (and, more importantly, never as success).
+      if (opts?.expectedVersion !== undefined) {
+        const { data: current } = await supabase
+          .from('group_expenses')
+          .select('version')
+          .eq('id', id)
+          .is('deleted_at', null)
+          .maybeSingle();
+        if (current && Number(current.version) !== opts.expectedVersion) {
+          throw new Error(tStatic('grp_expense_version_conflict'));
+        }
+      }
       throw new Error(tStatic('grp_only_creator_edit'));
     }
   },
@@ -1098,16 +1291,25 @@ export const groupSettlementsDb = {
       amount: Number(r.amount),
     }));
   },
-  async add(s: GroupSettlement) {
-    const { error } = await supabase.from('group_settlements').insert({
-      id: s.id, user_id: getUserId(), group_id: s.groupId,
-      from_member: s.fromMember, to_member: s.toMember,
-      amount: s.amount, date: s.date, note: s.note,
-      created_at: s.createdAt,
-      created_by: s.createdBy ?? getUserId(),
-      updated_by: s.updatedBy ?? getUserId(),
+  // Record a settlement through the hardened RPC. The outstanding-amount cap
+  // used to be a client-side check between two reads and an insert, so two
+  // devices recording the same repayment both passed it and the pair
+  // over-settled (audit 12-qa-review.md F-7). record_group_settlement takes a
+  // group row lock, recomputes the cap under it, and inserts — all in one
+  // transaction. Failures come back as DATA (reason_code), never as a raw
+  // Postgres error string.
+  async record(s: GroupSettlement): Promise<RecordSettlementResult> {
+    const { data, error } = await supabase.rpc('record_group_settlement', {
+      p_settlement_id: s.id,
+      p_group_id: s.groupId,
+      p_from_member: s.fromMember,
+      p_to_member: s.toMember,
+      p_amount: s.amount,
+      p_note: s.note ?? '',
+      p_date: s.date,
     });
     if (error) throw error;
+    return (data ?? {}) as RecordSettlementResult;
   },
   // Soft-delete one settlement (tombstone; every read filters deleted_at).
   // .select() surfaces RLS-filtered 0-row writes as an honest error, and the
@@ -1130,6 +1332,17 @@ export const groupSettlementsDb = {
     if (error) throw error;
   },
 };
+
+// supabase-migration-audit-p0-consent-guards.sql §2.2 raises SQLSTATE 23505
+// (MEMBER_ALREADY_EXISTS) when a client INSERTs a second membership row for a
+// profile that already has one in that group — the supported way back in for
+// someone who declined is the join code, not a re-invite. Without this the user
+// sees a raw Postgres unique-violation string.
+function translateMemberInsertError(error: unknown): unknown {
+  return isMemberAlreadyExistsError(error)
+    ? new Error(tStatic('grp_member_already_exists'))
+    : error;
+}
 
 export const groupMembersDb = {
   async getByGroup(groupId: string): Promise<GroupMember[]> {
@@ -1171,7 +1384,7 @@ export const groupMembersDb = {
       joined_at: member.joinedAt ?? null,
       created_at: new Date().toISOString(),
     });
-    if (error) throw error;
+    if (error) throw translateMemberInsertError(error);
   },
   async addMany(groupId: string, members: GroupMember[]) {
     if (members.length === 0) return;
@@ -1187,7 +1400,7 @@ export const groupMembersDb = {
       created_at: new Date().toISOString(),
     }));
     const { error } = await supabase.from('group_members').insert(rows);
-    if (error) throw error;
+    if (error) throw translateMemberInsertError(error);
   },
   async update(id: string, changes: Partial<GroupMember>) {
     const row: Record<string, unknown> = {};
@@ -1225,18 +1438,20 @@ export const groupInvitesDb = {
     });
     if (error) throw error;
   },
-  async getByTokenHash(tokenHash: string): Promise<GroupInvite | null> {
-    const { data, error } = await supabase
-      .from('group_invites').select('*')
-      .eq('token_hash', tokenHash)
-      .is('revoked_at', null)
-      .single();
-    if (error) return null;
-    return data ? mapGroupInvite(data) : null;
-  },
+  // getByTokenHash is GONE. It had no caller, and after
+  // supabase-migration-audit-p0-consent-guards.sql §3.2 it could not work:
+  // token_hash is no longer readable OR filterable by client roles, and the
+  // hash stopped being the credential (the raw token is, and only the server
+  // may derive its digest).
+  //
+  // Explicit column list, NOT select('*'): the table-wide SELECT grant was
+  // revoked and only these nine columns were granted back, so a star select now
+  // fails with "permission denied for column token_hash". This list is exactly
+  // what mapGroupInvite reads.
   async getActiveByGroup(groupId: string): Promise<GroupInvite[]> {
     const { data, error } = await supabase
-      .from('group_invites').select('*')
+      .from('group_invites')
+      .select('id, group_id, created_by, linked_member_id, expires_at, revoked_at, accepted_by, accepted_at, created_at')
       .eq('group_id', groupId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false });
@@ -1263,20 +1478,13 @@ export const groupEventsDb = {
     if (error) throw error;
     return (data ?? []).map(mapGroupEvent);
   },
-  async add(event: GroupEvent) {
-    const { error } = await supabase.from('group_events').insert({
-      id: event.id,
-      group_id: event.groupId,
-      actor_profile_id: event.actorProfileId,
-      event_type: event.eventType,
-      entity_type: event.entityType,
-      entity_id: event.entityId,
-      summary: event.summary,
-      payload: event.payload,
-      created_at: event.createdAt,
-    });
-    if (error) throw error;
-  },
+  // NOTE: there is deliberately no add(). Group activity rows are written by
+  // the fan-out triggers in supabase-migration-audit-p0-notifications.sql, in
+  // the same transaction as the money write, and the client INSERT policy on
+  // group_events is dropped there. Client-written events were best-effort —
+  // an actor who went offline between the expense insert and the fan-out left
+  // no activity record at all (audit 08-notifications.md N-2) — and let any
+  // member author arbitrary `summary` text into the shared feed.
 };
 
 export const notificationsDb = {
@@ -1289,23 +1497,13 @@ export const notificationsDb = {
     if (error) throw error;
     return (data ?? []).map(mapNotification);
   },
-  async addMany(notifications: AppNotification[]) {
-    if (notifications.length === 0) return;
-    const { error } = await supabase.from('notifications').insert(
-      notifications.map(notification => ({
-        id: notification.id,
-        user_id: notification.userId,
-        group_id: notification.groupId,
-        event_id: notification.eventId,
-        type: notification.type,
-        title: notification.title,
-        body: notification.body,
-        read_at: notification.readAt,
-        created_at: notification.createdAt,
-      })),
-    );
-    if (error) throw error;
-  },
+  // NOTE: there is deliberately no addMany(). Clients can only ever insert a
+  // notification for THEMSELVES now (the INSERT policy in
+  // supabase-migration-audit-p0-notifications.sql), and nothing in the app
+  // needs to. The old fan-out let any co-member write arbitrary title/body
+  // rows into another member's Inbox — forwarded verbatim as app-branded
+  // HIGH-priority FCM push (audit 05-security.md H5 / 08-notifications.md
+  // N-3). Every cross-user notification is now trigger-written.
   async markRead(id: string) {
     const { error } = await supabase
       .from('notifications')
@@ -1374,20 +1572,140 @@ export interface LeaveGroupResult {
   currency: string | null;
 }
 
+// accept_group_membership / decline_group_membership / transfer_group_ownership
+// all return leave_group's { success, reason_code, user_message } shape on
+// purpose (consent-guards.sql §2.5, account-deletion.sql §5), so one parser
+// serves all four.
+function parseLeaveGroupShape(data: unknown, fallbackMessage: string): LeaveGroupResult {
+  const result = (data ?? {}) as Record<string, unknown>;
+  return {
+    success: Boolean(result.success),
+    reasonCode: String(result.reason_code ?? 'UNKNOWN'),
+    userMessage: String(result.user_message ?? fallbackMessage),
+    payableAmount: Number(result.payable_amount ?? 0),
+    receivableAmount: Number(result.receivable_amount ?? 0),
+    currency: result.currency ? String(result.currency) : null,
+  };
+}
+
+/** One row of list_pending_group_memberships (consent-guards.sql §2.6) — the
+ *  ONLY window an invited user has onto a group they have not accepted, since
+ *  is_group_member() still means 'connected' and the split_groups SELECT policy
+ *  hides the row entirely. Scalar fields only: no member list, no ledger, no
+ *  join code. */
+export interface PendingGroupInvitation {
+  groupId: string;
+  memberId: string;
+  groupName: string;
+  groupEmoji: string;
+  currency: string;
+  invitedBy: string | null;
+  invitedByName: string;
+  invitedAt: string | null;
+}
+
 export const groupMembershipDb = {
   async leave(groupId: string): Promise<LeaveGroupResult> {
     const { data, error } = await supabase.rpc('leave_group', { p_group_id: groupId });
     if (error) throw new Error(error.message || 'Could not leave this group');
+    return parseLeaveGroupShape(data, 'Could not leave this group.');
+  },
 
-    const result = (data ?? {}) as Record<string, unknown>;
-    return {
-      success: Boolean(result.success),
-      reasonCode: String(result.reason_code ?? 'UNKNOWN'),
-      userMessage: String(result.user_message ?? 'Could not leave this group.'),
-      payableAmount: Number(result.payable_amount ?? 0),
-      receivableAmount: Number(result.receivable_amount ?? 0),
-      currency: result.currency ? String(result.currency) : null,
-    };
+  // Invitations the caller has NOT accepted yet. Returns [] rather than
+  // throwing on an un-migrated database: a missing RPC must not break the
+  // Groups tab, it just means there are no pending invitations to show.
+  async listPending(): Promise<PendingGroupInvitation[]> {
+    const { data, error } = await supabase.rpc('list_pending_group_memberships');
+    if (error) {
+      if (isMissingFunctionError(error)) return [];
+      throw error;
+    }
+    if (!Array.isArray(data)) return [];
+    return data.map((raw) => {
+      const row = (raw ?? {}) as Record<string, unknown>;
+      return {
+        groupId: String(row.group_id ?? ''),
+        memberId: String(row.member_id ?? ''),
+        groupName: String(row.group_name ?? ''),
+        groupEmoji: String(row.group_emoji ?? ''),
+        currency: String(row.currency ?? 'PKR'),
+        invitedBy: row.invited_by ? String(row.invited_by) : null,
+        invitedByName: String(row.invited_by_name ?? ''),
+        invitedAt: row.invited_at ? String(row.invited_at) : null,
+      };
+    }).filter(row => row.groupId !== '');
+  },
+
+  // The invitee promotes their OWN status='invited' row to 'connected'. No
+  // other party can call it for them (auth.uid() must equal profile_id).
+  async accept(groupId: string): Promise<LeaveGroupResult> {
+    const { data, error } = await supabase.rpc('accept_group_membership', { p_group_id: groupId });
+    if (error) throw new Error(error.message || 'Could not accept this invitation');
+    return parseLeaveGroupShape(data, 'Could not accept this invitation.');
+  },
+
+  // Unconditional refusal. Deliberately a SEPARATE RPC from leave_group and
+  // deliberately carrying NONE of its balance / reconciliation gates — that is
+  // the whole point of consent-guards §2.5: a never-accepted user must always
+  // be able to say no, or an attacker could conscript them and then wedge the
+  // exit shut with an expense.
+  async decline(groupId: string): Promise<LeaveGroupResult> {
+    const { data, error } = await supabase.rpc('decline_group_membership', { p_group_id: groupId });
+    if (error) throw new Error(error.message || 'Could not decline this invitation');
+    return parseLeaveGroupShape(data, 'Could not decline this invitation.');
+  },
+};
+
+/** archive_group / unarchive_group return leave_group's shape plus the new
+ *  archived_at, so the client can update its mirror without a re-fetch. */
+export interface GroupArchiveResult {
+  success: boolean;
+  reasonCode: string;
+  userMessage: string;
+  archivedAt: string | null;
+}
+
+function parseArchiveResult(data: unknown, fallbackMessage: string): GroupArchiveResult {
+  const result = (data ?? {}) as Record<string, unknown>;
+  return {
+    success: Boolean(result.success),
+    reasonCode: String(result.reason_code ?? 'UNKNOWN'),
+    userMessage: String(result.user_message ?? fallbackMessage),
+    archivedAt: result.archived_at ? String(result.archived_at) : null,
+  };
+}
+
+// Owner-only, non-destructive alternative to deleting a shared group
+// (supabase-migration-audit-p0-group-deletion-guard.sql §6). archived_at may
+// NOT be PATCHed directly — split_groups_protect_archive refuses that with
+// GROUP_ARCHIVE_RPC_ONLY — so the group_event and the member notification can
+// never be skipped.
+export const groupArchiveDb = {
+  async archive(groupId: string): Promise<GroupArchiveResult> {
+    const { data, error } = await supabase.rpc('archive_group', { p_group_id: groupId });
+    if (error) throw error;
+    return parseArchiveResult(data, 'Could not archive this group.');
+  },
+  async unarchive(groupId: string): Promise<GroupArchiveResult> {
+    const { data, error } = await supabase.rpc('unarchive_group', { p_group_id: groupId });
+    if (error) throw error;
+    return parseArchiveResult(data, 'Could not reopen this group.');
+  },
+};
+
+// Owner-only ownership handover (supabase-migration-audit-p0-account-deletion
+// .sql §5). The target must already be a connected, profile-linked member of
+// the same group, so a group can never be handed to a stranger. This is the
+// resolution path for BOTH delete_current_user's OWNED_GROUPS_WITH_MEMBERS
+// refusal and leave_group's ONLY_OWNER_ADMIN refusal.
+export const groupOwnershipDb = {
+  async transfer(groupId: string, newOwnerMemberId: string): Promise<LeaveGroupResult> {
+    const { data, error } = await supabase.rpc('transfer_group_ownership', {
+      p_group_id: groupId,
+      p_new_owner_member_id: newOwnerMemberId,
+    });
+    if (error) throw new Error(error.message || 'Could not transfer ownership');
+    return parseLeaveGroupShape(data, 'Could not transfer ownership.');
   },
 };
 
@@ -1401,43 +1719,70 @@ export const groupsLookupDb = {
   // caller's membership in one step. Needed because a non-member can't read
   // split_groups directly — the prior "lookup → re-fetch → insert" flow
   // always failed at the re-fetch step under strict RLS.
+  //
+  // Audit 2026-09 (C5 / security H1): the RPC now returns a jsonb status
+  // object rather than raising, because a RAISE rolled back the very
+  // join_code_attempts row the brute-force limiter counts. This never throws
+  // for a business outcome — callers switch on `status`. The try/catch is kept
+  // deliberately: migrations are hand-applied, so prod may briefly still run
+  // the old RETURNS TABLE + RAISE version, and its thrown message is mapped
+  // into the same vocabulary.
   async joinByCode(
     normalizedCode: string,
     displayName: string,
-  ): Promise<{ groupId: string; memberId: string; wasAlreadyConnected: boolean } | null> {
-    const { data, error } = await supabase.rpc('join_group_by_code', {
-      p_code_normalized: normalizedCode,
-      p_display_name: displayName,
-    });
-    if (error) {
-      // Bubble the Postgres message up so the UI layer can classify it
-      // ("Group code not found", "Not authenticated", …).
-      throw new Error(error.message || 'Join failed');
+  ): Promise<JoinCodeResult> {
+    try {
+      const { data, error } = await supabase.rpc('join_group_by_code', {
+        p_code_normalized: normalizedCode,
+        p_display_name: displayName,
+      });
+      if (error) return { status: joinStatusFromThrown(error) };
+      return parseJoinByCodeResponse(data);
+    } catch (err) {
+      return { status: joinStatusFromThrown(err) };
     }
-    if (!data || data.length === 0) return null;
-    const row = data[0] as { group_id: string; member_id: string; was_already_connected: boolean };
-    return {
-      groupId: row.group_id,
-      memberId: row.member_id,
-      wasAlreadyConnected: Boolean(row.was_already_connected),
-    };
   },
+  // Invite-link redemption. Audit 2026-09 (H3 / SEC-07,
+  // supabase-migration-audit-p0-consent-guards.sql §3.5): the RAW token goes to
+  // the server, which derives the SHA-256 itself with hash_invite_token. The
+  // client no longer hashes anything — that was the bug, because the stored
+  // hash WAS the password and RLS handed it to every group member. The
+  // parameter was renamed p_invite_token_hash -> p_invite_token so an
+  // un-updated client fails loudly instead of silently hashing a hash.
+  //
+  // Like joinByCode, this returns a status and never throws for a business
+  // outcome: the RPC must RETURN rather than RAISE or the
+  // invite_accept_attempts row the rate limiter counts would roll back.
+  //
+  // Graceful fallback: migrations are hand-applied, so prod may still run the
+  // OLD RETURNS TABLE function, which does not know the new argument name.
+  // PGRST202 / 42883 means exactly that — retry once against the legacy
+  // signature with the locally-computed hash, so existing invite links keep
+  // working in the window before the migration lands.
   async acceptInvite(
-    tokenHash: string,
+    rawToken: string,
     displayName: string,
-  ): Promise<{ groupId: string; memberId: string; wasAlreadyConnected: boolean }> {
-    const { data, error } = await supabase.rpc('accept_group_invite', {
-      p_invite_token_hash: tokenHash,
-      p_display_name: displayName,
-    });
-    if (error) throw new Error(error.message || 'Invite acceptance failed');
-    if (!data || data.length === 0) throw new Error('Invite not found');
-    const row = data[0] as { group_id: string; member_id: string; was_already_connected: boolean };
-    return {
-      groupId: row.group_id,
-      memberId: row.member_id,
-      wasAlreadyConnected: Boolean(row.was_already_connected),
-    };
+  ): Promise<InviteAcceptResult> {
+    try {
+      const { data, error } = await supabase.rpc('accept_group_invite', {
+        p_invite_token: rawToken,
+        p_display_name: displayName,
+      });
+      if (!error) return parseAcceptInviteResponse(data);
+      if (!isMissingFunctionError(error)) return { status: inviteStatusFromThrown(error) };
+
+      // Dynamic import keeps supabaseDb free of a static edge to collaboration,
+      // which itself lazily imports this module.
+      const { sha256Hex } = await import('./collaboration');
+      const legacy = await supabase.rpc('accept_group_invite', {
+        p_invite_token_hash: await sha256Hex(rawToken),
+        p_display_name: displayName,
+      });
+      if (legacy.error) return { status: inviteStatusFromThrown(legacy.error) };
+      return parseAcceptInviteResponse(legacy.data);
+    } catch (err) {
+      return { status: inviteStatusFromThrown(err) };
+    }
   },
 };
 
@@ -1561,6 +1906,13 @@ function mapGroup(r: Record<string, unknown>): SplitGroup {
     createdBy: (r.created_by as string) ?? (r.user_id as string) ?? null,
     joinCode: (r.join_code as string) ?? null,
     joinCodeNormalized: (r.join_code_normalized as string) ?? null,
+    // Added by audit-p0-join-abuse-limits / audit-p0-group-deletion-guard.
+    // Tolerate their absence so a client running against a pre-migration
+    // database still renders the group (undefined ⇒ "no expiry known",
+    // "not archived").
+    joinCodeExpiresAt: (r.join_code_expires_at as string) ?? null,
+    archivedAt: (r.archived_at as string) ?? null,
+    archivedBy: (r.archived_by as string) ?? null,
   };
 }
 
@@ -1613,7 +1965,9 @@ function mapGroupInvite(r: Record<string, unknown>): GroupInvite {
   return {
     id: r.id as string,
     groupId: r.group_id as string,
-    tokenHash: r.token_hash as string,
+    // Never selected any more (consent-guards §3.2 revoked the column grant).
+    // Left optional so a row read by some other path still maps cleanly.
+    tokenHash: (r.token_hash as string) ?? undefined,
     createdBy: r.created_by as string,
     linkedMemberId: (r.linked_member_id as string) ?? null,
     expiresAt: (r.expires_at as string) ?? null,
@@ -1647,6 +2001,14 @@ function mapNotification(r: Record<string, unknown>): AppNotification {
     type: r.type as AppNotification['type'],
     title: (r.title as string) ?? '',
     body: (r.body as string) ?? '',
+    // Added by supabase-migration-audit-p0-notifications.sql. Tolerate their
+    // absence so a client running against a pre-migration database (or a row
+    // written by an older trigger) still renders the stored title/body.
+    template: (r.template as string) ?? null,
+    params: (r.params && typeof r.params === 'object' && !Array.isArray(r.params)
+      ? r.params
+      : {}) as Record<string, unknown>,
+    actorId: (r.actor_id as string) ?? null,
     readAt: (r.read_at as string) ?? null,
     createdAt: r.created_at as string,
   };
@@ -1775,6 +2137,41 @@ function mapCustomCategory(r: Record<string, unknown>): CustomCategory {
 // KAMETI / COMMITTEES (no-custody ROSCA tracker)
 // See supabase-migration-committees.sql.
 // ══════════════════════════════════════
+
+// Stable failure codes raised by perform_committee_draw (see
+// supabase-migration-audit-p0-kameti-draw.sql). PostgREST surfaces the RAISE
+// text verbatim in error.message, so we match on the token rather than on
+// Postgres error codes.
+export const COMMITTEE_DRAW_ERRORS = [
+  'ALREADY_DRAWN', 'NOT_ORGANISER', 'NOT_FOUND', 'NOT_ACTIVE',
+  'TOO_FEW_MEMBERS', 'NOT_AUTHENTICATED', 'DRAW_LOCKED', 'DRAW_FIELDS_ARE_SERVER_ONLY',
+] as const;
+export type CommitteeDrawErrorCode = (typeof COMMITTEE_DRAW_ERRORS)[number];
+
+export class CommitteeDrawError extends Error {
+  readonly code: CommitteeDrawErrorCode | 'UNKNOWN';
+  constructor(code: CommitteeDrawErrorCode | 'UNKNOWN', message?: string) {
+    super(message ?? code);
+    this.name = 'CommitteeDrawError';
+    this.code = code;
+  }
+}
+
+function toCommitteeDrawError(err: unknown): CommitteeDrawError {
+  const message = (err as { message?: string })?.message ?? String(err);
+  const code = COMMITTEE_DRAW_ERRORS.find((c) => message.includes(c));
+  return new CommitteeDrawError(code ?? 'UNKNOWN', message);
+}
+
+export interface CommitteeDrawResult {
+  drawnAt: string;
+  drawSeed: string;
+  drawCommitment: string;
+  drawScheme: string;
+  /** Member ids in slot order — index 0 holds slot 1. */
+  order: string[];
+}
+
 export const committeesDb = {
   async getAll(): Promise<Committee[]> {
     const { data, error } = await supabase
@@ -1801,8 +2198,11 @@ export const committeesDb = {
     if (changes.status !== undefined) row.status = changes.status;
     if (changes.notes !== undefined) row.notes = changes.notes;
     if (changes.drawnAt !== undefined) row.drawn_at = changes.drawnAt;
-    if (changes.drawSeed !== undefined) row.draw_seed = changes.drawSeed;
-    if (changes.drawCommitment !== undefined) row.draw_commitment = changes.drawCommitment;
+    // drawSeed / drawCommitment are deliberately NOT writable from here. Audit
+    // 2026-09 M10: a client-written seed lets the organiser brute-force one that
+    // yields a hand-picked order. Only perform_committee_draw() may set them,
+    // and a trigger rejects any other write — see
+    // supabase-migration-audit-p0-kameti-draw.sql.
     if (changes.shareToken !== undefined) row.share_token = changes.shareToken;
     const { error } = await supabase.from('committees').update(row).eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
@@ -1811,6 +2211,25 @@ export const committeesDb = {
     // Hard delete — FKs cascade members + payments.
     const { error } = await supabase.from('committees').delete().eq('id', id).eq('user_id', getUserId());
     if (error) throw error;
+  },
+  // The ballot draw. Runs ENTIRELY server-side inside one transaction: the seed
+  // comes from Postgres entropy the organiser never sees or supplies, the order
+  // is computed in SQL, and a drawn-guard makes a second call fail with
+  // ALREADY_DRAWN. The client's only job afterwards is to recompute the same
+  // order from the published seed and confirm it (src/lib/committeeDraw.ts).
+  async performDraw(committeeId: string): Promise<CommitteeDrawResult> {
+    const { data, error } = await supabase.rpc('perform_committee_draw', { p_committee_id: committeeId });
+    if (error) throw toCommitteeDrawError(error);
+    const raw = data as Record<string, unknown> | null;
+    const order = Array.isArray(raw?.order) ? (raw.order as string[]) : [];
+    if (!raw || order.length === 0) throw new CommitteeDrawError('UNKNOWN', 'perform_committee_draw returned no order');
+    return {
+      drawnAt: String(raw.drawnAt),
+      drawSeed: String(raw.drawSeed),
+      drawCommitment: String(raw.drawCommitment),
+      drawScheme: String(raw.drawScheme),
+      order,
+    };
   },
   // Read-only witness snapshot via the anon SECURITY DEFINER RPC. No auth
   // required — used by the public witness page. Returns null for a bad token.

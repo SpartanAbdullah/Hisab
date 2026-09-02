@@ -16,6 +16,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useToast } from '../components/Toast';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { computePosition, simulateTimeline, validateTradeInput } from '../lib/investmentMath';
 import { marketColorFor } from '../lib/marketColors';
 import { rateIsSane } from '../lib/conversionMath';
@@ -50,6 +51,7 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
   const toast = useToast();
   const t = useT();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
 
   const [kind, setKind] = useState<InvestmentTradeKind>('buy');
   const [marketId, setMarketId] = useState('');
@@ -172,7 +174,12 @@ export function RecordTradeModal({ open, onClose, preset }: Props) {
 
   const handleClose = () => onClose();
 
-  const handleSave = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
+  // updated asynchronously, so two taps in one frame both read it as false.
+  // `saving` stays for the disabled/label UI; the ref is the real guard.
+  const handleSave = () => submitGuard.run(runSave);
+
+  const runSave = async () => {
     if (!canSave || !market) return;
     // Captured BEFORE the save so "first trade ever" is detected correctly.
     const isFirstTradeEver = trades.length === 0;

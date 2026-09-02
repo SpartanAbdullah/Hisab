@@ -51,6 +51,7 @@ import { useT, useI18nStore } from "../lib/i18n";
 import { validatePassword, PASSWORD_MIN_LENGTH } from "../lib/passwordPolicy";
 import { exportAllData, importData, downloadJSON } from "../lib/dataExport";
 import { profilesDb } from "../lib/supabaseDb";
+import { supabase } from "../lib/supabase";
 import { db } from "../db";
 import {
   getCoreMirrorSyncSnapshots,
@@ -87,6 +88,43 @@ function copyShareText(text: string): Promise<void> {
   }
 
   return copyWithTextareaFallback(text);
+}
+
+// Audit C2 (client half): `delete_current_user` refuses to run when the caller
+// still owns groups that have other members, RAISEing with this marker and a
+// detail listing the group names. Without mapping, the user sees a raw Postgres
+// string. Everything the driver gives us is searched — PostgrestError splits the
+// RAISE across message/details/hint depending on how it was thrown.
+const OWNED_GROUPS_MARKER = "OWNED_GROUPS_WITH_MEMBERS";
+
+function readOwnedGroupsBlocker(error: unknown): { blocked: boolean; names: string } {
+  const parts: string[] = [];
+  if (typeof error === "string") {
+    parts.push(error);
+  } else if (error && typeof error === "object") {
+    for (const key of ["message", "details", "hint", "code"] as const) {
+      const value = (error as Record<string, unknown>)[key];
+      if (typeof value === "string") parts.push(value);
+    }
+  }
+  const blob = parts.join(" | ");
+  const at = blob.indexOf(OWNED_GROUPS_MARKER);
+  if (at === -1) return { blocked: false, names: "" };
+  // The RPC raises the marker as the message and puts the comma-separated
+  // group names in DETAIL (PostgrestError.details). Fall back to whatever
+  // trails the marker in the same fragment for other transports.
+  const trailing = blob
+    .slice(at + OWNED_GROUPS_MARKER.length)
+    .split(" | ")[0]
+    .replace(/^[\s:;,—–-]+/, "")
+    .replace(/[.\s]+$/, "")
+    .trim();
+  const details =
+    error && typeof error === "object" && typeof (error as Record<string, unknown>).details === "string"
+      ? ((error as Record<string, unknown>).details as string).trim()
+      : "";
+  const names = trailing || (details.includes(OWNED_GROUPS_MARKER) || /joined one of your groups/i.test(details) ? "" : details);
+  return { blocked: true, names };
 }
 
 const SYNC_LABELS: Record<MirrorSyncSnapshot["key"], string> = {
@@ -157,6 +195,11 @@ export function SettingsPage() {
     () => localStorage.getItem("hisaab_mobile") ?? "",
   );
   const [newPassword, setNewPassword] = useState("");
+  // Re-auth (audit SEC-12): both the password change and the account deletion
+  // now demand the CURRENT password. Separate fields so neither flow leaks the
+  // other's typed secret into a form the user didn't intend to submit.
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [publicCode, setPublicCode] = useState("");
@@ -278,7 +321,15 @@ export function SettingsPage() {
       toast.show({ type: "error", title: t("pin_mismatch") });
       return;
     }
-    await setPin(pin1);
+    try {
+      await setPin(pin1);
+    } catch {
+      // WebCrypto missing (insecure origin / ancient WebView) — say so instead
+      // of claiming a PIN was set, which is the exact false promise the audit
+      // flagged in the first place.
+      toast.show({ type: "error", title: t("pin_set_failed") });
+      return;
+    }
     toast.show({ type: "success", title: t("pin_set_success") });
     setShowPinSetup(false);
     setPin1("");
@@ -329,6 +380,32 @@ export function SettingsPage() {
     }
   };
 
+  // Proof-of-identity for the two irreversible actions on this page. With only
+  // the anon key, re-signing in with the session's own email is the way to
+  // check a password; it mints a fresh session for the SAME user, so nothing
+  // else in the app is disturbed. (audit SEC-12 / M2)
+  const verifyCurrentPassword = async (
+    password: string,
+  ): Promise<{ ok: boolean; message: string }> => {
+    if (!email) return { ok: false, message: t("reauth_check_failed") };
+    if (!password) return { ok: false, message: t("reauth_required") };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (!error) return { ok: true, message: "" };
+      const text = (error.message ?? "").toLowerCase();
+      const wrongPassword =
+        error.status === 400 ||
+        text.includes("invalid login") ||
+        text.includes("credential");
+      return {
+        ok: false,
+        message: wrongPassword ? t("reauth_wrong_password") : t("reauth_check_failed"),
+      };
+    } catch {
+      return { ok: false, message: t("reauth_check_failed") };
+    }
+  };
+
   const handlePasswordReset = async () => {
     const policy = validatePassword(newPassword);
     if (!policy.valid) {
@@ -342,13 +419,19 @@ export function SettingsPage() {
     }
     setPasswordSaving(true);
     try {
+      const reauth = await verifyCurrentPassword(currentPassword);
+      if (!reauth.ok) {
+        toast.show({ type: "error", title: reauth.message });
+        return;
+      }
       const { changePassword } = useSupabaseAuthStore.getState();
       await changePassword(newPassword);
-      toast.show({ type: "success", title: "Password updated successfully!" });
+      toast.show({ type: "success", title: t("password_updated") });
       setNewPassword("");
+      setCurrentPassword("");
       setShowPasswordChange(false);
     } catch {
-      toast.show({ type: "error", title: "Failed to update password" });
+      toast.show({ type: "error", title: t("password_update_failed") });
     } finally {
       setPasswordSaving(false);
     }
@@ -358,14 +441,34 @@ export function SettingsPage() {
     if (deleteConfirm !== "DELETE") return;
     setDeleteSaving(true);
     try {
+      const reauth = await verifyCurrentPassword(deletePassword);
+      if (!reauth.ok) {
+        toast.show({ type: "error", title: reauth.message });
+        setDeleteSaving(false);
+        return;
+      }
       await deleteAccount();
       window.location.assign("/");
     } catch (error) {
-      toast.show({
-        type: "error",
-        title: "Could not delete account",
-        subtitle: error instanceof Error ? error.message : "Please try again.",
-      });
+      // The RPC refuses while the user still owns groups with other members —
+      // deleting them would strand everyone else's shared ledger. Tell them
+      // exactly which groups, and what to do about it.
+      const owned = readOwnedGroupsBlocker(error);
+      if (owned.blocked) {
+        toast.show({
+          type: "error",
+          title: t("del_account_owned_groups_title"),
+          subtitle: owned.names
+            ? t("del_account_owned_groups_body").replace("{names}", owned.names)
+            : t("del_account_owned_groups_generic"),
+        });
+      } else {
+        toast.show({
+          type: "error",
+          title: t("del_account_failed"),
+          subtitle: error instanceof Error ? error.message : t("del_account_retry"),
+        });
+      }
       setDeleteSaving(false);
     }
   };
@@ -530,8 +633,22 @@ export function SettingsPage() {
                 const policy = validatePassword(newPassword);
                 return (
                   <div className="space-y-2 animate-fade-in bg-accent-50 rounded-xl p-3 border border-cream-border">
+                    {/* Re-auth: the current password must be proven before the
+                        new one is accepted (audit SEC-12). */}
                     <input
                       type="password"
+                      autoComplete="current-password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder={t("reauth_current_password")}
+                      className="w-full border border-cream-border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500 transition-all bg-cream-card"
+                    />
+                    <p className="text-[10.5px] text-ink-500 leading-relaxed">
+                      {t("reauth_why")}
+                    </p>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder={`New password (min ${PASSWORD_MIN_LENGTH} chars)`}
@@ -552,7 +669,7 @@ export function SettingsPage() {
                     </p>
                     <button
                       onClick={handlePasswordReset}
-                      disabled={passwordSaving || !policy.valid}
+                      disabled={passwordSaving || !policy.valid || !currentPassword}
                       className="w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30"
                     >
                       {passwordSaving ? "Updating..." : "Update Password"}
@@ -1187,9 +1304,28 @@ export function SettingsPage() {
                     placeholder="DELETE"
                   />
                 </div>
+                {/* Re-auth: irreversible destruction of years of khata history
+                    must not be one tap away on an unlocked phone (SEC-12). */}
+                <div>
+                  <label className="text-[10px] font-bold text-pay-text uppercase tracking-widest mb-1.5 block">
+                    {t("reauth_current_password")}
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={deletePassword}
+                    onChange={(event) => setDeletePassword(event.target.value)}
+                    disabled={deleteSaving}
+                    className="w-full border border-pay-100 rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-pay-600/20 focus:border-pay-text transition-all bg-cream-card"
+                    placeholder={t("reauth_current_password")}
+                  />
+                  <p className="text-[10.5px] text-ink-500 mt-1.5 leading-relaxed">
+                    {t("reauth_why")}
+                  </p>
+                </div>
                 <button
                   onClick={handleDeleteAccount}
-                  disabled={deleteConfirm !== "DELETE" || deleteSaving}
+                  disabled={deleteConfirm !== "DELETE" || !deletePassword || deleteSaving}
                   className="w-full py-2.5 rounded-xl bg-pay-600 text-white text-[12px] font-semibold disabled:opacity-30 flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all"
                 >
                   <Trash2 size={13} />

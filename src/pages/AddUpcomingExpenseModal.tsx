@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useUpcomingExpenseStore } from '../stores/upcomingExpenseStore';
 import { useToast } from '../components/Toast';
@@ -38,6 +39,7 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
   const toast = useToast();
   const t = useT();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
 
   const [step, setStep] = useState(0);
   const [title, setTitle] = useState('');
@@ -59,7 +61,10 @@ export function AddUpcomingExpenseModal({ open, onClose }: Props) {
 
   const handleClose = () => { reset(); onClose(); };
 
-  const handleSubmit = async () => {
+  // Ref-backed entry re-check; `saving` state stays for the disabled/label UI.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  const runSubmit = async () => {
     setSaving(true);
     try {
       const currency: Currency = selectedAccount?.currency ?? 'AED';

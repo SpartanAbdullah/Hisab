@@ -25,6 +25,12 @@ import { startGlobalRealtime, stopGlobalRealtime, resumeGlobalRealtime } from '.
 import { startPushRegistration, stopPushRegistration } from './lib/pushRegistration';
 import { supabase } from './lib/supabase';
 import { initNativeBridge } from './lib/nativeBridge';
+import { isNativeRuntime } from './lib/runtime';
+import { useAuthStore } from './stores/authStore';
+import { PIN_RELOCK_AFTER_MS } from './lib/pinCrypto';
+// Statically imported on purpose: a lazy chunk that fails to load (offline, or
+// a stale deploy) must never be the reason the PIN gate silently doesn't render.
+import { PinLockScreen } from './pages/PinLockScreen';
 import { useT, useI18nStore } from './lib/i18n';
 import { Globe } from 'lucide-react';
 
@@ -240,6 +246,71 @@ function AppContent() {
     };
   }, [user?.id]);
 
+  // ── Device PIN gate (audit H7 / QA F-1) ────────────────────────────────
+  // PinLockScreen used to have zero importers: Settings could set a PIN and the
+  // Play listing sold it, but the app opened straight to Home. The gate now
+  // covers (a) cold start — authStore boots isLocked=true whenever a PIN record
+  // exists — and (b) resume, once the app has been backgrounded for at least
+  // PIN_RELOCK_AFTER_MS. It renders BELOW the auth / email-verification /
+  // onboarding gates and below the public routes, so none of those are covered.
+  // App-mode independent: full_tracker and splits_only share this shell.
+  const hasPin = useAuthStore((s) => s.hasPin);
+  const isPinLocked = useAuthStore((s) => s.isLocked);
+  const backgroundedAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    const onHidden = () => {
+      // First hidden event wins: don't restart the clock on a repeat.
+      if (backgroundedAt.current === null) backgroundedAt.current = Date.now();
+    };
+    const onShown = () => {
+      const since = backgroundedAt.current;
+      backgroundedAt.current = null;
+      if (since !== null && Date.now() - since >= PIN_RELOCK_AFTER_MS) {
+        // lock() re-derives hasPin from storage, so this is a no-op when the
+        // user has no PIN set.
+        useAuthStore.getState().lock();
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') onHidden();
+      else onShown();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    // Safari/iOS PWA can fire pagehide without a visibilitychange.
+    window.addEventListener('pagehide', onHidden);
+
+    // Native: the WebView is suspended wholesale, and Capacitor's lifecycle
+    // event is the dependable signal there (see lib/nativeBridge.ts for the
+    // same dynamic-import pattern). Its own appStateChange listener stays as
+    // it is — Capacitor allows multiple listeners per event.
+    let cancelled = false;
+    let removeNative: (() => void) | undefined;
+    if (isNativeRuntime()) {
+      void import('@capacitor/app')
+        .then(({ App: CapApp }) =>
+          CapApp.addListener('appStateChange', ({ isActive }) => {
+            if (isActive) onShown();
+            else onHidden();
+          }),
+        )
+        .then((handle) => {
+          if (cancelled) void handle.remove();
+          else removeNative = () => { void handle.remove(); };
+        })
+        .catch(() => {
+          // Plugin unavailable — visibilitychange still covers most resumes.
+        });
+    }
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onHidden);
+      removeNative?.();
+    };
+  }, [user?.id]);
+
   // FCM registration. No-op on web and on a native build without Firebase
   // config — see docs/push-notifications-setup.md.
   useEffect(() => {
@@ -434,6 +505,13 @@ function AppContent() {
         <OnboardingPage />
       </Suspense>
     );
+  }
+
+  // Device PIN gate. Last gate before the app shell: signed in, verified,
+  // onboarded — and now the phone's owner has to prove it's them. "Forgot PIN"
+  // inside the screen signs out, which is also what clears the PIN.
+  if (hasPin && isPinLocked) {
+    return <PinLockScreen />;
   }
 
   return (

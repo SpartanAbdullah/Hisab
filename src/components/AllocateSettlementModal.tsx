@@ -9,6 +9,7 @@ import { confirmDestructive } from './ConfirmDestructiveSheet';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard, useSubmitIntentId } from '../lib/useSubmitGuard';
 import { allocateRepayment, previewAllocations, totalRemaining, type Allocation, type AllocationStrategy } from '../lib/repaymentAllocation';
 import { resolveSettlementSides, type SettlementSides } from '../lib/settlementSides';
 import { executeAllocatedSettlements } from '../lib/settlementExecution';
@@ -37,6 +38,7 @@ export function AllocateSettlementModal({ open, onClose, loans, direction, curre
   const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
+  const submitGuard = useSubmitGuard();
 
   const [lump, setLump] = useState('');
   // Oldest-first default: a consolidated return pays down what's been owed
@@ -110,7 +112,17 @@ export function AllocateSettlementModal({ open, onClose, loans, direction, curre
     totalAllocated <= maxRemaining + 0.001 &&
     (!applyToBalance || !!accountId);
 
-  const handleSubmit = async () => {
+  // One intent id for the whole batch; each request's id is derived from it
+  // plus the loan id, so a double-fired batch re-sends the SAME ids and every
+  // duplicate lands on the primary key instead of the counterparty's inbox.
+  const nextIntentId = useSubmitIntentId(
+    [open, strategy, lump, note, applyToBalance, accountId, JSON.stringify(manual)].join('|'),
+  );
+
+  // Ref-backed entry re-check; `saving` state remains the disabled/label UI.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  const runSubmit = async () => {
     if (!canSubmit) return;
     const ok = await confirmDestructive({
       title: `${t('stl_bulk_send').replace('{n}', String(allocations.length))} · ${formatMoney(totalAllocated, currency)}`,
@@ -125,6 +137,7 @@ export function AllocateSettlementModal({ open, onClose, loans, direction, curre
     if (!ok) return;
 
     setSaving(true);
+    const intentId = nextIntentId();
     try {
       const result = await executeAllocatedSettlements(
         allocations.map((a) => ({ loanId: a.loanId, amount: a.amount })),
@@ -134,6 +147,7 @@ export function AllocateSettlementModal({ open, onClose, loans, direction, curre
           requesterAccountId: applyToBalance && accountId ? accountId : null,
           sidesByLoan,
           createRequest,
+          requestIdFor: (loanId) => `${intentId}:${loanId}`,
         },
       );
       if (!result.failed) {

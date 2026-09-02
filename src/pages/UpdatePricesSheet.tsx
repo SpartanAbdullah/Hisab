@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast';
 import { marketColorFor } from '../lib/marketColors';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 
 interface Props {
   open: boolean;
@@ -23,6 +24,7 @@ export function UpdatePricesSheet({ open, onClose, marketId }: Props) {
   const updatePrice = useInvestmentStore((s) => s.updatePrice);
   const toast = useToast();
   const t = useT();
+  const submitGuard = useSubmitGuard();
 
   const holdings = useMemo(
     () => holdingsFor(marketId, trades, prices).filter((h) => h.position.quantity > 0),
@@ -51,7 +53,12 @@ export function UpdatePricesSheet({ open, onClose, marketId }: Props) {
     return parsed !== h.lastPrice;
   });
 
-  const handleSave = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
+  // updated asynchronously, so two taps in one frame both read it as false.
+  // `saving` stays for the disabled/label UI; the ref is the real guard.
+  const handleSave = () => submitGuard.run(runSave);
+
+  const runSave = async () => {
     if (dirtyEntries.length === 0 || saving) return;
     setSaving(true);
     try {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Plus, X, Trash2, Shield } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useToast } from '../components/Toast';
 import { useCommitteeStore, type NewCommitteeMember } from '../stores/committeeStore';
 import { currencyMeta } from '../lib/design-tokens';
@@ -22,6 +23,7 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
   const t = useT();
   const toast = useToast();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
   const createCommittee = useCommitteeStore((s) => s.createCommittee);
 
   const myName = localStorage.getItem('hisaab_user_name') || '';
@@ -56,7 +58,12 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
   const canCreate = !!name.trim() && amt > 0 && rows.some((r) => r.name.trim());
   const isDirty = !!name.trim() || !!amount.trim() || rows.some((r) => r.name.trim() || r.phone.trim());
 
-  const handleCreate = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
+  // updated asynchronously, so two taps in one frame both read it as false.
+  // `saving` stays for the disabled/label UI; the ref is the real guard.
+  const handleCreate = () => submitGuard.run(runCreate);
+
+  const runCreate = async () => {
     if (!name.trim()) { toast.show({ type: 'error', title: t('kameti_name') }); return; }
     if (!(amt > 0)) { toast.show({ type: 'error', title: t('val_need_amount') }); return; }
     const named = rows.filter((r) => r.name.trim());

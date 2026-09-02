@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { settlementRequestsDb } from '../lib/supabaseDb';
 import type { SettlementRequest, Currency } from '../db';
+import { translateLinkedWriteError, isDuplicateKeyError } from '../lib/linkedErrorMap';
 import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
 import { useAccountStore } from './accountStore';
@@ -16,6 +17,12 @@ interface CreateInput {
   note?: string;
   // Phase 2C-B: optional sender-side opt-in. Null ⇒ ledger-only on both sides.
   requesterAccountId?: string | null;
+  // Idempotency key (audit 2026-09, F-8) — see linkedRequestStore.CreateInput.
+  // `linked_settlement_requests.id` is a client-supplied `text primary key`
+  // and create_settlement_request inserts it verbatim, so reusing one id per
+  // submit intent turns a double-fire into a 23505 instead of two settlement
+  // requests the counterparty could both accept. Omitted ⇒ fresh uuid.
+  requestId?: string;
 }
 
 interface SettlementRequestState {
@@ -61,18 +68,35 @@ export const useSettlementRequestStore = create<SettlementRequestState>((set, ge
   },
 
   createRequest: async (input) => {
-    const id = uuid();
-    await settlementRequestsDb.insert({
-      id,
-      loanPairId: input.loanPairId,
-      requesterLoanId: input.requesterLoanId,
-      responderLoanId: input.responderLoanId,
-      toUserId: input.toUserId,
-      amount: input.amount,
-      currency: input.currency,
-      note: input.note ?? '',
-      requesterAccountId: input.requesterAccountId ?? null,
-    });
+    const id = input.requestId ?? uuid();
+    try {
+      await settlementRequestsDb.insert({
+        id,
+        loanPairId: input.loanPairId,
+        requesterLoanId: input.requesterLoanId,
+        responderLoanId: input.responderLoanId,
+        toUserId: input.toUserId,
+        amount: input.amount,
+        currency: input.currency,
+        note: input.note ?? '',
+        requesterAccountId: input.requesterAccountId ?? null,
+      });
+    } catch (err) {
+      // Idempotent create (audit F-8): a primary-key collision on OUR intent
+      // id means this exact request already landed (double tap, or a retry
+      // after an ambiguous failure). Fall through to the reload and return the
+      // row that exists; a 23505 from any other constraint still throws below
+      // because the id lookup finds nothing.
+      if (!isDuplicateKeyError(err)) {
+        // linked_settlement_requests carried the same AED/PKR-only currency
+        // CHECK (audit F-MIG2 / H6, widened by
+        // supabase-migration-audit-p0-currencies.sql). If this build meets a
+        // database without that migration, translate the raw SQLSTATE 23514
+        // instead of showing the Postgres string. Covers SettleLinkedLoanModal
+        // and the bulk AllocateSettlementModal loop.
+        throw translateLinkedWriteError(err, 'settlement');
+      }
+    }
     await get().loadRequests();
     const inserted = get().requests.find((r) => r.id === id);
     if (!inserted) throw new Error('Settlement request created but could not be reloaded');

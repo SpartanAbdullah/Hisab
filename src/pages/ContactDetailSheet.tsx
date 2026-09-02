@@ -1,9 +1,9 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText, Merge, QrCode, Clock } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, HandCoins, Handshake, RefreshCw, History, ShieldCheck, Trash2, MessageCircle, Check, X, FileText, Merge, QrCode, Clock, Phone } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { QRScanner } from '../components/QRScanner';
 import { formatConnectCode } from '../lib/connectQr';
-import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
+import { usePersonStore, ContactLinkError, DuplicateLinkedContactError } from '../stores/personStore';
 import { useContactLinkStore } from '../stores/contactLinkStore';
 import { usePhoneDiscoveryStore, findPhoneMatch } from '../stores/phoneDiscoveryStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
@@ -12,13 +12,16 @@ import { useLoanStore } from '../stores/loanStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
-import { resolveProfileByCode } from '../lib/collaboration';
+import { codeLookupBudgetSpent, resolveProfileByCode } from '../lib/collaboration';
+import { formatLinkError, retryAfterMinutes } from '../lib/contactLinkStatus';
 import { buildWhatsAppUrl, hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { formatMoney } from '../lib/constants';
 import { computeTrustScore, trustLevelStyle } from '../lib/trustScore';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { markMirrorStale } from '../lib/mirrorCache';
 import { VerifiedBadge } from '../components/VerifiedBadge';
+import { isConsentVerifiedLink } from '../lib/contactVerification';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import type { Person } from '../db';
 import { QuickEntry, type QuickEntryPreset } from './QuickEntry';
 import { EditTransactionModal } from '../components/EditTransactionModal';
@@ -39,7 +42,8 @@ type Mode = 'idle' | 'entering' | 'resolved';
 // "Link to Hisaab user" or "Unlink". The code lookup only runs on explicit
 // Resolve button press, never on keystrokes.
 export function ContactDetailSheet({ open, person, onClose }: Props) {
-  const { linkToProfile, unlinkFromProfile, archiveIfSettled, updatePhone } = usePersonStore();
+  const { linkToProfile, linkToDiscoveredProfile, unlinkFromProfile, archiveIfSettled, updatePhone } =
+    usePersonStore();
   const persons = usePersonStore((s) => s.persons);
   const syncableBreakdownFor = useLinkedRequestStore((s) => s.syncableBreakdownFor);
   const syncPastRecords = useLinkedRequestStore((s) => s.syncPastRecords);
@@ -55,7 +59,12 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('idle');
   const [code, setCode] = useState('');
   const [resolving, setResolving] = useState(false);
-  const [resolved, setResolved] = useState<{ profileId: string; displayName: string } | null>(null);
+  // `code` is the raw code this preview came from — the link RPC verifies it
+  // server-side, so it must be carried through to the confirm step. A
+  // discovery hit has no code (null) and can only use the legacy write path.
+  const [resolved, setResolved] = useState<
+    { profileId: string; displayName: string; code: string | null } | null
+  >(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -70,6 +79,14 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   const [savingPhone, setSavingPhone] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+
+  // Double-tap guards (audit C10/F-8) — one per independent money/request
+  // mutating action on this sheet. See src/lib/useSubmitGuard.ts.
+  const syncGuard = useSubmitGuard();
+  const linkGuard = useSubmitGuard();
+  const unlinkGuard = useSubmitGuard();
+  const archiveGuard = useSubmitGuard();
+  const mergeGuard = useSubmitGuard();
 
   // Whether THEY have added this user back. A link is one-sided until the
   // other person accepts, and the sheet used to claim otherwise.
@@ -117,12 +134,10 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     void discover([person.phone]);
   }, [open, person?.phone, person?.linkedProfileId, discover]);
 
-  // Compute the syncable / skipped split here so the card can show an
-  // honest per-currency preview and surface the count of loans that
-  // can't sync yet (currencies outside what linked_transaction_requests
-  // accepts). Re-runs when requests change so the card hides itself
-  // after a successful sync without needing manual refresh.
-  const { syncable, skipped } = useMemo(
+  // Compute the syncable set here so the card can show an honest
+  // per-currency preview. Re-runs when requests change so the card hides
+  // itself after a successful sync without needing manual refresh.
+  const { syncable } = useMemo(
     () => (person ? syncableBreakdownFor(person.id) : { syncable: [], skipped: [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [person?.id, requests, syncableBreakdownFor],
@@ -141,13 +156,6 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [syncable]);
-  // Same bucketing for the skipped list so the warning chip can list
-  // "1 SAR · 2 OMR" rather than a generic count.
-  const skippedCurrencies = useMemo(() => {
-    const set = new Set<string>();
-    for (const loan of skipped) set.add(loan.currency);
-    return [...set].sort();
-  }, [skipped]);
 
   // Private trust score. Computed only against this person's loans, so the
   // dependency list is precise — re-runs when their loans or repayments
@@ -161,14 +169,11 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   if (!person) return null;
 
   const isLinked = !!person.linkedProfileId;
-  // Pending = I linked them, they haven't accepted. Everything still works
-  // from my side (I can record and send records); what's missing is that I
-  // don't appear in THEIR contacts yet.
-  const awaitingThem =
-    isLinked &&
-    contactLinks.some(
-      (r) => r.fromUserId === myId && r.toUserId === person.linkedProfileId && r.status === 'pending',
-    );
+  // The seal — and the "connected both ways" prose — needs CONSENT, not a
+  // linked_profile_id I wrote myself — see src/lib/contactVerification.ts
+  // (audit 2026-09 SEC-09). An unaccepted or legacy link falls through to
+  // the waiting copy below instead of claiming a mutual connection.
+  const linkVerified = isConsentVerifiedLink(contactLinks, myId, person.linkedProfileId);
   // Derived from the subscribed snapshot (not a store read) so the badge
   // repaints on the render where the lookup landed.
   const discoveryHit = isLinked ? null : findPhoneMatch(discoveryResults, person.phone);
@@ -203,7 +208,10 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     setShowMoneyEntry(true);
   };
 
-  const handleSyncPastRecords = async () => {
+  // Guarded: syncPastRecords loops createRequest via Promise.all internally —
+  // a double tap would send 2N cross-user requests (audit C10/F-8).
+  const handleSyncPastRecords = () => syncGuard.run(runSyncPastRecords);
+  const runSyncPastRecords = async () => {
     if (!person) return;
     const ok = await confirmDestructive({
       title: t('contact_sync_confirm_title').replace('{name}', person.name),
@@ -238,36 +246,63 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     }
   };
 
+  // A throttled lookup returns zero rows, exactly like a genuine miss, so the
+  // only hint we have is our own count of charges this hour.
+  const noPreviewMessage = () =>
+    codeLookupBudgetSpent()
+      ? t('clink_err_rate_limited').replace('{minutes}', String(retryAfterMinutes(undefined)))
+      : t('clink_err_no_match');
+
   const handleResolve = async () => {
     setError('');
     setResolved(null);
     const trimmed = code.trim();
     if (!trimmed) {
-      setError('Enter a user code to continue.');
+      setError(t('clink_err_invalid_code'));
       return;
     }
     setResolving(true);
     try {
       const found = await resolveProfileByCode(trimmed);
       if (!found) {
-        setError('No user with this code.');
+        setError(noPreviewMessage());
         return;
       }
-      setResolved(found);
+      setResolved({ ...found, code: trimmed });
       setMode('resolved');
     } catch {
-      setError('Could not look up this code. Try again.');
+      setError(t('addc_link_err_lookup'));
     } finally {
       setResolving(false);
     }
   };
 
-  const handleConfirmLink = async () => {
+  const handleConfirmLink = () => linkGuard.run(runConfirmLink);
+  const runConfirmLink = async () => {
     if (!resolved) return;
     setSaving(true);
     setError('');
     try {
-      await linkToProfile(person.id, resolved.profileId);
+      // Both paths are server-verified now; only the PROOF differs. Code path:
+      // the server re-resolves the code (the resolved profile rides along only
+      // as the pre-migration fallback). Discovery path: no code exists, so the
+      // server re-runs the phone match itself against this contact's saved
+      // number — the profile id below is a claim it checks, not a credential.
+      const linked = resolved.code
+        ? await linkToProfile(person.id, resolved.code, {
+            profileId: resolved.profileId,
+            displayName: resolved.displayName,
+          })
+        : await linkToDiscoveredProfile(person.id, resolved.profileId, resolved.displayName);
+      toast.show({
+        type: 'success',
+        title: t('clink_added_toast').replace('{name}', linked.displayName || resolved.displayName),
+        // Honest about consent: linked on your side; theirs is their call.
+        subtitle:
+          linked.linkState === 'mutual'
+            ? t('clink_mutual')
+            : t('clink_waiting').replace('{name}', linked.displayName || resolved.displayName),
+      });
       onClose();
     } catch (err) {
       if (err instanceof DuplicateLinkedContactError) {
@@ -281,14 +316,17 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
             : t('contact_dup_link_generic'),
         );
       } else {
-        setError('Could not link this contact. Try again.');
+        // Same statuses either way, but NO_MATCH / RATE_LIMITED need discovery
+        // wording — "check the code" is meaningless when there was no code.
+        setError(formatLinkError(err, t, resolved.code ? 'code' : 'discovery'));
       }
     } finally {
       setSaving(false);
     }
   };
 
-  const handleUnlink = async () => {
+  const handleUnlink = () => unlinkGuard.run(runUnlink);
+  const runUnlink = async () => {
     const ok = await confirmDestructive({
       title: t('contact_unlink_confirm_title').replace('{name}', person.name),
       description: t('contact_unlink_confirm_body'),
@@ -302,14 +340,18 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
     try {
       await unlinkFromProfile(person.id);
       onClose();
-    } catch {
-      setError('Could not unlink this contact. Try again.');
+    } catch (err) {
+      // Unlink has its own copy for the generic case; a specific server status
+      // (not signed in, contact gone) still gets its own message.
+      const status = err instanceof ContactLinkError ? err.status : 'UNKNOWN';
+      setError(status === 'UNKNOWN' ? t('clink_err_unlink') : formatLinkError(err, t));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleArchive = async () => {
+  const handleArchive = () => archiveGuard.run(runArchive);
+  const runArchive = async () => {
     const confirmed = await confirmDestructive({
       title: 'Remove this contact?',
       description: t('del_contact_body'),
@@ -342,7 +384,8 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
   // RPC reassigns every loan/transaction (id-keyed AND name-fallback rows),
   // then archives this row. Loans/transactions are mirrored stores — mark
   // them stale and refetch so the reassignment is visible immediately.
-  const handleMerge = async (target: Person) => {
+  const handleMerge = (target: Person) => mergeGuard.run(() => runMerge(target));
+  const runMerge = async (target: Person) => {
     const confirmed = await confirmDestructive({
       title: t('merge_confirm_title').replace('{target}', target.name),
       description: t('merge_confirm_body')
@@ -406,7 +449,7 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 which clipped the badge off-screen for long names. */}
             <p className="text-[14px] font-semibold text-ink-900 flex items-center gap-1.5 min-w-0">
               <span className="truncate">{person.name}</span>
-              {isLinked && <VerifiedBadge size={15} title={t('contact_linked_pill')} />}
+              {linkVerified && <VerifiedBadge size={15} title={t('contact_linked_pill')} />}
             </p>
             {isLinked && person.linkedProfileId ? (
               // Surface WHICH Hisaab account this contact is paired with so the
@@ -662,36 +705,20 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                     ? 'Sending…'
                     : `Sync ${syncable.length === 1 ? 'this record' : `${syncable.length} records`}`}
                 </button>
-                {skipped.length > 0 && (
-                  <p className="text-[10.5px] text-ink-500 mt-2 leading-relaxed pl-1">
-                    {skipped.length}{' '}
-                    {skipped.length === 1 ? 'loan' : 'loans'} in{' '}
-                    {skippedCurrencies.join(', ')}{' '}
-                    {skipped.length === 1 ? "can't" : "can't"} be synced yet — linked records support AED &amp; PKR only.
-                  </p>
-                )}
               </div>
             )}
 
-            {/* Edge case: every loan with this person is in an unsupported
-                currency. The "sync" card is hidden because syncable is
-                empty, but the user should still know why. */}
-            {syncable.length === 0 && skipped.length > 0 && (
-              <div className="rounded-2xl bg-warn-50 border border-cream-border p-3 flex items-start gap-2.5">
-                <History size={14} className="text-warn-600 mt-0.5 shrink-0" />
-                <p className="text-[11px] text-ink-700 leading-relaxed">
-                  {skipped.length}{' '}
-                  past {skipped.length === 1 ? 'record' : 'records'} with{' '}
-                  {person.name} in {skippedCurrencies.join(', ')} can't be
-                  synced — linked records support AED &amp; PKR only for now.
-                </p>
-              </div>
-            )}
-
-            {awaitingThem ? (
+            {linkVerified ? (
+              <p className="text-[11px] text-ink-500 leading-relaxed">
+                {t('clink_mutual')} &mdash; {person.name} appears in your contacts and you
+                appear in theirs. Loans and splits you record can be shared.
+              </p>
+            ) : (
               // Honest intermediate state. Claiming a mutual connection that
-              // the other side hasn't agreed to is exactly the confusion that
-              // made people ask "why can't they see me?".
+              // the other side hasn't consented to (still pending, or a
+              // legacy link predating the consent flow) is exactly the
+              // confusion that made people ask "why can't they see me?" —
+              // see src/lib/contactVerification.ts (audit 2026-09 SEC-09).
               <div className="rounded-2xl bg-warn-50 border border-cream-border p-3.5 flex items-start gap-2.5">
                 <Clock size={15} className="text-warn-600 shrink-0 mt-0.5" strokeWidth={2.2} />
                 <div className="min-w-0">
@@ -703,11 +730,6 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                   </p>
                 </div>
               </div>
-            ) : (
-              <p className="text-[11px] text-ink-500 leading-relaxed">
-                {t('clink_mutual')} &mdash; {person.name} appears in your contacts and you
-                appear in theirs. Loans and splits you record can be shared.
-              </p>
             )}
             <button
               onClick={handleUnlink}
@@ -720,22 +742,37 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
         ) : mode === 'idle' ? (
           <div className="space-y-2">
             {/* One-tap link when this contact's saved number already resolved
-                to a Hisaab account — no code exchange needed at all. */}
+                to a Hisaab account — no code exchange needed at all.
+                NO verified seal here (audit 2026-09 SEC-09): phone numbers are
+                self-claimed with zero ownership check, so this match proves
+                only that SOME account claims this number. A neutral phone
+                glyph plus an explicit caption, so nobody links a stranger
+                believing Hisaab vouched for them. */}
             {discoveryHit && (
               <button
                 type="button"
                 disabled={saving}
                 onClick={() => {
-                  setResolved({ profileId: discoveryHit.profileId, displayName: discoveryHit.displayName });
+                  // No code behind a phone match — see handleConfirmLink.
+                  setResolved({
+                    profileId: discoveryHit.profileId,
+                    displayName: discoveryHit.displayName,
+                    code: null,
+                  });
                   setMode('resolved');
                 }}
-                className="w-full rounded-2xl bg-receive-50 border border-receive-100 px-3.5 py-3 flex items-center gap-2.5 text-left disabled:opacity-50 press-lg"
+                className="w-full rounded-2xl bg-cream-soft border border-cream-border px-3.5 py-3 flex items-start gap-2.5 text-left disabled:opacity-50 press-lg"
               >
-                <VerifiedBadge size={16} title={t('disc_badge')} />
-                <span className="flex-1 min-w-0 text-[12px] text-ink-700 leading-snug">
-                  {t('disc_found').replace('{name}', discoveryHit.displayName)}
+                <Phone size={16} strokeWidth={2.2} className="shrink-0 mt-0.5 text-ink-500" aria-hidden />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[12px] text-ink-700 leading-snug">
+                    {t('disc_found').replace('{name}', discoveryHit.displayName)}
+                  </span>
+                  <span className="block text-[10.5px] text-ink-500 leading-relaxed mt-0.5">
+                    {t('disc_unverified_note')}
+                  </span>
                 </span>
-                <span className="shrink-0 text-[11.5px] font-bold text-receive-text">
+                <span className="shrink-0 text-[11.5px] font-bold text-accent-600 mt-0.5">
                   {t('disc_link_cta')}
                 </span>
               </button>
@@ -911,13 +948,13 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
           try {
             const found = await resolveProfileByCode(scanned);
             if (!found) {
-              setError('No user with this code.');
+              setError(noPreviewMessage());
               return;
             }
-            setResolved(found);
+            setResolved({ ...found, code: scanned });
             setMode('resolved');
           } catch {
-            setError('Could not look up this code. Try again.');
+            setError(t('addc_link_err_lookup'));
           } finally {
             setResolving(false);
           }
@@ -957,7 +994,9 @@ export function ContactDetailSheet({ open, person, onClose }: Props) {
                 {(p.name[0] ?? '?').toUpperCase()}
               </span>
               <span className="flex-1 min-w-0 truncate text-[13px] font-semibold text-ink-900">{p.name}</span>
-              {p.linkedProfileId && <VerifiedBadge size={14} title={t('contact_linked_pill')} />}
+              {isConsentVerifiedLink(contactLinks, myId, p.linkedProfileId) && (
+                <VerifiedBadge size={14} title={t('contact_linked_pill')} />
+              )}
             </button>
           ));
         })()}

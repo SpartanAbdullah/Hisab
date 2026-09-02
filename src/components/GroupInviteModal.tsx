@@ -3,12 +3,25 @@ import { Copy, Link2, UserPlus } from 'lucide-react';
 import { Modal } from './Modal';
 import { useSplitStore } from '../stores/splitStore';
 import { useToast } from './Toast';
+import { useT } from '../lib/i18n';
 import type { GroupInvite, SplitGroup } from '../db';
 
 interface Props {
   open: boolean;
   group: SplitGroup;
   onClose: () => void;
+}
+
+// The raw enum used to be printed straight into the badge ("invited",
+// "guest"). Since owner-added members now land as 'invited' by default (audit
+// H6 / SEC-05) that string is on screen for every new group, so it goes through
+// i18n like every other user-facing word — same vocabulary GroupDetailPage's
+// member chips use.
+function statusLabel(t: ReturnType<typeof useT>, status?: string, isOwner?: boolean): string {
+  if (isOwner) return t('member_owner');
+  if (status === 'connected') return t('member_on_app');
+  if (status === 'invited') return t('member_invited');
+  return t('member_not_on_app');
 }
 
 function statusBadgeClass(status?: string) {
@@ -18,6 +31,7 @@ function statusBadgeClass(status?: string) {
 }
 
 export function GroupInviteModal({ open, group, onClose }: Props) {
+  const t = useT();
   const toast = useToast();
   const { createInvite, getGroupInvites } = useSplitStore();
   const [loading, setLoading] = useState(false);
@@ -97,7 +111,7 @@ export function GroupInviteModal({ open, group, onClose }: Props) {
                   <p className="text-[13px] font-semibold text-ink-800 truncate">{member.name}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full ${statusBadgeClass(status)}`}>
-                      {status}
+                      {statusLabel(t, status, member.isOwner)}
                     </span>
                     {linkedInvite && (
                       <span className="text-[10px] text-ink-500 truncate">

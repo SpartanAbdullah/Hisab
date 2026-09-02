@@ -17,6 +17,7 @@ import { useAppModeStore } from '../stores/appModeStore';
 import { useSplitStore } from '../stores/splitStore';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard, useSubmitIntentId } from '../lib/useSubmitGuard';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { AccountSelect } from '../components/AccountSelect';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
@@ -24,6 +25,7 @@ import { linkedLoanIdSet } from '../lib/linkedLoanIdSet';
 import { buildRepaymentGroups } from '../lib/repaymentGroups';
 import { allocateRepayment, previewAllocations } from '../lib/repaymentAllocation';
 import { executeAllocatedRepayments } from '../lib/repaymentExecution';
+import { isLoanRemainingConflict } from '../lib/loanRemainingDelta';
 import { executeSplitEvent } from '../lib/splitEvent';
 import { SplitWithSheet, type SplitPlan } from '../components/SplitWithSheet';
 import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
@@ -97,7 +99,7 @@ export function QuickEntry({
   const { processTransaction } = useTransactionStore();
   const transactions = useTransactionStore((s) => s.transactions);
   const { loans } = useLoanStore();
-  const { createLoan, applyRepayment } = useLoanStore();
+  const { createLoan, applyRepayment, loadLoans } = useLoanStore();
   const { goals } = useGoalStore();
   const { generateSchedule } = useEmiStore();
   const { expenses: upcomingExpenses } = useUpcomingExpenseStore();
@@ -110,6 +112,7 @@ export function QuickEntry({
   const toast = useToast();
   const t = useT();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
 
   const [step, setStep] = useState(0);
   const [intent, setIntent] = useState<EntryIntent | null>(null);
@@ -144,6 +147,15 @@ export function QuickEntry({
   const [splitPlan, setSplitPlan] = useState<SplitPlan | null>(null);
   const [showSplitSheet, setShowSplitSheet] = useState(false);
   const amountRef = useRef<HTMLInputElement>(null);
+
+  // One request id per submit intent: the same id survives a double tap and a
+  // retry of an unchanged form (so a duplicate insert collides on the primary
+  // key instead of mirroring a second debt onto the other user), and is
+  // replaced the instant the entry type, amount, contact, or note changes —
+  // or the modal reopens.
+  const nextRequestId = useSubmitIntentId(
+    [open, type, contact.id ?? '', contact.name.trim(), amount, notes].join('|'),
+  );
 
   useEffect(() => {
     if (open && step === 0) setTimeout(() => amountRef.current?.focus(), 300);
@@ -613,7 +625,11 @@ export function QuickEntry({
     return usePersonStore.getState().findOrCreateByName(name);
   }
 
-  const handleSubmit = async () => {
+  // Entry re-check lives in submitGuard (a ref, so two taps in one frame
+  // can't both pass); `saving` stays purely for the disabled/label UI.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  const runSubmit = async () => {
     setShowSpendingWarning(false);
     const amt = parseFloat(amount);
     if (!amt) return;
@@ -662,7 +678,10 @@ export function QuickEntry({
             }
             if (result.failed) {
               // Committed prefix stays — report how far we got so a retry
-              // only needs to cover the rest.
+              // only needs to cover the rest. A stale-write refusal (audit
+              // C10) also means our remainings are behind: re-pull them so
+              // the retry allocates against truth.
+              if (isLoanRemainingConflict(result.failed.error)) await loadLoans();
               toast.show({
                 type: 'error',
                 title: t('alloc_partial_title').replace('{done}', String(result.done)).replace('{total}', String(result.total)),
@@ -720,6 +739,7 @@ export function QuickEntry({
                 amount: amt,
                 currency: branch.currency,
                 note: notes,
+                requestId: nextRequestId(),
               });
               toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
               reset();
@@ -780,6 +800,7 @@ export function QuickEntry({
             // (Branch currency IS this account's currency, so the DB's
             // currency-match check can't fire.)
             requesterAccountId: accountForBranch?.id ?? null,
+            requestId: nextRequestId(),
           });
           toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
           reset();
@@ -828,6 +849,8 @@ export function QuickEntry({
           throw result.failed.error instanceof Error ? result.failed.error : new Error('Transaction failed');
         }
         if (result.failed) {
+          // Same as the ledger batch above: refresh on a stale-write refusal.
+          if (isLoanRemainingConflict(result.failed.error)) await loadLoans();
           toast.show({
             type: 'error',
             title: t('alloc_partial_title').replace('{done}', String(result.done)).replace('{total}', String(result.total)),
@@ -1124,6 +1147,11 @@ export function QuickEntry({
       setShowConfirmation(true);
       reset();
     } catch (err) {
+      // Audit C10: a repayment can be refused because the loan moved (or was
+      // deleted) on another device. The message says so; re-pull the loans so
+      // the picker's remaining figures — and the overpayment cap built from
+      // them — reflect the truth the user must re-enter against.
+      if (isLoanRemainingConflict(err)) void loadLoans();
       toast.show({ type: 'error', title: 'Transaction Failed', subtitle: err instanceof Error ? err.message : t('toast_error_generic') });
     } finally { setSaving(false); }
   };

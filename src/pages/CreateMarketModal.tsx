@@ -7,6 +7,7 @@ import { useInvestmentStore } from '../stores/investmentStore';
 import { useToast } from '../components/Toast';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { SUPPORTED_CURRENCIES, type Currency, type InvestmentMarket } from '../db';
 
 const SUGGESTIONS: { name: string; currency: Currency }[] = [
@@ -25,6 +26,7 @@ export function CreateMarketModal({ open, onClose, onCreated }: Props) {
   const createMarket = useInvestmentStore((s) => s.createMarket);
   const toast = useToast();
   const t = useT();
+  const submitGuard = useSubmitGuard();
 
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState<Currency>(
@@ -40,7 +42,12 @@ export function CreateMarketModal({ open, onClose, onCreated }: Props) {
 
   const markets = useInvestmentStore((s) => s.markets);
 
-  const handleCreate = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
+  // updated asynchronously, so two taps in one frame both read it as false.
+  // `saving` stays for the disabled/label UI; the ref is the real guard.
+  const handleCreate = () => submitGuard.run(runCreate);
+
+  const runCreate = async () => {
     if (!name.trim() || saving) return;
     const isFirstMarket = markets.length === 0;
     setSaving(true);

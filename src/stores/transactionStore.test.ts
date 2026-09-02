@@ -35,6 +35,10 @@ vi.mock('../lib/supabaseDb', async () => {
   // Toggle: when true, transactionsDb.add throws on the next call. Lets us
   // simulate "final write fails after balance moved" for the rollback test.
   let nextTxAddThrows: Error | null = null;
+  // Optional side-effect fired immediately BEFORE that throw. The only hook we
+  // have for interleaving a competing device's write into the exact window
+  // between "loan balance moved" and "rollback runs" (audit C10).
+  let nextTxAddBefore: (() => void) | null = null;
 
   return {
     __seedAccount: (a: { id: string; balance: number; name?: string; type?: string; currency?: string; metadata?: Record<string, string> }) => {
@@ -49,7 +53,15 @@ vi.mock('../lib/supabaseDb', async () => {
       });
     },
     __seedLoan: (l: Record<string, unknown>) => loans.set(l.id as string, l),
-    __failNextTxAdd: (err: Error) => { nextTxAddThrows = err; },
+    __failNextTxAdd: (err: Error, before?: () => void) => { nextTxAddThrows = err; nextTxAddBefore = before ?? null; },
+    // Simulate another device moving this loan: change ONLY the remote row,
+    // leaving the local store holding the stale figure.
+    __remoteLoanDelta: (id: string, delta: number) => {
+      const cur = loans.get(id);
+      if (!cur) return;
+      const next = Math.round(Math.max(0, Number(cur.remainingAmount ?? 0) + delta) * 100) / 100;
+      loans.set(id, { ...cur, remainingAmount: next, status: next === 0 ? 'settled' : 'active' });
+    },
     __reset: () => {
       accounts.clear();
       transactions.clear();
@@ -61,6 +73,7 @@ vi.mock('../lib/supabaseDb', async () => {
       investmentTrades.clear();
       investmentPrices.clear();
       nextTxAddThrows = null;
+      nextTxAddBefore = null;
     },
     __getInvestmentTrades: () => Array.from(investmentTrades.values()),
     __getAccount: (id: string) => accounts.get(id),
@@ -95,7 +108,10 @@ vi.mock('../lib/supabaseDb', async () => {
       async add(t: Record<string, unknown>) {
         if (nextTxAddThrows) {
           const err = nextTxAddThrows;
+          const before = nextTxAddBefore;
           nextTxAddThrows = null;
+          nextTxAddBefore = null;
+          before?.();
           throw err;
         }
         transactions.set(t.id as string, t);
@@ -109,10 +125,30 @@ vi.mock('../lib/supabaseDb', async () => {
 
     loansDb: {
       async getAll() { return Array.from(loans.values()); },
+      async get(id: string) { return loans.get(id) ?? null; },
       async add(l: Record<string, unknown>) { loans.set(l.id as string, l); },
       async update(id: string, changes: Record<string, unknown>) {
         const cur = loans.get(id);
         if (cur) loans.set(id, { ...cur, ...changes });
+      },
+      // Mirrors apply_loan_remaining_delta: compare-and-swap on the expected
+      // remaining, clamp at 0, re-derive status, raise the conflict code.
+      async applyRemainingDelta(id: string, expectedRemaining: number, delta: number) {
+        const cur = loans.get(id);
+        if (!cur) {
+          const err = new Error('LOAN_NOT_FOUND') as Error & { code: string };
+          err.code = 'LOAN_NOT_FOUND';
+          throw err;
+        }
+        const current = Number(cur.remainingAmount ?? 0);
+        if (Math.round(current * 100) !== Math.round(expectedRemaining * 100)) {
+          const err = new Error('LOAN_REMAINING_CONFLICT') as Error & { code: string };
+          err.code = 'LOAN_REMAINING_CONFLICT';
+          throw err;
+        }
+        const next = Math.round(Math.max(0, current + delta) * 100) / 100;
+        loans.set(id, { ...cur, remainingAmount: next, status: next === 0 ? 'settled' : 'active' });
+        return next;
       },
       async delete(id: string) { loans.delete(id); },
     },
@@ -187,8 +223,10 @@ import { useInvestmentStore } from './investmentStore';
 // but TypeScript doesn't know about them.
 const seedAccount = (mockDb as unknown as { __seedAccount: (a: { id: string; balance: number; name?: string; type?: string; currency?: string; metadata?: Record<string, string> }) => void }).__seedAccount;
 const seedLoan = (mockDb as unknown as { __seedLoan: (l: Record<string, unknown>) => void }).__seedLoan;
-const failNextTxAdd = (mockDb as unknown as { __failNextTxAdd: (err: Error) => void }).__failNextTxAdd;
+const failNextTxAdd = (mockDb as unknown as { __failNextTxAdd: (err: Error, before?: () => void) => void }).__failNextTxAdd;
 const resetDb = (mockDb as unknown as { __reset: () => void }).__reset;
+const remoteLoanDelta = (mockDb as unknown as { __remoteLoanDelta: (id: string, delta: number) => void }).__remoteLoanDelta;
+const remoteLoan = (mockDb as unknown as { __getLoan: (id: string) => Record<string, unknown> | undefined }).__getLoan;
 
 beforeEach(async () => {
   resetDb();
@@ -763,6 +801,78 @@ describe('goal contributions — self-stored + rollback', () => {
 
     expect(useGoalStore.getState().getGoal('goal-1')?.savedAmount).toBe(750);
     expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(5000);
+  });
+});
+
+// Audit C10 / F-2. loans.remainingAmount is never written as an absolute
+// figure any more — every change (forward AND rollback) goes through the
+// apply_loan_remaining_delta compare-and-swap. The mock RPC above enforces the
+// same expected-value check the server does, so these drive the real ladder in
+// src/lib/loanRemainingDelta.ts through the full_tracker money path.
+describe('full_tracker repayment — loan optimistic lock', () => {
+  const seedGivenLoan = (remaining = 2000) => {
+    const loan = {
+      id: 'loan-race', personName: 'Bilal', personId: null, type: 'given',
+      totalAmount: 2000, remainingAmount: remaining, currency: 'AED',
+      status: 'active', notes: '', createdAt: new Date().toISOString(),
+    };
+    seedLoan(loan);
+    useLoanStore.setState({ loans: [loan as never] });
+    return loan;
+  };
+
+  it('retries against server truth when another device moved the loan and it still covers the payment', async () => {
+    seedAndLoad({ id: 'bank', balance: 0, currency: 'AED' });
+    seedGivenLoan(2000);
+    // Another device already collected 500; our store still shows 2000.
+    remoteLoanDelta('loan-race', -500);
+
+    await useTransactionStore.getState().processTransaction({
+      type: 'repayment', amount: 300, loanId: 'loan-race', destinationAccountId: 'bank',
+    });
+
+    // 1500 − 300, NOT 2000 − 300: the other device's payment survived.
+    expect(remoteLoan('loan-race')?.remainingAmount).toBe(1200);
+    expect(useLoanStore.getState().getLoan('loan-race')?.remainingAmount).toBe(1200);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(300);
+    expect(useTransactionStore.getState().transactions).toHaveLength(1);
+  });
+
+  it('refuses — and unwinds every leg — when the refreshed loan can no longer absorb the payment', async () => {
+    seedAndLoad({ id: 'bank', balance: 0, currency: 'AED' });
+    seedGivenLoan(2000);
+    // Settled elsewhere down to 100. Applying 900 would clamp, leaving the
+    // account leg and the transaction row overstating the loan's reduction.
+    remoteLoanDelta('loan-race', -1900);
+
+    await expect(
+      useTransactionStore.getState().processTransaction({
+        type: 'repayment', amount: 900, loanId: 'loan-race', destinationAccountId: 'bank',
+      }),
+    ).rejects.toThrow(/another device|kisi aur device/i);
+
+    expect(remoteLoan('loan-race')?.remainingAmount).toBe(100);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(0);
+    expect(useTransactionStore.getState().transactions).toHaveLength(0);
+  });
+
+  it('rollback gives back only what it took — a concurrent repayment is not clobbered', async () => {
+    seedAndLoad({ id: 'bank', balance: 0, currency: 'AED' });
+    seedGivenLoan(2000);
+    // Their 200 lands in the window between our loan write and our rollback.
+    // The old snapshot compensation restored a flat 2000 here, erasing it.
+    failNextTxAdd(new Error('Simulated DB failure'), () => remoteLoanDelta('loan-race', -200));
+
+    await expect(
+      useTransactionStore.getState().processTransaction({
+        type: 'repayment', amount: 300, loanId: 'loan-race', destinationAccountId: 'bank',
+      }),
+    ).rejects.toThrow(/Simulated DB failure/);
+
+    // 2000 − 300 (ours) − 200 (theirs) + 300 (our rollback) = 1800.
+    expect(remoteLoan('loan-race')?.remainingAmount).toBe(1800);
+    expect(useAccountStore.getState().getAccount('bank')?.balance).toBe(0);
+    expect(useTransactionStore.getState().transactions).toHaveLength(0);
   });
 });
 

@@ -3,6 +3,7 @@ import { FileText, Copy, MessageCircle } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { formatMoney } from '../lib/constants';
 import { memberSettleUp, buildMemberCardText } from '../lib/groupSettleUp';
 import { generateGroupSettleUpPdf } from '../lib/groupSettleUpPdf';
@@ -40,6 +41,9 @@ export function GroupSettleUpModal({ open, onClose, group, debts, expenses, simp
   // Privacy: hide every figure in the shared card/PDF — names and structure stay.
   const [hideAmounts, setHideAmounts] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  // No money moves here, but a double tap on a slow device fires two PDF
+  // builds and two share sheets. Same ref-backed guard for uniformity.
+  const submitGuard = useSubmitGuard();
   const [copying, setCopying] = useState(false);
 
   // Default to the current user's own card (privacy-safe — you're not exposing
@@ -82,7 +86,9 @@ export function GroupSettleUpModal({ open, onClose, group, debts, expenses, simp
     finally { setCopying(false); }
   };
 
-  const handleFullPlanPdf = async () => {
+  const handleFullPlanPdf = () => submitGuard.run(runFullPlanPdf);
+
+  const runFullPlanPdf = async () => {
     setPreparing(true);
     try {
       const nameOf = new Map(group.members.map((m) => [m.id, m.name]));

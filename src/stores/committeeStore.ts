@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { committeesDb, committeeMembersDb, committeePaymentsDb } from '../lib/supabaseDb';
-import { generateSeed, commitmentFor, drawOrder } from '../lib/committeeDraw';
+import { committeesDb, committeeMembersDb, committeePaymentsDb, CommitteeDrawError } from '../lib/supabaseDb';
+import { generateSeed } from '../lib/committeeDraw';
 import type {
   Committee, CommitteeMember, CommitteePayment,
   CommitteeCadence, CommitteePayoutMethod, Currency,
@@ -32,6 +32,8 @@ interface CommitteeState {
   createCommittee: (input: CreateCommitteeInput) => Promise<Committee>;
   deleteCommittee: (id: string) => Promise<void>;
   runBallot: (committeeId: string) => Promise<void>;
+  /** True once an order exists — the draw CTA must be gone from that moment. */
+  isDrawn: (committeeId: string) => boolean;
   ensureShareToken: (committeeId: string) => Promise<string>;
   setFixedOrder: (committeeId: string, orderedMemberIds: string[]) => Promise<void>;
   setPaid: (committeeId: string, memberId: string, round: number, paid: boolean) => Promise<void>;
@@ -112,19 +114,39 @@ export const useCommitteeStore = create<CommitteeState>((set, get) => ({
     }));
   },
 
+  // The ballot draw. Audit 2026-09 M10 / F-13: this used to generate the seed,
+  // the commitment AND the order on this device and write them in one plain
+  // UPDATE, with no drawn-guard anywhere — so the organiser could re-roll until
+  // slot 1 was theirs and every witness verification would still pass.
+  //
+  // The draw is now a single server RPC (see committeesDb.performDraw). This
+  // store-level guard is a UX shortcut, not the protection: the real guard is
+  // `drawn_at IS NULL` inside the transaction, which raises ALREADY_DRAWN. On
+  // that error we resync from the server so the UI stops offering a draw that
+  // already happened.
+  isDrawn: (committeeId) => {
+    const c = get().committees.find((x) => x.id === committeeId);
+    if (!c) return false;
+    return !!c.drawnAt || !!c.drawSeed || get().members.some((m) => m.committeeId === committeeId && m.slot != null);
+  },
+
   runBallot: async (committeeId) => {
-    const members = get().members.filter((m) => m.committeeId === committeeId);
-    // Provably-fair commit-reveal: a random seed + its SHA-256 commitment are
-    // stored with the draw so any member can later recompute and verify it.
-    const seed = generateSeed();
-    const commitment = await commitmentFor(seed);
-    const order = drawOrder(members.map((m) => m.id), seed);
+    if (get().isDrawn(committeeId)) throw new CommitteeDrawError('ALREADY_DRAWN');
+    let result;
+    try {
+      result = await committeesDb.performDraw(committeeId);
+    } catch (err) {
+      // The server refused because an order already exists — our local copy was
+      // stale (another device, another tab). Pull the real one back.
+      if (err instanceof CommitteeDrawError && err.code === 'ALREADY_DRAWN') {
+        await get().loadAll().catch(() => {});
+      }
+      throw err;
+    }
+    const { drawnAt, drawSeed, drawCommitment, order } = result;
     const slotById = new Map(order.map((id, i) => [id, i + 1]));
-    const drawnAt = new Date().toISOString();
-    await Promise.all(members.map((m) => committeeMembersDb.update(m.id, { slot: slotById.get(m.id) ?? null })));
-    await committeesDb.update(committeeId, { payoutMethod: 'ballot', drawnAt, drawSeed: seed, drawCommitment: commitment });
     set((s) => ({
-      committees: s.committees.map((c) => (c.id === committeeId ? { ...c, payoutMethod: 'ballot', drawnAt, drawSeed: seed, drawCommitment: commitment } : c)),
+      committees: s.committees.map((c) => (c.id === committeeId ? { ...c, payoutMethod: 'ballot', drawnAt, drawSeed, drawCommitment } : c)),
       members: s.members.map((m) => (m.committeeId === committeeId ? { ...m, slot: slotById.get(m.id) ?? m.slot } : m)),
     }));
   },
@@ -139,6 +161,12 @@ export const useCommitteeStore = create<CommitteeState>((set, get) => ({
   },
 
   setFixedOrder: async (committeeId, orderedMemberIds) => {
+    // A ballot that has been drawn is frozen — reordering slots by hand would
+    // keep the honest seed but replace the order it produced (the second half
+    // of audit M10). The DB rejects it too (DRAW_LOCKED trigger); this just
+    // fails fast with a code the UI can read.
+    const c = get().committees.find((x) => x.id === committeeId);
+    if (c?.drawSeed) throw new CommitteeDrawError('DRAW_LOCKED');
     const slotById = new Map(orderedMemberIds.map((id, i) => [id, i + 1]));
     const drawnAt = new Date().toISOString();
     await Promise.all(orderedMemberIds.map((id, i) => committeeMembersDb.update(id, { slot: i + 1 })));

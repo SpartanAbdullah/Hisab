@@ -19,9 +19,11 @@ import { useLoanStore } from '../stores/loanStore';
 import { useEmiStore } from '../stores/emiStore';
 import { useCommitteeStore } from '../stores/committeeStore';
 import { buildInboxActionItems, buildInboxInfoItems, isInboxInfoNotification, type ActionContent, type ActionItem, type InfoItem, type InfoIcon as InfoIconKind } from '../lib/inboxInfo';
+import { notificationHref, renderNotificationContent } from '../lib/notificationContent';
 import type { RecurringDueDetail } from '../lib/recurringRunner';
 import { buildWhatsAppUrl } from '../lib/whatsappReminder';
 import { useToast } from '../components/Toast';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { EditTransactionModal } from '../components/EditTransactionModal';
 import { AcceptIntoAccountSheet, type AcceptIntoAccountRequest } from '../components/AcceptIntoAccountSheet';
@@ -97,6 +99,16 @@ export function InboxPage() {
   const [acceptSheet, setAcceptSheet] = useState<
     { kind: 'linked' | 'settlement'; id: string; req: AcceptIntoAccountRequest } | null
   >(null);
+  // One guard per cross-user money action — a ref, so two taps landing in the
+  // same frame can't both pass. `busyId` stays purely for the disabled/label
+  // UI (React state updates are async, so it alone can't stop a double-accept
+  // or double-settle from mirroring twice onto the other person's ledger).
+  const acceptGuard = useSubmitGuard();
+  const acceptSettlementGuard = useSubmitGuard();
+  const rejectGuard = useSubmitGuard();
+  const cancelGuard = useSubmitGuard();
+  const rejectSettlementGuard = useSubmitGuard();
+  const cancelSettlementGuard = useSubmitGuard();
 
   const load = useCallback(async () => {
     await Promise.all([
@@ -333,8 +345,13 @@ export function InboxPage() {
 
   // The actual accept call, shared by the plain-confirm path (accountId
   // null) and the account sheet. Returns success so the sheet knows whether
-  // to close or stay open for a retry.
-  const performAccept = async (id: string, accountId: string | null): Promise<boolean> => {
+  // to close or stay open for a retry. Guarded: a dropped double-tap
+  // resolves to undefined, which both callers treat as "not ok" (stay open /
+  // no-op) — exactly the safe outcome for a suppressed duplicate.
+  const performAccept = (id: string, accountId: string | null): Promise<boolean | undefined> =>
+    acceptGuard.run(() => runAccept(id, accountId));
+
+  const runAccept = async (id: string, accountId: string | null): Promise<boolean> => {
     const req = requests.find((r) => r.id === id);
     setBusyId(id);
     try {
@@ -397,7 +414,9 @@ export function InboxPage() {
     }
     await performAccept(id, null);
   };
-  const handleReject = async (id: string) => {
+  const handleReject = (id: string) => rejectGuard.run(() => runReject(id));
+
+  const runReject = async (id: string) => {
     const ok = await confirmDestructive({
       title: t('inbox_reject_confirm_title'),
       description: t('inbox_reject_confirm_body'),
@@ -416,7 +435,9 @@ export function InboxPage() {
       setBusyId(null);
     }
   };
-  const handleCancel = async (id: string) => {
+  const handleCancel = (id: string) => cancelGuard.run(() => runCancel(id));
+
+  const runCancel = async (id: string) => {
     const ok = await confirmDestructive({
       title: t('inbox_cancel_confirm_title'),
       description: t('inbox_cancel_confirm_body'),
@@ -436,7 +457,13 @@ export function InboxPage() {
     }
   };
 
-  const performAcceptSettlement = async (id: string, accountId: string | null): Promise<boolean> => {
+  // Guarded like performAccept: a dropped double-tap resolves to undefined,
+  // which both callers (the plain-confirm path and the account sheet) treat
+  // as "not ok" — the safe outcome for a suppressed duplicate.
+  const performAcceptSettlement = (id: string, accountId: string | null): Promise<boolean | undefined> =>
+    acceptSettlementGuard.run(() => runAcceptSettlement(id, accountId));
+
+  const runAcceptSettlement = async (id: string, accountId: string | null): Promise<boolean> => {
     const req = settlements.find((r) => r.id === id);
     setBusyId(id);
     try {
@@ -488,7 +515,9 @@ export function InboxPage() {
     }
     await performAcceptSettlement(id, null);
   };
-  const handleRejectSettlement = async (id: string) => {
+  const handleRejectSettlement = (id: string) => rejectSettlementGuard.run(() => runRejectSettlement(id));
+
+  const runRejectSettlement = async (id: string) => {
     const ok = await confirmDestructive({
       title: t('inbox_reject_confirm_title'),
       description: t('inbox_reject_confirm_body'),
@@ -507,7 +536,9 @@ export function InboxPage() {
       setBusyId(null);
     }
   };
-  const handleCancelSettlement = async (id: string) => {
+  const handleCancelSettlement = (id: string) => cancelSettlementGuard.run(() => runCancelSettlement(id));
+
+  const runCancelSettlement = async (id: string) => {
     const ok = await confirmDestructive({
       title: t('inbox_cancel_confirm_title'),
       description: t('inbox_cancel_confirm_body'),
@@ -718,23 +749,39 @@ export function InboxPage() {
             ) : null
           ) : (
             <div className="space-y-2.5 stagger-in">
-              {infoNotifs.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  onClick={() => void markNotificationRead(n.id)}
-                  className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 press-lg"
-                >
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-accent-50">
-                    <UserPlus size={17} className="text-accent-600" strokeWidth={2} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-ink-900 tracking-tight truncate">{n.title || 'New connection'}</p>
-                    <p className="text-[11.5px] text-ink-500 mt-0.5 line-clamp-2">{n.body}</p>
-                  </div>
-                  <span className="w-2 h-2 rounded-full bg-accent-500 shrink-0" aria-hidden />
-                </button>
-              ))}
+              {infoNotifs.map((n) => {
+                // Server rows carry template+params; render them in the
+                // reader's language and fall back to the stored text for
+                // legacy rows (audit N-1 / H5 — clients no longer author it).
+                const content = renderNotificationContent(n, t);
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    // A group INVITE row is actionable, not just informational:
+                    // Accept/Decline lives on the Groups tab, and the invitee
+                    // cannot open /group/:id at all (RLS hides a group they
+                    // have not joined). notificationHref already routes 'invite'
+                    // to /groups — tapping now follows it instead of only
+                    // marking the row read and going nowhere.
+                    onClick={() => {
+                      void markNotificationRead(n.id);
+                      const href = notificationHref(n);
+                      if (href !== '/inbox') navigate(href);
+                    }}
+                    className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 press-lg"
+                  >
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-accent-50">
+                      <UserPlus size={17} className="text-accent-600" strokeWidth={2} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-ink-900 tracking-tight truncate">{content.title || t('ntf_new_connection')}</p>
+                      <p className="text-[11.5px] text-ink-500 mt-0.5 line-clamp-2">{content.body}</p>
+                    </div>
+                    <span className="w-2 h-2 rounded-full bg-accent-500 shrink-0" aria-hidden />
+                  </button>
+                );
+              })}
               {infoItems.map((it) => (
                 <InfoCard key={it.id} item={it} onOpen={() => it.href && navigate(it.href)} />
               ))}

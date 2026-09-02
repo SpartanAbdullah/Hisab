@@ -9,8 +9,16 @@ interface Props {
   members: CommitteeMember[];
 }
 
-// Provably-fair draw panel: shows the commitment "fingerprint" and lets anyone
-// recompute the order from the revealed seed to confirm it wasn't rigged.
+// Provably-fair draw panel: publishes the seed and its seal, and recomputes the
+// payout order from them so anyone — organiser, member, or a relative on the
+// witness link with no account — can confirm the order wasn't rigged.
+//
+// Audit 2026-09 M10: the seed used to be generated on the organiser's phone,
+// which made this panel a rubber stamp (re-roll until slot 1 is yours, then
+// save the matching pair). The seed now comes from the server inside the same
+// transaction that consumes it, so the recompute below is a real check. The
+// seed is shown in full on purpose: verification you cannot reproduce by hand
+// isn't verification. See src/lib/committeeDraw.ts for the exact scheme.
 export function CommitteeVerifyDraw({ committee, members }: Props) {
   const t = useT();
   const [result, setResult] = useState<boolean | null>(null);
@@ -38,10 +46,16 @@ export function CommitteeVerifyDraw({ committee, members }: Props) {
         <p className="text-[13px] font-semibold text-ink-900">{t('kameti_verify_title')}</p>
       </div>
       <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">{t('kameti_verify_desc')}</p>
+      <p className="text-[11px] text-ink-500 mt-1.5 leading-relaxed">{t('kameti_draw_server_note')}</p>
       <div className="mt-2.5 rounded-xl bg-cream-soft border border-cream-hairline px-3 py-2">
+        <p className="text-[9px] font-semibold text-ink-400 uppercase tracking-wide">{t('kameti_draw_seed')}</p>
+        <p className="text-[10.5px] font-mono text-ink-600 break-all leading-snug">{committee.drawSeed}</p>
+      </div>
+      <div className="mt-1.5 rounded-xl bg-cream-soft border border-cream-hairline px-3 py-2">
         <p className="text-[9px] font-semibold text-ink-400 uppercase tracking-wide">{t('kameti_commitment')}</p>
         <p className="text-[10.5px] font-mono text-ink-600 break-all leading-snug">{committee.drawCommitment.slice(0, 32)}…</p>
       </div>
+      <p className="text-[10px] text-ink-400 mt-1.5 leading-relaxed">{t('kameti_draw_recompute_how')}</p>
       {result === null ? (
         <button onClick={verify} disabled={checking} className="mt-3 w-full py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-bold disabled:opacity-50 press">
           {checking ? t('kameti_verifying') : t('kameti_verify')}

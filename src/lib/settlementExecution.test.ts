@@ -34,6 +34,19 @@ describe('executeAllocatedSettlements', () => {
     expect(inputs[1].loanPairId).toBe('p2');
   });
 
+  it('stamps a per-loan idempotency id when requestIdFor is supplied', async () => {
+    const d = deps({ requestIdFor: (loanId) => `intent-7:${loanId}` });
+    await executeAllocatedSettlements(items, d);
+    const inputs = d.createRequest.mock.calls.map((c) => c[0] as SettlementRequestInput);
+    expect(inputs.map((i) => i.requestId)).toEqual(['intent-7:l1', 'intent-7:l2']);
+  });
+
+  it('leaves requestId undefined when no id source is supplied (store mints a uuid)', async () => {
+    const d = deps();
+    await executeAllocatedSettlements([items[0]], d);
+    expect((d.createRequest.mock.calls[0][0] as SettlementRequestInput).requestId).toBeUndefined();
+  });
+
   it('defaults requesterAccountId to null (ledger-only request)', async () => {
     const d = deps();
     await executeAllocatedSettlements([items[0]], d);

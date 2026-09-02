@@ -18,6 +18,8 @@
 //   • Fires with no `schedule`, so it is delivered rather than pending —
 //     notificationScheduler's cancel-all-pending sweep can't eat it.
 import { isNativeRuntime } from './runtime';
+import { notificationHref, renderNotificationContent } from './notificationContent';
+import { tStatic } from './i18n';
 import type { AppNotification } from '../db';
 
 // FNV-1a 32-bit, kept positive and under Android's int32 notification-id
@@ -44,23 +46,6 @@ const MAX_PER_BATCH = 3;
 
 const seen = new Set<string>();
 let primed = false;
-
-/** Where a notification type should land when tapped. Mirrors the routes
- *  the Inbox tabs use so a tap resolves the thing it is about. */
-function hrefFor(type: AppNotification['type']): string {
-  switch (type) {
-    case 'linked_request':
-    case 'linked_settlement':
-      return '/inbox';
-    case 'contact_linked':
-      return '/inbox';
-    case 'group_update':
-    case 'invite':
-      return '/groups';
-    default:
-      return '/inbox';
-  }
-}
 
 /** True when the user cannot currently see the app. On Capacitor the
  *  WebView's document goes hidden as the activity backgrounds, so this is
@@ -115,13 +100,21 @@ export async function surfaceNewNotifications(notifications: AppNotification[]):
     const perm = await LocalNotifications.checkPermissions();
     if (perm.display !== 'granted') return;
     await LocalNotifications.schedule({
-      notifications: fresh.map((n) => ({
-        id: androidNotificationId(`instant:${n.id}`),
-        title: n.title || 'Hisaab',
-        body: n.body || '',
-        extra: { href: hrefFor(n.type) },
-        smallIcon: 'ic_stat_hisaab',
-      })),
+      notifications: fresh.map((n) => {
+        // Render template+params through i18n so a tray notification arrives
+        // in the reader's language, not the sender's (audit N-1). Rows without
+        // a template fall back to the server-composed text.
+        const content = renderNotificationContent(n, tStatic);
+        return {
+          id: androidNotificationId(`instant:${n.id}`),
+          title: content.title || 'Hisaab',
+          body: content.body,
+          // Deep-links group rows to the group itself instead of dumping the
+          // user at the top of /groups to hunt (audit N-8).
+          extra: { href: notificationHref(n) },
+          smallIcon: 'ic_stat_hisaab',
+        };
+      }),
     });
   } catch (err) {
     // Delivery is best-effort by design: the in-app list is the source of

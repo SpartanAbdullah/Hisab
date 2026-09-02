@@ -374,6 +374,97 @@ const S = {
     en: "Only the member who added this expense can edit or delete it.",
   },
   grp_expense_not_deleted: { ur: "Expense delete nahi hua", en: "Expense not deleted" },
+  // Optimistic-lock conflict on a shared group expense (audit F-6). The edit
+  // was REJECTED, not merged — say so, or the user walks away believing their
+  // change landed.
+  grp_expense_version_conflict: {
+    ur: "Kisi aur ne abhi yeh expense update kiya hai. Aapki tabdeeli save nahi hui — dobara kholein aur phir se karein.",
+    en: "Someone else just updated this expense. Your change was not saved — reopen it and apply it again.",
+  },
+  // record_group_settlement RPC outcomes (audit F-7).
+  grp_settle_signin: {
+    ur: "Dobara sign in karein.",
+    en: "Please sign in again.",
+  },
+  grp_settle_not_member: {
+    ur: "Aap is group ke active member nahi hain.",
+    en: "You are not an active member of this group.",
+  },
+  grp_settle_invalid_participants: {
+    ur: "Yeh member group chhod chuka hai — settlement mein shaamil nahi ho sakta.",
+    en: "This member has left the group and can't be part of a settlement.",
+  },
+  grp_settle_invalid_amount: {
+    ur: "Zero se zyada amount likhein.",
+    en: "Enter an amount greater than zero.",
+  },
+  grp_settle_already_settled: {
+    ur: "Yeh hisaab pehle hi barabar ho chuka hai.",
+    en: "This balance is already settled.",
+  },
+  grp_settle_exceeds: {
+    ur: "Settlement baqaya {amount} se zyada nahi ho sakta.",
+    en: "Settlement cannot exceed the outstanding {amount}.",
+  },
+  grp_settle_failed: {
+    ur: "Settlement save nahi ho saki. Dobara koshish karein.",
+    en: "Settlement could not be saved. Please try again.",
+  },
+  // ── Group notification templates ──
+  // Server triggers write a template key + params; these render it in the
+  // user's language (audit N-1: cross-user notification text used to be
+  // English-only, frozen on the actor's device).
+  ntf_someone: { ur: "Koi member", en: "A member" },
+  ntf_the_group: { ur: "group", en: "the group" },
+  ntf_an_expense: { ur: "Aik kharcha", en: "An expense" },
+  ntf_group_added_title: { ur: "{group} mein add kiye gaye", en: "Added to {group}" },
+  ntf_group_added_body: {
+    ur: "{actor} ne aap ko aik shared group mein add kiya.",
+    en: "{actor} added you to a shared group.",
+  },
+  ntf_member_joined_title: { ur: "{actor} {group} mein shaamil hue", en: "{actor} joined {group}" },
+  ntf_member_joined_body: {
+    ur: "{actor} ab group se connected hain.",
+    en: "{actor} is now connected to the group.",
+  },
+  ntf_expense_added_title: { ur: "{actor} ne kharcha add kiya", en: "{actor} added an expense" },
+  ntf_expense_added_body: {
+    ur: "{group} mein {desc} — {amount} add hua.",
+    en: "{desc} for {amount} was added in {group}.",
+  },
+  ntf_expense_added_body_plain: {
+    ur: "{group} mein {desc} add hua.",
+    en: "{desc} was added in {group}.",
+  },
+  ntf_expense_updated_title: { ur: "{actor} ne kharcha update kiya", en: "{actor} updated an expense" },
+  ntf_expense_updated_body: {
+    ur: "{group} mein {desc} badla gaya.",
+    en: "{desc} was changed in {group}.",
+  },
+  ntf_expense_deleted_title: { ur: "{actor} ne kharcha delete kiya", en: "{actor} deleted an expense" },
+  ntf_expense_deleted_body: {
+    ur: "{group} se {desc} hata diya gaya.",
+    en: "{desc} was removed from {group}.",
+  },
+  ntf_settlement_added_title: { ur: "{from} ne hisaab barabar kiya", en: "{from} settled up" },
+  ntf_settlement_added_body: {
+    ur: "{group} mein {from} ne {to} ko {amount} diye.",
+    en: "{from} settled {amount} with {to} in {group}.",
+  },
+  ntf_settlement_added_body_plain: {
+    ur: "{group} mein {from} ne {to} se hisaab barabar kiya.",
+    en: "{from} settled up with {to} in {group}.",
+  },
+  ntf_settlement_deleted_title: { ur: "{actor} ne settlement hataya", en: "{actor} removed a settlement" },
+  ntf_settlement_deleted_body: {
+    ur: "{group} ka {from} → {to} settlement undo ho gaya.",
+    en: "The {from} → {to} settlement in {group} was undone.",
+  },
+  ntf_no_shared_yet: {
+    ur: "Abhi tak koi shared notification nahi.",
+    en: "No shared notifications yet.",
+  },
+  ntf_new_connection: { ur: "Naya connection", en: "New connection" },
   qe_group_one_loan: { ur: "1 qarz", en: "1 loan" },
   edit_date_label: { ur: "Tareekh", en: "Date" },
   edit_date_hint: {
@@ -404,6 +495,17 @@ const S = {
   lsr_err_not_found: {
     ur: "Yeh request ab mojood nahi (shayad cancel ho gayi). Inbox refresh karein.",
     en: "This request no longer exists (it may have been cancelled). Refresh your inbox.",
+  },
+  // Stale-schema fallback: the server hasn't accepted the widened currency
+  // list yet (supabase-migration-audit-p0-currencies.sql). Never a client-side
+  // block — all 8 currencies stay selectable in the UI.
+  ltr_err_currency_unsupported: {
+    ur: "Yeh currency abhi server par cross-user udhaar ke liye enable nahi hui, is liye request nahi bheji ja saki. Filhaal isay apne apne hisaab mein local record karein, ya AED/PKR mein bhejein.",
+    en: "This currency isn't enabled for cross-user udhaar on the server yet, so the request wasn't sent. Record it in your own ledger for now, or send it in AED/PKR.",
+  },
+  lsr_err_currency_unsupported: {
+    ur: "Yeh currency abhi server par settlement request ke liye enable nahi hui. Payment aap dono apne apne hisaab mein khud record kar lein, ya AED/PKR wale loan par settle karein.",
+    en: "This currency isn't enabled for settlement requests on the server yet. Record the payment in each of your own ledgers for now, or settle a loan in AED/PKR.",
   },
 
   // Trust-led onboarding + intent routing (Monarch-inspired quick wins)
@@ -1108,6 +1210,20 @@ const S = {
     ur: "Pehle sign in karo.",
     en: "You need to sign in first.",
   },
+  // Brute-force limiter (supabase-migration-audit-p0-join-abuse-limits.sql):
+  // 5 wrong codes in 5 minutes locks join attempts for the rest of the window.
+  join_error_rate_limited: {
+    ur: "Bohat zyada ghalat code. 5 minute ruk kar dobara koshish karo.",
+    en: "Too many wrong codes. Wait 5 minutes and try again.",
+  },
+  join_error_own_group: {
+    ur: "Ye aap ka apna group hai — aap pehle se is mein ho.",
+    en: "This is your own group — you’re already in it.",
+  },
+  join_error_unknown: {
+    ur: "Join nahi ho saka. Thori dair baad dobara koshish karo.",
+    en: "Couldn’t join. Please try again in a moment.",
+  },
   join_success_title: { ur: "Group join ho gaya", en: "You\u2019re in" },
   join_success_subtitle: {
     ur: "Ab mil ke pehla kharcha daalo",
@@ -1291,6 +1407,60 @@ const S = {
   pin_mismatch: { ur: "PIN match nahi kiya", en: "PINs do not match" },
   pin_set_success: { ur: "PIN set ho gaya!", en: "PIN set successfully!" },
   pin_removed: { ur: "PIN hata diya", en: "PIN removed" },
+  // Lockout copy for long waits — pin_try_again only reads well in seconds.
+  pin_try_again_long: {
+    ur: "Bohat zyada ghalat koshishein. {m}m {s}s baad dobara try karein.",
+    en: "Too many wrong tries. Try again in {m}m {s}s.",
+  },
+  pin_locked_note: {
+    ur: "Har ghalat koshish par intezaar barhta jayega.",
+    en: "Each wrong try makes the wait longer.",
+  },
+  pin_set_failed: {
+    ur: "PIN set nahi ho saka. Yeh device PIN lock support nahi karta.",
+    en: "Couldn't set a PIN — this device doesn't support it.",
+  },
+  pin_verify_failed: {
+    ur: "PIN check nahi ho saka. Sign out karke dobara sign in karein.",
+    en: "Couldn't check that PIN. Sign out and sign back in.",
+  },
+
+  // ── Re-authentication before sensitive account actions (audit SEC-12) ──
+  reauth_current_password: { ur: "Mojooda password", en: "Current password" },
+  reauth_why: {
+    ur: "Tasdeeq ke liye apna mojooda password daalein.",
+    en: "Enter your current password to confirm it's you.",
+  },
+  reauth_required: {
+    ur: "Pehle apna mojooda password daalein.",
+    en: "Enter your current password first.",
+  },
+  reauth_wrong_password: {
+    ur: "Mojooda password ghalat hai.",
+    en: "That current password isn't right.",
+  },
+  reauth_check_failed: {
+    ur: "Password check nahi ho saka. Connection dekh kar dobara koshish karein.",
+    en: "Couldn't verify your password. Check your connection and try again.",
+  },
+  password_updated: { ur: "Password update ho gaya", en: "Password updated" },
+  password_update_failed: { ur: "Password update nahi hua", en: "Couldn't update password" },
+
+  // ── Account deletion outcomes ──
+  del_account_failed: { ur: "Account delete nahi hua", en: "Could not delete account" },
+  del_account_retry: { ur: "Dobara koshish karein.", en: "Please try again." },
+  del_account_owned_groups_title: {
+    ur: "Pehle apne groups sambhalein",
+    en: "Sort out your groups first",
+  },
+  del_account_owned_groups_body: {
+    ur: "In groups mein abhi doosre log hain: {names}. Ownership kisi aur ko dein ya group archive karein, phir account delete karein.",
+    en: "These groups still have other members: {names}. Transfer ownership or archive them, then delete your account.",
+  },
+  del_account_owned_groups_generic: {
+    ur: "Aap ke kuch groups mein abhi doosre log hain. Ownership kisi aur ko dein ya woh groups archive karein, phir account delete karein.",
+    en: "Some of your groups still have other members. Transfer ownership or archive those groups, then delete your account.",
+  },
 
   // ── Auth / Profile ──
   auth_skip: { ur: "Baad Mein dekhtay hain", en: "Skip for now" },
@@ -1955,9 +2125,41 @@ const S = {
   clink_waiting_desc: { ur: "Aap unhein apne khaate mein rakh sakte hain aur record bhej sakte hain. Jab woh add karenge, aap unke contacts mein bhi aa jayenge.", en: "You can keep them in your ledger and send them records now. Once they add you back, you'll appear in their contacts too." },
   clink_mutual: { ur: "Dono taraf se connected", en: "Connected both ways" },
 
+  // ── Link failures (audit 2026-09 C6): every status link_contact_by_code /
+  //    unlink_contact_profile can return. Statuses map to keys in
+  //    src/lib/contactLinkStatus.ts — keep the two in step. ──
+  clink_err_no_match: { ur: "Is code ka koi user nahi mila. Code dobara check karein.", en: "No user with this code. Double-check it and try again." },
+  clink_err_invalid_code: { ur: "Ye code theek nahi lag raha. Hisaab code 6 characters ka hota hai, jaise HSB-AB12CD.", en: "That code doesn’t look right. A Hisaab code is 6 characters, like HSB-AB12CD." },
+  clink_err_rate_limited: { ur: "Bohat zyada code check ho chuke. {minutes} minute baad dobara koshish karein.", en: "Too many code lookups. Try again in {minutes} minutes." },
+  clink_err_already_linked: { ur: "Ye contact pehle se kisi aur Hisaab user se juda hua hai. Pehle unlink karein, phir naya code lagayein.", en: "This contact is already linked to a different Hisaab user. Unlink first, then use the new code." },
+  clink_err_self: { ur: "Ye aap ka apna code hai — apne aap ko add nahi kar sakte.", en: "That’s your own code — you can’t link yourself." },
+  clink_err_archived: { ur: "Ye contact hataya ja chuka hai. Pehle usay wapas layein, phir link karein.", en: "This contact was removed. Restore it first, then link." },
+  clink_err_contact_missing: { ur: "Ye contact nahi mila. Contacts refresh kar ke dobara koshish karein.", en: "Couldn’t find this contact. Refresh Contacts and try again." },
+  clink_err_auth: { ur: "Pehle sign in karein.", en: "You need to sign in first." },
+  clink_err_network: { ur: "Network nahi mila. Connection check kar ke dobara koshish karein.", en: "Can’t reach the server. Check your connection and try again." },
+  // Fallback for any caller that still tries to write the link column itself.
+  // Both real paths (code and phone discovery) have a server RPC now, so this
+  // should not be reachable from the app — kept as the honest answer if it is.
+  clink_err_code_required: { ur: "Link ke liye ab unka Hisaab code chahiye. Un se code ya QR maang kar dobara koshish karein.", en: "Linking now needs their Hisaab code. Ask them for their code or QR, then try again." },
+  clink_err_unlink: { ur: "Unlink nahi ho saka. Dobara koshish karein.", en: "Could not unlink this contact. Try again." },
+  clink_err_unknown: { ur: "Link nahi ho saka. Thori dair baad dobara koshish karein.", en: "Couldn’t link. Please try again in a moment." },
+  // Discovery-path wording for two statuses whose code-path copy would be a
+  // lie: there is no code to re-check, and the throttle is the phone budget.
+  // link_contact_by_discovery re-checks the number AND their opt-in at link
+  // time, so a badge that was true an hour ago can honestly fail now.
+  clink_err_discovery_no_match: { ur: "Ye number ab un ke Hisaab account se match nahi karta — number badal gaya ho ga ya unhon ne discovery band kar di hai. Un se Hisaab code maang kar link karein.", en: "That number no longer matches their Hisaab account — they may have changed it or turned discovery off. Ask them for their Hisaab code instead." },
+  clink_err_discovery_rate_limited: { ur: "Bohat zyada number check ho chuke. {minutes} minute baad dobara koshish karein.", en: "Too many number lookups. Try again in {minutes} minutes." },
+
   // ── Phone discovery (opt-in, no address-book access) ──
   disc_badge: { ur: "Hisaab User", en: "Hisaab User" },
   disc_found: { ur: "Ye number Hisaab par hai — {name}", en: "This number is on Hisaab — {name}" },
+  // Security audit 2026-09 (SEC-09): phone numbers are self-claimed — nobody
+  // verifies ownership — so a discovery hit must never wear the verified seal.
+  // This caption says plainly what the match does and doesn't prove.
+  disc_unverified_note: {
+    ur: "Number match hua hai — tasdeeq shuda nahi. Naam is account ne khud rakha hai; paisa record karne se pehle khud tasdeeq kar lein.",
+    en: "Number matched — not verified. This name is chosen by that account; confirm with them before recording money.",
+  },
   disc_link_cta: { ur: "Link karein", en: "Link them" },
   disc_my_phone_title: { ur: "Mera phone number", en: "My phone number" },
   disc_my_phone_desc: { ur: "Jinke paas aap ka number save hai, unhein Hisaab par aap mil jayenge. Number kisi ko dikhaya nahi jata — sirf match kiya jata hai.", en: "People who already have your number saved can find you on Hisaab. Your number is never shown to anyone — only matched." },
@@ -2073,6 +2275,21 @@ const S = {
   err_overpayment: {
     ur: "Yeh amount baqi qarz se zyada hai. Sirf {remaining} baqi hai.",
     en: "Amount exceeds the remaining loan. Only {remaining} left.",
+  },
+  // Loan optimistic-lock outcomes (audit C10). Thrown by loanStore when the
+  // apply_loan_remaining_delta RPC refuses a stale write — surfaced as a toast
+  // subtitle, so keep them short.
+  err_loan_changed_elsewhere: {
+    ur: "Yeh qarz abhi kisi aur device par badla hai. Refresh karke dobara likhein.",
+    en: "This loan just changed on another device. Refresh and enter it again.",
+  },
+  err_loan_gone: {
+    ur: "Yeh qarz ab mojood nahi — shayad kisi aur device par delete hua hai.",
+    en: "This loan no longer exists — it may have been deleted on another device.",
+  },
+  err_repayment_amount_invalid: {
+    ur: "Payment ki raqam sahi nahi. Zero se zyada amount likhein.",
+    en: "That payment amount isn't valid. Enter an amount greater than zero.",
   },
   err_rate_too_low: {
     ur: "Conversion rate bohot kam hai. Phir se check karein.",
@@ -2280,7 +2497,9 @@ const S = {
   del_tx_body: { ur: "Iska balance par asar ulat jayega.", en: "The balance change will be reversed." },
   del_contact_body: { ur: "Yeh contact aur uska local record hat jayega.", en: "This removes the contact and its local record." },
   // Error recovery (replace raw err.message)
-  err_offline: { ur: "Aap offline hain. Connect hote hi save ho jayega.", en: "You're offline. We'll save this once you reconnect." },
+  // NOTE: Hisaab has no working offline write queue (the outbox runner is
+  // inert behind VITE_ENABLE_OUTBOX), so this must NOT promise a later save.
+  err_offline: { ur: "Aap offline hain — yeh entry save NAHI hui. Internet aane par dobara karein.", en: "You're offline — this entry was not saved. Try again once you're connected." },
   err_could_not_save: { ur: "Save nahi hua — aapka paisa waise ka waisa hai. Dobara koshish karein.", en: "Couldn't save that — your money wasn't touched. Try again." },
   // Shared error/hint defaults
   err_page_title: { ur: "Yeh load nahi hua", en: "Couldn't load this" },
@@ -2478,6 +2697,16 @@ const S = {
   kameti_verifying: { ur: "Check ho raha…", en: "Checking…" },
   kameti_verify_ok: { ur: "Sahi ✓ — tarteeb bilkul wohi hai jo seal hui thi, kuch nahi badla", en: "Checked ✓ — the order is exactly as sealed, nothing was changed" },
   kameti_verify_fail: { ur: "Match nahi — tarteeb badli gayi hai", en: "Doesn't match — the order was changed" },
+  // Server-side draw (audit 2026-09 C10/M10) — the ballot is drawn once, on the
+  // server, and can never be re-rolled.
+  kameti_draw_already: { ur: "Is kameti ki parchi pehle hi nikal chuki hai — dobara nahi nikalti", en: "This kameti's ballot was already drawn — it can't be drawn again" },
+  kameti_draw_locked: { ur: "Baari tay ho chuki — ab koi ise badal nahi sakta, organiser bhi nahi", en: "Turn order is locked — nobody can change it now, not even the organiser" },
+  kameti_draw_failed: { ur: "Parchi nahi nikal saki. Dobara koshish karein.", en: "Couldn't run the draw. Please try again." },
+  kameti_draw_too_few: { ur: "Parchi ke liye kam se kam 2 members chahiye", en: "You need at least 2 members to draw" },
+  kameti_draw_not_organizer: { ur: "Sirf organiser parchi nikal sakta hai", en: "Only the organiser can run the draw" },
+  kameti_draw_server_note: { ur: "Parchi Hisaab ke server ne nikali — number kisi ke phone se nahi aaya, isliye koi ise dobara nahi chala sakta.", en: "The draw was made on Hisaab's server — the random number never came from anyone's phone, so nobody can re-roll it." },
+  kameti_draw_seed: { ur: "Parchi ka number (seed)", en: "Draw number (seed)" },
+  kameti_draw_recompute_how: { ur: "Khud check karna hai? Har member ka SHA-256 nikalein: seed:member-id — phir in hashes ko chhote se bade tarteeb dein. Wohi baari ki tarteeb hai.", en: "Want to check it yourself? Take SHA-256 of seed:member-id for each member, then sort those hashes smallest to largest. That is the payout order." },
   kameti_share_witness: { ur: "Witness link share karein", en: "Share witness link" },
   kameti_witness_title: { ur: "Committee record", en: "Committee record" },
   kameti_witness_banner: { ur: "Ye shared committee record hai. Hisaab paisa nahi rakhta — ye woh sachcha record hai jo sab members dekhte hain.", en: "A shared committee record. Hisaab never holds the money — this is the honest ledger every member sees." },
@@ -3047,6 +3276,159 @@ const S = {
   cc_statement_purchases: { ur: "Kharchay + baaki", en: "Purchases + carried" },
   cc_statement_instalment: { ur: "Is cycle ki installment", en: "This cycle's instalment" },
   cc_statement_total_balance: { ur: "Total balance", en: "Total balance" },
+
+  // ── Group consent, archive & lifecycle (audit 2026-09 P0 client wiring) ──
+  // Companion copy for supabase-migration-audit-p0-consent-guards.sql,
+  // -group-deletion-guard.sql, -account-deletion.sql and -join-abuse-limits.sql.
+
+  // Invite-link redemption failures (accept_group_invite status vocabulary).
+  invite_error_not_found: {
+    ur: "Ye invite link ab kaam nahi karti — expire ho gayi ya wapas le li gayi. Owner se nai link mango.",
+    en: "This invite link no longer works — it expired or was withdrawn. Ask the group owner for a fresh one.",
+  },
+  invite_error_group_gone: {
+    ur: "Jis group ki ye invite thi woh ab mojood nahi.",
+    en: "The group this invite pointed to no longer exists.",
+  },
+  invite_error_rate_limited: {
+    ur: "Bohat zyada koshishein. 15 minute ruk kar dobara try karo.",
+    en: "Too many attempts. Wait 15 minutes and try again.",
+  },
+  invite_fail_title_invalid: { ur: "Invite link kaam nahi kar rahi", en: "Invite link not valid" },
+  invite_fail_title_group_gone: { ur: "Group mojood nahi", en: "Group no longer exists" },
+  invite_fail_title_rate_limited: { ur: "Thora ruk jayein", en: "Too many attempts" },
+  invite_fail_title_auth: { ur: "Pehle sign in karein", en: "Sign in first" },
+  invite_fail_title_network: { ur: "Connection ka masla", en: "Connection problem" },
+  invite_fail_title_unknown: { ur: "Group join nahi ho saka", en: "Could not join this group" },
+  invite_page_intro: {
+    ur: "Ye invite aap ke account ko aik shared Hisaab group se joRegi aur har tabdeeli ki khabar degi.",
+    en: "This invite will connect your account to a shared Hisaab group and keep you updated on every change.",
+  },
+  invite_page_joined_title: { ur: "Aap shaamil ho gaye", en: "You are in" },
+  invite_page_joined_body: {
+    ur: "Group khul raha hai — kharchay, tabdeeliyan aur settlements sab yahan.",
+    en: "Opening the group now so you can see expenses, edits, deletes, and settlements.",
+  },
+  invite_page_title: { ur: "Shared group join karein", en: "Join shared group" },
+  invite_page_next_title: { ur: "Aage kya hoga", en: "What happens next" },
+  invite_page_next_body: {
+    ur: "Aap group ke connected member ban jayenge aur jab bhi koi kharcha add, edit, delete ya settle karega, aap ko pata chalega.",
+    en: "You will be attached to the group as a connected member and receive in-app updates whenever someone adds, edits, deletes, or settles an expense.",
+  },
+  invite_page_go_home: { ur: "Home jayein", en: "Go home" },
+  invite_page_try_again: { ur: "Dobara koshish", en: "Try again" },
+  invite_page_joining: { ur: "Join ho raha hai...", en: "Joining..." },
+  invite_page_opening: { ur: "Khul raha hai...", en: "Opening..." },
+  invite_page_join_cta: { ur: "Group join karein", en: "Join group" },
+
+  // Pending group invitations — the invitee's Accept/Decline door.
+  ginv_pending_heading: { ur: "Zeer-e-ghaur invitations", en: "Pending invitations" },
+  ginv_pending_sub: {
+    ur: "{name} ne aap ko bulaya hai. Jab tak aap qubool nahi karte, aap group mein nahi hain.",
+    en: "{name} invited you. You are not in the group until you accept.",
+  },
+  ginv_accept: { ur: "Qubool karein", en: "Accept" },
+  ginv_decline: { ur: "Mana karein", en: "Decline" },
+  ginv_accepted: { ur: "Aap group mein shaamil ho gaye", en: "You joined the group" },
+  ginv_declined: { ur: "Invitation mana kar di gayi", en: "Invitation declined" },
+  ginv_accept_failed: { ur: "Invitation qubool nahi ho saki", en: "Could not accept this invitation" },
+  ginv_decline_failed: { ur: "Invitation mana nahi ho saki", en: "Could not decline this invitation" },
+  ginv_decline_confirm_title: { ur: "Ye invitation mana karein?", en: "Decline this invitation?" },
+  ginv_decline_confirm_body: {
+    ur: "Aap group mein shaamil nahi honge. Baad mein group code ya nai invite link se aa sakte hain.",
+    en: "You won't join the group. You can still come in later with the group code or a fresh invite link.",
+  },
+
+  // Duplicate membership row (consent-guards §2.2, SQLSTATE 23505).
+  grp_member_already_exists: {
+    ur: "Ye shakhs pehle se is group mein hai (ya pehle invite ho chuka hai). Unhein group code bhejein.",
+    en: "This person already has a place in this group (or was invited before). Share the group code with them instead.",
+  },
+
+  // Group delete guard (group-deletion-guard.sql §2).
+  grp_del_blocked_members_title: { ur: "Ye group delete nahi ho sakta", en: "This group can't be deleted" },
+  grp_del_blocked_members_body: {
+    ur: "Is group mein aur log bhi shaamil hain. Delete karne se un ke kharchay aur settlements bhi mit jayenge. Iske bajaye group archive karein.",
+    en: "Other people are still in this group. Deleting it would erase their expenses and settlements too. Archive it instead.",
+  },
+  grp_del_blocked_balances_title: { ur: "Pehle hisaab barabar karein", en: "Settle the balances first" },
+  grp_del_blocked_balances_body: {
+    ur: "Is group mein abhi hisaab barabar nahi hua. Pehle settle karein, ya group archive kar dein taake record mehfooz rahe.",
+    en: "Some balances in this group are still unsettled. Settle them first, or archive the group to keep the record intact.",
+  },
+  grp_del_archive_cta: { ur: "Archive karein", en: "Archive instead" },
+  grp_del_failed: { ur: "Group delete nahi ho saka", en: "Could not delete this group" },
+
+  // Archive / reopen.
+  grp_archive_action: { ur: "Group archive karein", en: "Archive group" },
+  grp_unarchive_action: { ur: "Group dobara kholein", en: "Reopen group" },
+  grp_archive_confirm_title: { ur: "Ye group archive karein?", en: "Archive this group?" },
+  grp_archive_confirm_body: {
+    ur: "Sab kuch nazar aata rahega, magar naye kharchay, settlements aur naye members band ho jayenge. Aap jab chahein dobara khol sakte hain.",
+    en: "Everything stays visible, but no new expenses, settlements or members. You can reopen it whenever you like.",
+  },
+  grp_archived_banner_title: { ur: "Ye group archive shuda hai", en: "This group is archived" },
+  grp_archived_banner_body: {
+    ur: "Purana record sab ke liye mehfooz hai. Naya kuch daalne ke liye owner ko group dobara kholna hoga.",
+    en: "The record stays readable for everyone. The owner must reopen it to record anything new.",
+  },
+  grp_archived_tag: { ur: "Archive shuda", en: "Archived" },
+  grp_archived_section: { ur: "Archive shuda", en: "Archived" },
+  grp_archived_done: { ur: "Group archive ho gaya", en: "Group archived" },
+  grp_unarchived_done: { ur: "Group dobara khul gaya", en: "Group reopened" },
+  grp_archive_failed: { ur: "Group archive nahi ho saka", en: "Could not archive this group" },
+  grp_unarchive_failed: { ur: "Group dobara khul nahi saka", en: "Could not reopen this group" },
+
+  // Ownership transfer — the escape hatch for OWNED_GROUPS_WITH_MEMBERS and
+  // leave_group's ONLY_OWNER_ADMIN.
+  grp_transfer_action: { ur: "Kisi aur ko admin banayein", en: "Assign another admin" },
+  grp_transfer_title: { ur: "Naya admin chunein", en: "Choose the new admin" },
+  grp_transfer_body: {
+    ur: "Sirf woh members chun sakte hain jo Hisaab par is group mein shaamil ho chuke hain. Iske baad aap aam member ban jayenge.",
+    en: "Only members who have joined this group on Hisaab can take it over. You become a regular member afterwards.",
+  },
+  grp_transfer_none: {
+    ur: "Abhi koi aisa member nahi jo group ka admin ban sake. Pehle kisi ko join karwayein.",
+    en: "Nobody in this group can take it over yet. Get someone to join first.",
+  },
+  grp_transfer_done: { ur: "Group ki zimmedari transfer ho gayi", en: "Ownership transferred" },
+  grp_transfer_failed: { ur: "Zimmedari transfer nahi ho saki", en: "Could not transfer ownership" },
+
+  // Join code rotation + expiry (join-abuse-limits.sql SECTION 2).
+  grp_code_refresh: { ur: "Naya code", en: "Refresh code" },
+  grp_code_expires: { ur: "{date} tak chalega", en: "Works until {date}" },
+  grp_code_expired: { ur: "Code expire ho chuka — naya banayein", en: "Code expired — refresh it" },
+  grp_code_refreshed: { ur: "Naya group code ban gaya", en: "New group code created" },
+  grp_code_refresh_sub: {
+    ur: "Purana code ab kaam nahi karega. Naya code share karein.",
+    en: "The old code stops working. Share the new one.",
+  },
+  grp_code_refresh_failed: { ur: "Naya code nahi ban saka", en: "Could not refresh the code" },
+
+  // Group activity feed — the four new group_event types.
+  gev_group_archived: { ur: "Group archive kiya gaya", en: "Group archived" },
+  gev_group_unarchived: { ur: "Group dobara khola gaya", en: "Group reopened" },
+  gev_member_account_deleted: { ur: "Member ka account delete ho gaya", en: "Member deleted their account" },
+  gev_ownership_transferred: { ur: "Group ki zimmedari badli", en: "Ownership transferred" },
+
+  // Archive notifications (notify_group_archive_state templates).
+  ntf_group_archived_title: { ur: "{group} archive ho gaya", en: "{group} was archived" },
+  ntf_group_archived_body: {
+    ur: "{actor} ne {group} archive kar diya. Sab kuch nazar aayega, magar naya kuch add nahi hoga.",
+    en: "{actor} archived {group}. It stays readable, but nothing new can be added.",
+  },
+  ntf_group_unarchived_title: { ur: "{group} dobara khul gaya", en: "{group} was reopened" },
+  ntf_group_unarchived_body: {
+    ur: "{actor} ne {group} dobara khol diya. Ab kharchay add ho sakte hain.",
+    en: "{actor} reopened {group}. You can add expenses again.",
+  },
+
+  // A creator who has LEFT can no longer edit or delete even their own rows —
+  // every group write path requires a connected membership.
+  grp_left_readonly: {
+    ur: "Aap is group se nikal chuke hain — yahan ke record ab sirf dekhne ke liye hain.",
+    en: "You left this group, so its records are read-only for you.",
+  },
 } as const;
 
 type Key = keyof typeof S;

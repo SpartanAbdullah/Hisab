@@ -14,6 +14,7 @@ import {
   QrCode,
   Keyboard,
   Clock,
+  Phone,
 } from 'lucide-react';
 import { hasWhatsAppNumber } from '../lib/whatsappReminder';
 import { usePersonStore } from '../stores/personStore';
@@ -21,14 +22,17 @@ import { useContactLinkStore } from '../stores/contactLinkStore';
 import { usePhoneDiscoveryStore } from '../stores/phoneDiscoveryStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
 import { QRScanner } from '../components/QRScanner';
-import { resolveProfileByCode } from '../lib/collaboration';
+import { codeLookupBudgetSpent, resolveProfileByCode } from '../lib/collaboration';
+import { formatLinkError, retryAfterMinutes } from '../lib/contactLinkStatus';
 import { formatConnectCode } from '../lib/connectQr';
 import { useLoanStore } from '../stores/loanStore';
 import { NavyHero, TopBar } from '../components/NavyHero';
 import { UserAvatar } from '../components/UserAvatar';
 import { VerifiedBadge } from '../components/VerifiedBadge';
+import { isConsentVerifiedLink } from '../lib/contactVerification';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { useToast } from '../components/Toast';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { ContactDetailSheet } from './ContactDetailSheet';
 import { MyConnectCode } from '../components/MyConnectCode';
@@ -60,6 +64,7 @@ export function ContactsPage() {
   const loadPersons = usePersonStore((s) => s.loadPersons);
   const createPerson = usePersonStore((s) => s.createPerson);
   const linkToProfile = usePersonStore((s) => s.linkToProfile);
+  const linkToDiscoveredProfile = usePersonStore((s) => s.linkToDiscoveredProfile);
   const loans = useLoanStore((s) => s.loans);
   const loadLoans = useLoanStore((s) => s.loadLoans);
   const t = useT();
@@ -88,9 +93,17 @@ export function ContactsPage() {
   const [linkMode, setLinkMode] = useState<'ask' | 'code'>('ask');
   const [linkCode, setLinkCode] = useState('');
   const [resolvingCode, setResolvingCode] = useState(false);
-  const [linkTarget, setLinkTarget] = useState<{ profileId: string; displayName: string } | null>(null);
+  // `code` is null for a phone-discovery hit — there is no code behind a
+  // number match, and the server's link RPC verifies a code (audit C6).
+  const [linkTarget, setLinkTarget] = useState<
+    { profileId: string; displayName: string; code: string | null } | null
+  >(null);
   const [linkError, setLinkError] = useState('');
   const [showScanner, setShowScanner] = useState(false);
+
+  // Double-tap guard (audit C10/F-8): add-contact submit creates a person
+  // plus an optional cross-user link request. See src/lib/useSubmitGuard.ts.
+  const createGuard = useSubmitGuard();
 
   const myId = useSupabaseAuthStore((s) => s.user?.id ?? '');
   const contactLinks = useContactLinkStore((s) => s.requests);
@@ -236,10 +249,16 @@ export function ContactsPage() {
     try {
       const found = await resolveProfileByCode(trimmed);
       if (!found) {
-        setLinkError(t('addc_link_err_notfound'));
+        // Zero rows means "no such code" OR "throttled" — the server refuses
+        // to say which, so lean on our own count of charges this hour.
+        setLinkError(
+          codeLookupBudgetSpent()
+            ? t('clink_err_rate_limited').replace('{minutes}', String(retryAfterMinutes(undefined)))
+            : t('addc_link_err_notfound'),
+        );
         return;
       }
-      setLinkTarget(found);
+      setLinkTarget({ ...found, code: trimmed });
       // Adopt their Hisaab display name when the user hasn't typed one —
       // saves a step, and a name they'd have typed anyway.
       if (!newName.trim()) setNewName(found.displayName);
@@ -256,7 +275,8 @@ export function ContactsPage() {
     newName.trim().length > 0 &&
     persons.some((p) => p.name.trim().toLowerCase() === newName.trim().toLowerCase());
 
-  const handleCreate = async () => {
+  const handleCreate = () => createGuard.run(runCreate);
+  const runCreate = async () => {
     const trimmed = newName.trim();
     if (!trimmed) return;
     setCreating(true);
@@ -268,17 +288,31 @@ export function ContactsPage() {
         // the link didn't happen. Saying otherwise would send the user
         // looking for a contact that's sitting right there.
         try {
-          await linkToProfile(created.id, linkTarget.profileId);
+          // Code path sends the CODE (server re-verifies it); the resolved
+          // profile rides along only as the pre-migration fallback. A phone
+          // discovery hit has no code, and the server re-runs the number match
+          // itself — the profile id is a claim it checks, not a credential.
+          const linked = linkTarget.code
+            ? await linkToProfile(created.id, linkTarget.code, {
+                profileId: linkTarget.profileId,
+                displayName: linkTarget.displayName,
+              })
+            : await linkToDiscoveredProfile(created.id, linkTarget.profileId, linkTarget.displayName);
           toast.show({
             type: 'success',
             title: `${trimmed} added & connected`,
-            subtitle: `${linkTarget.displayName} was asked to add you back. You can start sharing records now.`,
+            subtitle:
+              linked.linkState === 'mutual'
+                ? t('clink_mutual')
+                : t('clink_waiting').replace('{name}', linked.displayName || linkTarget.displayName),
           });
-        } catch {
+        } catch (err) {
           toast.show({
             type: 'info',
             title: 'Contact added',
-            subtitle: t('addc_link_partial'),
+            // Say WHY the link didn't happen (wrong code, stale discovery
+            // match, rate limit) instead of the old blanket "linking failed".
+            subtitle: `${t('addc_link_partial')} ${formatLinkError(err, t, linkTarget.code ? 'code' : 'discovery')}`,
           });
         }
       } else {
@@ -427,22 +461,33 @@ export function ContactsPage() {
               {/* Discovery hit. The number the user just typed belongs to a
                   Hisaab account that opted in to being findable — offering
                   the link here saves them hunting for a code that already
-                  resolved itself. */}
+                  resolved itself.
+                  NO verified seal (audit 2026-09 SEC-09): nothing verifies
+                  that the account claiming this number actually owns it. */}
               {phoneMatch && !linkTarget && (
                 <button
                   type="button"
                   onClick={() => {
-                    setLinkTarget({ profileId: phoneMatch.profileId, displayName: phoneMatch.displayName });
+                    setLinkTarget({
+                      profileId: phoneMatch.profileId,
+                      displayName: phoneMatch.displayName,
+                      code: null,
+                    });
                     setLinkError('');
                     if (!newName.trim()) setNewName(phoneMatch.displayName);
                   }}
-                  className="mt-2 w-full rounded-xl bg-receive-50 border border-receive-100 px-3 py-2.5 flex items-center gap-2.5 text-left press-lg"
+                  className="mt-2 w-full rounded-xl bg-cream-soft border border-cream-border px-3 py-2.5 flex items-start gap-2.5 text-left press-lg"
                 >
-                  <VerifiedBadge size={15} title={t('disc_badge')} />
-                  <span className="flex-1 min-w-0 text-[11.5px] text-ink-700 leading-snug">
-                    {t('disc_found').replace('{name}', phoneMatch.displayName)}
+                  <Phone size={15} strokeWidth={2.2} className="shrink-0 mt-0.5 text-ink-500" aria-hidden />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[11.5px] text-ink-700 leading-snug">
+                      {t('disc_found').replace('{name}', phoneMatch.displayName)}
+                    </span>
+                    <span className="block text-[10px] text-ink-500 leading-relaxed mt-0.5">
+                      {t('disc_unverified_note')}
+                    </span>
                   </span>
-                  <span className="shrink-0 text-[11px] font-bold text-receive-text">
+                  <span className="shrink-0 text-[11px] font-bold text-accent-600 mt-0.5">
                     {t('disc_link_cta')}
                   </span>
                 </button>
@@ -456,7 +501,10 @@ export function ContactsPage() {
             <div className="rounded-xl bg-cream-soft border border-cream-hairline p-3 space-y-2.5">
               {linkTarget ? (
                 <div className="flex items-center gap-2.5">
-                  <VerifiedBadge size={16} title={t('contact_linked_pill')} />
+                  {/* Neutral link glyph, not the verified seal: this target
+                      may have come from an unverified phone match, and even a
+                      code lookup is not yet an accepted, two-way link. */}
+                  <Link2 size={16} strokeWidth={2.2} className="shrink-0 text-accent-600" aria-hidden />
                   <span className="flex-1 min-w-0 text-[12px] font-semibold text-ink-900 truncate">
                     {t('addc_link_found').replace('{name}', linkTarget.displayName)}
                   </span>
@@ -731,9 +779,11 @@ export function ContactsPage() {
                         <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight">
                           {person.name}
                         </p>
-                        {/* Verified seal right after the name — linked means a
-                            real Hisaab account sits on the other side. */}
-                        {person.linkedProfileId && (
+                        {/* Verified seal right after the name — only once the
+                            other account has ACCEPTED the link. A
+                            linked_profile_id alone is my own claim about them
+                            (audit 2026-09 SEC-09). */}
+                        {isConsentVerifiedLink(contactLinks, myId, person.linkedProfileId) && (
                           <VerifiedBadge size={14} title={t('contact_linked_pill')} />
                         )}
                         {/* WhatsApp badge — at a glance, whether this contact
@@ -747,8 +797,11 @@ export function ContactsPage() {
                           // linkable RIGHT NOW, which is worth surfacing on
                           // the row rather than only inside the sheet.
                           matchFor(person.phone) ? (
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] rounded-full bg-receive-50 text-receive-text px-1.5 py-0.5 shrink-0 inline-flex items-center gap-1">
-                              <VerifiedBadge size={10} title={t('disc_badge')} />
+                            // Phone glyph, never the seal: the number match is
+                            // an unverified claim (audit 2026-09 SEC-09). The
+                            // sheet spells that out before the user links.
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] rounded-full bg-cream-soft border border-cream-hairline text-ink-600 px-1.5 py-0.5 shrink-0 inline-flex items-center gap-1">
+                              <Phone size={9} strokeWidth={2.4} className="shrink-0" aria-hidden />
                               {t('disc_badge')}
                             </span>
                           ) : (

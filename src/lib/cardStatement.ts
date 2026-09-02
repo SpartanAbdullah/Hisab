@@ -63,7 +63,7 @@ export function statementInstalmentDates(dueDay: number, count: number, fromIso:
   if (!Number.isFinite(dueDay) || dueDay < 1 || dueDay > 31 || count <= 0) return [];
   const from = new Date(`${fromIso.slice(0, 10)}T00:00:00`);
   const fromMid = from.getTime();
-  let y = from.getFullYear();
+  const y = from.getFullYear();
   let m = from.getMonth();
   // First statement day strictly after `from`; roll to next month if the
   // statement day this month has already passed (or is today).

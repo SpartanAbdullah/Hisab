@@ -12,6 +12,7 @@ import { ListSkeleton } from '../components/ListSkeleton';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { differenceInDays, format } from 'date-fns';
 import { AddGoalModal } from './AddGoalModal';
 import { AddUpcomingExpenseModal } from './AddUpcomingExpenseModal';
@@ -88,6 +89,11 @@ export function GoalsPage() {
   const [addAmount, setAddAmount] = useState('');
   const [addMode, setAddMode] = useState<'add' | 'out'>('add');
   const [savingAdd, setSavingAdd] = useState(false);
+  // Ref-backed double-tap guard (audit F-8/D-1): the `saving*` STATE flags
+  // update asynchronously, so two taps in one frame both read them as false
+  // and would post the contribution / correction twice. Shared across the
+  // goal money actions — they all mutate a goal's savedAmount or target.
+  const submitGuard = useSubmitGuard();
   // Goal management: edit details / correct saved amount / delete — the
   // recovery paths goals never had (a typo used to be permanent).
   const [menuGoalId, setMenuGoalId] = useState<string | null>(null);
@@ -100,7 +106,11 @@ export function GoalsPage() {
   const [correctAmount, setCorrectAmount] = useState('');
   const [savingCorrect, setSavingCorrect] = useState(false);
 
-  const handleGoalEditSave = async () => {
+  const handleGoalEditSave = () => submitGuard.run(runGoalEditSave);
+  const handleGoalCorrect = () => submitGuard.run(runGoalCorrect);
+  const handleGoalDelete = (g: Goal) => submitGuard.run(() => runGoalDelete(g));
+
+  const runGoalEditSave = async () => {
     if (!editGoal) return;
     const target = parseFloat(editTarget);
     if (!editTitle.trim() || !(target > 0)) return;
@@ -120,7 +130,7 @@ export function GoalsPage() {
     }
   };
 
-  const handleGoalCorrect = async () => {
+  const runGoalCorrect = async () => {
     if (!correctGoal) return;
     const target = parseFloat(correctAmount);
     if (!Number.isFinite(target) || target < 0) return;
@@ -136,7 +146,7 @@ export function GoalsPage() {
     }
   };
 
-  const handleGoalDelete = async (g: Goal) => {
+  const runGoalDelete = async (g: Goal) => {
     const ok = await confirmDestructive({
       title: t('goal_delete_title'),
       description: t('goal_delete_body').replace('{title}', g.title),
@@ -167,7 +177,9 @@ export function GoalsPage() {
     setAddAmount('');
     setAddMode('add');
   };
-  const submitAdd = async () => {
+  const submitAdd = () => submitGuard.run(runSubmitAdd);
+
+  const runSubmitAdd = async () => {
     if (!selectedGoal) return;
     const amt = parseFloat(addAmount);
     if (!amt || amt <= 0) return;

@@ -5,7 +5,12 @@
 // filled in verified blue, which reads identically at a glance.
 //
 // Usage semantics across the app (keep these consistent):
-//   - Contacts: the person is LINKED to a real Hisaab account
+//   - Contacts: the two accounts hold a CONSENT-VERIFIED link — an accepted
+//     contact_link_request. Gate every contact-side render on
+//     `isConsentVerifiedLink()` from src/lib/contactVerification.ts and NEVER
+//     on `person.linkedProfileId` or a phone-discovery hit: both are claims
+//     made by one side alone, and phone numbers carry no ownership check at
+//     all, so the seal would vouch for an impersonator (audit 2026-09 SEC-09).
 //   - Loans: the loan (or a person's whole ledger) is fully SETTLED
 //   - Groups: on the group DETAIL page, every debt in the group is settled;
 //     on the groups LIST card, the CURRENT USER is square (whole-group debt

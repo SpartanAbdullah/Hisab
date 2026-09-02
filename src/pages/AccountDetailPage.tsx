@@ -22,6 +22,7 @@ import { formatMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { daysUntilDayOfMonth } from '../lib/inboxInfo';
 import { useT, type I18nKey } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import {
   Wallet,
   Landmark,
@@ -120,6 +121,10 @@ export function AccountDetailPage() {
   const emiSchedules = useEmiStore((s) => s.schedules);
   const { expenses, loadExpenses } = useUpcomingExpenseStore();
   const [reanchoring, setReanchoring] = useState(false);
+  // Declared with the other top-level hooks (this component has early
+  // returns below). Ref-backed double-tap guard for the money-mutating
+  // actions on this page — opening balance, correct-balance and re-anchor.
+  const submitGuard = useSubmitGuard();
   const t = useT();
   const toast = useToast();
   const navigate = useNavigate();
@@ -223,7 +228,9 @@ export function AccountDetailPage() {
     return { statement, advanceLoans, misaligned };
   }, [isCreditCard, account, loans, emiSchedules, transactions]);
 
-  const handleReanchor = async () => {
+  const handleReanchor = () => submitGuard.run(runReanchor);
+
+  const runReanchor = async () => {
     const dd = parseInt(account.metadata.dueDay ?? '', 10);
     if (!Number.isFinite(dd) || dd < 1 || dd > 31) return;
     setReanchoring(true);
@@ -289,7 +296,9 @@ export function AccountDetailPage() {
     setOpeningNote('');
   };
 
-  const saveOpeningBalance = async () => {
+  const saveOpeningBalance = () => submitGuard.run(runSaveOpeningBalance);
+
+  const runSaveOpeningBalance = async () => {
     const amount = parseFloat(openingAmount);
     if (!amount || amount <= 0) return;
     setSavingOpeningBalance(true);
@@ -891,7 +900,7 @@ export function AccountDetailPage() {
                 </button>
                 <button
                   disabled={savingCorrect || !Number.isFinite(parseFloat(correctInput)) || Math.abs(parseFloat(correctInput) - account.balance) < 0.005}
-                  onClick={async () => {
+                  onClick={() => submitGuard.run(async () => {
                     setSavingCorrect(true);
                     try {
                       await useTransactionStore.getState().processTransaction({
@@ -909,7 +918,7 @@ export function AccountDetailPage() {
                     } finally {
                       setSavingCorrect(false);
                     }
-                  }}
+                  })}
                   className="flex-1 py-2.5 rounded-xl bg-ink-900 text-white text-[12px] font-semibold disabled:opacity-30 transition-opacity"
                 >
                   {t('acct_correct_cta')}

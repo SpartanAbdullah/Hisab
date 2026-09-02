@@ -44,6 +44,10 @@ export function GroupCard({
   const connected = group.members.filter((m) => m.status === 'connected').length;
   const owed = balance > 0.01;
   const owes = balance < -0.01;
+  // Archived groups are still fully readable — they just accept nothing new.
+  // The tag has to be on the row itself, not only in the section header, so a
+  // search result (which is flat) is never ambiguous.
+  const isArchived = Boolean(group.archivedAt);
 
   // Settle-status: prefer an explicit outstandingCount from the parent; fall
   // back to deriving it from this user's net balance (non-zero ⇒ one balance
@@ -65,7 +69,9 @@ export function GroupCard({
   return (
     <button
       onClick={onClick}
-      className="w-full rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press-lg"
+      className={`w-full rounded-[18px] bg-cream-card border border-cream-border p-4 text-left press-lg ${
+        isArchived ? 'opacity-75' : ''
+      }`}
     >
       <div className="flex items-center gap-3">
         <div className="relative w-11 h-11 rounded-2xl bg-cream-soft border border-cream-hairline flex items-center justify-center text-lg shrink-0">
@@ -83,6 +89,11 @@ export function GroupCard({
         <div className="flex-1 min-w-0">
           <p className="text-[14px] font-medium text-ink-900 truncate tracking-tight flex items-center gap-1.5">
             <span className="truncate">{group.name}</span>
+            {isArchived && (
+              <span className="shrink-0 rounded-full bg-cream-soft border border-cream-hairline px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.06em] text-ink-500">
+                {t('grp_archived_tag')}
+              </span>
+            )}
             {/* Verified seal: this user is square in the group. */}
             {balanceLoaded && isSquare && <VerifiedBadge size={14} title={t('status_settled')} />}
           </p>

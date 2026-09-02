@@ -18,7 +18,7 @@ we always know who's on what. Pair this with the step-by-step in
 | C4 | Design the consistent Hisaab logo (pick a concept) | ✅ | "Single Wink" chosen 2026-07-07 (green #2FE3A0 tile, ink stroke "h" + wink — see docs/brand/LOGO_HANDOFF.md); replaced Concept A (navy squircle, cream H, violet bar) |
 | C5 | Produce ALL icon assets from the chosen logo | ✅ | favicon, PWA (+ real maskable), apple-touch, Android mipmaps, in-app mark — via `scripts/generate-icons.mjs` |
 | C6 | Hardware back button closes an open modal first | ✅ | Done; **verify on device** (RELEASE.md smoke test) |
-| C7 | Draft Play store listing copy (short + full description) | ✅ | `docs/play-store-listing.md` — en + Roman-Urdu + release notes + ASO keywords |
+| C7 | Draft Play store listing copy (short + full description) | ✅ | `docs/play-store-listing.md` — en + Roman-Urdu + release notes + ASO keywords. **2026-09-02: three false claims removed** (PIN lock, offline-first, USD/EUR/GBP currencies — audit finding `12-qa-review.md` F-1 / `00-executive-summary.md` Top Finding #3). PIN lock and offline claims must stay out of the listing until those features are actually wired in; the currency line now lists the real 8 (`PKR, AED, PHP, SAR, QAR, OMR, KWD, BHD`). |
 | C8 | Draft the 1024×500 feature graphic (SVG) | ⏳ | You export to PNG |
 | C9 | Correct the Data Safety doc details (phone, Sentry) | ✅ | Phone=collected, crash logs=shared w/ Sentry. Verified: **no user ID is sent to Sentry** (capability dormant) |
 | C10 | Sentry wiring matches final decision | ✅ | Code wired (reads `VITE_SENTRY_DSN`); you provide the DSN (Y12) |

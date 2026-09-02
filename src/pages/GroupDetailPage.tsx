@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical, UserPlus, Pencil, X } from 'lucide-react';
+import { Plus, Handshake, Trash2, Share2, Clock3, Copy, Receipt, Sparkles, Check, LogOut, MoreVertical, UserPlus, Pencil, X, Archive, ArchiveRestore, UserMinus, Crown, RefreshCw, Lock } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
+import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { AddGroupExpenseModal } from './AddGroupExpenseModal';
@@ -13,6 +14,7 @@ import { ProgressRing } from '../components/ProgressRing';
 import { PageErrorState } from '../components/PageErrorState';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { VerifiedBadge } from '../components/VerifiedBadge';
+import { readGroupGuardFailure } from '../lib/groupGuardErrors';
 import { useT } from '../lib/i18n';
 import { formatMoney } from '../lib/constants';
 import { useToast } from '../components/Toast';
@@ -50,6 +52,7 @@ function getActivityDisplay(
   event: GroupEvent,
   settlements: GroupSettlement[],
   group: SplitGroup,
+  t: ReturnType<typeof useT>,
 ): ActivityDisplay {
   const payload = (event.payload ?? {}) as Record<string, unknown>;
   const memberName = (id: string | undefined): string => {
@@ -151,6 +154,56 @@ function getActivityDisplay(
         title: event.summary,
         subtitle: 'Group created',
       };
+    // ── Lifecycle events written by the audit-2026-09 migrations ────────────
+    // All four carry a server-composed `summary`, so the title is that
+    // sentence and the subtitle is the localized event label.
+    case 'group_archived':
+      // archive_group, group-deletion-guard.sql §6b.
+      // Payload: { groupId, groupName, currency, actorName, archivedAt }
+      return {
+        icon: <Archive size={16} />,
+        iconBg: 'bg-cream-soft text-ink-600',
+        title: event.summary,
+        subtitle: t('gev_group_archived'),
+      };
+    case 'group_unarchived':
+      // unarchive_group, §6c. Payload: { …, unarchivedAt }
+      return {
+        icon: <ArchiveRestore size={16} />,
+        iconBg: 'bg-receive-50 text-receive-text',
+        title: event.summary,
+        subtitle: t('gev_group_unarchived'),
+      };
+    case 'member_account_deleted':
+      // delete_current_user, account-deletion.sql §4b. Payload:
+      // { memberId, displayName, expensesRetained, settlementsRetained, deletedAt }
+      // The retained counts matter: they are the reassurance that this
+      // member's money records did NOT disappear with their account.
+      return (() => {
+        const displayName = typeof payload.displayName === 'string' ? payload.displayName : '';
+        const expensesRetained = Number(payload.expensesRetained ?? 0);
+        const settlementsRetained = Number(payload.settlementsRetained ?? 0);
+        const retained = expensesRetained + settlementsRetained;
+        return {
+          icon: <UserMinus size={16} />,
+          iconBg: 'bg-warn-50 text-warn-600',
+          title: displayName || event.summary,
+          subtitle: t('gev_member_account_deleted'),
+          note: retained > 0 ? event.summary : undefined,
+        };
+      })();
+    case 'group_ownership_transferred':
+      // transfer_group_ownership, account-deletion.sql §5. Payload:
+      // { newOwnerMemberId, newOwnerProfileId, previousOwnerMemberId }
+      return (() => {
+        const newOwnerId = typeof payload.newOwnerMemberId === 'string' ? payload.newOwnerMemberId : undefined;
+        return {
+          icon: <Crown size={16} />,
+          iconBg: 'bg-accent-100 text-accent-600',
+          title: newOwnerId ? memberName(newOwnerId) : event.summary,
+          subtitle: t('gev_ownership_transferred'),
+        };
+      })();
     default:
       return {
         icon: <Clock3 size={16} />,
@@ -186,7 +239,7 @@ export function GroupDetailPage() {
   const navigate = useNavigate();
   const t = useT();
   const toast = useToast();
-  const { groups, getGroupExpenses, getSimplifiedDebts, getPairwiseDebts, deleteGroup, leaveGroup, getGroupEvents, getSettlements, deleteSettlement, loadGroups, setGroupExpenseReconciled } = useSplitStore();
+  const { groups, getGroupExpenses, getSimplifiedDebts, getPairwiseDebts, deleteGroup, leaveGroup, getGroupEvents, getSettlements, deleteSettlement, loadGroups, setGroupExpenseReconciled, archiveGroup, unarchiveGroup, transferGroupOwnership, refreshJoinCode } = useSplitStore();
   const markGroupRead = useNotificationStore((state) => state.markGroupRead);
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
@@ -205,6 +258,10 @@ export function GroupDetailPage() {
   const [editExpense, setEditExpense] = useState<GroupExpense | null>(null);
   const [savingReconciliationId, setSavingReconciliationId] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [refreshingCode, setRefreshingCode] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferringMemberId, setTransferringMemberId] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   // One-time member-status legend. Shown the first time a group has any
@@ -378,6 +435,90 @@ export function GroupDetailPage() {
     .filter(row => row.paid > 0.01 || row.share > 0.01 || row.settlement > 0.01 || Math.abs(row.net) > 0.01)
     .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.paid - a.paid || a.member.name.localeCompare(b.member.name));
 
+  // Archived = frozen and readable. The server blocks every write anyway
+  // (tg_block_writes_in_archived_group / tg_block_join_archived_group), so
+  // hiding the actions is honesty, not enforcement.
+  const isArchived = Boolean(group.archivedAt);
+  const isOwner = Boolean(currentMember?.isOwner);
+  // transfer_group_ownership only accepts a connected, profile-linked member of
+  // the same group — mirror that filter so the picker can never offer a
+  // candidate the RPC will reject with INVALID_NEW_OWNER.
+  const transferCandidates = group.members.filter(
+    (member) => member.status === 'connected' && member.profileId && member.profileId !== currentUserId,
+  );
+  const joinCodeExpiresAt = group.joinCodeExpiresAt ? new Date(group.joinCodeExpiresAt) : null;
+  const joinCodeExpired = joinCodeExpiresAt !== null
+    && Number.isFinite(joinCodeExpiresAt.getTime())
+    && joinCodeExpiresAt.getTime() < Date.now();
+  const joinCodeExpiryLabel = joinCodeExpiresAt && Number.isFinite(joinCodeExpiresAt.getTime())
+    ? joinCodeExpired
+      ? t('grp_code_expired')
+      : t('grp_code_expires').replace(
+          '{date}',
+          joinCodeExpiresAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        )
+    : null;
+
+  // Archive is the non-destructive alternative and, for a group with other
+  // members or unsettled ex-members, the ONLY end state available: the delete
+  // guard refuses, and leave_group refuses too once a balance is stuck
+  // (group-deletion-guard.sql, residual risk R1).
+  const handleArchive = async (confirmFirst = true) => {
+    if (archiving) return false;
+    if (confirmFirst) {
+      const ok = await confirmDestructive({
+        title: t('grp_archive_confirm_title'),
+        description: t('grp_archive_confirm_body'),
+        confirmLabel: t('grp_archive_action'),
+        cancelLabel: t('not_now'),
+        tone: 'warning',
+      });
+      if (!ok) return false;
+    }
+    setArchiving(true);
+    try {
+      const result = await archiveGroup(group.id);
+      toast.show({
+        type: result.success ? 'success' : 'error',
+        title: result.success ? t('grp_archived_done') : t('grp_archive_failed'),
+        subtitle: result.success ? undefined : result.userMessage,
+      });
+      if (result.success) await reload();
+      return result.success;
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('grp_archive_failed'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+      return false;
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleUnarchive = async () => {
+    if (archiving) return;
+    setArchiving(true);
+    try {
+      const result = await unarchiveGroup(group.id);
+      toast.show({
+        type: result.success ? 'success' : 'error',
+        title: result.success ? t('grp_unarchived_done') : t('grp_unarchive_failed'),
+        subtitle: result.success ? undefined : result.userMessage,
+      });
+      if (result.success) await reload();
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('grp_unarchive_failed'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setArchiving(false);
+    }
+  };
+
   const handleDelete = async () => {
     // Unsettled debts vanish with the group — say so explicitly instead of
     // the generic body, so nobody deletes away money they're still owed.
@@ -389,9 +530,92 @@ export function GroupDetailPage() {
         : t('del_group_body'),
       confirmLabel: 'Delete group',
     });
-    if (ok) {
+    if (!ok) return;
+
+    // supabase-migration-audit-p0-group-deletion-guard.sql refuses a client
+    // hard-delete of a SHARED group. Previously this call had no try/catch at
+    // all, so a refusal surfaced as an unhandled rejection and the user got
+    // nothing. Both tiers are dead ends by design — Archive is the way out, so
+    // it is offered as the primary action right here rather than being buried
+    // back in the menu.
+    try {
       await deleteGroup(group.id);
       navigate('/groups');
+    } catch (err) {
+      const blocker = readGroupGuardFailure(err);
+      if (blocker?.code === 'GROUP_HAS_OTHER_MEMBERS' || blocker?.code === 'GROUP_HAS_OUTSTANDING_BALANCES') {
+        const isMembers = blocker.code === 'GROUP_HAS_OTHER_MEMBERS';
+        const body = isMembers ? t('grp_del_blocked_members_body') : t('grp_del_blocked_balances_body');
+        const archiveInstead = await confirmDestructive({
+          title: isMembers ? t('grp_del_blocked_members_title') : t('grp_del_blocked_balances_title'),
+          // The server DETAIL names the members / amounts — keep it, it is the
+          // difference between "someone" and "Bilal owes AED 150.00".
+          description: blocker.detail ? `${body}\n\n${blocker.detail}` : body,
+          confirmLabel: t('grp_del_archive_cta'),
+          cancelLabel: t('not_now'),
+          tone: 'warning',
+        });
+        if (archiveInstead) await handleArchive(false);
+        return;
+      }
+      toast.show({
+        type: 'error',
+        title: t('grp_del_failed'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    }
+  };
+
+  // Owner-only handover. The RPC only accepts a member who is connected AND
+  // profile-linked, so a group can never be handed to a guest seat or a
+  // stranger — the picker below applies exactly that filter.
+  const handleTransferOwnership = async (memberId: string) => {
+    if (transferringMemberId) return;
+    setTransferringMemberId(memberId);
+    try {
+      const result = await transferGroupOwnership(group.id, memberId);
+      toast.show({
+        type: result.success ? 'success' : 'error',
+        title: result.success ? t('grp_transfer_done') : t('grp_transfer_failed'),
+        subtitle: result.success ? undefined : result.userMessage,
+      });
+      if (result.success) {
+        setShowTransfer(false);
+        await reload();
+      }
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('grp_transfer_failed'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setTransferringMemberId(null);
+    }
+  };
+
+  // Join codes expire 14 days after creation or rotation. Rotating retires the
+  // old code immediately (anyone still holding it can no longer join), which is
+  // exactly why this lives behind an explicit owner action.
+  const handleRefreshJoinCode = async () => {
+    if (refreshingCode) return;
+    setRefreshingCode(true);
+    try {
+      const nextCode = await refreshJoinCode(group.id);
+      await navigator.clipboard.writeText(nextCode).catch(() => {});
+      toast.show({
+        type: 'success',
+        title: t('grp_code_refreshed'),
+        subtitle: t('grp_code_refresh_sub'),
+      });
+    } catch (err) {
+      toast.show({
+        type: 'error',
+        title: t('grp_code_refresh_failed'),
+        subtitle: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setRefreshingCode(false);
     }
   };
 
@@ -484,13 +708,18 @@ export function GroupDetailPage() {
             // narrow Android screens left almost no room for the group
             // title (a `{emoji} {name}` string that's often long).
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowInvite(true)}
-                className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
-                aria-label="Invite"
-              >
-                <Share2 size={14} className="text-white" />
-              </button>
+              {/* No new members can join an archived group
+                  (tg_block_join_archived_group blocks even the definer join
+                  RPCs), so an invite link would be born dead. */}
+              {!isArchived && (
+                <button
+                  onClick={() => setShowInvite(true)}
+                  className="w-9 h-9 rounded-xl bg-white/10 active:bg-white/15 flex items-center justify-center transition-colors"
+                  aria-label="Invite"
+                >
+                  <Share2 size={14} className="text-white" />
+                </button>
+              )}
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setShowMenu((v) => !v)}
@@ -517,7 +746,30 @@ export function GroupDetailPage() {
                         {leaving ? 'Leaving…' : 'Leave group'}
                       </button>
                     )}
-                    {currentMember?.isOwner && (
+                    {isOwner && transferCandidates.length > 0 && !isArchived && (
+                      <button
+                        role="menuitem"
+                        onClick={() => { setShowMenu(false); setShowTransfer(true); }}
+                        className="w-full px-4 py-3 text-left text-[13px] font-medium text-ink-800 active:bg-cream-soft flex items-center gap-2.5 border-t border-cream-hairline transition-colors"
+                      >
+                        <Crown size={14} className="text-ink-600" />
+                        {t('grp_transfer_action')}
+                      </button>
+                    )}
+                    {isOwner && (
+                      <button
+                        role="menuitem"
+                        onClick={() => { setShowMenu(false); void (isArchived ? handleUnarchive() : handleArchive()); }}
+                        disabled={archiving}
+                        className="w-full px-4 py-3 text-left text-[13px] font-medium text-ink-800 active:bg-cream-soft flex items-center gap-2.5 border-t border-cream-hairline disabled:opacity-50 transition-colors"
+                      >
+                        {isArchived
+                          ? <ArchiveRestore size={14} className="text-ink-600" />
+                          : <Archive size={14} className="text-ink-600" />}
+                        {isArchived ? t('grp_unarchive_action') : t('grp_archive_action')}
+                      </button>
+                    )}
+                    {isOwner && (
                       <button
                         role="menuitem"
                         onClick={() => { setShowMenu(false); handleDelete(); }}
@@ -586,7 +838,39 @@ export function GroupDetailPage() {
 
       <div className="sukoon-body pt-4">
 
-      {group.joinCode && (() => {
+      {/* Archived banner. The server refuses every write in an archived group
+          (GROUP_ARCHIVED), so this explains a page whose action bar has gone
+          rather than letting the user discover it by tapping. */}
+      {isArchived && (
+        <div className="px-5 pt-4">
+          <div className="rounded-[18px] bg-cream-soft border border-cream-border p-4 flex items-start gap-3 animate-fade-in">
+            <div className="w-10 h-10 rounded-2xl bg-cream-card border border-cream-hairline text-ink-500 flex items-center justify-center shrink-0">
+              <Lock size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-bold text-ink-900 tracking-tight">
+                {t('grp_archived_banner_title')}
+              </p>
+              <p className="text-[11px] text-ink-500 mt-1 leading-relaxed">
+                {t('grp_archived_banner_body')}
+              </p>
+              {isOwner && (
+                <button
+                  onClick={() => void handleUnarchive()}
+                  disabled={archiving}
+                  className="mt-3 rounded-xl bg-ink-900 text-white px-3.5 py-2 text-[11.5px] font-bold flex items-center gap-1.5 disabled:opacity-40 press"
+                >
+                  <ArchiveRestore size={12} strokeWidth={2.4} /> {t('grp_unarchive_action')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* The join code is dead weight on an archived group — nobody new can
+          join one (tg_block_join_archived_group), definer RPCs included. */}
+      {!isArchived && group.joinCode && (() => {
         // When the owner is the only connected person, the group code card
         // becomes the primary activation surface — bigger, louder, with an
         // explicit "why you're seeing this" headline. Once others have
@@ -617,9 +901,16 @@ export function GroupDetailPage() {
                   </div>
                 </div>
                 <div className="mt-3.5 flex items-center gap-2.5 bg-cream-soft rounded-2xl px-3.5 py-2.5 border border-cream-border">
-                  <p className="flex-1 text-[15px] font-bold font-mono tracking-tight text-ink-900 truncate">
-                    {group.joinCode}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[15px] font-bold font-mono tracking-tight text-ink-900 truncate">
+                      {group.joinCode}
+                    </p>
+                    {joinCodeExpiryLabel && (
+                      <p className={`text-[10px] mt-0.5 font-semibold ${joinCodeExpired ? 'text-pay-text' : 'text-ink-500'}`}>
+                        {joinCodeExpiryLabel}
+                      </p>
+                    )}
+                  </div>
                   <button
                     onClick={copyCode}
                     className="shrink-0 rounded-xl bg-ink-900 text-white text-white px-3 py-1.5 text-[11px] font-bold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-indigo-500/20"
@@ -627,6 +918,16 @@ export function GroupDetailPage() {
                     <Copy size={11} strokeWidth={2.5} /> Copy
                   </button>
                 </div>
+                {isOwner && (
+                  <button
+                    onClick={() => void handleRefreshJoinCode()}
+                    disabled={refreshingCode}
+                    className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-accent-600 active:opacity-60 disabled:opacity-40 min-h-[36px]"
+                  >
+                    <RefreshCw size={12} className={refreshingCode ? 'animate-spin' : ''} />
+                    {t('grp_code_refresh')}
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -641,7 +942,23 @@ export function GroupDetailPage() {
               <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Group Code</p>
                 <p className="text-[15px] font-bold text-ink-900 font-mono tracking-tight">{group.joinCode}</p>
+                {joinCodeExpiryLabel && (
+                  <p className={`text-[10px] mt-0.5 font-semibold ${joinCodeExpired ? 'text-pay-text' : 'text-ink-500'}`}>
+                    {joinCodeExpiryLabel}
+                  </p>
+                )}
               </div>
+              {isOwner && (
+                <button
+                  onClick={() => void handleRefreshJoinCode()}
+                  disabled={refreshingCode}
+                  className="shrink-0 rounded-xl bg-cream-card border border-cream-border text-ink-700 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-40"
+                  aria-label={t('grp_code_refresh')}
+                  title={t('grp_code_refresh')}
+                >
+                  <RefreshCw size={12} className={refreshingCode ? 'animate-spin' : ''} />
+                </button>
+              )}
               <button
                 onClick={copyCode}
                 className="shrink-0 rounded-xl bg-cream-card border border-cream-border text-ink-700 px-3 py-2 text-[11px] font-semibold flex items-center gap-1.5 active:scale-95 transition-all"
@@ -756,6 +1073,17 @@ export function GroupDetailPage() {
       {tab === 'expenses' ? (
         <div className="px-5 pt-4 space-y-2">
           {expenses.length === 0 ? (
+            // An archived group with no expenses has nothing to activate —
+            // every "add" path is refused server-side, so a CTA would be a
+            // dead end. The archived banner above already explains the state.
+            isArchived ? (
+              <div className="rounded-[18px] bg-cream-card border border-cream-border p-6 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-cream-soft border border-cream-hairline text-ink-500 mx-auto flex items-center justify-center">
+                  <Receipt size={22} />
+                </div>
+                <p className="text-[13px] font-semibold text-ink-800 mt-3">{t('grp_archived_banner_title')}</p>
+              </div>
+            ) :
             // Activation card — strong CTA instead of a passive "no expenses"
             // line. When the owner is still alone, a split isn't possible yet
             // (expenses can only involve connected members), so point them at
@@ -986,7 +1314,7 @@ export function GroupDetailPage() {
             </div>
           ) : (
             events.map((event, index) => {
-              const display = getActivityDisplay(event, settlements, group);
+              const display = getActivityDisplay(event, settlements, group, t);
               return (
                 <div
                   key={event.id}
@@ -1053,6 +1381,10 @@ export function GroupDetailPage() {
           to match the navy hero TopBar action chips: 36px tall, 12px text,
           rounded-xl. Two-button layout: Add Expense (primary ink-900,
           flex-1) and Settle Up (receive-600, content-width). */}
+      {/* Hidden while archived: tg_block_writes_in_archived_group refuses both
+          an expense insert and a settlement insert, so offering the buttons
+          would only produce a raw GROUP_ARCHIVED error. */}
+      {!isArchived && (
       <div className="fixed bottom-[92px] left-0 right-0 px-5 z-30 pointer-events-none">
         <div className="flex gap-2 max-w-[480px] mx-auto pointer-events-auto">
           <button
@@ -1069,6 +1401,7 @@ export function GroupDetailPage() {
           </button>
         </div>
       </div>
+      )}
 
       </div>
 
@@ -1077,6 +1410,43 @@ export function GroupDetailPage() {
       <SettleUpModal open={showSettle} group={group} debts={shownDebts} currentMemberId={currentMember?.id} onClose={() => { setShowSettle(false); void reload(); }} />
       <GroupSettleUpModal open={showSettleShare} group={group} debts={shownDebts} expenses={expenses} simplify={simplify} currentMemberId={currentMember?.id} onClose={() => setShowSettleShare(false)} />
       <GroupInviteModal open={showInvite} group={group} onClose={() => { setShowInvite(false); void reload(); }} />
+
+      {/* Ownership handover — the escape hatch for delete_current_user's
+          OWNED_GROUPS_WITH_MEMBERS refusal and for leave_group's
+          ONLY_OWNER_ADMIN. Only connected, profile-linked members are offered,
+          which is exactly the RPC's own INVALID_NEW_OWNER filter. */}
+      <Modal
+        open={showTransfer}
+        onClose={() => setShowTransfer(false)}
+        title={t('grp_transfer_title')}
+      >
+        <div className="p-5 space-y-3">
+          <p className="text-[12px] text-ink-500 leading-relaxed">{t('grp_transfer_body')}</p>
+          {transferCandidates.length === 0 ? (
+            <p className="text-[12px] text-ink-400 text-center py-6">{t('grp_transfer_none')}</p>
+          ) : (
+            <div className="space-y-2">
+              {transferCandidates.map((member) => (
+                <button
+                  key={member.id}
+                  onClick={() => void handleTransferOwnership(member.id)}
+                  disabled={transferringMemberId !== null}
+                  className="w-full rounded-2xl bg-cream-card border border-cream-border p-3 flex items-center gap-3 text-left disabled:opacity-40 press"
+                >
+                  <div className="w-10 h-10 rounded-full bg-cream-soft text-ink-700 flex items-center justify-center text-[12px] font-bold shrink-0">
+                    {member.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold text-ink-800 truncate">{member.name}</p>
+                    <p className="text-[10px] text-ink-500 mt-0.5">{t('member_on_app')}</p>
+                  </div>
+                  <Crown size={14} className="text-ink-400 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
     </main>
   );
 }

@@ -6,7 +6,7 @@ import { loadCacheFirst, markMirrorStale, mirrorDelete, mirrorPut } from '../lib
 import { addMonths, format } from 'date-fns';
 import type { Transaction, Currency, EmiSchedule, EmiStatus, Loan, ActivityType, InvestmentTrade } from '../db';
 import { useAccountStore } from './accountStore';
-import { useLoanStore, type CreateLoanInput } from './loanStore';
+import { useLoanStore, loanDeltaDeps, syncLocalRemaining, type CreateLoanInput } from './loanStore';
 import { useGoalStore } from './goalStore';
 import { useEmiStore } from './emiStore';
 import { useActivityStore } from './activityStore';
@@ -23,6 +23,7 @@ import { assertLinkedLoanDeleteAllowed } from '../lib/linkedLoanGuards';
 import { simulateTimeline, validateTradeInput } from '../lib/investmentMath';
 import { rateIsSane } from '../lib/conversionMath';
 import { MutationScope, runSafeMutation } from '../lib/mutationSafety';
+import { applyLoanRemainingDelta, round2 } from '../lib/loanRemainingDelta';
 
 interface BaseTransactionInput {
   amount: number;
@@ -345,32 +346,62 @@ async function trackedCreateLoan(scope: MutationScope, input: CreateLoanInput): 
   return loan;
 }
 
+// Full-tracker repayment leg: knock `amount` off the loan's remaining balance.
+//
+// Audit 2026-09 C10 / F-2. This used to read the local snapshot, compute
+// `Math.max(0, remaining - amount)` and write that ABSOLUTE figure — the loan
+// twin of the account lost-update bug. Two devices repaying the same loan both
+// read 2000, both wrote 1500, and one repayment vanished from the loan while
+// BOTH transaction rows and BOTH account legs survived. Worse, the rollback
+// path restored the snapshot ("set it back to 2000"), so a failed mutation on
+// this device silently ERASED a concurrent repayment made on another.
+//
+// Both halves now go through apply_loan_remaining_delta (compare-and-swap,
+// clamped at 0, status derived server-side), via the shared conflict ladder in
+// src/lib/loanRemainingDelta.ts. A delta commutes: the inverse gives back
+// exactly what this step took and leaves anyone else's concurrent change
+// intact. On an unresolvable conflict the whole mutation throws — the account
+// leg, the transaction row and the EMI marks all unwind together, so the user
+// never ends up with a payment record the loan never absorbed.
 async function trackedApplyRepayment(scope: MutationScope, loanId: string, amount: number): Promise<void> {
-  // Snapshot before so compensation restores exact prior state. The store's
-  // applyRepayment clamps remainingAmount at 0, so forward/reverse via a
-  // negated delta are asymmetric when amount > remainingAmount (overpayment).
   const before = useLoanStore.getState().loans.find(l => l.id === loanId);
   if (!before) throw new Error(`Loan ${loanId} not found`);
-  const prevRemaining = before.remainingAmount;
   const prevStatus = before.status;
-  const newRemaining = Math.max(0, Math.round((before.remainingAmount - amount) * 100) / 100);
-  const newStatus: Loan['status'] = newRemaining === 0 ? 'settled' : 'active';
-  const updatedAt = new Date().toISOString();
-  await loansDb.update(loanId, { remainingAmount: newRemaining, status: newStatus });
-  await mirrorPut(db.loans, { ...before, remainingAmount: newRemaining, status: newStatus, updatedAt });
-  markMirrorStale('loans');
-  useLoanStore.setState(s => ({
-    loans: s.loans.map(l => (l.id === loanId ? { ...l, remainingAmount: newRemaining, status: newStatus, updatedAt } : l)),
-  }));
+  const requested = round2(amount);
+  // A zero/negative leg was a no-op under the old arithmetic (and the RPC
+  // rejects a zero delta) — keep it a no-op rather than a new failure mode.
+  if (!(requested > 0)) return;
+
+  const deps = loanDeltaDeps(loanId);
+  const result = await applyLoanRemainingDelta(
+    {
+      expectedRemaining: before.remainingAmount,
+      // Not pre-clamped: the RPC's own GREATEST(0, …) reproduces the old
+      // Math.max(0, …) exactly, so an overpayment still settles the loan
+      // instead of driving it negative.
+      delta: -requested,
+      // Retry guard. After a conflict refetch we only replay when the fresh
+      // loan can still absorb what we believed we were applying; otherwise the
+      // account leg + transaction row would overstate the loan's reduction —
+      // the corruption the lock exists to prevent.
+      requireRemainingAtLeast: Math.min(requested, round2(before.remainingAmount)),
+    },
+    deps,
+  );
   scope.register(async () => {
-    await loansDb.update(loanId, { remainingAmount: prevRemaining, status: prevStatus });
-    await mirrorPut(db.loans, { ...before, remainingAmount: prevRemaining, status: prevStatus, updatedAt: new Date().toISOString() });
-    markMirrorStale('loans');
-    useLoanStore.setState(s => ({
-      loans: s.loans.map(l => (l.id === loanId ? { ...l, remainingAmount: prevRemaining, status: prevStatus } : l)),
-    }));
+    // Give back exactly what moved (`applied`, not the requested amount — they
+    // differ when the server clamp bit), expected-locked on the value our
+    // forward write produced.
+    if (result.applied === 0) return;
+    const reversed = await applyLoanRemainingDelta(
+      { expectedRemaining: result.newRemaining, delta: result.applied },
+      deps,
+    );
+    syncLocalRemaining(loanId, reversed.newRemaining);
   });
-  if (newStatus === 'settled' && prevStatus !== 'settled') {
+  syncLocalRemaining(loanId, result.newRemaining);
+
+  if (result.newRemaining === 0 && prevStatus !== 'settled') {
     try {
       await useActivityStore.getState().logActivity(
         'loan_settled',

@@ -19,3 +19,110 @@ export function friendlyLinkedError(raw: string): string {
   }
   return raw;
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Unsupported-currency fallback (audit 2026-09, F-MIG2 / H6).
+//
+// linked_transaction_requests / linked_settlement_requests carried a hard
+// `check (currency in ('AED','PKR'))` while the client ships eight currencies,
+// so a Gulf/Filipino user's linked udhaar died with a raw Postgres 23514 and a
+// lost entry. supabase-migration-audit-p0-currencies.sql widens both CHECKs to
+// the full SUPPORTED_CURRENCIES list — but migrations here are applied by hand
+// (no runner), so a client build can reach a database that hasn't caught up.
+// This maps that specific violation to honest, actionable copy instead of a
+// Postgres string. It is a graceful fallback, NOT a client-side block: the UI
+// still offers all eight currencies, because all eight are valid once the
+// migration lands.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Which write failed — picks the recovery advice that actually applies. */
+export type LinkedWriteKind = 'loan' | 'settlement';
+
+// PostgrestError is an Error subclass carrying { code, details, hint }, but a
+// thrown value can also be a bare object or a string, so read defensively.
+function errorText(err: unknown): { code: string; text: string } {
+  if (typeof err === 'string') return { code: '', text: err };
+  if (err && typeof err === 'object') {
+    const e = err as Record<string, unknown>;
+    const parts = [e.message, e.details, e.hint, e.constraint]
+      .filter((v): v is string => typeof v === 'string');
+    return { code: typeof e.code === 'string' ? e.code : '', text: parts.join(' | ') };
+  }
+  return { code: '', text: '' };
+}
+
+/**
+ * True when the failure is a Postgres CHECK violation (SQLSTATE 23514) on a
+ * currency constraint of the cross-user request tables — i.e. the database
+ * still refuses this currency.
+ *
+ * Deliberately narrow: the other CHECKs on these tables (amount > 0, kind,
+ * status, *_different_parties) never mention "currency", and the RPCs'
+ * "currency mismatch" guards are plpgsql RAISEs (P0001), not 23514, so they
+ * keep their own existing messages.
+ */
+export function isUnsupportedCurrencyError(err: unknown): boolean {
+  const { code, text } = errorText(err);
+  if (!text) return false;
+  const isCheckViolation = code === '23514' || /violates check constraint/i.test(text);
+  return isCheckViolation && /currency/i.test(text);
+}
+
+/**
+ * True when the failure is a Postgres unique/primary-key violation (SQLSTATE
+ * 23505). Cross-user request rows carry a CLIENT-supplied `id text primary
+ * key`, so when a submit reuses its intent id (double tap, or a retry after an
+ * ambiguous network failure) the second insert collides here instead of
+ * creating a second, independently-acceptable request — the F-8 blast radius.
+ * The stores translate that collision into "already created" and return the
+ * existing row; the row is then re-read from the server, so a 23505 raised by
+ * some OTHER unique constraint still fails loudly at the lookup.
+ */
+export function isDuplicateKeyError(err: unknown): boolean {
+  const { code, text } = errorText(err);
+  if (code === '23505') return true;
+  return /duplicate key value violates unique constraint/i.test(text);
+}
+
+/**
+ * Friendly copy for a linked-request WRITE failure, or `null` when the error
+ * isn't one we recognise — callers keep their own fallback so genuine
+ * diagnostics still reach the screen.
+ */
+export function friendlyLinkedWriteError(err: unknown, kind: LinkedWriteKind): string | null {
+  if (isUnsupportedCurrencyError(err)) {
+    return tStatic(kind === 'settlement'
+      ? 'lsr_err_currency_unsupported'
+      : 'ltr_err_currency_unsupported');
+  }
+  const { text } = errorText(err);
+  if (!text) return null;
+  const mapped = friendlyLinkedError(text);
+  return mapped === text ? null : mapped;
+}
+
+/**
+ * Marker class: an error whose `message` is already user-facing, localized
+ * copy. Lets UI catch blocks skip their "wrap the raw detail in parentheses"
+ * formatting and render the message as-is.
+ */
+export class FriendlyLinkedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FriendlyLinkedError';
+  }
+}
+
+export function isFriendlyLinkedError(err: unknown): err is FriendlyLinkedError {
+  return err instanceof FriendlyLinkedError;
+}
+
+/**
+ * Wrap a linked-request write failure in localized copy when we recognise it,
+ * otherwise hand the original error straight back (unknown failures keep their
+ * diagnostic value). Intended for `throw translateLinkedWriteError(err, …)`.
+ */
+export function translateLinkedWriteError(err: unknown, kind: LinkedWriteKind): unknown {
+  const friendly = friendlyLinkedWriteError(err, kind);
+  return friendly ? new FriendlyLinkedError(friendly) : err;
+}

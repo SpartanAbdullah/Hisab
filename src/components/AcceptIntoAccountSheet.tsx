@@ -15,6 +15,7 @@ import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { approxOther } from '../lib/currencyValidation';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import type { Currency } from '../db';
 
 export interface AcceptIntoAccountRequest {
@@ -41,6 +42,7 @@ interface Props {
 
 export function AcceptIntoAccountSheet({ open, request, onClose, onConfirm }: Props) {
   const t = useT();
+  const submitGuard = useSubmitGuard();
   const accounts = useAccountStore((s) => s.accounts);
   // '' = record only. Deliberately the default: an account effect the user
   // didn't consciously choose is worse than none.
@@ -72,7 +74,12 @@ export function AcceptIntoAccountSheet({ open, request, onClose, onConfirm }: Pr
   const delta = request.direction === 'out' ? -request.amount : request.amount;
   const selectedAccount = eligible.find((a) => a.id === selectedId) ?? null;
 
-  const handleConfirm = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
+  // updated asynchronously, so two taps in one frame both read it as false.
+  // `saving` stays for the disabled/label UI; the ref is the real guard.
+  const handleConfirm = () => submitGuard.run(runConfirm);
+
+  const runConfirm = async () => {
     setSaving(true);
     try {
       await onConfirm(selectedId || null);

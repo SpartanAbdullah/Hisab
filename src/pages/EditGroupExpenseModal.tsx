@@ -2,6 +2,7 @@
 import { Trash2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useSplitStore } from '../stores/splitStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useAppModeStore } from '../stores/appModeStore';
@@ -36,6 +37,9 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
   const t = useT();
   const toast = useToast();
   const guardClose = useDiscardGuard();
+  // Shared by save AND delete: they mutate the same row, so a save landing on
+  // top of an in-flight delete (or vice versa) is exactly what we must block.
+  const submitGuard = useSubmitGuard();
   const { updateGroupExpense, deleteGroupExpense } = useSplitStore();
   const { accounts, loadAccounts } = useAccountStore();
   const appMode = useAppModeStore((s) => s.mode);
@@ -192,7 +196,10 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
     return { valid: true, splits: selectedMembers.map(id => ({ memberId: id, amount: amt / selectedMembers.length })) };
   };
 
-  const handleSave = async () => {
+  const handleSave = () => submitGuard.run(runSave);
+  const handleDelete = () => submitGuard.run(runDelete);
+
+  const runSave = async () => {
     if (!expense) return;
     if (!description.trim() || amt <= 0 || !paidBy) {
       toast.show({ type: 'error', title: t('fill_all') });
@@ -228,7 +235,7 @@ export function EditGroupExpenseModal({ open, group, expense, onClose }: Props) 
     }
   };
 
-  const handleDelete = async () => {
+  const runDelete = async () => {
     if (!expense) return;
     const ok = await confirmDestructive({
       title: 'Delete this expense?',

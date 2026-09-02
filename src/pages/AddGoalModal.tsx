@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useGoalStore } from '../stores/goalStore';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
@@ -16,6 +17,7 @@ export function AddGoalModal({ open, onClose }: Props) {
   const { createGoal } = useGoalStore();
   const t = useT();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
 
   const [title, setTitle] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
@@ -32,8 +34,14 @@ export function AddGoalModal({ open, onClose }: Props) {
   const targetValid = Number.isFinite(parsedTarget) && parsedTarget > 0;
   const canSubmit = !!title.trim() && targetValid;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // preventDefault stays OUTSIDE the guard: a dropped second tap must still
+  // not let the browser submit the form natively.
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    return submitGuard.run(runSubmit);
+  };
+
+  const runSubmit = async () => {
     setError('');
     const amt = parseFloat(targetAmount);
     if (!title.trim()) { setError(t('val_need_name')); return; }

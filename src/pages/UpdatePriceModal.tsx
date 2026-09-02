@@ -7,6 +7,7 @@ import { useInvestmentStore } from '../stores/investmentStore';
 import { useToast } from '../components/Toast';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 
 interface Props {
   open: boolean;
@@ -21,6 +22,7 @@ export function UpdatePriceModal({ open, onClose, marketId, symbol, currency, cu
   const updatePrice = useInvestmentStore((s) => s.updatePrice);
   const toast = useToast();
   const t = useT();
+  const submitGuard = useSubmitGuard();
 
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
@@ -32,7 +34,12 @@ export function UpdatePriceModal({ open, onClose, marketId, symbol, currency, cu
   const parsed = parseFloat(text);
   const valid = Number.isFinite(parsed) && parsed > 0;
 
-  const handleSave = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
+  // updated asynchronously, so two taps in one frame both read it as false.
+  // `saving` stays for the disabled/label UI; the ref is the real guard.
+  const handleSave = () => submitGuard.run(runSave);
+
+  const runSave = async () => {
     if (!valid || saving) return;
     setSaving(true);
     try {

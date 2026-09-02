@@ -15,6 +15,7 @@ import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { useT } from '../lib/i18n';
+import { renderNotificationContent } from '../lib/notificationContent';
 
 const iconMap: Record<string, LucideIcon> = {
   account_created: PlusCircle,
@@ -160,32 +161,39 @@ export function ActivityPage() {
         ) : tab === 'shared' ? (
           notifications.length === 0 ? (
             <div className="rounded-2xl bg-cream-card border border-cream-border p-4 text-[12px] text-ink-500 text-center">
-              No shared notifications yet.
+              {t('ntf_no_shared_yet')}
             </div>
           ) : (
             <div className="space-y-2">
-              {notifications.map((notification, index) => (
-                <div
-                  key={notification.id}
-                  className="rounded-2xl bg-cream-card border border-cream-border p-4 flex items-start gap-3 animate-fade-in"
-                  style={{ animationDelay: `${index * 30}ms` }}
-                >
-                  <div className="w-9 h-9 rounded-xl bg-warn-50 text-warn-600 flex items-center justify-center shrink-0 mt-0.5">
-                    <BellRing size={15} strokeWidth={1.8} />
+              {notifications.map((notification, index) => {
+                // Group notifications are template+params rows written by the
+                // server now, so this renders in the reader's language instead
+                // of the actor's frozen English (audit N-1). Legacy rows fall
+                // back to their stored title/body.
+                const content = renderNotificationContent(notification, t);
+                return (
+                  <div
+                    key={notification.id}
+                    className="rounded-2xl bg-cream-card border border-cream-border p-4 flex items-start gap-3 animate-fade-in"
+                    style={{ animationDelay: `${index * 30}ms` }}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-warn-50 text-warn-600 flex items-center justify-center shrink-0 mt-0.5">
+                      <BellRing size={15} strokeWidth={1.8} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-ink-800 leading-snug tracking-tight">
+                        {content.title}
+                      </p>
+                      <p className="text-[12px] text-ink-500 mt-1">
+                        {content.body}
+                      </p>
+                      <p className="text-[10px] text-ink-500 mt-1">
+                        {format(new Date(notification.createdAt), 'dd MMM, h:mm a')}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-ink-800 leading-snug tracking-tight">
-                      {notification.title}
-                    </p>
-                    <p className="text-[12px] text-ink-500 mt-1">
-                      {notification.body}
-                    </p>
-                    <p className="text-[10px] text-ink-500 mt-1">
-                      {format(new Date(notification.createdAt), 'dd MMM, h:mm a')}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )
         ) : activities.length === 0 ? (

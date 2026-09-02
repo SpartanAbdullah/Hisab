@@ -1,5 +1,6 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../components/Modal';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
@@ -11,6 +12,7 @@ import { totalRemaining } from '../lib/repaymentAllocation';
 import { ConfirmationSheet } from '../components/ConfirmationSheet';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { clampCardCredit } from '../lib/cardCredit';
+import { isLoanRemainingConflict } from '../lib/loanRemainingDelta';
 import { useToast } from '../components/Toast';
 import { AccountSelect } from '../components/AccountSelect';
 import { CurrencyConversionCard } from '../components/CurrencyConversionCard';
@@ -46,11 +48,12 @@ export function RepaymentModal({
 }: Props) {
   const { accounts } = useAccountStore();
   const { processTransaction, getByLoan } = useTransactionStore();
-  const { loans, applyRepayment } = useLoanStore();
+  const { loans, applyRepayment, loadLoans } = useLoanStore();
   const linkedRequests = useLinkedRequestStore((s) => s.requests);
   const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
+  const submitGuard = useSubmitGuard();
   // Captured at commit so onRepaid can report the amount after the fields reset.
   const lastAmountRef = useRef(0);
 
@@ -136,7 +139,11 @@ export function RepaymentModal({
     return null;
   })();
 
-  const handleSubmit = async () => {
+  // Entry re-check lives in submitGuard (a ref, so two taps in one frame
+  // can't both pass); `saving` stays purely for the disabled/label UI.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  const runSubmit = async () => {
     const parsedAmount = parseFloat(amount);
     // Ledger-only mode has no account picker — requiring accountId here made
     // the Record payment button silently dead in that mode (canSubmit enabled
@@ -256,6 +263,12 @@ export function RepaymentModal({
       setConversionRate('');
       setNotes('');
     } catch (err) {
+      // Audit C10: both repayment paths can now refuse a stale write (another
+      // device moved this loan, or deleted it). The message already explains
+      // it; pull the loan back from truth so the remaining figure on screen —
+      // and the overpayment guard reading it — is the one they must re-enter
+      // against, instead of the stale number that just failed.
+      if (isLoanRemainingConflict(err)) void loadLoans();
       toast.show({
         type: 'error',
         title: t('error'),

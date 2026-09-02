@@ -4,6 +4,7 @@ import { Modal } from '../components/Modal';
 import { useSplitStore } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { formatMoney } from '../lib/constants';
 import type { SplitGroup } from '../db';
 import { friendlyGroupParticipantError, validateNewSettlementParticipants } from '../lib/groupActiveMembers';
@@ -23,6 +24,7 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
   const t = useT();
   const toast = useToast();
   const { addSettlement } = useSplitStore();
+  const submitGuard = useSubmitGuard();
   const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -71,7 +73,12 @@ export function SettleUpModal({ open, group, debts, currentMemberId, onClose }: 
     return t('settle_pays').replace('{from}', debt.fromName).replace('{to}', debt.toName);
   };
 
-  const handleSettle = async () => {
+  // Ref-backed entry re-check: two taps in one frame both see `saving ===
+  // false` (state is async) and would record the same settlement twice, which
+  // the client-side cap check cannot catch. `saving` stays for the UI.
+  const handleSettle = () => submitGuard.run(runSettle);
+
+  const runSettle = async () => {
     if (!selectedDebt) return;
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) {

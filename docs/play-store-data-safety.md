@@ -18,7 +18,7 @@ Hisaab is a personal finance record-keeping app. It is not a bank, wallet custod
 | Collaboration records | Groups, members, split expenses, settlements, invite records, linked loan and settlement requests | Optional, only when collaboration features are used | App functionality, user-requested sharing |
 | Manually entered contacts | `persons` table; the optional contact **phone number IS cloud-synced** to Supabase (`persons.phone`, + committee member phone) — disclose Phone number = collected | Optional | App functionality for loans and linked records |
 | In-app notification records | `notifications` table for group updates and requests | Generated when applicable | App functionality |
-| Local app data | Local storage settings, Supabase browser session persistence, local PIN hash, IndexedDB/Dexie mirror and outbox tables | Generated as needed | Session persistence, local app lock, reliability, offline sync scaffolding |
+| Local app data | Local storage settings, Supabase browser session persistence, local PIN hash, IndexedDB/Dexie mirror and outbox tables | Generated as needed | Session persistence, local app lock (⚠️ hash is stored but `PinLockScreen` is never rendered — the lock does not currently gate app access, see note below), reliability, offline sync scaffolding (⚠️ scaffold only — the outbox is disabled and every dispatch handler throws; no offline writes actually sync) |
 | Crash and diagnostic context | Sentry — **ENABLED in this build** (`VITE_SENTRY_DSN` is configured). Sends exceptions, stack traces & diagnostic context to Sentry GmbH (EU region). `sendDefaultPii: false`; no user ID attached at any current call site | Collected; **shared with Sentry** | Debugging, security, service reliability |
 
 ## Sharing
@@ -67,6 +67,7 @@ Current code review found:
 
 ## Human Review Before Submission
 
+0. ⚠️ **Added 2026-09-02:** do not describe the "local PIN hash" row above as an active app-lock security control in the Data Safety form or anywhere else reviewer-facing. `src/pages/PinLockScreen.tsx` has zero importers — a PIN can be set and hashed in Settings, but nothing in the app ever renders the lock screen to enforce it, so it currently protects nothing. Same caveat for "offline sync scaffolding": `src/lib/outboxRunner.ts` is gated behind a disabled flag and every handler throws — there is no working offline write path today. (Source: `docs/audit-2026-09/12-qa-review.md` F-1, `docs/audit-2026-09/00-executive-summary.md` Top Finding #3.)
 1. ✅ Resolved: Sentry **is enabled** (`VITE_SENTRY_DSN` configured). Crash logs + diagnostics are collected and shared with Sentry GmbH (EU); `sendDefaultPii: false`, no user ID attached at any current call site — keep it that way or re-disclose.
 2. Apply `supabase-migration-p0-launch-blockers.sql`, run `supabase-p0-security-verification.sql`, and confirm provider backup retention after permanent Auth identity deletion.
 3. ✅ Resolved: contact phone **IS cloud-synced** (`persons.phone` in Supabase). `hisaab_mobile` in Settings is local-only, but `persons.phone` syncs — so **Phone number = Collected** must be disclosed.

@@ -1,21 +1,26 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { linkedRequestsDb } from '../lib/supabaseDb';
+import { SUPPORTED_CURRENCIES } from '../db';
 import type { LinkedRequest, LinkedRequestKind, Currency, Loan } from '../db';
 import { plausibilityCheck } from '../lib/currencyValidation';
+import { translateLinkedWriteError, isDuplicateKeyError } from '../lib/linkedErrorMap';
 import { syncCandidateLoans } from '../lib/syncableLoans';
 import { useLoanStore } from './loanStore';
 import { useTransactionStore } from './transactionStore';
 import { usePersonStore } from './personStore';
 import { useAccountStore } from './accountStore';
 
-// Currencies the linked_transaction_requests SQL check constraint allows
-// (see supabase-migration-phase2b-linked-requests.sql). The wider
-// SUPPORTED_CURRENCIES set is for the local-only ledger; cross-user
-// linked records are still AED/PKR-only at the DB layer. Keeping this
-// constant local to the store so the client never sends a row the SQL
-// would reject — instead we surface the filtered count to the UI.
-export const LINKED_REQUEST_CURRENCIES = ['AED', 'PKR'] as const;
+// Currencies the linked_transaction_requests SQL check constraint allows.
+// Was ['AED','PKR'] to match the original hard CHECK in
+// supabase-migration-phase2b-linked-requests.sql:14 — which silently killed
+// cross-user udhaar for 6 of the 8 shipped currencies on the un-gated primary
+// paths (audit 2026-09, F-MIG2 / H6). supabase-migration-audit-p0-currencies.sql
+// widens the DB constraint to the full SUPPORTED_CURRENCIES list, so the client
+// gate now mirrors it exactly. If a build ever reaches a database without that
+// migration, the insert fails with SQLSTATE 23514 and createRequest below
+// translates it into friendly bilingual copy instead of a raw Postgres string.
+export const LINKED_REQUEST_CURRENCIES = SUPPORTED_CURRENCIES;
 export type LinkedRequestCurrency = typeof LINKED_REQUEST_CURRENCIES[number];
 function isLinkedRequestCurrency(c: Currency): c is LinkedRequestCurrency {
   return (LINKED_REQUEST_CURRENCIES as readonly string[]).includes(c);
@@ -35,6 +40,13 @@ interface CreateInput {
   // the other side accepts. Null ⇒ sender side ledger-only. Never combined
   // with preExistingLoanId (past money must not double-count).
   requesterAccountId?: string | null;
+  // Idempotency key (audit 2026-09, F-8). The row id is the table's client
+  // -supplied `text primary key`, so a caller that mints ONE id per submit
+  // intent (see useSubmitIntentId) turns a double-fire into a primary-key
+  // collision instead of two identical debt requests mirrored onto the
+  // counterparty's ledger. Omitted ⇒ a fresh uuid per call, i.e. the old
+  // behaviour, so untouched callers are unaffected.
+  requestId?: string;
 }
 
 export interface SyncableLoansBreakdown {
@@ -111,18 +123,36 @@ export const useLinkedRequestStore = create<LinkedRequestState>((set, get) => ({
     if (!check.passed && check.severity === 'block') {
       throw new Error(check.reason ?? "That amount doesn't look right.");
     }
-    const id = uuid();
-    await linkedRequestsDb.insert({
-      id,
-      toUserId: input.toUserId,
-      personId: input.personId,
-      kind: input.kind,
-      amount: input.amount,
-      currency: input.currency,
-      note: input.note ?? '',
-      preExistingLoanId: input.preExistingLoanId ?? null,
-      requesterAccountId: input.requesterAccountId ?? null,
-    });
+    const id = input.requestId ?? uuid();
+    try {
+      await linkedRequestsDb.insert({
+        id,
+        toUserId: input.toUserId,
+        personId: input.personId,
+        kind: input.kind,
+        amount: input.amount,
+        currency: input.currency,
+        note: input.note ?? '',
+        preExistingLoanId: input.preExistingLoanId ?? null,
+        requesterAccountId: input.requesterAccountId ?? null,
+      });
+    } catch (err) {
+      // Idempotent create (audit F-8): the id is this submit intent's key, so
+      // a primary-key collision means THIS request already exists — a second
+      // tap or a retry after an ambiguous network failure. Treat it as
+      // success and fall through to the reload, which returns the row that
+      // actually landed. If the 23505 came from some other constraint the
+      // lookup below finds nothing and still throws.
+      if (!isDuplicateKeyError(err)) {
+        // Graceful fallback for a database that hasn't had
+        // supabase-migration-audit-p0-currencies.sql applied yet: the raw
+        // SQLSTATE 23514 check violation used to reach the toast verbatim and
+        // the whole entry was lost with no explanation (audit F-MIG2 / H6).
+        // Every caller surfaces `err.message`, so translating here covers the
+        // AddLoanModal, QuickEntry (both modes) and sync-past-records paths.
+        throw translateLinkedWriteError(err, 'loan');
+      }
+    }
     // Reload to get the canonical row (status, created_at, etc.).
     await get().loadRequests();
     const inserted = get().requests.find((r) => r.id === id);

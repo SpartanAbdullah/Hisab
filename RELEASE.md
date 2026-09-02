@@ -185,8 +185,12 @@ Google's reviewers need working credentials to test the app. Before submitting:
    Hisaab v1.0.0 — first release.
 
    Track money, loans, and group expenses with friends and family across
-   PKR, AED, USD, EUR, GBP. Works offline. Pakistani-Urdu and English UI.
+   PKR, AED, PHP, SAR, QAR, OMR, KWD, BHD. Secure cloud storage. Pakistani-Urdu and English UI.
    ```
+   <!-- Corrected 2026-09-02 (audit finding 12-qa-review.md F-1): the previous draft claimed
+        "USD, EUR, GBP" (unsupported — see src/db/types.ts:1 for the real 8-currency list) and
+        "Works offline" (all mutations currently hard-fail offline; the outbox is a disabled
+        scaffold). Do not restore either claim until the underlying feature actually ships. -->
 5. **Save → Review release → Send for review**. (For first uploads, see Section 10 about closed testing — Play requires it for new developer accounts.)
 
 ---

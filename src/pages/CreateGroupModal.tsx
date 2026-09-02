@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, UserPlus, Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useSplitStore, type ResolvedMemberInput } from '../stores/splitStore';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
@@ -29,6 +30,7 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
   const toast = useToast();
   const navigate = useNavigate();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
   const { createGroup } = useSplitStore();
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('✈️');
@@ -75,7 +77,10 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
 
   const removeMember = (profileId: string) => setMembers(members.filter(m => m.profileId !== profileId));
 
-  const handleSubmit = async () => {
+  // Ref-backed entry re-check; `saving` state stays for the disabled/label UI.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  const runSubmit = async () => {
     if (!name.trim()) {
       toast.show({ type: 'error', title: t('fill_all') });
       return;

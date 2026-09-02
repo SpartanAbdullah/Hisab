@@ -10,7 +10,9 @@ import { useToast } from '../components/Toast';
 import { formatMoney, formatSignedMoney } from '../lib/constants';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
+import { useSubmitGuard, useSubmitIntentId } from '../lib/useSubmitGuard';
 import { resolveSettlementSides } from '../lib/settlementSides';
+import { isFriendlyLinkedError } from '../lib/linkedErrorMap';
 import type { Loan } from '../db';
 
 interface Props {
@@ -29,6 +31,7 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
   const appMode = useAppModeStore((s) => s.mode);
   const toast = useToast();
   const t = useT();
+  const submitGuard = useSubmitGuard();
 
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -85,7 +88,18 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
     return true;
   })();
 
-  const handleSubmit = async () => {
+  // Ref-backed entry re-check: `saving` state can't stop two taps that land in
+  // the same frame. `saving` stays for the disabled/label UI.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  // One request id per submit intent — a double tap or an unchanged retry
+  // reuses it, so the duplicate insert collides on the primary key instead of
+  // queueing a second settlement the counterparty could also accept.
+  const nextRequestId = useSubmitIntentId(
+    [open, loan.id, amount, note, applyToBalance, selectedAccountId].join('|'),
+  );
+
+  const runSubmit = async () => {
     if (!sides) {
       setError(t('stl_create_error'));
       return;
@@ -118,11 +132,17 @@ export function SettleLinkedLoanModal({ open, onClose, loan }: Props) {
         currency: loan.currency,
         note,
         requesterAccountId,
+        requestId: nextRequestId(),
       });
       toast.show({ type: 'success', title: t('stl_sent_title'), subtitle: t('stl_sent_subtitle') });
       onClose();
     } catch (err) {
       console.error('settlement request create failed', err);
+      // An already-localized failure (e.g. the database hasn't taken
+      // supabase-migration-audit-p0-currencies.sql yet and rejected the
+      // currency) reads as its own sentence — don't bracket it behind the
+      // generic headline.
+      if (isFriendlyLinkedError(err)) { setError(err.message); return; }
       const detail = err instanceof Error ? err.message : '';
       setError(detail ? `${t('stl_create_error')} (${detail})` : t('stl_create_error'));
     } finally {

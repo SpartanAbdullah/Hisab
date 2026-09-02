@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './Modal';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useLoanStore } from '../stores/loanStore';
@@ -11,6 +12,7 @@ import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { allocateRepayment, totalRemaining, type Allocation, type AllocationStrategy } from '../lib/repaymentAllocation';
 import { executeAllocatedRepayments } from '../lib/repaymentExecution';
+import { isLoanRemainingConflict } from '../lib/loanRemainingDelta';
 import type { Currency, Loan } from '../db';
 
 type Strategy = AllocationStrategy | 'manual';
@@ -37,9 +39,11 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
   const { accounts, loadAccounts } = useAccountStore();
   const processTransaction = useTransactionStore((s) => s.processTransaction);
   const applyRepayment = useLoanStore((s) => s.applyRepayment);
+  const loadLoans = useLoanStore((s) => s.loadLoans);
   const isLedgerOnlyMode = useAppModeStore((s) => s.mode) === 'splits_only';
   const toast = useToast();
   const t = useT();
+  const submitGuard = useSubmitGuard();
 
   const [lump, setLump] = useState('');
   const [strategy, setStrategy] = useState<Strategy>('smallest');
@@ -104,7 +108,11 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
     totalAllocated <= maxRemaining + 0.001 &&
     (isLedgerOnlyMode || !!accountId);
 
-  const handleSubmit = async () => {
+  // Entry re-check lives in submitGuard (a ref, so two taps in one frame
+  // can't both pass); `saving` stays purely for the disabled/label UI.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  const runSubmit = async () => {
     if (!canSubmit) return;
     const ok = await confirmDestructive({
       title: `${t('alloc_apply')} · ${formatMoney(totalAllocated, currency)}`,
@@ -142,6 +150,11 @@ export function AllocateRepaymentModal({ open, onClose, loans, direction, curren
         // Each repayment commits independently; report how far we got so a
         // retry only needs to cover the rest.
         const err = result.failed.error;
+        // Audit C10: a mid-batch stop can be the optimistic lock refusing a
+        // stale write (another device moved this loan). Re-pull the loans so
+        // the preview + the retry allocate against the real remainings, not
+        // the figures that just lost the race.
+        if (isLoanRemainingConflict(err)) await loadLoans();
         toast.show({
           type: 'error',
           title: result.done > 0

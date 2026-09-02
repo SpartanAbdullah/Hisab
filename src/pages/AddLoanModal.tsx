@@ -2,6 +2,7 @@
 import { Users, Lock } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard, useSubmitIntentId } from '../lib/useSubmitGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useTransactionStore } from '../stores/transactionStore';
 import { useEmiStore } from '../stores/emiStore';
@@ -30,6 +31,7 @@ export function AddLoanModal({ open, onClose }: Props) {
   const toast = useToast();
   const t = useT();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
 
   const [loanType, setLoanType] = useState<LoanType>('given');
   const [contact, setContact] = useState<ContactValue>({ id: null, name: '' });
@@ -79,8 +81,22 @@ export function AddLoanModal({ open, onClose }: Props) {
   const canSubmit = !!contact.name.trim() && amountValid && (isLedgerOnlyMode || !!accountId) && emiConfigured;
   const isDirty = !!contact.name.trim() || !!amount.trim() || !!notes.trim() || hasEmi;
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  // One request id per submit intent: the same id survives a double tap and a
+  // retry of an unchanged form (so a duplicate insert collides on the primary
+  // key instead of mirroring a second debt onto the other user), and is
+  // replaced the instant any field — or the modal's open state — changes.
+  const nextRequestId = useSubmitIntentId(
+    [open, loanType, contact.id ?? '', contact.name.trim(), amount, notes, accountId, ledgerCurrency].join('|'),
+  );
+
+  // Entry re-check lives in submitGuard (a ref, so two taps in one frame can't
+  // both pass); `saving` stays purely for the disabled/label UI.
+  const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    return submitGuard.run(runSubmit);
+  };
+
+  const runSubmit = async () => {
     setError('');
     const amt = parseFloat(amount);
     const trimmedName = contact.name.trim();
@@ -113,6 +129,7 @@ export function AddLoanModal({ open, onClose }: Props) {
           amount: amt,
           currency: branch.currency,
           note: notes,
+          requestId: nextRequestId(),
         });
         toast.show({ type: 'success', title: t('ltr_sent_title'), subtitle: t('ltr_sent_subtitle') });
         setContact({ id: null, name: '' }); setAmount(''); setAccountId(''); setCashAdvanceSourceId(''); setNotes('');

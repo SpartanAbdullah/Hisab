@@ -54,6 +54,41 @@ export function buildInviteUrl(token: string): string {
   return publicAppUrl ? `${publicAppUrl}/join/${token}` : `/join/${token}`;
 }
 
+// ── Code-lookup budget (audit 2026-09, C6) ─────────────────────────────────
+// The server allows 20 code lookups per rolling hour per user, and BOTH
+// lookup_profile_by_code (the preview) and link_contact_by_code (the write)
+// charge the same window — so the current preview-then-link flow costs 2 per
+// completed link. lookup_profile_by_code answers a throttled caller with ZERO
+// ROWS, deliberately indistinguishable from "no such code", so the client
+// cannot be told it was limited. This mirror of the window exists only to pick
+// better copy for a null preview: it counts the charges THIS tab made, so it
+// under-reports (never over-reports) and a false "rate limited" message is
+// therefore not reachable from a fresh session.
+const LOOKUP_WINDOW_MS = 60 * 60 * 1000;
+const LOOKUP_BUDGET = 20;
+let codeLookupCharges: number[] = [];
+
+/** Record one charge against the shared code_lookup_attempts window. Called by
+ *  the preview here and by the link RPC's caller (personStore). */
+export function recordCodeLookupCharge(): void {
+  const now = Date.now();
+  codeLookupCharges = codeLookupCharges.filter((at) => now - at < LOOKUP_WINDOW_MS);
+  codeLookupCharges.push(now);
+}
+
+/** True when this tab has already spent the hourly budget — i.e. a null
+ *  lookup is more likely a throttle than a genuine miss. Heuristic only. */
+export function codeLookupBudgetSpent(): boolean {
+  const now = Date.now();
+  codeLookupCharges = codeLookupCharges.filter((at) => now - at < LOOKUP_WINDOW_MS);
+  return codeLookupCharges.length >= LOOKUP_BUDGET;
+}
+
+/** Test seam — clears the local mirror of the window. */
+export function resetCodeLookupBudget(): void {
+  codeLookupCharges = [];
+}
+
 // Phase 2A: single place that turns a raw user-entered code into a resolved
 // profile (or null). Normalises input, calls the RPC, narrows the shape.
 // Callers must gate invocation behind an explicit user action — do NOT call
@@ -65,5 +100,6 @@ export async function resolveProfileByCode(
   if (!normalised) return null;
   // Import lazily to avoid a cycle with supabaseDb (which imports lib/).
   const { personsDb } = await import('./supabaseDb');
+  recordCodeLookupCharge();
   return personsDb.lookupProfileByCode(normalised);
 }

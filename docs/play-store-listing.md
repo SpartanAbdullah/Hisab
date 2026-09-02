@@ -32,7 +32,7 @@ Yeh ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena karta —
 
 💸 Expenses & income — log spending in plain words ("karak 3 aed"), sorted into clear categories with receipt photos
 🏦 Accounts — cash, bank, wallet & credit cards, all balances in one view
-🌍 Multi-currency — PKR, AED, USD, EUR & GBP, for expats living between Pakistan and the Gulf
+🌍 Multi-currency — PKR, AED, PHP, SAR, QAR, OMR, KWD & BHD, for expats living across the Gulf and Pakistan
 📒 Khata / udhaar — keep a clean ledger of money you've lent or are owed with family, friends & flatmates
 📅 Instalments (qist) — set EMI-style schedules and send a one-tap WhatsApp reminder, even if they don't have the app
 👥 Splits — share rent, groceries & bills with your group, then settle up cleanly. Paison par behes khatam
@@ -40,14 +40,14 @@ Yeh ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena karta —
 🎯 Savings goals — set aside for Eid or the ticket home and watch the bar fill
 🧧 Budgets — envelope-style "left to spend this month" so you never overspend
 📊 Insights — charts, top categories and gentle coach cards ("you're owed money", "this bill renews soon"), plus daily money-wisdom
-📴 Offline-first — log on the bus or in a no-signal basement; syncs when you're back online
+☁️ Secure cloud storage — your hisaab is saved to the cloud and stays in sync across your devices (an internet connection is needed to log entries)
 
 == WHY DESI USERS LOVE IT ==
 
 ✅ AED + PKR together — for expats sending home and spending here
 ✅ English + Roman-Urdu — baari, qist, udhaar, khata, the words you actually use
 ✅ No ads, ever — your data stays private
-✅ Optional PIN lock — your hisaab, your eyes only
+✅ Works on Android and the web — one account, everywhere
 ✅ Delete your account and data anytime
 ✅ Free to start
 
@@ -68,9 +68,9 @@ Search: hisaab, hisab kitab, khata, udhaar, expense tracker, budget app, kameti,
 
 ---
 
-## Short description — Roman Urdu (≤ 80 chars · this is 62)
+## Short description — Roman Urdu (≤ 80 chars · this is 54)
 ```
-Khata, udhaar, kameti aur kharchay — AED + PKR, offline, no ads
+Khata, udhaar, kameti aur kharchay — AED + PKR, no ads
 ```
 
 ## Full description — Roman Urdu (≤ 4000 chars)
@@ -85,7 +85,7 @@ Yeh sirf ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena kart
 
 💸 Kharchay aur kamai — seedhe lafzon mein likhein ("karak 3 aed"), saaf categories aur receipt ki photo ke saath
 🏦 Accounts — cash, bank, wallet aur credit card, saray balance ek nazar mein
-🌍 Multi-currency — PKR, AED, USD, EUR aur GBP, Pakistan aur Gulf ke darmiyan rehne walon ke liye
+🌍 Multi-currency — PKR, AED, PHP, SAR, QAR, OMR, KWD aur BHD, Gulf aur Pakistan ke darmiyan rehne walon ke liye
 📒 Khata / udhaar — jo paisa aap ne diya ya lena hai, ghar walon aur doston ke saath saaf ledger
 📅 Qist — EMI jaisa schedule banayein aur ek tap par WhatsApp reminder bhejein, chahe unke paas app na ho
 👥 Split — rent, grocery aur bills group ke saath baant lein, phir saaf settle. Paison par behes khatam
@@ -93,14 +93,14 @@ Yeh sirf ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena kart
 🎯 Bachat ke goals — Eid ya ghar ki ticket ke liye paisa alag rakhein aur bar bharte dekhein
 🧧 Budget — envelope style "is mahine kitna bacha" taake aap zyada kharch na karein
 📊 Insights — charts, top categories aur narm coach cards, aur rozana money-wisdom
-📴 Offline — bus mein ya signal ke baghair likhein; net aate hi sync ho jata hai
+☁️ Cloud mein mehfooz — aap ka hisaab cloud par save hota hai aur har device par sync rehta hai (entry likhne ke liye internet chahiye)
 
 == DESI USERS ISE KYUN PASAND KARTAY HAIN ==
 
 ✅ AED + PKR saath — ghar paisa bhejne aur yahan kharch karne walon ke liye
 ✅ English + Roman-Urdu — baari, qist, udhaar, khata, wohi lafz jo aap bolte hain
 ✅ Koi ads nahi — aap ka data private rehta hai
-✅ PIN lock optional — aap ka hisaab, sirf aap ki nazar
+✅ Android aur web dono par chalta hai — ek hi account, har jagah
 ✅ Account aur data jab chahein delete karein
 ✅ Shuru karna free
 
@@ -123,9 +123,9 @@ Andaze lagana band karein. Dekhna shuru karein. Hisaab download karein — aap k
 ```
 Welcome to Hisaab v1.0.0 — your money, always in sight.
 
-Track expenses, income, khata/udhaar, splits, savings goals and envelope budgets across PKR, AED, USD, EUR & GBP. Run your kameti/committee with a provably-fair parchi draw and a read-only witness link. One-tap WhatsApp payment reminders, receipt photos, coach cards and daily wisdom.
+Track expenses, income, khata/udhaar, splits, savings goals and envelope budgets across PKR, AED, PHP, SAR, QAR, OMR, KWD & BHD. Run your kameti/committee with a provably-fair parchi draw and a read-only witness link. One-tap WhatsApp payment reminders, receipt photos, coach cards and daily wisdom.
 
-Works offline, optional PIN lock, no ads. English + Roman-Urdu.
+Secure cloud storage, no ads. English + Roman-Urdu.
 
 Hisaab only tracks money you already have — it never holds, lends or moves it.
 ```
@@ -133,7 +133,7 @@ Hisaab only tracks money you already have — it never holds, lends or moves it.
 ---
 
 ## ASO keywords (weave into the description / use for research — Play has no keyword field)
-khata · udhaar · hisab kitab · hisaab · kameti · committee tracker · BC committee · expense tracker · budget app · qist · split bill · loan tracker · khata book · money manager · AED PKR · Pakistan UAE · Roman Urdu · savings goals · multi currency · offline expense tracker · settle up · rosca committee · spending tracker · no ads finance · personal finance
+khata · udhaar · hisab kitab · hisaab · kameti · committee tracker · BC committee · expense tracker · budget app · qist · split bill · loan tracker · khata book · money manager · AED PKR · Pakistan UAE · Roman Urdu · savings goals · multi currency · settle up · rosca committee · spending tracker · no ads finance · personal finance
 
 ---
 
@@ -142,4 +142,5 @@ khata · udhaar · hisab kitab · hisaab · kameti · committee tracker · BC co
 - **Kameti/committee** is framed only as a savings-committee tracker with a provably-fair draw + read-only witness link — no gambling/lottery/wagering/prize language. → keeps an **Everyone** IARC rating.
 - **No-custody disclaimers** stated explicitly in both languages ("Hisaab is NOT a lender", "never hold, move, lend or transfer").
 - **"Sood-free by design"** reinforces the no-interest framing for the target audience.
-- Every feature named (provably-fair draw, WhatsApp reminders to non-app contacts, witness link, receipt photos, coach cards, daily wisdom, offline, PIN, multi-currency, account deletion) is a shipped feature.
+- Every feature named above (provably-fair draw, WhatsApp reminders to non-app contacts, witness link, receipt photos, coach cards, daily wisdom, cloud storage/sync, multi-currency, account deletion) is a shipped feature.
+- **Claims removed 2026-09-02 (audit finding 12-qa-review.md F-1 / 00-executive-summary.md Top Finding #3):** the previous copy claimed (a) an "optional PIN lock" — `PinLockScreen` exists in code but has zero importers and is never enforced; (b) "offline-first ... syncs when you're back online" — the offline outbox is a disabled scaffold and every mutation hard-fails without a connection; (c) currency support of "PKR, AED, USD, EUR & GBP" — the app actually supports 8 currencies (`PKR, AED, PHP, SAR, QAR, OMR, KWD, BHD`, `src/db/types.ts:1`) and has never supported USD/EUR/GBP. Do not reintroduce the PIN or offline-first claims until those features are actually wired in and verified working end-to-end; the currency line above is the corrected, accurate list.

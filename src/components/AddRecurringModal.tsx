@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useRecurringStore } from '../stores/recurringStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from './Toast';
@@ -32,6 +33,7 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
   const toast = useToast();
   const t = useT();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
   const isEdit = !!template;
   const seedCategory =
     defaultCategory && (EXPENSE_CATEGORIES as readonly string[]).includes(defaultCategory)
@@ -76,7 +78,12 @@ export function AddRecurringModal({ open, onClose, defaultCategory, title, templ
     return Number.isFinite(n) && n > 0 && !!accountId;
   })();
 
-  const handleSave = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
+  // updated asynchronously, so two taps in one frame both read it as false.
+  // `saving` stays for the disabled/label UI; the ref is the real guard.
+  const handleSave = () => submitGuard.run(runSave);
+
+  const runSave = async () => {
     const numeric = Number(amount);
     if (!Number.isFinite(numeric) || numeric <= 0) {
       toast.show({ type: 'error', title: 'Enter a valid amount' });

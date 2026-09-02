@@ -21,6 +21,7 @@ export interface SettlementRequestInput {
   currency: Currency;
   note?: string;
   requesterAccountId?: string | null;
+  requestId?: string;
 }
 
 export interface SettlementExecDeps {
@@ -29,6 +30,12 @@ export interface SettlementExecDeps {
   requesterAccountId?: string | null; // same opt-in account stamped on every request
   sidesByLoan: Record<string, SettlementSides>;
   createRequest: (input: SettlementRequestInput) => Promise<unknown>;
+  // Idempotency (audit F-8): one stable id per (submit intent, loan). A
+  // double-fired batch reuses the same ids, so every duplicate insert hits the
+  // primary key instead of sending the counterparty a second set of settlement
+  // requests. Omitted ⇒ the store mints a fresh uuid per call, i.e. the old
+  // behaviour.
+  requestIdFor?: (loanId: string) => string;
 }
 
 export interface SettlementExecResult {
@@ -71,6 +78,7 @@ export async function executeAllocatedSettlements(
         currency: deps.currency,
         note: deps.note,
         requesterAccountId: deps.requesterAccountId ?? null,
+        requestId: deps.requestIdFor?.(item.loanId),
       });
       sent.push(item);
     } catch (error) {

@@ -23,6 +23,7 @@ import { SendStatementModal } from '../components/SendStatementModal';
 import { PageErrorState } from '../components/PageErrorState';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
 import { useToast } from '../components/Toast';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -32,6 +33,7 @@ import { resolvePersonName } from '../lib/resolvePersonName';
 import { getOldestIsoDate } from '../lib/paymentReminders';
 import { uncoveredToPaidIds } from '../lib/emiCoverage';
 import { buildInternalNote } from '../lib/internalNotes';
+import { isLoanRemainingConflict } from '../lib/loanRemainingDelta';
 import type { EmiSchedule, Transaction, SettlementRequest } from '../db';
 
 export function LoanDetailPage() {
@@ -65,6 +67,8 @@ export function LoanDetailPage() {
   const [receiptData, setReceiptData] = useState<{ receivedAmount: number; currency: string; remaining: number | null; date: string } | undefined>(undefined);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedEmi, setSelectedEmi] = useState<(EmiSchedule & { isOverdue: boolean }) | null>(null);
+  const settleNoMoneyGuard = useSubmitGuard();
+  const deleteLoanGuard = useSubmitGuard();
 
   const load = useCallback(async () => {
     await Promise.all([loadLoans(), loadSchedules(), loadTransactions(), loadAccounts()]);
@@ -168,7 +172,9 @@ export function LoanDetailPage() {
   // Money-free settle: the remaining balance is recorded as paid WITHOUT any
   // account leg — for debts cleared outside the app or written off. Kills the
   // fake-entry workaround users invented to close a loan.
-  const handleSettleNoMoney = async () => {
+  const handleSettleNoMoney = () => settleNoMoneyGuard.run(runSettleNoMoney);
+
+  const runSettleNoMoney = async () => {
     const ok = await confirmDestructive({
       title: t('loan_settle_nomoney_title'),
       description: t('loan_settle_nomoney_body').replace('{amount}', formatMoney(loan.remainingAmount, loan.currency)),
@@ -185,6 +191,10 @@ export function LoanDetailPage() {
       toast.show({ type: 'success', title: t('loan_settle_nomoney_done') });
       refreshLoanDetail();
     } catch (err) {
+      // Audit C10: the write-off is a repayment for the WHOLE remaining
+      // balance, so it is the most likely thing to lose an optimistic-lock
+      // race. Pull the page back to truth before the user re-reads the figure.
+      if (isLoanRemainingConflict(err)) refreshLoanDetail();
       toast.show({ type: 'error', title: t('error'), subtitle: err instanceof Error ? err.message : undefined });
     } finally {
       setSettlingNoMoney(false);
@@ -193,7 +203,9 @@ export function LoanDetailPage() {
 
   // Cascade delete: loan + repayments + origin entry + EMI schedule, with
   // every balance effect reversed. The escape hatch for a mis-entered loan.
-  const handleDeleteLoan = async () => {
+  const handleDeleteLoan = () => deleteLoanGuard.run(runDeleteLoan);
+
+  const runDeleteLoan = async () => {
     const recordCount = loanTransactions.length;
     const ok = await confirmDestructive({
       title: t('loan_delete_title'),
@@ -371,7 +383,12 @@ export function LoanDetailPage() {
                       >
                         <Pencil size={14} className="text-ink-500" /> {t('loan_edit_details')}
                       </button>
-                      {loan.status === 'active' && loan.remainingAmount > 0 && !isLinkedLoan && (
+                      {/* Nothing left to forgive → no action. applyRepayment
+                          now REFUSES a zero/sub-paisa amount (it would be a
+                          record of nothing) instead of silently no-op'ing, so
+                          the affordance has to disappear with the balance —
+                          0.005 matches the store's rounding epsilon. */}
+                      {loan.status === 'active' && loan.remainingAmount > 0.005 && !isLinkedLoan && (
                         <button
                           onClick={() => { setShowMenu(false); void handleSettleNoMoney(); }}
                           disabled={settlingNoMoney}

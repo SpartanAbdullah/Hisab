@@ -2,6 +2,7 @@
 import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
 import { StepIndicator } from '../components/StepIndicator';
@@ -51,6 +52,7 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const toast = useToast();
   const t = useT();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
   const primaryCurrency = ((localStorage.getItem('hisaab_primary_currency') as Currency) || 'AED');
 
   const [step, setStep] = useState(0);
@@ -117,7 +119,12 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
     return Number.isFinite(n) && n >= 0;
   })();
 
-  const handleSubmit = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
+  // updated asynchronously, so two taps in one frame both read it as false.
+  // `saving` stays for the disabled/label UI; the ref is the real guard.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  const runSubmit = async () => {
     if (!balanceValid) { toast.show({ type: 'error', title: t('val_balance_invalid') }); return; }
     setSaving(true);
     try {

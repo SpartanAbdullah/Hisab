@@ -2,6 +2,7 @@
 import { Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useSplitStore } from '../stores/splitStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useAppModeStore } from '../stores/appModeStore';
@@ -46,6 +47,7 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
   const t = useT();
   const toast = useToast();
   const guardClose = useDiscardGuard();
+  const submitGuard = useSubmitGuard();
   const { addGroupExpense } = useSplitStore();
   const { accounts, loadAccounts } = useAccountStore();
   const appMode = useAppModeStore((s) => s.mode);
@@ -144,7 +146,12 @@ export function AddGroupExpenseModal({ open, group, onClose, prefillAmount, rece
     };
   };
 
-  const handleSubmit = async () => {
+  // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag can't
+  // stop two taps landing in one frame — both would read `saving === false`
+  // and post two group expenses. `saving` stays for the disabled/label UI.
+  const handleSubmit = () => submitGuard.run(runSubmit);
+
+  const runSubmit = async () => {
     setSubmitError(null);
 
     if (!defaultPayerId) {

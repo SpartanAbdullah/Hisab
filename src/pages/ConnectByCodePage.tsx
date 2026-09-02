@@ -2,15 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CheckCircle2, Link2, UserPlus } from 'lucide-react';
 import { NavyHero, TopBar } from '../components/NavyHero';
-import { VerifiedBadge } from '../components/VerifiedBadge';
 import { UserAvatar } from '../components/UserAvatar';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useToast } from '../components/Toast';
 import { usePersonStore, DuplicateLinkedContactError } from '../stores/personStore';
 import { useSupabaseAuthStore } from '../stores/supabaseAuthStore';
-import { resolveProfileByCode } from '../lib/collaboration';
+import { codeLookupBudgetSpent, resolveProfileByCode } from '../lib/collaboration';
+import { formatLinkError, retryAfterMinutes } from '../lib/contactLinkStatus';
 import { extractConnectCode } from '../lib/connectQr';
+import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useT } from '../lib/i18n';
 
 // Landing page for a scanned Hisaab QR (https://usehisaab.com/u/HSB-XXXXXX).
@@ -30,10 +31,12 @@ export function ConnectByCodePage() {
   const createPerson = usePersonStore((s) => s.createPerson);
   const linkToProfile = usePersonStore((s) => s.linkToProfile);
 
-  const [status, setStatus] = useState<'loading' | 'ready' | 'notfound' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'notfound' | 'limited' | 'error'>('loading');
   const [found, setFound] = useState<{ profileId: string; displayName: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Double-tap guard (audit C10/F-8). See src/lib/useSubmitGuard.ts.
+  const addGuard = useSubmitGuard();
 
   const normalised = extractConnectCode(rawCode ?? '');
 
@@ -46,7 +49,9 @@ export function ConnectByCodePage() {
     try {
       const result = await resolveProfileByCode(normalised);
       if (!result) {
-        setStatus('notfound');
+        // A throttled lookup answers with zero rows — same as a genuine miss —
+        // so the only signal we have is our own count of charges this hour.
+        setStatus(codeLookupBudgetSpent() ? 'limited' : 'notfound');
         return;
       }
       setFound(result);
@@ -67,25 +72,36 @@ export function ConnectByCodePage() {
   // Already in the user's contacts — nothing to do but say so.
   const existing = found ? persons.find((p) => p.linkedProfileId === found.profileId) ?? null : null;
 
-  const handleAdd = async () => {
+  const handleAdd = () => addGuard.run(runAdd);
+  const runAdd = async () => {
     if (!found) return;
     setSaving(true);
     setError('');
     try {
       const created = await createPerson(found.displayName, null);
+      // The CODE crosses the wire, not the resolved uuid: only the server may
+      // decide which account a code belongs to (audit 2026-09 C6). `found` is
+      // passed as the pre-migration fallback and for nothing else.
+      let linkState: 'pending' | 'mutual' = 'pending';
       try {
-        await linkToProfile(created.id, found.profileId);
+        const linked = await linkToProfile(created.id, normalised ?? '', found);
+        linkState = linked.linkState;
       } catch (err) {
         if (err instanceof DuplicateLinkedContactError) {
           setError(t('contact_dup_link_generic'));
           return;
         }
-        throw err;
+        setError(formatLinkError(err, t));
+        return;
       }
       toast.show({
         type: 'success',
         title: `${found.displayName} added & connected`,
-        subtitle: 'They were asked to add you back.',
+        // Consent semantics: a link is one-sided until they add you back.
+        subtitle:
+          linkState === 'mutual'
+            ? t('clink_mutual')
+            : t('clink_waiting').replace('{name}', found.displayName),
       });
       navigate('/contacts', { replace: true });
     } catch {
@@ -138,6 +154,15 @@ export function ConnectByCodePage() {
           />
         )}
 
+        {status === 'limited' && (
+          <PageErrorState
+            variant="inline"
+            title={t('clink_err_rate_limited').replace('{minutes}', String(retryAfterMinutes(undefined)))}
+            message={t('clink_err_no_match')}
+            onRetry={() => void resolve()}
+          />
+        )}
+
         {status === 'error' && (
           <PageErrorState
             variant="inline"
@@ -152,9 +177,12 @@ export function ConnectByCodePage() {
             <div className="rounded-[18px] bg-cream-card border border-cream-border p-5 flex items-center gap-3">
               <UserAvatar name={found.displayName} size={44} />
               <div className="min-w-0 flex-1">
+                {/* No verified seal here (audit 2026-09 SEC-09): this is a
+                    code lookup, not a link — nothing has been accepted by
+                    either side yet, and the seal must mean exactly one thing
+                    app-wide (an accepted, two-way contact link). */}
                 <p className="text-[15px] font-semibold text-ink-900 flex items-center gap-1.5 min-w-0">
                   <span className="truncate">{found.displayName}</span>
-                  <VerifiedBadge size={15} title={t('contact_linked_pill')} />
                 </p>
                 <p className="text-[11.5px] text-ink-500 mt-0.5">on Hisaab</p>
               </div>
