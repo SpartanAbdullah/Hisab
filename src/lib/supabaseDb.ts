@@ -149,13 +149,20 @@ export const accountsDb = {
       .eq('user_id', getUserId());
     if (error) throw error;
   },
+  // A plain GET, deliberately not `head: true`: on the live PWA a HEAD through
+  // the service worker was observed surfacing as a 503 in the browser while
+  // Supabase's edge logged 200 (2026-09-03 post-deploy smoke check). Both
+  // callers fall back to 0 on error, and `completeOnboarding` turns 0 into
+  // "create a starter wallet" — so a flaky probe could mint a duplicate wallet.
+  // Reading the ids (a user has tens of accounts, never thousands) is exact
+  // and has no HEAD-specific failure mode.
   async count(): Promise<number> {
-    const { count, error } = await supabase
-      .from('accounts').select('id', { count: 'exact', head: true })
+    const { data, error } = await supabase
+      .from('accounts').select('id')
       .eq('user_id', getUserId())
       .is('deleted_at', null);
     if (error) throw error;
-    return count ?? 0;
+    return data?.length ?? 0;
   },
 };
 
