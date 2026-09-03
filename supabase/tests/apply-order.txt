@@ -134,5 +134,22 @@ supabase-migration-p2-kameti-editing.sql
 #   (incremental-sync-tombstones), and because a new file's safe default is
 #   late.
 supabase-migration-p2-edit-history.sql
-# ↓ LAST — reconciliation reads every table above
+# ↓ the PERFORMANCE advisor sweep: it hoists auth.uid() out of the row loop for
+#   EVERY policy in schema public, so it must run after every file that CREATEs
+#   or REPLACEs a policy — it can only fix what already exists. Everything below
+#   it adds tables, functions and grants but no policy, so late-but-not-last is
+#   correct. Also drops the duplicate group_events index, adds FK covering
+#   indexes and the attempt-ledger primary keys. Re-run after adding any
+#   migration that touches a policy.
+supabase-migration-p3-rls-initplan-and-indexes.sql
+# ↓ reconciliation reads every table above
 supabase-migration-p3-invariant-monitoring.sql
+# ↓ TRULY LAST — the least-privilege sweep over public.* functions. It is a
+#   pass over pg_proc, not a list of hand-written grants, so it must run after
+#   EVERY file that CREATEs a function: anything created later keeps the
+#   `authenticated` EXECUTE Supabase's default privileges hand it, and escapes
+#   the search_path pin. p3-invariant-monitoring is the immediate predecessor
+#   because it contributes five of the eleven functions §1 has to pin
+#   (_recon_urldecode / _recon_numeric / _recon_note_meta / _recon_mapped_types
+#   / _recon_cron_status). Re-run this file after adding any new migration.
+supabase-migration-p3-rpc-execute-grants.sql

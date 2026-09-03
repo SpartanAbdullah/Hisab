@@ -22,9 +22,13 @@ wiring) is mid-edit as of 2026-09-03 (see APPLY-ORDER.md §2b row 14).
 Migration apply order and integration-run results: **[APPLY-ORDER.md](APPLY-ORDER.md)**
 (companion doc — read it before applying anything; not duplicated here).
 **`supabase/tests/apply-order.txt` is the canonical apply order** for the
-whole corpus now (APPLY-ORDER.md §2b) — **71 production files** (1 schema +
-70 migrations), machine-checked via `supabase/tests/run.sh`, run in CI on
-every push/PR to `main`. The assertion count has grown in steps as each new
+whole corpus now (APPLY-ORDER.md §2b) — **73 production files** (1 schema +
+72 migrations, after `p3-rls-initplan-and-indexes.sql` and
+`p3-rpc-execute-grants.sql` were added on 2026-09-03), machine-checked via
+`supabase/tests/run.sh`, run in CI on every push/PR to `main`.
+`supabase-migration-p3-rpc-execute-grants.sql` is now the **last** line and
+must stay last: it is a sweep over `pg_proc`, so anything applied after it
+escapes both the EXECUTE revoke and the `search_path` pin. The assertion count has grown in steps as each new
 suite landed (248 → 331 → 357 → 449, per the individual migration docs cited
 in APPLY-ORDER.md §2b) and is not restated here as one fixed number — read
 the CI job or run the harness locally for the current true count, since this
@@ -64,7 +68,25 @@ gating: `docs/release-and-rollback.md`.
    on 2026-09-03 (see A3 in §6.2). Via Supabase Studio SQL Editor (there is
    no migration runner in this repo — see `CLAUDE.md`). Confirm each file's
    own embedded verification notice says `OK`/`verification passed` before
-   moving to the next.
+   moving to the next. **`supabase-migration-p3-rpc-execute-grants.sql` is
+   the last file and must be pasted last** — it sweeps `pg_proc`, so anything
+   applied after it keeps the `anon`/`authenticated` EXECUTE that Supabase's
+   default privileges hand every new function. Re-running it later is safe and
+   is the intended fix if a subsequent migration adds functions.
+   3a. **Re-run Supabase Studio → Advisors → Security afterwards.** The
+   2026-09-03 production run
+   ([prod-verification-2026-09-03.md](prod-verification-2026-09-03.md))
+   reported 0 ERROR / 56 WARN / 2 INFO. After the batch, expect
+   `anon_security_definer_function_executable` to list **exactly two**
+   functions — `get_committee_witness` and `get_khata_view`, the two
+   capability-URL public pages, both documented in
+   `p3-rpc-execute-grants.sql` §2 — `function_search_path_mutable` to be
+   empty for `public`, and `authenticated_security_definer_function_executable`
+   to contain no `tg_*` / `handle_new_user` / `rls_auto_enable` entries.
+   `rls_auto_enable` is a Supabase-platform function, not a Hisaab object —
+   it exists nowhere in this repo's SQL and is deliberately not touched.
+   `auth_leaked_password_protection` is a dashboard toggle (Auth → Providers →
+   Email), not a migration.
 4. **Set feature flags only after their own pre-flight (V-) query**, never
    before, and **one flag per release cycle** — the recommended enable order,
    per `docs/server-side-money-engine.md` §5/§10/§15/§21 (the L4 money-engine
@@ -268,7 +290,7 @@ by someone with access this agent doesn't have).
 |---|---|---|---|
 | A1 | Run `supabase-audit-p0-verification.sql` in Supabase Studio against **production** and share the output | The prerequisite for treating any "fixed" claim in this tracker as confirmed in prod, not just in Docker (C1) | §1 step 1–2 above |
 | A2 | Connect the Supabase CLI to the project | Long-term fix for C1 — moves migrations to a numbered, tracked, CI-applied model instead of hand-pasting into Studio | `00-executive-summary.md` C1; `docs/release-and-rollback.md` §4 |
-| A3 | Apply every file in `supabase/tests/apply-order.txt` order, in one window, with the matching client build | Covers all **30** pending migrations (11 audit-p0 + 19 P1/P2/P3, per APPLY-ORDER.md §2b rows 1–18 plus `p2-analytics-aggregates.sql`/`p2-realtime-broadcast.sql` already covered inline), not just the original 11 or the 23 this action used to cite — the P2/P3 tail grew again on 2026-09-03 | §1 step 3 above; APPLY-ORDER.md §2b |
+| A3 | Apply every file in `supabase/tests/apply-order.txt` order, in one window, with the matching client build | Covers all **32** pending migrations (11 audit-p0 + 21 P1/P2/P3, per APPLY-ORDER.md §2b rows 1–18 plus `p2-analytics-aggregates.sql`/`p2-realtime-broadcast.sql` already covered inline, plus `p3-rls-initplan-and-indexes.sql` and `p3-rpc-execute-grants.sql` added late on 2026-09-03), not just the original 11 or the 23 this action used to cite — the P2/P3 tail grew again on 2026-09-03. **`p3-rpc-execute-grants.sql` goes last**, then re-run the Security advisor (step 3a) | §1 step 3/3a above; APPLY-ORDER.md §2b |
 | A4 | After merge + push (web) and `npm run build && npx cap sync android`, run the Gradle AAB build locally | `gradlew` needs a loopback socket the agent sandbox blocks — see `docs/updating-the-android-app.md` | CLAUDE.md "Shipping rule" |
 | A5 | Rotate the Supabase anon key | `git log` on `main` still contains commits (`88ed40c`, `dfea60e`) with the production anon key baked into build artifacts; RLS limits the blast radius but rotation is still recommended defense-in-depth and has not been done | `docs/testing-the-trust-boundary.md` §7 (secret-scanning section) |
 | A6 | Set the PostHog project key + the feedback WhatsApp number as env vars | H2's analytics/feedback work is built and consent-gated but inert without these. The event-wiring half of A6 has since progressed — commit `586aa9e` records "remaining deferred events wired" (`src/lib/telemetryEvents.ts` now defines 32 typed events, up from 28) — but that only matters once these two env vars actually exist; nothing fires without them | §3 H2 above |
