@@ -45,3 +45,10 @@ Review at the start of every session.
   and multiple currencies simultaneously — never merge across either.
 - **i18n:** all user-facing strings live in `src/lib/i18n.ts` as `{ ur (roman Urdu), en }`.
   No hardcoded English in JSX; check both languages render.
+
+## 2026-09-03 — first CI run of the audit branch, production apply
+- **Never chain a test step with `;` before a push.** A `vitest … | grep ; npm run lint && … && git push` chain pushed with 5 failing tests. Every gate before a push is `&&`, and the push is the last link.
+- **Non-migration SQL diagnostics must not be named `supabase-migration-*`.** The db-tests workflow's apply-order sanity check globs that prefix; a read-only preflight named that way failed CI. Use `supabase-<purpose>-<date>.sql` (like `supabase-audit-p0-verification.sql`).
+- **Tests that import the data layer need placeholder `VITE_SUPABASE_*` env.** `src/lib/supabase.ts` builds the client at import time; locally `.env` masks the crash, CI has no `.env`. `vitest.config.ts` now supplies placeholders — do not remove them.
+- **SQL files are LF-only (`.gitattributes`).** Windows autocrlf rewrote them to CRLF on a branch switch and broke the two tests that assert multi-line SQL. If a migration-parsing test fails only locally, check `file <name>.sql` for CRLF first.
+- **Production applies happen in one window with the client deploy, and the 41 historical files are never re-run.** The founder ran the whole `apply-order.txt` including the harness prelude; it was harmless only because every historical file is idempotent and the batch order was preserved. The runbook now states the production list starts at `audit-p0-currencies`.
