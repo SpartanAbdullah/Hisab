@@ -454,3 +454,37 @@ Conclusion: no pending file can fail on today's production data, and none rewrit
 rows. The only behavioural consequence for existing data is that the three single-member
 groups can no longer have expense amounts edited until a second member connects (audit C4/C10
 design: a ledger needs two live parties).
+
+## Post-apply verification — 2026-09-03 (founder applied the batch in Studio)
+
+The founder ran `supabase/tests/apply-order.txt` top to bottom — i.e. including the 41
+already-applied historical files and the harness-only prelude. Read-only re-check afterwards:
+
+- **Data intact:** exact counts and sums identical to the morning baseline (716 transactions,
+  271 loans, 40 accounts, 25 profiles, 82 group expenses; account-balance and loan-remaining
+  sums unchanged). The re-run of the historical files did no harm: every idempotent file was a
+  no-op and the batch order was preserved, so the final state is the branch's.
+- **Prelude effect neutralised:** it drops the four notifications policies, the notifications-rls
+  migration re-creates them and audit-p0-notifications replaces the INSERT one; final state =
+  `Users can insert own notifications` + view/update/delete own + the RESTRICTIVE gate.
+- **30 of 32 branch files verifiably applied.** C4 (no FOR ALL on group_settlements), C6
+  (`token_hash` not readable), C7 (self-only INSERT) closed; 123 policies, 0 bare `auth.uid()`;
+  anon-executable SECURITY DEFINER = exactly {get_committee_witness, get_khata_view}; 0 functions
+  without search_path; duplicate index gone; identity PKs present; join_group_by_code is the
+  single JSONB overload; app_config seeded (`min_supported_version` 1.0.0); every new table
+  (blocks, record_edits, khata_links, reconciliation_*, group_guest_identities, code_lookup_attempts,
+  reports) present; **all 57 `supabase.rpc()` names the branch client calls exist and are
+  EXECUTE-able by `authenticated`**.
+- **Gap 1 — `supabase-migration-audit-p0-currencies.sql` did not take effect:** the two
+  `*_currency_check` constraints are still AED/PKR-only and `ltr/lsr_currency_supported` are
+  absent. Safe to re-run (idempotent; preflight shows 0 rows outside AED/PKR).
+- **Gap 2 — `pg_cron` is not installed** (extensions: pg_stat_statements, pgcrypto, plpgsql,
+  supabase_vault, uuid-ossp). The three guarded schedulers skipped with a NOTICE: nightly
+  `run_reconciliation()` (p3-invariant-monitoring §6), `hisaab-prune-record-edits`
+  (p2-edit-history), kameti due-sweep (p2-notification-maturity §9). Enable pg_cron in
+  Dashboard → Database → Extensions, then re-run those three files (idempotent) or create the
+  jobs in the Cron UI. `reconciliation_runs` is empty until then.
+- Security advisor after apply: 0 ERROR; 2 anon WARNs (the allowlist), 59 authenticated WARNs
+  (all client RPCs or policy/trigger helpers), 4 INFO rls-no-policy (app_push_config,
+  khata_link_lookups, reconciliation_runs, reconciliation_findings — all server-only tables),
+  leaked-password protection still off.
