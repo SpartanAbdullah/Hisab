@@ -394,3 +394,63 @@ unused_index (36)
    Index \`idx_investment_prices_user_deleted\` on table \`public.investment_prices\` has not been used
    Index \`idx_transactions_reconciled\` on table \`public.transactions\` has not been used
 ```
+
+## Pre-apply baseline — `pg_policies` snapshot (108 policies, 2026-09-03)
+
+Captured read-only before any of the 32 pending files is applied. Every name is one the
+repo's own SQL creates (no hand-made policies); the two ledger tables carry exactly the nine
+policies `supabase-migration-audit-p0-group-ledger-integrity.sql` allowlists, so its
+"drop anything unallowlisted" step has nothing unexpected to drop.
+
+```
+accounts :: Active profiles only [ALL/R] · Users can manage own accounts [ALL/P]
+activities :: Active profiles only [ALL/R] · Users can manage own activities [ALL/P]
+budgets :: Active profiles only [ALL/R] · budgets_{select,insert,update,delete}_own
+committee_members :: committee_members_{select,insert,update,delete}_own
+committee_payments :: committee_payments_{select,insert,update,delete}_own
+committees :: committees_{select,insert,update,delete}_own
+contact_link_requests :: clr_select_participant [SELECT/P]
+custom_categories :: custom_categories_{select,insert,update,delete}_own
+device_push_tokens :: dpt_{select,insert,update,delete}_own
+emi_schedules :: Active profiles only [ALL/R] · Users can manage own emi [ALL/P]
+goals :: Active profiles only [ALL/R] · Users can manage own goals [ALL/P]
+group_events :: Active profiles only [ALL/R] · Connected members can create group events [INSERT/P] · Connected members can view group events [SELECT/P] · Members can delete own group events [DELETE/P]
+group_expenses :: Active profiles only [ALL/R] · Connected members can create shared group expenses [INSERT/P] · Expense creators can delete their shared group expenses [DELETE/P] · Expense creators can update their shared group expenses [UPDATE/P] · Members can view shared group expenses [SELECT/P]
+group_invites :: Active profiles only [ALL/R] · Group owners can create invites [INSERT/P] · Group owners can update invites [UPDATE/P] · Members can view invites in their groups [SELECT/P] · Owner can revoke invites [DELETE/P]
+group_members :: Active profiles only [ALL/R] · Group owners can add members [INSERT/P] · Group owners can update members [UPDATE/P] · Users can view members of shared groups [SELECT/P]
+group_settlements :: Active profiles only [ALL/R] · Connected members can create shared group settlements [INSERT/P] · Connected members can delete shared group settlements [DELETE/P] · Members can view shared group settlements [SELECT/P] · Users can manage own settlements [ALL/P]  ← the C4 policy, dropped by group-ledger-integrity
+investment_markets / investment_prices / investment_trades :: <table>_{select,insert,update,delete}_own
+join_code_attempts :: no client access to join_code_attempts [ALL/P, false/false]
+linked_settlement_requests :: Active profiles only [ALL/R] · lsr_insert_own [INSERT/P] · lsr_select_participant [SELECT/P]
+linked_transaction_requests :: Active profiles only [ALL/R] · ltr_insert_own [INSERT/P] · ltr_select_participant [SELECT/P]
+loans :: Active profiles only [ALL/R] · Users can manage own loans [ALL/P]
+notifications :: Active profiles only [ALL/R] · Users can delete own notifications [DELETE/P] · Users can insert notifications for self or fellow members [INSERT/P]  ← C7 · Users can update own notifications [UPDATE/P] · Users can view own notifications [SELECT/P]
+persons :: Active profiles only [ALL/R] · persons_{select,insert,update,delete}_own
+profiles :: Users can insert own profile [INSERT/P] · Users can update own active profile [UPDATE/P] · Users can view own active profile [SELECT/P]
+recurring_transactions :: Active profiles only [ALL/R] · recurring_{select,insert,update,delete}_own
+remittances :: Active profiles only [ALL/R] · remittances_{select,insert,update,delete}_own
+split_groups :: Active profiles only [ALL/R] · Members can view shared groups [SELECT/P] · Users can manage own groups [ALL/P]
+transactions :: Active profiles only [ALL/R] · Users can manage own transactions [ALL/P]
+upcoming_expenses :: Active profiles only [ALL/R] · Users can manage own upcoming [ALL/P]
+```
+
+Table sizes at the same moment (for lock/maintenance-window sizing): 25 auth users; largest
+tables `activities` 917 rows, `transactions` 714, `notifications` 499, `loans` 269; every
+table under 1 MB; whole schema under 5 MB.
+
+## Pre-flight run against production — 2026-09-03 (read-only, `supabase-migration-preflight-2026-09-03.sql`)
+
+All 66 checks executed through the Supabase MCP. Result:
+
+| severity | checks | non-zero |
+|---|---|---|
+| BLOCKS (file would abort) | 5 | **0** |
+| DEGRADES (constraint would land NOT VALID / index skipped) | 37 | **0** |
+| REWRITES (existing rows updated at apply time) | 6 | invites→14-day expiry **4**, join codes→14-day expiry **5**, notifications channel/href backfill **500**; version backfill 0, draw_scheme backfill 0, witness-token destruction **0** (the only irreversible statement is a no-op on today's data) |
+| FREEZES (legal today, new trigger refuses future edits) | 9 | groups with <2 connected members **3** (see below); every other freeze 0 |
+| LOCKS (table sizes) | 9 | largest is `transactions` at 716 rows — no maintenance window needed |
+
+Conclusion: no pending file can fail on today's production data, and none rewrites money
+rows. The only behavioural consequence for existing data is that the three single-member
+groups can no longer have expense amounts edited until a second member connects (audit C4/C10
+design: a ledger needs two live parties).
