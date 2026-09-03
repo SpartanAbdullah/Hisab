@@ -1,0 +1,6 @@
+# Migration SQL is parsed by unit tests with LF expectations and pasted into
+# Supabase Studio; keep it LF on every platform (Windows autocrlf would
+# otherwise rewrite the working copy to CRLF and break moneyBoundsMigration.test.ts
+# and consentGuardsPhoneParity.test.ts locally).
+*.sql text eol=lf
+supabase/tests/** text eol=lf

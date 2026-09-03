@@ -1,7 +1,7 @@
 # Migration data-safety review — the 32 unapplied files
 
 **Date:** 2026-09-03 · **Branch:** `audit-p0-remediation` @ `e54e84f` · **Deployed client:** `main` @ `2248327`
-**Companion pre-flight:** [`supabase-migration-preflight-2026-09-03.sql`](../../supabase-migration-preflight-2026-09-03.sql) (repo root)
+**Companion pre-flight:** [`supabase-preflight-2026-09-03.sql`](../../supabase-preflight-2026-09-03.sql) (repo root)
 **Production state evidence:** [`prod-verification-2026-09-03.md`](./prod-verification-2026-09-03.md)
 
 ---
@@ -1048,7 +1048,7 @@ Everything else is either safe ahead of the client (the 19 additive files, the 5
 
 ## §5. Summary (c) — the constraint pre-flight
 
-**One file, one query, strictly read-only:** [`supabase-migration-preflight-2026-09-03.sql`](../../supabase-migration-preflight-2026-09-03.sql)
+**One file, one query, strictly read-only:** [`supabase-preflight-2026-09-03.sql`](../../supabase-preflight-2026-09-03.sql)
 
 Returns `(file, check, violating_rows)` — 66 rows. Severities: **BLOCKS** (non-zero aborts that file), **DEGRADES** (constraint lands `NOT VALID` / index silently skipped), **REWRITES** (row blast radius of an apply-time backfill), **LOCKS** (table row count for a rewrite or index build), **FREEZES** (rows that stay legal but become uneditable).
 
@@ -1087,7 +1087,7 @@ SELECT status, count(*) FROM public.loans GROUP BY 1;
 ```
 
 ### Step 2 — run the pre-flight
-Paste `supabase-migration-preflight-2026-09-03.sql` whole. **Read every row.**
+Paste `supabase-preflight-2026-09-03.sql` whole. **Read every row.**
 - Any **BLOCKS** > 0 → stop and fix those rows first.
 - Any **DEGRADES** > 0 → decide: fix now, or accept the constraint landing `NOT VALID`.
 - **REWRITES / LOCKS / FREEZES** → note the numbers; they size the window and tell you what becomes uneditable.

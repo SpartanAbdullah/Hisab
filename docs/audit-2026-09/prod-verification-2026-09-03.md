@@ -438,7 +438,7 @@ Table sizes at the same moment (for lock/maintenance-window sizing): 25 auth use
 tables `activities` 917 rows, `transactions` 714, `notifications` 499, `loans` 269; every
 table under 1 MB; whole schema under 5 MB.
 
-## Pre-flight run against production — 2026-09-03 (read-only, `supabase-migration-preflight-2026-09-03.sql`)
+## Pre-flight run against production — 2026-09-03 (read-only, `supabase-preflight-2026-09-03.sql`)
 
 All 66 checks executed through the Supabase MCP. Result:
 
