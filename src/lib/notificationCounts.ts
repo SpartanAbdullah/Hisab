@@ -86,6 +86,54 @@ export function countAttentionNotifications(
   return count;
 }
 
+/** Notification types that MIRROR a row the bell already counts as a pending
+ *  request.
+ *
+ *  `linked_request` / `linked_settlement` rows are the *ping about* a
+ *  `linked_transaction_requests` / `linked_settlement_requests` row
+ *  (`tg_ltr_notify` / `tg_lsr_notify`,
+ *  supabase-migration-linked-notifications-realtime.sql). The request row
+ *  itself is counted by `countIncomingPending`, so counting the ping too would
+ *  show 2 for one loan — and worse, the ping stays UNREAD after the user
+ *  accepts while the request leaves `pending`, so the badge could never reach
+ *  zero (the "counter stays at 1" bug the store fights in `locallyRead`).
+ *
+ *  The request row is the honest one: it clears the instant you act. */
+export function isRequestMirrorNotification(n: AppNotification): boolean {
+  return n.type === 'linked_request' || n.type === 'linked_settlement';
+}
+
+/** Unread notifications the BELL is allowed to count: every attention row that
+ *  is not already represented by a pending request (see
+ *  `isRequestMirrorNotification`).
+ *
+ *  THE BUG THIS EXISTS FOR (founder report 2026-09-03, "my bell isn't alerting
+ *  me anymore if there are any unread notifications"): the bell's notification
+ *  term was `isInboxInfoNotification` — an ALLOW-list of four types, two of
+ *  which (`invite`, `system`) no writer in the product ever produces (audit
+ *  08-notifications.md §1.1). So the single highest-volume notification in the
+ *  app — `group_update`, the group fan-out — never lit the bell at all, and a
+ *  user with hundreds of unread rows saw nothing. Deny-listing the two
+ *  request mirrors instead of allow-listing four types means every NEW
+ *  notification type is counted by default, which is the safe direction for a
+ *  badge whose job is "something is waiting for you".
+ *
+ *  Everything the Inbox "Info" tab lists is exactly this set minus the
+ *  self/mute filters (`isInboxInfoNotification` in inboxInfo.ts shares this
+ *  predicate), so every counted row has a place the user can open and clear. */
+export function countBellNotifications(
+  notifications: readonly AppNotification[],
+  selfUserId?: string | null,
+  mutes?: NotificationMuteState,
+): number {
+  let count = 0;
+  for (const n of notifications) {
+    if (isRequestMirrorNotification(n)) continue;
+    if (isAttentionNotification(n, selfUserId, mutes)) count += 1;
+  }
+  return count;
+}
+
 /** The shape both `linkedRequestStore` and `settlementRequestStore` rows
  *  share, reduced to what a badge needs. */
 export interface BadgeRequest {
@@ -123,4 +171,168 @@ export function countOutgoingPending(
     if (r.status === 'pending' && r.fromUserId === userId && r.toUserId !== userId) count += 1;
   }
   return count;
+}
+
+/** Everything the home-header bell (`InboxAction`) counts, in one place. */
+export interface BellCountInput {
+  /** The loaded slice of the `notifications` table (newest 100). */
+  notifications: readonly AppNotification[];
+  /** `linked_transaction_requests` rows for this user, both directions. */
+  linkedRequests: readonly BadgeRequest[];
+  /** `linked_settlement_requests` rows for this user, both directions. */
+  settlementRequests: readonly BadgeRequest[];
+  /** `contact_link_requests` — "X added you, add them back?" asks. */
+  contactLinkRequests: readonly BadgeRequest[];
+  /** The signed-in user. '' while signing in / booting ⇒ no request counts. */
+  userId: string;
+  mutes?: NotificationMuteState;
+}
+
+/** What the bell has to show, split by who it is waiting on. */
+export interface BellState {
+  /** Needs THIS user: incoming pending requests + unread notifications.
+   *  Drives the red number badge. */
+  actionable: number;
+  /** This user is waiting on SOMEONE ELSE: their own outgoing pending
+   *  requests. Drives a quiet neutral dot — never a red number. */
+  waiting: number;
+}
+
+/** The bell badge, split.
+ *
+ *  `actionable` — two kinds of thing, both of which the /inbox destination
+ *  shows and the user can clear there:
+ *    1. requests waiting on a DECISION from this user (Incoming tab), and
+ *    2. unread notifications that are not a mirror of (1) (Info tab).
+ *
+ *  `waiting` — outgoing pending requests. Audit N-7 was right that these must
+ *  not ring an alarm ("a red animated badge for days with nothing to act on"),
+ *  but removing them left the founder's bell completely dark: production says
+ *  their entire badge was 5 outgoing loan requests + 3 outgoing settlements,
+ *  with zero incoming and every group notification already read. Silence is
+ *  the wrong answer too — those 8 asks are real, and the user wants to see
+ *  them to nudge people. So they get their own quiet channel: a dot, no
+ *  number, no animation, and the Inbox "Waiting on others" section behind it.
+ *
+ *  If both exist the number wins — attention outranks patience.
+ *
+ *  Deliberately NOT counted anywhere: the derived To-do queue
+ *  (`buildInboxActionItems`), which has never been part of this badge and
+ *  would make the bell depend on half a dozen full-tracker-only stores.
+ *
+ *  Known, pre-existing overlap: a contact ask writes BOTH a pending
+ *  `contact_link_requests` row and a `contact_linked` notification to the same
+ *  user (supabase-migration-connections-push-discovery.sql:150-178), so one
+ *  ask can count twice. The notification carries no request id, so there is no
+ *  key to de-duplicate on; acting on the ask and reading the ping both drive
+ *  the number down, and it still reaches zero. */
+export function countBellItems(input: BellCountInput): BellState {
+  return {
+    actionable:
+      countIncomingPending(input.linkedRequests, input.userId) +
+      countIncomingPending(input.settlementRequests, input.userId) +
+      countIncomingPending(input.contactLinkRequests, input.userId) +
+      // `|| null`: an empty id means "not signed in yet", not "the actor is ''".
+      countBellNotifications(input.notifications, input.userId || null, input.mutes),
+    waiting:
+      countOutgoingPending(input.linkedRequests, input.userId) +
+      countOutgoingPending(input.settlementRequests, input.userId),
+  };
+}
+
+/** Whole days a request has been waiting, local-calendar style (a request sent
+ *  last night is "1 day", not "0"). Negative clock skew clamps to 0, and an
+ *  unparseable timestamp returns null so the caller can just omit the line.
+ *
+ *  Feeds the Inbox "Waiting on others" section: "who / what" are already on the
+ *  card, "how long" is the part that tells the user whether to nudge. */
+export function daysWaiting(createdAtIso: string, now: Date): number | null {
+  const at = Date.parse(createdAtIso);
+  if (!Number.isFinite(at)) return null;
+  const then = new Date(at);
+  const startOfThen = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
+  const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const days = Math.round((startOfNow - startOfThen) / 86_400_000);
+  return days > 0 ? days : 0;
+}
+
+// ── Stale request mirrors ──────────────────────────────────────────────────
+// Production, the founder's account: 38 unread `linked_request` + 35 unread
+// `linked_settlement` notifications, against ZERO pending incoming requests.
+// Every one of those pings is dead: it is either an outcome notice the
+// triggers send the SENDER ("Shared loan confirmed",
+// supabase-migration-linked-notifications-realtime.sql:58-63, 102-107) — whose
+// request left `pending` at the moment it was written — or a request ping the
+// user already acted on. Nothing in the app can ever clear them: the Inbox
+// Info tab excludes mirrors and the card they refer to is gone. That is the
+// "counter stays at 1" family, 73 rows deep, and it keeps `unreadCount` (the
+// Activity tab's number) permanently wrong.
+//
+// The rows carry NO request id — `tg_ltr_notify` inserts `event_id` null and
+// no params — so staleness is inferred from the pending set instead:
+//
+//   an unread mirror is STALE unless a request of the same kind, still
+//   pending and addressed to this user, was created within `windowMs` of it.
+//
+// The trigger writes its notification inside the request's own INSERT
+// transaction, so a live pair's timestamps agree to well under a second; the
+// default window is minutes wide, which errs toward LEAVING a row unread. When
+// nothing of that kind is pending — the founder's case — every mirror of that
+// kind is stale, which is the invariant this is really for: if nothing of a
+// kind is waiting on you, no ping of that kind may still be unread.
+
+/** Minutes, not seconds: generous on purpose. A false "stale" hides a real
+ *  request ping; a false "live" just leaves one row unread until next time. */
+export const MIRROR_STALE_WINDOW_MS = 5 * 60 * 1000;
+
+export interface MirrorReconcileInput {
+  notifications: readonly AppNotification[];
+  /** Pending-or-not `linked_transaction_requests` rows, both directions. */
+  linkedRequests: readonly (BadgeRequest & { createdAt?: string })[];
+  /** Pending-or-not `linked_settlement_requests` rows, both directions. */
+  settlementRequests: readonly (BadgeRequest & { createdAt?: string })[];
+  userId: string;
+  windowMs?: number;
+}
+
+function pendingIncomingTimes(
+  requests: readonly (BadgeRequest & { createdAt?: string })[],
+  userId: string,
+): number[] {
+  const times: number[] = [];
+  for (const r of requests) {
+    if (r.status !== 'pending' || r.toUserId !== userId) continue;
+    const at = Date.parse(r.createdAt ?? '');
+    // A pending request with an unreadable timestamp still protects its ping —
+    // NaN here would silently turn "live" into "stale".
+    times.push(Number.isFinite(at) ? at : Number.NaN);
+  }
+  return times;
+}
+
+function hasLiveMatch(times: readonly number[], at: number, windowMs: number): boolean {
+  for (const t of times) {
+    if (!Number.isFinite(t) || !Number.isFinite(at)) return true; // can't tell ⇒ keep
+    if (Math.abs(t - at) <= windowMs) return true;
+  }
+  return false;
+}
+
+/** Ids of unread request-mirror notifications whose request is no longer
+ *  pending. Pure, order-preserving, and empty when there is nothing to do —
+ *  the caller uses that to skip the write entirely. */
+export function staleMirrorNotificationIds(input: MirrorReconcileInput): string[] {
+  if (!input.userId) return [];
+  const windowMs = input.windowMs ?? MIRROR_STALE_WINDOW_MS;
+  const linkedTimes = pendingIncomingTimes(input.linkedRequests, input.userId);
+  const settlementTimes = pendingIncomingTimes(input.settlementRequests, input.userId);
+  const ids: string[] = [];
+  for (const n of input.notifications) {
+    if (n.readAt) continue;
+    if (!isRequestMirrorNotification(n)) continue;
+    const times = n.type === 'linked_request' ? linkedTimes : settlementTimes;
+    if (times.length === 0) { ids.push(n.id); continue; }
+    if (!hasLiveMatch(times, Date.parse(n.createdAt), windowMs)) ids.push(n.id);
+  }
+  return ids;
 }

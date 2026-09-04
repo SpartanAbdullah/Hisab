@@ -831,9 +831,12 @@ export function LoansPage() {
         {loadStatus === 'loading' && loans.length === 0 ? (
           <ListSkeleton rows={3} />
         ) : loadStatus === 'ready' && primaryGroups.length === 0 && otherGroups.length === 0 ? (
+          // `tick` = these are DONE; `money` (a banknote stack) = nothing
+          // lent or borrowed yet. The old pair — a shield and a thumbs-up —
+          // drew neither of those things.
           <EmptyState
             icon={Users}
-            clayIcon={tab === 'settled' ? 'shield' : 'handshake'}
+            clayIcon={tab === 'settled' ? 'tick' : 'money'}
             tone={tab === 'settled' ? 'receive' : 'warn'}
             title={
               tab === 'settled'

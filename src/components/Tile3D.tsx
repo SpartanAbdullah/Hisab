@@ -8,6 +8,7 @@ import {
   type ClayBadgePlacement,
   type ClayIconPlacement,
   type ClayTileIconSize,
+  type ClayTileLabel,
   type ClayTint,
 } from '../lib/clay';
 
@@ -23,13 +24,36 @@ interface Props {
    * 'corner' reserves 64px for the icon alone.
    */
   iconPlacement?: ClayIconPlacement;
-  /** 'md' (default, 48px) or 'sm' (36px). Pair 'sm' with 'top' on 4-up grids. */
+  /**
+   * 'sm' (36px) | 'md' (default, 48px) | 'lg' (64px).
+   *
+   * 'lg' + 'top' is the home-grid shape: on a 4-up grid at 360px the tile is
+   * ~74px wide, so a 64px icon is 86% of it and hangs 26px above its top
+   * edge. That disproportion is deliberate — the founder asked for the icons
+   * to be the obvious thing on the grid, so the art is the bold element and
+   * the label is a caption.
+   */
   iconSize?: ClayTileIconSize;
   /**
    * Copy comes in as props — this component never holds a string of its own,
    * so the i18n rule is satisfied at the call site with t('key').
    */
   title: string;
+  /**
+   * 'below' (default) — the title renders as an 11px caption under the art
+   * (stacked placement) or beside it (corner).
+   * 'hidden' — stacked placement only: the title renders as a visually-hidden
+   * span, so it is still the tile's accessible name, and the art carries the
+   * tile on its own. Never omit `title` to get this shape; an icon-only
+   * button with no accessible name is unusable with a screen reader.
+   *
+   * `subtitle` is dropped under 'hidden' — a hidden title above visible
+   * secondary copy is incoherent, so the component refuses to render it
+   * rather than leaving that decision at the call site. A `badge` still
+   * renders; pair it with badgePlacement="corner", which is the only
+   * placement that makes sense with no text under the art.
+   */
+  label?: ClayTileLabel;
   subtitle?: string;
   /** Small neutral pill (a count, a due date, a status). */
   badge?: React.ReactNode;
@@ -58,15 +82,16 @@ interface Props {
 /**
  * Tier 1 of the clay system: the PRESSABLE tile.
  *
- * A gradient clay surface with a bottom lip, a floating 3D icon hanging off
- * its top inline-end corner, and a 2px press. Renders a real <button> or a
+ * A faintly luminous tinted surface — hairline inside the radius, soft
+ * large-radius ambient shadow, no drawn edge of any kind — with a floating
+ * 3D icon hanging over it, and a scale press. Renders a real <button> or a
  * router <Link> — never a div with an onClick, so keyboard and screen-reader
  * users get the affordance for free.
  *
- * Layout note for callers: the icon overlaps the tile's top edge by ~35% of
- * its height, so a grid of tiles needs room above the first row —
- * `pt-5` on the container, or `gap-y-6` between rows. Inside a scroll
- * container with `overflow-hidden` the icon will clip.
+ * Layout note for callers: the icon overlaps the tile's top edge by 35%
+ * (corner) or 40% (top) of its height — 26px for an `lg` icon — so a grid of
+ * tiles needs room above the first row: `pt-6` on the container, or `gap-y-7`
+ * between rows. Inside a scroll container with `overflow-hidden` it clips.
  */
 export function Tile3D({
   tint = 'neutral',
@@ -74,6 +99,7 @@ export function Tile3D({
   iconPlacement = 'corner',
   iconSize = 'md',
   title,
+  label = 'below',
   subtitle,
   badge,
   badgePlacement = 'inline',
@@ -83,10 +109,19 @@ export function Tile3D({
   disabled = false,
   className = '',
 }: Props) {
+  // Hiding the label is a property of the stacked shape only; a corner tile
+  // with no visible text is an empty box with an icon bolted to one side.
+  const titleHidden = label === 'hidden' && iconPlacement === 'top' && Boolean(icon);
+
   const classes = [
     'clay-tile',
     clayTintClass(tint),
-    ...clayTileLayoutClasses({ hasIcon: Boolean(icon), iconPlacement, iconSize }),
+    ...clayTileLayoutClasses({
+      hasIcon: Boolean(icon),
+      iconPlacement,
+      iconSize,
+      label: titleHidden ? 'hidden' : 'below',
+    }),
     selected ? 'clay-tile-selected' : '',
     className,
   ]
@@ -106,8 +141,12 @@ export function Tile3D({
           className={clayTileIconClass(iconPlacement)}
         />
       ) : null}
-      <span className="clay-tile-title">{title}</span>
-      {subtitle ? <span className="clay-tile-sub">{subtitle}</span> : null}
+      {/* `sr-only`, never `aria-label` on the element: the title stays a real
+          text node, so it is what the accessible name is computed from with
+          no duplication, and it still gets picked up by find-in-page and by
+          translation tooling. */}
+      <span className={titleHidden ? 'sr-only' : 'clay-tile-title'}>{title}</span>
+      {subtitle && !titleHidden ? <span className="clay-tile-sub">{subtitle}</span> : null}
       {badge ? <span className={clayBadgeClass(badgePlacement)}>{badge}</span> : null}
     </>
   );

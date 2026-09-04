@@ -28,10 +28,13 @@ export function GettingStartedCard({ accountCount, transactionCount, onAddAccoun
 
   return (
     // 3D clay (docs/design-system.md §10). This is the very first thing a new
-    // user sees, so it gets the illustration: a piggybank floating over an
-    // accent clay card. The card itself is informational (the two step rows
-    // carry the taps), so it is a Card3D, not a tile.
-    <Card3D tint="accent" padding="lg" icon="piggybank">
+    // user sees, so it gets the illustration: a WALLET floating over an
+    // accent clay card — step 1 of the two steps below is "add an account",
+    // and a wallet is the picture of an account. (It used to be `piggybank`,
+    // whose art is actually a money bag: true to "money", mute about the
+    // setup this card is asking for.) The card itself is informational (the
+    // two step rows carry the taps), so it is a Card3D, not a tile.
+    <Card3D tint="accent" padding="lg" icon="wallet">
       {/* The counter sits on the TITLE line only. It used to be centred
           against the whole title+subtitle block, which squeezed the subtitle
           into a two-line wrap between it and the icon gutter (worst in roman

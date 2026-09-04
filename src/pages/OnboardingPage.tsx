@@ -61,10 +61,13 @@ type OnboardIntent = 'spending' | 'loans' | 'kameti' | 'splits' | 'budgets';
 const INTENT_OPTIONS: Array<{
   value: OnboardIntent; labelKey: string; leansTo: AppMode; tint: ClayTint; icon: string;
 }> = [
-  { value: 'spending', labelKey: 'onboard_intent_spending', leansTo: 'full_tracker', tint: 'coral', icon: 'receipt' },
-  { value: 'loans', labelKey: 'onboard_intent_loans', leansTo: 'full_tracker', tint: 'blush', icon: 'handshake' },
+  // Art picked for what it SHOWS: a shopping bag for spending, a banknote
+  // stack for lending/borrowing, a coin stack for kameti, a calculator for
+  // splitting a bill, a dartboard for budget targets.
+  { value: 'spending', labelKey: 'onboard_intent_spending', leansTo: 'full_tracker', tint: 'coral', icon: 'bag' },
+  { value: 'loans', labelKey: 'onboard_intent_loans', leansTo: 'full_tracker', tint: 'blush', icon: 'money' },
   { value: 'kameti', labelKey: 'onboard_intent_kameti', leansTo: 'full_tracker', tint: 'gold', icon: 'coins' },
-  { value: 'splits', labelKey: 'onboard_intent_splits', leansTo: 'splits_only', tint: 'sky', icon: 'chat' },
+  { value: 'splits', labelKey: 'onboard_intent_splits', leansTo: 'splits_only', tint: 'sky', icon: 'calculator' },
   { value: 'budgets', labelKey: 'onboard_intent_budgets', leansTo: 'full_tracker', tint: 'mint', icon: 'target' },
 ];
 
@@ -443,7 +446,9 @@ export function OnboardingPage() {
                   <button onClick={() => setSelectedMode('splits_only')}
                     aria-pressed={selectedMode === 'splits_only'}
                     className={`clay-tile clay-tile-has-icon ps-5 pe-16 py-5 rounded-3xl ${selectedMode === 'splits_only' ? 'clay-accent clay-tile-selected' : 'clay-neutral'}`}>
-                    <Icon3D name="chat" size="md" float className="clay-tile-icon" />
+                    {/* A calculator: splits-only mode IS the "work out who
+                        owes what" half of the app, with no wallet behind it. */}
+                    <Icon3D name="calculator" size="md" float className="clay-tile-icon" />
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-[14px] tracking-tight">{t('mode_splits_title')}</p>
                       {!quizSkipped && recommended === 'splits_only' && (

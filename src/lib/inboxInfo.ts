@@ -12,14 +12,24 @@ import { parseInternalNote } from './internalNotes';
 import { buildPayeeProfiles, matchPayee } from './payeeMemory';
 import { localIso } from './thisWeek';
 import { formatMoney } from './constants';
+import { isRequestMirrorNotification } from './notificationCounts';
 import { tStatic } from './i18n';
 
 // Persisted notifications that belong in the Inbox "Info" tab + bell badge:
-// unread, non-group, non-request informational pings (e.g. "someone added you
-// via your code"). Group fan-out notifications have their own home on the
-// Activity page; linked request/settlement pings are actioned on Incoming.
+// every unread row EXCEPT the linked request/settlement pings, which are
+// actioned on the Incoming tab and counted from the request rows themselves
+// (see isRequestMirrorNotification).
+//
+// This was an allow-list of four types — `contact_linked | system | invite |
+// kameti` — until 2026-09-03. Two of those four are written by nothing in the
+// product (audit 08-notifications.md §1.1), so in practice the tab and the
+// bell badge showed contact pings only, and `group_update` — the highest
+// volume notification in the app — was invisible on both: the founder's bell
+// went dark with hundreds of unread rows in the table. Group rows have a real
+// home here now; `notificationHref` already deep-links each one to its group,
+// and tapping marks it read, so the count clears.
 export function isInboxInfoNotification(n: AppNotification): boolean {
-  return !n.readAt && (n.type === 'contact_linked' || n.type === 'system' || n.type === 'invite' || n.type === 'kameti');
+  return !n.readAt && !isRequestMirrorNotification(n);
 }
 
 export type InfoTone = 'pay' | 'warn' | 'info' | 'accent' | 'receive';

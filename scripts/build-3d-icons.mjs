@@ -86,7 +86,11 @@ const SLUG_MAP = {
   calendar: 'calender',
   bell: 'megaphone',
   gift: 'gift',
-  people: 'boy',
+  // NOTE: there is deliberately no `people` here. It was a second name for
+  // the SAME upstream `boy` art as `person` (byte-identical output), so a
+  // caller reaching for "a group of people" silently got one figure. The
+  // pack has no multi-person art at all; `chat` (two overlapping speech
+  // bubbles) is what the group surfaces use instead.
   chart: 'chart',
   shield: 'sheild',
   target: 'target',
@@ -94,6 +98,18 @@ const SLUG_MAP = {
   trophy: 'trophy',
   pot: 'bucket',
   sparkle: 'star',
+  plus: 'plus',
+  link: 'link',
+  key: 'key',
+  money: 'money',
+  bag: 'bag',
+  calculator: 'calculator',
+  cup: 'tea-cup',
+  person: 'boy',
+  person2: 'girl',
+  alarm: 'clock',
+  tick: 'tick',
+  lock: 'lock',
 };
 
 function fmtBytes(n) {

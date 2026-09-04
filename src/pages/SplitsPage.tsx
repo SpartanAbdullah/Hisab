@@ -404,7 +404,11 @@ export function SplitsPage() {
           <div className="grid grid-cols-2 gap-2.5 pt-5">
             <Tile3D
               tint="sky"
-              icon="chat"
+              /* Literal art for the two verbs: a `plus` for "make a new one",
+                 a `key` for "let me in with this code". The pair used to be
+                 `chat`/`handshake` (a speech bubble and a thumbs-up), which
+                 said nothing about creating or joining. */
+              icon="plus"
               iconPlacement="top"
               iconSize="sm"
               title={t('groups_action_create_title')}
@@ -412,7 +416,7 @@ export function SplitsPage() {
             />
             <Tile3D
               tint="neutral"
-              icon="handshake"
+              icon="key"
               iconPlacement="top"
               iconSize="sm"
               title={t('groups_action_join_title')}

@@ -21,8 +21,8 @@ interface Props {
   padding?: ClayCardPadding;
   /**
    * Optional 3D asset floating off the top inline-end corner, exactly as on
-   * Tile3D. Sanctioned on tier 2: the tiers are separated by the lip, the
-   * press, the focus ring and the radius — not by the art.
+   * Tile3D. Sanctioned on tier 2: the tiers are separated by the press, the
+   * focus ring, the shadow spread and the radius — not by the art.
    *
    * Reserves a 64px inline-end gutter, except under `padding="none"` where
    * the caller owns the spacing.
@@ -42,10 +42,12 @@ interface Props {
 /**
  * Tier 2 of the clay system: the INFORMATIONAL surface.
  *
- * Same lit-from-above material as Tile3D, but with a softer two-layer shadow,
- * no lip, no press, no focus ring, and a 24px radius against the tile's 16px.
- * That radius gap is the point — a user must be able to tell "I can press
- * this" from "this is telling me something" before touching either.
+ * Same surface recipe as Tile3D — hairline inside the radius, soft ambient
+ * shadow, no drawn edge — but with a wider, flatter shadow (0 12px 32px -16px
+ * against the tile's 0 8px 24px -12px), no press, no focus ring, and a 24px
+ * radius against the tile's 16px. That radius gap is the point — a user must
+ * be able to tell "I can press this" from "this is telling me something"
+ * before touching either.
  *
  * If a card needs to be tappable, it is not a card. Use Tile3D.
  */

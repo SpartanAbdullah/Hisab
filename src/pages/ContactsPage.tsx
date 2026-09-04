@@ -693,8 +693,11 @@ export function ContactsPage() {
             works, shown once the user has at least one contact. */}
         {persons.length > 0 && !showAdd && !lastCreated && (
           <Card3D tint="blush" padding="sm" className="rounded-[18px] flex items-center gap-3">
+            {/* A chain LINK — this card counts how many contacts are linked
+                to a real Hisaab account. The asset named `handshake` that
+                used to sit here renders a thumbs-up. */}
             <div className="w-10 h-10 flex items-center justify-center shrink-0">
-              <Icon3D name="handshake" size="sm" />
+              <Icon3D name="link" size="sm" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-ink-900 tracking-tight">
@@ -726,9 +729,11 @@ export function ContactsPage() {
         ) : persons.length === 0 ? (
           loadStatus === 'ready' ? (
             <div className="text-center py-10">
-              {/* 3D clay: the rendered icon replaces the flat glyph, same halo. */}
+              {/* 3D clay: the rendered icon replaces the flat glyph, same
+                  halo. A `person` — an empty contacts list is missing
+                  PEOPLE, which the old thumbs-up art never said. */}
               <div className="w-14 h-14 rounded-3xl bg-accent-100 flex items-center justify-center mx-auto mb-3">
-                <Icon3D name="handshake" size="sm" />
+                <Icon3D name="person" size="sm" />
               </div>
               <p className="text-[13px] font-semibold text-ink-900">
                 {t('cts_empty_title')}

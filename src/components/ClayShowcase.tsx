@@ -49,7 +49,9 @@ const DEPTH_BUTTONS: { key: string; variant: 'primary' | 'secondary' | 'danger' 
 
 const SECTIONS = {
   tiles: 'Tier 1 — clay-tile (pressable)',
-  stack: 'Tile — iconPlacement top, 4-up @ 360px',
+  stack: 'Tile — top + sm, 4-up @ 360px',
+  stackLg: 'Tile — top + lg, label below (11px)',
+  stackBare: 'Tile — top + lg, label hidden (sr-only)',
   cards: 'Tier 2 — clay-card (informational)',
   states: 'Tile states',
   icons: 'Icon3D sizes + float',
@@ -68,12 +70,12 @@ const STACK_TILES: { key: string; tint: ClayTint; icon: string; heading: string 
 const STATE_TILES = [
   { key: 'plain', heading: 'No icon', sub: 'Bare tile, 44px min height' },
   { key: 'badge', heading: 'With badge', sub: 'Neutral pill under the subtitle' },
-  { key: 'off', heading: 'Disabled', sub: 'Lip flattens, key shadow off' },
+  { key: 'off', heading: 'Disabled', sub: 'Ambient shadow off, 50% opacity' },
 ];
 
 const CARD_COPY = {
   heading: 'Informational surface',
-  detail: 'No lip, no press, no focus ring, 24px radius. If it needs a tap, it is a tile.',
+  detail: 'No press, no focus ring, wider shadow, 24px radius. If it needs a tap, it is a tile.',
   note: 'Icons here sit inline, not floating — floating is a tile affordance.',
 };
 
@@ -135,6 +137,52 @@ export function ClayShowcase() {
               badge={i === 1 ? STACK_BADGE : undefined}
               badgePlacement="corner"
               selected={i === 0}
+              onClick={() => undefined}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ---- Stacked 4-up, lg icon, label BELOW ----
+          The home-grid shape after the 2026-09-03 founder pass: 64px of art
+          on a ~74px tile, an 11px medium ink-700 caption under it. */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-bold uppercase tracking-widest text-ink-500">{SECTIONS.stackLg}</h2>
+        <div className="grid grid-cols-4 gap-x-2 gap-y-7 pt-7">
+          {STACK_TILES.map((tile, i) => (
+            <Tile3D
+              key={tile.key}
+              tint={tile.tint}
+              icon={tile.icon}
+              iconPlacement="top"
+              iconSize="lg"
+              title={tile.heading}
+              badge={i === 1 ? STACK_BADGE : undefined}
+              badgePlacement="corner"
+              onClick={() => undefined}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ---- Stacked 4-up, lg icon, label HIDDEN ----
+          The other half of the founder's either/or. The title is still
+          rendered — as an sr-only span — so every tile keeps a real
+          accessible name; only the pixels are gone. */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-bold uppercase tracking-widest text-ink-500">{SECTIONS.stackBare}</h2>
+        <div className="grid grid-cols-4 gap-x-2 gap-y-7 pt-7">
+          {STACK_TILES.map((tile, i) => (
+            <Tile3D
+              key={tile.key}
+              tint={tile.tint}
+              icon={tile.icon}
+              iconPlacement="top"
+              iconSize="lg"
+              label="hidden"
+              title={tile.heading}
+              badge={i === 1 ? STACK_BADGE : undefined}
+              badgePlacement="corner"
               onClick={() => undefined}
             />
           ))}

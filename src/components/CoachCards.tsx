@@ -21,8 +21,12 @@ const KIND_ICON: Record<CoachKind, string> = {
   budget_pace: 'chart',
   renewals_soon: 'calendar',
   goal_behind: 'target',
-  top_category: 'receipt',
-  log_nudge: 'chat',
+  // A shopping bag for "here is where your money went" — `receipt` renders a
+  // plain text document, which reads as paperwork, not as spending.
+  top_category: 'bag',
+  // An alarm clock for "you haven't logged anything in N days" — `chat`
+  // (speech bubbles) said nothing about a lapsed habit.
+  log_nudge: 'alarm',
 };
 
 // Tone → clay tint. The old tone only coloured a 36px icon chip; carrying it

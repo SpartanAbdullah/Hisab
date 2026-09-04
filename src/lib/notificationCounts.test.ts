@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   countAttentionNotifications,
+  countBellItems,
+  countBellNotifications,
   countIncomingPending,
   countOutgoingPending,
+  daysWaiting,
   isAttentionNotification,
+  isRequestMirrorNotification,
+  staleMirrorNotificationIds,
 } from './notificationCounts';
+import { isInboxInfoNotification } from './inboxInfo';
 import type { AppNotification } from '../db';
 
 const ME = 'user-me';
@@ -126,5 +132,268 @@ describe('countIncomingPending / countOutgoingPending', () => {
   it('is zero while the user id is unknown (signed out / still booting)', () => {
     expect(countIncomingPending(requests, '')).toBe(0);
     expect(countOutgoingPending(requests, '')).toBe(0);
+  });
+});
+
+// ── The bell badge (founder report 2026-09-03: "the counter is also not
+//    there"). The badge counted an ALLOW-list of four notification types, two
+//    of which nothing in the product writes — so `group_update`, the app's
+//    highest-volume notification, never lit it.
+describe('countBellNotifications', () => {
+  it('counts an unread group notification — the type the old allow-list dropped', () => {
+    expect(countBellNotifications([notif({ type: 'group_update' })], ME)).toBe(1);
+  });
+
+  it('counts contact / kameti pings too', () => {
+    const rows = [
+      notif({ id: '1', type: 'contact_linked', actorId: null }),
+      notif({ id: '2', type: 'kameti', actorId: null }),
+    ];
+    expect(countBellNotifications(rows, ME)).toBe(2);
+  });
+
+  it('never counts the linked request/settlement mirrors', () => {
+    // These are the ping ABOUT a pending request row, and that row is counted
+    // directly. Counting both shows 2 for one loan — and the ping stays unread
+    // after the user accepts, so the badge could never reach zero.
+    expect(isRequestMirrorNotification(notif({ type: 'linked_request' }))).toBe(true);
+    expect(isRequestMirrorNotification(notif({ type: 'linked_settlement' }))).toBe(true);
+    expect(isRequestMirrorNotification(notif({ type: 'group_update' }))).toBe(false);
+    const rows = [
+      notif({ id: '1', type: 'linked_request' }),
+      notif({ id: '2', type: 'linked_settlement' }),
+      notif({ id: '3', type: 'group_update' }),
+    ];
+    expect(countBellNotifications(rows, ME)).toBe(1);
+  });
+
+  it('still drops read, self-caused and muted-group rows (audit N-7)', () => {
+    const rows = [
+      notif({ id: '1' }),                                       // ✓
+      notif({ id: '2', readAt: '2026-09-02T11:00:00.000Z' }),   // read
+      notif({ id: '3', actorId: ME }),                          // self-caused
+      notif({ id: '4', groupId: 'g1' }),                        // muted group
+    ];
+    expect(countBellNotifications(rows, ME, { mutedGroupIds: ['g1'] })).toBe(1);
+  });
+
+  it('reaches zero once everything is read', () => {
+    const rows = [notif({ id: '1' }), notif({ id: '2', type: 'contact_linked' })];
+    const read = rows.map((n) => ({ ...n, readAt: '2026-09-02T12:00:00.000Z' }));
+    expect(countBellNotifications(rows, ME)).toBe(2);
+    expect(countBellNotifications(read, ME)).toBe(0);
+  });
+
+  // The bell must never promise something the /inbox destination cannot show:
+  // the Info tab lists exactly the rows this counts (minus the self/mute
+  // filters, which can only make the badge SMALLER than the list).
+  it('agrees with what the Inbox Info tab lists', () => {
+    const rows = [
+      notif({ id: '1', type: 'group_update' }),
+      notif({ id: '2', type: 'contact_linked' }),
+      notif({ id: '3', type: 'kameti' }),
+      notif({ id: '4', type: 'linked_request' }),
+      notif({ id: '5', readAt: '2026-09-02T11:00:00.000Z' }),
+    ];
+    expect(countBellNotifications(rows, ME)).toBe(rows.filter(isInboxInfoNotification).length);
+  });
+});
+
+describe('countBellItems', () => {
+  const base = {
+    notifications: [] as AppNotification[],
+    linkedRequests: [],
+    settlementRequests: [],
+    contactLinkRequests: [],
+    userId: ME,
+  };
+
+  it('adds incoming requests and unread notifications', () => {
+    expect(countBellItems({
+      ...base,
+      notifications: [notif({ id: '1' }), notif({ id: '2', type: 'contact_linked' })],
+      linkedRequests: [{ status: 'pending', toUserId: ME, fromUserId: THEM }],
+      settlementRequests: [{ status: 'pending', toUserId: ME, fromUserId: THEM }],
+      contactLinkRequests: [{ status: 'pending', toUserId: ME, fromUserId: THEM }],
+    })).toEqual({ actionable: 5, waiting: 0 });
+  });
+
+  it('routes requests this user sent to `waiting`, never to the red number (N-7)', () => {
+    expect(countBellItems({
+      ...base,
+      linkedRequests: [
+        { status: 'pending', toUserId: THEM, fromUserId: ME },   // mine, waiting on them
+        { status: 'pending', toUserId: ME, fromUserId: THEM },   // ✓ actionable
+      ],
+    })).toEqual({ actionable: 1, waiting: 1 });
+  });
+
+  it('does not double-count a loan request against its own notification', () => {
+    // One incoming loan request = one item, even though the trigger also
+    // writes the receiver a `linked_request` row.
+    expect(countBellItems({
+      ...base,
+      notifications: [notif({ id: '1', type: 'linked_request' })],
+      linkedRequests: [{ status: 'pending', toUserId: ME, fromUserId: THEM }],
+    })).toEqual({ actionable: 1, waiting: 0 });
+  });
+
+  it('is zero when nothing needs the user', () => {
+    expect(countBellItems({
+      ...base,
+      notifications: [notif({ id: '1', readAt: '2026-09-02T11:00:00.000Z' })],
+      linkedRequests: [{ status: 'accepted', toUserId: ME, fromUserId: THEM }],
+    })).toEqual({ actionable: 0, waiting: 0 });
+  });
+
+  it('counts unread notifications even before the user id is known', () => {
+    // Boot order: notifications can land before the auth store settles. The
+    // badge must not blink off — request counts wait for the id, rows do not.
+    expect(countBellItems({
+      ...base,
+      userId: '',
+      notifications: [notif({ id: '1' })],
+      linkedRequests: [{ status: 'pending', toUserId: ME, fromUserId: THEM }],
+    })).toEqual({ actionable: 1, waiting: 0 });
+  });
+
+  // ── The founder's production account, 2026-09-03, exactly as measured ────
+  // 5 outgoing pending linked requests, 3 outgoing pending settlements, 0
+  // incoming of either, 0 contact links, 76 group_update rows ALL READ, and 73
+  // unread request mirrors (38 linked_request + 35 linked_settlement).
+  // Expected: no red number — nothing needs them — but a waiting dot for 8.
+  it('reproduces the founder’s account: actionable 0, waiting 8', () => {
+    const outgoing = (n: number) =>
+      Array.from({ length: n }, () => ({ status: 'pending', toUserId: THEM, fromUserId: ME }));
+    const read = (id: string, type: AppNotification['type']) =>
+      notif({ id, type, readAt: '2026-09-01T09:00:00.000Z' });
+    const unreadMirror = (id: string, type: AppNotification['type']) => notif({ id, type });
+
+    const state = countBellItems({
+      notifications: [
+        ...Array.from({ length: 76 }, (_, i) => read(`g${i}`, 'group_update')),
+        ...Array.from({ length: 38 }, (_, i) => unreadMirror(`lr${i}`, 'linked_request')),
+        ...Array.from({ length: 35 }, (_, i) => unreadMirror(`ls${i}`, 'linked_settlement')),
+      ],
+      linkedRequests: outgoing(5),
+      settlementRequests: outgoing(3),
+      contactLinkRequests: [],
+      userId: ME,
+    });
+    expect(state).toEqual({ actionable: 0, waiting: 8 });
+  });
+});
+
+// ── Stale request mirrors ─────────────────────────────────────────────────
+// The 73 unread pings in that same production account: their requests are all
+// resolved, the Inbox can't show them, and nothing the user does clears them.
+describe('staleMirrorNotificationIds', () => {
+  const T0 = '2026-09-02T10:00:00.000Z';
+
+  it('retires every mirror when nothing of that kind is pending (the founder’s 73)', () => {
+    const rows = [
+      ...Array.from({ length: 38 }, (_, i) => notif({ id: `lr${i}`, type: 'linked_request' })),
+      ...Array.from({ length: 35 }, (_, i) => notif({ id: `ls${i}`, type: 'linked_settlement' })),
+    ];
+    const ids = staleMirrorNotificationIds({
+      notifications: rows,
+      // Only OUTGOING pendings — none of these is waiting on ME.
+      linkedRequests: [{ status: 'pending', toUserId: THEM, fromUserId: ME, createdAt: T0 }],
+      settlementRequests: [{ status: 'pending', toUserId: THEM, fromUserId: ME, createdAt: T0 }],
+      userId: ME,
+    });
+    expect(ids).toHaveLength(73);
+  });
+
+  it('never touches a ping whose incoming request is still pending', () => {
+    const live = notif({ id: 'live', type: 'linked_request', createdAt: T0 });
+    const ids = staleMirrorNotificationIds({
+      notifications: [live],
+      linkedRequests: [{ status: 'pending', toUserId: ME, fromUserId: THEM, createdAt: T0 }],
+      settlementRequests: [],
+      userId: ME,
+    });
+    expect(ids).toEqual([]);
+  });
+
+  it('retires an OLD ping even while a different request of that kind is pending', () => {
+    const old = notif({ id: 'old', type: 'linked_request', createdAt: '2026-08-01T10:00:00.000Z' });
+    const live = notif({ id: 'live', type: 'linked_request', createdAt: T0 });
+    const ids = staleMirrorNotificationIds({
+      notifications: [old, live],
+      linkedRequests: [{ status: 'pending', toUserId: ME, fromUserId: THEM, createdAt: T0 }],
+      settlementRequests: [],
+      userId: ME,
+    });
+    expect(ids).toEqual(['old']);
+  });
+
+  it('leaves non-mirror and already-read rows alone', () => {
+    const ids = staleMirrorNotificationIds({
+      notifications: [
+        notif({ id: 'g', type: 'group_update' }),
+        notif({ id: 'c', type: 'contact_linked' }),
+        notif({ id: 'read', type: 'linked_request', readAt: '2026-09-02T11:00:00.000Z' }),
+      ],
+      linkedRequests: [],
+      settlementRequests: [],
+      userId: ME,
+    });
+    expect(ids).toEqual([]);
+  });
+
+  it('keeps a ping when a timestamp is unreadable — never clears on a guess', () => {
+    const ids = staleMirrorNotificationIds({
+      notifications: [notif({ id: 'x', type: 'linked_request', createdAt: 'not-a-date' })],
+      linkedRequests: [{ status: 'pending', toUserId: ME, fromUserId: THEM, createdAt: T0 }],
+      settlementRequests: [],
+      userId: ME,
+    });
+    expect(ids).toEqual([]);
+  });
+
+  it('does nothing while the user id is unknown', () => {
+    expect(staleMirrorNotificationIds({
+      notifications: [notif({ id: 'x', type: 'linked_request' })],
+      linkedRequests: [],
+      settlementRequests: [],
+      userId: '',
+    })).toEqual([]);
+  });
+
+  it('is idempotent: a second pass over the marked rows finds nothing', () => {
+    const rows = [notif({ id: 'a', type: 'linked_request' })];
+    const first = staleMirrorNotificationIds({
+      notifications: rows, linkedRequests: [], settlementRequests: [], userId: ME,
+    });
+    expect(first).toEqual(['a']);
+    const marked = rows.map((n) => ({ ...n, readAt: '2026-09-03T10:00:00.000Z' }));
+    expect(staleMirrorNotificationIds({
+      notifications: marked, linkedRequests: [], settlementRequests: [], userId: ME,
+    })).toEqual([]);
+  });
+});
+
+describe('daysWaiting', () => {
+  const now = new Date(2026, 8, 3, 14, 0, 0); // 2026-09-03 local
+
+  it('is 0 for something sent today', () => {
+    expect(daysWaiting(new Date(2026, 8, 3, 1, 0, 0).toISOString(), now)).toBe(0);
+  });
+
+  it('counts calendar days, so last night is 1 day', () => {
+    expect(daysWaiting(new Date(2026, 8, 2, 23, 0, 0).toISOString(), now)).toBe(1);
+  });
+
+  it('counts a longer wait', () => {
+    expect(daysWaiting(new Date(2026, 7, 24, 12, 0, 0).toISOString(), now)).toBe(10);
+  });
+
+  it('clamps a future timestamp to 0 rather than showing a negative wait', () => {
+    expect(daysWaiting(new Date(2026, 8, 5, 12, 0, 0).toISOString(), now)).toBe(0);
+  });
+
+  it('is null for an unreadable timestamp', () => {
+    expect(daysWaiting('nope', now)).toBeNull();
   });
 });

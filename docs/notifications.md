@@ -266,7 +266,7 @@ Outgoing pending stays in the Outgoing tab, which `InboxPage.tsx:167-172` alread
 
 ### 8.4 Two one-liners
 
-- **`src/lib/inboxInfo.ts:21-23`** — `isInboxInfoNotification` lists `contact_linked | system | invite`. Add `'kameti'` so kameti notifications light the Info tab and the bell; without it they load into the store and appear on the Activity "shared" tab only.
+- **`src/lib/inboxInfo.ts:21-23`** — `isInboxInfoNotification` listed `contact_linked | system | invite`. ~~Add `'kameti'`~~ **Done differently (2026-09-03):** the allow-list was the bug. `system` and `invite` are written by nothing (§1.1), so the Info tab and the bell badge only ever counted contact pings — a user with hundreds of unread `group_update` rows saw an empty bell. The predicate is now a DENY-list: every unread row except `linked_request` / `linked_settlement` (those are mirrors of a pending request row, which `countIncomingPending` counts directly and which clears when the user acts). `isRequestMirrorNotification` in `notificationCounts.ts` owns the rule; `countBellItems` assembles the whole badge.
 - **`src/App.tsx:470`** — the boot block calls `loadNotifications()`. Add `void useNotificationStore.getState().loadPrefs()` beside it, so mutes are known before the first count is rendered. Without it, the first badge of a session ignores mutes until something else triggers a prefs load.
 
 ### 8.5 Native tap handler — `src/lib/nativeBridge.ts` (not owned by M5)

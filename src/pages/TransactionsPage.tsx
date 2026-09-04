@@ -31,7 +31,8 @@ import { ListSkeleton } from '../components/ListSkeleton';
 import { NextStepHint } from '../components/NextStepHint';
 import { useAsyncLoad } from '../hooks/useAsyncLoad';
 import { QuickEntry } from './QuickEntry';
-import { deferredBlockStyle, estimateGroupHeight, useProgressiveBlocks } from '../components/VirtualList';
+import { deferredBlockStyle, estimateGroupHeight } from '../components/VirtualList';
+import { DEFAULT_LIST_PAGE_SIZE, nextPageCount, sliceBlocks } from '../lib/listPaging';
 import { analyticsDb } from '../lib/supabaseDb';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
@@ -54,6 +55,33 @@ type SplitLedgerEntry = Extract<LedgerEntry, { kind: 'split' }>;
 // render on a fresh boot. Anything older is one tap away and the tap says how
 // many entries are behind it.
 const RECENT_WINDOW_DAYS = 90;
+
+// ── The render page (founder request 2026-09-03) ───────────────────────────
+// On top of the 90-day recent window, only the newest ENTRIES_PER_PAGE entries
+// are painted on arrival; "Load more" adds another page.
+//
+// This replaces the IntersectionObserver reveal that used to sit here (M2(d),
+// docs/performance.md §6.6.5): that one mounted 8 day groups and quietly
+// prepared the next 8 whenever the sentinel came within 800 px, so a scroll
+// walked the whole window without the user ever asking for it. A day group is
+// also the wrong unit for the promise the footer makes — one group can be one
+// row or forty — so the cut is by entry now, and the count under the list is
+// the number of lines the user can actually see.
+//
+// This is a RENDERING page, not a fetch page. Paging the fetch here would be
+// wrong twice over: `transactionStore` is shared with HomePage, LoansPage, the
+// statement generators and the analytics fallback, and its fetch is already
+// bounded (12 months / 1000 rows, docs/performance.md §7.1) with an explicit
+// "Show full history" escape. So the rows are local; only the paint is paged.
+const ENTRIES_PER_PAGE = DEFAULT_LIST_PAGE_SIZE;
+
+// How many pages the list had grown to, kept for the session across unmounts —
+// the same trick, and the same reason, as VirtualList's `blockMemory`:
+// `src/App.tsx` (H7 / MF-18) restores `window.scrollY` right after a POP
+// navigation commits, and it can only land if the page re-renders at the height
+// it left with. A ref or component state would reset to page 1 on every trip to
+// a transaction detail sheet and dump the user back at the top.
+let rememberedPages = 1;
 
 // One ad-hoc split shown as the single event it was. Collapsed it reads like a
 // normal expense line carrying the FULL bill (that is what left the account);
@@ -393,14 +421,47 @@ export function TransactionsPage() {
     return [...groups.values()].map((g) => ({ ...g, entries: bundleSplitEvents(g.items) }));
   }, [windowed, primaryCurrency]);
 
-  // Windowed RENDERING on top of the windowed data: reveal day groups a
-  // screenful at a time as the user scrolls. Grows only, and remembers how far
-  // it grew, so App.tsx's POP scroll restoration (H7/MF-18) still lands on the
-  // right offset when the user comes back from a detail route.
-  const { visible: visibleGroups, hasMore, sentinelRef } = useProgressiveBlocks(
-    dayGroups.length,
-    { memoryKey: 'transactions' },
+  // ── Paged RENDERING on top of the windowed data ──────────────────────────
+  // The newest 15 entries paint on arrival; each "Load more" tap adds 15 more.
+  // Grows only, and remembers how far it grew across unmounts (see
+  // `rememberedPages`) so a trip into a detail sheet and back does not collapse
+  // the list under App.tsx's scroll restoration.
+  const [pageCount, setPageCount] = useState(rememberedPages);
+  useEffect(() => {
+    rememberedPages = pageCount;
+  }, [pageCount]);
+  // A new filter, a new search or lifting the 90-day window is a NEW list, so
+  // it starts at page one. Nothing else resets it — in particular a realtime
+  // arrival or a resume-refresh does not, so new rows land at the top of a list
+  // that is still as deep as the user left it.
+  //
+  // Adjusted DURING RENDER rather than in an effect, which is React's own
+  // "adjusting state when a prop changes" pattern
+  // (react.dev/learn/you-might-not-need-an-effect). An effect would be wrong
+  // twice here: it fires on MOUNT too, throwing away the remembered depth on
+  // every return from a detail sheet — the exact case `rememberedPages` exists
+  // to serve — and it would paint one frame of the old page count first.
+  const listIdentity = `${filter}|${timeFilter}|${search}|${showFullHistory}`;
+  const [lastListIdentity, setLastListIdentity] = useState(listIdentity);
+  if (lastListIdentity !== listIdentity) {
+    setLastListIdentity(listIdentity);
+    setPageCount(1);
+  }
+
+  // Day totals are NOT affected by the page: `dayGroups` above already computed
+  // each `signedSum` from every row of that day. A day's arithmetic must not
+  // change because the user has not tapped "Load more" yet — only the number of
+  // visible lines does. The same holds for the month-flow hero, the results
+  // count and the "N older entries are hidden" footer, all of which are
+  // computed from `transactions`/`filtered`, never from what is painted.
+  const page = useMemo(
+    () => sliceBlocks(dayGroups.map((g) => g.entries.length), pageCount * ENTRIES_PER_PAGE),
+    [dayGroups, pageCount],
   );
+  const visibleGroups = page.blocks;
+  const loadMoreEntries = useCallback(() => {
+    setPageCount((current) => nextPageCount(current, ENTRIES_PER_PAGE, page.total));
+  }, [page.total]);
 
   const today = new Date();
   const yesterday = subDays(today, 1);
@@ -629,14 +690,21 @@ export function TransactionsPage() {
           // Deliberately NOT keyed on `search` — re-animating on every
           // keystroke would make typing feel like the page was thrashing.
           <div className="space-y-4 stagger-in" key={`${filter}-${timeFilter}`}>
-            {dayGroups.slice(0, visibleGroups).map((group) => (
+            {dayGroups.slice(0, visibleGroups).map((group, groupIndex) => {
+              // The page can cut mid-day. The header's total still covers the
+              // WHOLE day (see the note above `page`); only the rows below it
+              // are trimmed, and the footer says how many of how many are shown.
+              const entries =
+                groupIndex === visibleGroups - 1
+                  ? group.entries.slice(0, page.lastBlockEntries)
+                  : group.entries;
+              return (
               // One day group = one deferred block. Off-screen blocks skip
-              // layout and paint entirely (content-visibility), and blocks past
-              // `visibleGroups` are not mounted at all until the sentinel below
-              // scrolls into view.
+              // layout and paint entirely (content-visibility), and groups past
+              // the current page are not mounted at all.
               <div
                 key={group.date.toISOString()}
-                style={deferredBlockStyle(estimateGroupHeight(group.entries.length))}
+                style={deferredBlockStyle(estimateGroupHeight(entries.length))}
               >
                 <div className="flex items-baseline justify-between px-1 mb-1.5">
                   <p className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
@@ -654,7 +722,7 @@ export function TransactionsPage() {
                   )}
                 </div>
                 <div className="rounded-[18px] bg-cream-card border border-cream-border px-4 divide-y divide-cream-hairline">
-                  {group.entries.map((entry) =>
+                  {entries.map((entry) =>
                     entry.kind === 'txn' ? (
                       <TransactionItem
                         key={entry.key}
@@ -673,12 +741,28 @@ export function TransactionsPage() {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
 
-            {/* Reveal sentinel. Rendered only while blocks remain, and sitting
-                well above the fold of the next batch (rootMargin) so the list
-                never visibly stalls while scrolling. */}
-            {hasMore && <div ref={sentinelRef} aria-hidden className="h-px" />}
+            {/* "Showing N of M" over the list the filters produced — M is every
+                entry that matched, not a guess, and it is the same number the
+                results count above reports. One tap adds another 15. */}
+            {page.hasMore && (
+              <div className="space-y-2 pt-1">
+                <p className="text-[10.5px] text-ink-500 px-1 tabular-nums">
+                  {t('list_showing_n_of_m')
+                    .replace('{n}', String(page.rendered))
+                    .replace('{m}', String(page.total))}
+                </p>
+                <button
+                  type="button"
+                  onClick={loadMoreEntries}
+                  className="w-full min-h-[44px] rounded-2xl bg-cream-card border border-cream-border text-[12px] font-semibold text-ink-700"
+                >
+                  {t('list_load_more')}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

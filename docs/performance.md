@@ -893,6 +893,21 @@ as before, every figure comes from the same expression as before.
 
 Two separate mechanisms, deliberately not conflated.
 
+> **Amended 2026-09-03 (founder request: "just load the latest 15 entries, then
+> a Load more button").** The automatic day-group reveal described in (a) was
+> replaced on `TransactionsPage` by an explicit **15-entry page + "Load more"
+> button** (`src/lib/listPaging.ts`: `sliceBlocks`, `nextPageCount`; 24 tests).
+> The unit is now an *entry*, a day group is cut mid-way with its whole-day
+> total still shown in the header, and nothing is revealed by scrolling. The
+> two properties that mattered are kept: the page count only grows and is
+> remembered in a module variable for the session (same reason as below — the
+> POP scroll restoration needs the page to re-render at the height it left
+> with), and totals/search/filters run over the full loaded window, never over
+> what is painted. `useProgressiveBlocks` / `resetBlockMemory` in
+> `VirtualList.ts` therefore have **no consumer** today; they stay exported and
+> tested for any list that still wants scroll-driven reveal. The text below
+> describes the mechanism as originally built.
+
 **(a) Windowed rendering** — `src/components/VirtualList.ts`
 (`useProgressiveBlocks` + `deferredBlockStyle`). No new dependency. The unit is
 a **day group**, not a row.

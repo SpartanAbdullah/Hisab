@@ -110,8 +110,9 @@ describe('tile layout', () => {
     );
   });
 
-  it('gives the sm corner pairing its own class rather than tweaking the md one', () => {
+  it('gives each corner pairing its own class rather than tweaking the md one', () => {
     expect(clayTileLayoutClasses({ hasIcon: true, iconSize: 'sm' })).toEqual(['clay-tile-has-icon-sm']);
+    expect(clayTileLayoutClasses({ hasIcon: true, iconSize: 'lg' })).toEqual(['clay-tile-has-icon-lg']);
   });
 
   it('stacks for top placement, with no inline-end gutter class', () => {
@@ -122,6 +123,30 @@ describe('tile layout', () => {
       'clay-tile-stack',
       'clay-tile-stack-md',
     ]);
+    expect(clayTileLayoutClasses({ hasIcon: true, iconPlacement: 'top', iconSize: 'lg' })).toEqual([
+      'clay-tile-stack',
+      'clay-tile-stack-lg',
+    ]);
+  });
+
+  // label="hidden" LAYERS on the stacked classes; it never replaces them,
+  // because the icon's reserved top padding still has to be there.
+  it('adds the bare modifier when the label is hidden, keeping the stack classes', () => {
+    expect(
+      clayTileLayoutClasses({ hasIcon: true, iconPlacement: 'top', iconSize: 'lg', label: 'hidden' }),
+    ).toEqual(['clay-tile-stack', 'clay-tile-stack-lg', 'clay-tile-stack-bare']);
+  });
+
+  it("defaults to a visible label, and 'below' is the same as omitting it", () => {
+    expect(clayTileLayoutClasses({ hasIcon: true, iconPlacement: 'top', label: 'below' })).toEqual(
+      clayTileLayoutClasses({ hasIcon: true, iconPlacement: 'top' }),
+    );
+  });
+
+  // Corner tiles have no hidden-label shape: an icon bolted to the corner of
+  // a box with no text in it is not a tile, it is a mistake.
+  it('never hides the label on a corner tile', () => {
+    expect(clayTileLayoutClasses({ hasIcon: true, label: 'hidden' })).toEqual(['clay-tile-has-icon']);
   });
 
   it('positions the icon by placement', () => {
@@ -179,11 +204,31 @@ describe('stacked icon geometry', () => {
     expect(clayIconPx('sm')).toBeLessThan(tileWidth - 2 * 6);
   });
 
+  // The founder's ask (2026-09-03) was "make the icons more obvious", and lg
+  // on a 4-up grid is how: 64px of art on a 74px tile is 86% of its width —
+  // deliberately past the 74% the corner layout ever reserved, and past the
+  // tile's own 6px padding box. It still must not be WIDER than the tile, or
+  // adjacent icons in a row start touching across the 8px gap.
+  it('lets an lg icon dominate a 74px 4-up tile without overflowing it', () => {
+    const tileWidth = (360 - 40 - 3 * 8) / 4;
+    expect(clayIconPx('lg')).toBeGreaterThan(tileWidth * 0.74);
+    expect(clayIconPx('lg')).toBeLessThan(tileWidth);
+    // It overflows the 6px padding box on purpose — that is the "bigger than
+    // its box" read, and it only works because nothing in the clay system
+    // sets overflow: hidden.
+    expect(clayIconPx('lg')).toBeGreaterThan(tileWidth - 2 * 6);
+  });
+
   // Minimum tap target (design-system §4 / .clay-tile min-height: 44px).
+  // The title dropped to 11px in the 2026-09-03 pass, so the arithmetic that
+  // proves the target is still legal had to move with it.
   it('keeps every stacked pairing above the 44px tap target', () => {
-    for (const size of ['sm', 'md'] as ClaySize[]) {
-      // top padding + a 12px title line + 10px bottom padding
-      expect(clayTileStackPadding(size) + 12 + 10).toBeGreaterThanOrEqual(44);
+    for (const size of ['sm', 'md', 'lg'] as ClaySize[]) {
+      // top padding + an 11px title line + 10px bottom padding
+      expect(clayTileStackPadding(size) + 11 + 10).toBeGreaterThanOrEqual(44);
+      // …and with the label hidden: top padding + .clay-tile-stack-bare's
+      // 14px bottom padding, no text at all.
+      expect(clayTileStackPadding(size) + 14).toBeGreaterThanOrEqual(44);
     }
   });
 });

@@ -110,8 +110,28 @@ export function clayIconClass(size: ClaySize, float: boolean): string {
  */
 export type ClayIconPlacement = 'corner' | 'top';
 
-/** Tiles carry sm or md art; `lg` is for standalone/hero use, not tiles. */
-export type ClayTileIconSize = Extract<ClaySize, 'sm' | 'md'>;
+/**
+ * Tiles carry the full size ladder.
+ *
+ * `lg` (64px) was opened up to tiles on founder feedback (2026-09-03): the
+ * home grid's icons had to become the tile's bold element, not an accent on
+ * it. On a 4-up grid at 360px a tile is ~74px wide, so a 64px icon is 86% of
+ * the tile's width and overhangs its top edge by 26px — deliberately bigger
+ * than the box it sits on, which is the point. Nothing in the clay system
+ * sets `overflow: hidden`, so it renders; a grid still needs room above its
+ * first row (see Tile3D's doc comment).
+ */
+export type ClayTileIconSize = ClaySize;
+
+/**
+ * Whether a stacked tile shows its title.
+ *   below  — 11px caption under the art (default).
+ *   hidden — art only. The title is still rendered, as a visually-hidden
+ *            span, so it remains the tile's accessible name; only the pixels
+ *            go. NEVER drop the title prop to get this shape — an icon-only
+ *            tile with no accessible name is an unlabelled button.
+ */
+export type ClayTileLabel = 'below' | 'hidden';
 
 /**
  * Where a tile's badge sits.
@@ -165,11 +185,20 @@ export function clayTileLayoutClasses(opts: {
   hasIcon: boolean;
   iconPlacement?: ClayIconPlacement;
   iconSize?: ClayTileIconSize;
+  label?: ClayTileLabel;
 }): string[] {
-  const { hasIcon, iconPlacement = 'corner', iconSize = 'md' } = opts;
+  const { hasIcon, iconPlacement = 'corner', iconSize = 'md', label = 'below' } = opts;
   if (!hasIcon) return [];
-  if (iconPlacement === 'top') return ['clay-tile-stack', `clay-tile-stack-${iconSize}`];
-  return iconSize === 'sm' ? ['clay-tile-has-icon-sm'] : ['clay-tile-has-icon'];
+  if (iconPlacement === 'top') {
+    const classes = ['clay-tile-stack', `clay-tile-stack-${iconSize}`];
+    // Only the stacked shape can hide its label — a corner tile with no
+    // visible text is just an empty box with an icon bolted to one corner.
+    if (label === 'hidden') classes.push('clay-tile-stack-bare');
+    return classes;
+  }
+  if (iconSize === 'sm') return ['clay-tile-has-icon-sm'];
+  if (iconSize === 'lg') return ['clay-tile-has-icon-lg'];
+  return ['clay-tile-has-icon'];
 }
 
 /** Positioning class for the icon itself, by placement. */
@@ -190,8 +219,8 @@ export function clayBadgeClass(placement: ClayBadgePlacement): string {
  * Layout classes a Card3D adds on top of `.clay-card` + its tint class.
  *
  * A floating icon on a tier-2 card is sanctioned — the tiers are separated by
- * the lip, the press, the focus ring and the radius, not by the art — so this
- * mirrors the tile's corner treatment. The one asymmetry: `padding="none"`
+ * the press, the focus ring, the shadow spread and the radius, not by the art
+ * — so this mirrors the tile's corner treatment. The one asymmetry: `padding="none"`
  * gets NO gutter, because a caller who asked for no padding owns the spacing
  * and would not expect 64px silently added back.
  */

@@ -34,7 +34,8 @@ import { formatMoney } from '../lib/constants';
 import { approxOther, plausibilityCheck } from '../lib/currencyValidation';
 import { friendlyLinkedError } from '../lib/linkedErrorMap';
 import { useCategoryOptions } from '../lib/mergedCategories';
-import { useT } from '../lib/i18n';
+import { useT, type I18nKey } from '../lib/i18n';
+import { daysWaiting } from '../lib/notificationCounts';
 import { PageErrorState } from '../components/PageErrorState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { EmptyState } from '../components/EmptyState';
@@ -801,6 +802,12 @@ export function InboxPage() {
                 // reader's language and fall back to the stored text for
                 // legacy rows (audit N-1 / H5 — clients no longer author it).
                 const content = renderNotificationContent(n, t);
+                // Group + kameti rows land here too now (they are unread
+                // notifications with no request row of their own, and the bell
+                // counts them — so this tab has to be able to show them).
+                // A "person added you" glyph on a group expense would misread,
+                // so the icon follows the row's own kind.
+                const RowIcon = n.type === 'contact_linked' ? UserPlus : Users;
                 return (
                   <button
                     key={n.id}
@@ -819,10 +826,12 @@ export function InboxPage() {
                     className="w-full text-left rounded-[18px] bg-cream-card border border-cream-border p-4 flex items-center gap-3 press-lg"
                   >
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-accent-50">
-                      <UserPlus size={17} className="text-accent-600" strokeWidth={2} />
+                      <RowIcon size={17} className="text-accent-600" strokeWidth={2} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-semibold text-ink-900 tracking-tight truncate">{content.title || t('ntf_new_connection')}</p>
+                      <p className="text-[13px] font-semibold text-ink-900 tracking-tight truncate">
+                        {content.title || (n.type === 'contact_linked' ? t('ntf_new_connection') : t('ntf_update'))}
+                      </p>
                       <p className="text-[11.5px] text-ink-500 mt-0.5 line-clamp-2">{content.body}</p>
                     </div>
                     <span className="w-2 h-2 rounded-full bg-accent-500 shrink-0" aria-hidden />
@@ -869,6 +878,19 @@ export function InboxPage() {
           // list, so replaying the reveal is the honest signal that the
           // content changed rather than merely re-sorted.
           <div className="space-y-2.5 stagger-in" key={tab}>
+            {/* "Waiting on others (N)" — the outgoing asks that the bell now
+                marks with a quiet dot instead of a red number (audit N-7 kept:
+                no alarm), given a named home so the user can see who is slow
+                and nudge them. Header only; the cards below carry who/what and
+                the age line. */}
+            {tab === 'outgoing' && pendingVisibleCount > 0 && (
+              <div className="flex items-center gap-2 pb-0.5">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+                  {t('inbox_waiting_on_others').replace('{n}', String(pendingVisibleCount))}
+                </span>
+                <span className="flex-1 h-px bg-cream-hairline" />
+              </div>
+            )}
             {visible.map((entry, idx) => {
               // Divider sits at the boundary between the pinned pending block
               // and the resolved history — shown only when both groups exist.
@@ -1266,6 +1288,17 @@ function ContactAskCard({
   );
 }
 
+/** "3 din se intezar" for a pending outgoing ask. null when the timestamp is
+ *  unreadable, so the caller just omits the line. `daysWaiting` is pure and
+ *  tested; the words live here, per the repo's lib-owns-facts rule. */
+function waitingLabel(createdAtIso: string, t: (key: I18nKey) => string): string | null {
+  const days = daysWaiting(createdAtIso, new Date());
+  if (days === null) return null;
+  if (days === 0) return t('inbox_waiting_today');
+  if (days === 1) return t('inbox_waiting_1d');
+  return t('inbox_waiting_nd').replace('{n}', String(days));
+}
+
 function SettlementCard({
   request, tab, busy, contactName, remindUrl, accountLine, fullTracker, onAccept, onReject, onCancel, onReport, onBlock,
 }: {
@@ -1316,6 +1349,11 @@ function SettlementCard({
           </p>
           <p className="text-[10.5px] text-ink-500 mt-1">
             {format(new Date(request.createdAt), 'MMM d, h:mm a')}
+            {/* How long this ask has been sitting — the piece that tells the
+                sender whether it's worth a nudge. Outgoing + pending only. */}
+            {tab === 'outgoing' && isPending && waitingLabel(request.createdAt, t) ? (
+              <span className="text-ink-400"> · {waitingLabel(request.createdAt, t)}</span>
+            ) : null}
           </p>
           {accountLine && (
             <p className="text-[11px] text-ink-500 mt-1.5 flex items-start gap-1.5 leading-snug">
@@ -1479,6 +1517,11 @@ function RequestCard({
           )}
           <p className="text-[10.5px] text-ink-500 mt-1">
             {format(new Date(request.createdAt), 'MMM d, h:mm a')}
+            {/* How long this ask has been sitting — the piece that tells the
+                sender whether it's worth a nudge. Outgoing + pending only. */}
+            {tab === 'outgoing' && isPending && waitingLabel(request.createdAt, t) ? (
+              <span className="text-ink-400"> · {waitingLabel(request.createdAt, t)}</span>
+            ) : null}
           </p>
           {accountLine && (
             <p className="text-[11px] text-ink-500 mt-1.5 flex items-start gap-1.5 leading-snug">

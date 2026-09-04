@@ -618,13 +618,15 @@ export function HomePage() {
           ) : (
             <>
               {receivableEntries.length === 0 && payableEntries.length === 0 ? (
-                // The one place this mode gets an illustration. The asset
-                // named `handshake` is actually a thumbs-up, which is
-                // exactly right for "nothing outstanding": a blush card
-                // (blush is the khata / "diya aur liya" tint) with the
-                // record-an-IOU CTA on the clay depth button.
+                // The one place this mode gets an illustration. `tick` —
+                // a checkmark is the plainest picture of "nothing
+                // outstanding" (the asset named `handshake` is a thumbs-up,
+                // which reads as praise for something you did, not as a
+                // settled ledger): a blush card (blush is the khata /
+                // "diya aur liya" tint) with the record-an-IOU CTA on the
+                // clay depth button.
                 <Card3D tint="blush" padding="lg" className="text-center">
-                  <Icon3D name="handshake" size="lg" float className="mx-auto" />
+                  <Icon3D name="tick" size="lg" float className="mx-auto" />
                   <p className="font-semibold text-ink-900 mt-2">
                     {t('home_no_ious')}
                   </p>
@@ -726,7 +728,7 @@ export function HomePage() {
               <div className="grid grid-cols-2 gap-x-3 gap-y-6 pt-5">
                 <Tile3D
                   tint="blush"
-                  icon="chat"
+                  icon="person"
                   iconPlacement="top"
                   title={t('splits_home_contacts')}
                   subtitle={t('splits_home_contacts_sub')}
@@ -811,7 +813,9 @@ export function HomePage() {
 
               <Card3D tint="sky" padding="sm">
                 <div className="flex items-center gap-3">
-                  <Icon3D name="bell" size="sm" />
+                  {/* An alarm clock, not the megaphone the pack files under
+                      `bell` — this row is about reminders reaching you. */}
+                  <Icon3D name="alarm" size="sm" />
                   <p className="text-[12px] text-ink-700 leading-relaxed">
                     {t('home_notify_needs_app')}
                   </p>
@@ -1167,21 +1171,29 @@ export function HomePage() {
             gutters and an 8px column gap a tile is 74px wide, and the corner
             layout reserves 64px of that for the icon alone. Stacked, the icon
             is centred over the top edge and the label gets the full 62px
-            beneath it. `iconSize="sm"` (36px) keeps the art in proportion to
-            a 74px tile; `badgePlacement="corner"` keeps the same counts the
+            beneath it. `badgePlacement="corner"` keeps the same counts the
             old QuickTile pinned to the corner, now ringed in the tile's own
             surface colour so it stays legible over the art.
 
-            No overflow-hidden ancestor here, and `pt-5` / `gap-y-6` on the
-            grid: a stacked icon hangs 14px above its tile and would clip
+            `iconSize="lg"` (64px), not the sm it shipped with: founder
+            feedback 2026-09-03 was that the icons should be the obvious
+            thing here. 64px of art on a 74px tile is 86% of its width and
+            hangs 26px above the top edge — bigger than the box it sits on,
+            on purpose. The label follows it down to 11px medium ink-700, so
+            the art leads and the word captions it (Tile3D also supports
+            `label="hidden"` for an art-only grid; the labels are kept for
+            now).
+
+            No overflow-hidden ancestor here, and `pt-7` / `gap-y-7` on the
+            grid: an lg stacked icon hangs 26px above its tile and would clip
             otherwise. */}
         {accountCount > 0 && (
-          <div className="grid grid-cols-4 gap-x-2 gap-y-6 pt-5">
+          <div className="grid grid-cols-4 gap-x-2 gap-y-7 pt-7">
             <Tile3D
               tint="mint"
               icon="target"
               iconPlacement="top"
-              iconSize="sm"
+              iconSize="lg"
               title={t("nav_goals")}
               onClick={() => navigate("/goals")}
             />
@@ -1189,7 +1201,7 @@ export function HomePage() {
               tint="gold"
               icon="wallet"
               iconPlacement="top"
-              iconSize="sm"
+              iconSize="lg"
               title={t("home_tile_budget")}
               badge={budgetAttentionCount > 0 ? (budgetAttentionCount > 9 ? "9+" : budgetAttentionCount) : undefined}
               badgePlacement="corner"
@@ -1199,7 +1211,7 @@ export function HomePage() {
               tint="sky"
               icon="card"
               iconPlacement="top"
-              iconSize="sm"
+              iconSize="lg"
               title={t("home_tile_subs")}
               badge={subscriptionsDueSoon > 0 ? (subscriptionsDueSoon > 9 ? "9+" : subscriptionsDueSoon) : undefined}
               badgePlacement="corner"
@@ -1209,7 +1221,7 @@ export function HomePage() {
               tint="accent"
               icon="chart"
               iconPlacement="top"
-              iconSize="sm"
+              iconSize="lg"
               title={t("nav_analytics")}
               onClick={() => navigate("/analytics")}
             />
@@ -1217,17 +1229,18 @@ export function HomePage() {
               tint="neutral"
               icon="receipt"
               iconPlacement="top"
-              iconSize="sm"
+              iconSize="lg"
               title={t("nav_activity")}
               onClick={() => navigate("/activity")}
             />
             <Tile3D
               tint="blush"
-              /* `chat` (two speech bubbles), not `handshake` — that asset's
-                 art is a thumbs-up, which reads as approval, not people. */
-              icon="chat"
+              /* `person` — a single figure is exactly what a contacts list
+                 is a list OF. (`chat`, two speech bubbles, is reserved for
+                 the GROUP surfaces, where "several people" is the point.) */
+              icon="person"
               iconPlacement="top"
-              iconSize="sm"
+              iconSize="lg"
               title={t("home_tile_contacts")}
               badge={unsettledContactCount > 0 ? (unsettledContactCount > 9 ? "9+" : unsettledContactCount) : undefined}
               badgePlacement="corner"
@@ -1237,7 +1250,7 @@ export function HomePage() {
               tint="gold"
               icon="coins"
               iconPlacement="top"
-              iconSize="sm"
+              iconSize="lg"
               title={t("kameti_title")}
               onClick={() => navigate("/kameti")}
             />
@@ -1245,7 +1258,7 @@ export function HomePage() {
               tint="mint"
               icon="trophy"
               iconPlacement="top"
-              iconSize="sm"
+              iconSize="lg"
               title={t("home_tile_invest")}
               onClick={() => navigate("/investments")}
             />
@@ -1369,15 +1382,18 @@ export function HomePage() {
             needs a hand (overdue EMIs, missed recurring, kameti rounds,
             unfiled expenses) and lands on the Inbox "To-do" tab. */}
         {dataReady && (
-          // Both rows are taps, so both are tiles. The shield floats over
-          // the ritual row (the weekly check is the "your hisaab is
-          // guarded" moment); the to-do row wears gold + bell and keeps its
-          // count in the tile badge. Done-today flips the ritual tile to
-          // mint so keeping the ritual is visibly rewarded.
+          // Both rows are taps, so both are tiles. A `tick` floats over the
+          // ritual row — the Hisaab CHECK is literally a checkmark, where
+          // the old `shield` drew protection, a promise this row does not
+          // make; the to-do row wears gold + an ALARM CLOCK (the asset
+          // named `bell` is a megaphone — announcement, not "this needs
+          // your hand") and keeps its count in the tile badge. Done-today
+          // flips the ritual tile to mint so keeping the ritual is visibly
+          // rewarded.
           <div className="space-y-6 pt-5">
             <Tile3D
               tint={checkDays === 0 ? "mint" : "accent"}
-              icon="shield"
+              icon="tick"
               title={t("check_entry_title")}
               subtitle={
                 checkDays === null
@@ -1393,7 +1409,7 @@ export function HomePage() {
             {needsActionCount > 0 && (
               <Tile3D
                 tint="gold"
-                icon="bell"
+                icon="alarm"
                 title={
                   needsActionCount === 1
                     ? t("home_action_one")

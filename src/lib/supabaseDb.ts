@@ -40,6 +40,7 @@ import {
 } from './contactLinkStatus';
 import { fetchAllPages, type PagedFetchResult } from './pagedFetch';
 import { shouldStopWindowPaging } from './historyWindow';
+import type { KeysetCursor } from './listPaging';
 import type { DailySeriesRow, MonthlySummaryRow, TopExpenseRow } from './analytics';
 import type { RecordSettlementResult } from './groupSettlementResult';
 // Audit G5/O10 edit history. Types only — the renderer is pure and stays out
@@ -1845,13 +1846,111 @@ export const groupEventsDb = {
   // member author arbitrary `summary` text into the shared feed.
 };
 
+// ──────────────────────────────────────
+// How many notification rows one page costs. The list used to fetch a flat
+// `limit(100)` on every boot, every realtime nudge and every resume-refresh,
+// and render all 100 (founder request 2026-09-03). It now fetches the newest
+// NOTIFICATION_PAGE_SIZE and pages the rest on an explicit tap.
+const NOTIFICATION_PAGE_SIZE = 15;
+// Unread rows are fetched IN FULL alongside the first page, not paged — see
+// `getUnread` for why. This ceiling exists only so a pathological account
+// cannot turn "in full" into an unbounded read; the badge shows "9+" long
+// before it matters. Exported so the store can tell "no unread rows beyond
+// these" apart from "we stopped counting here".
+export const NOTIFICATION_UNREAD_CAP = 200;
+
+/** One page of notifications, newest first. */
+export interface NotificationPage {
+  rows: AppNotification[];
+  /**
+   * Exact number of notification rows this user owns. Requested only on the
+   * first page (PostgREST returns it in the same round-trip as the rows), so
+   * it is null on every subsequent page — the caller already has it.
+   */
+  total: number | null;
+}
+
 export const notificationsDb = {
-  async getAll(): Promise<AppNotification[]> {
+  /**
+   * The newest `limit` rows, or — with a cursor — the `limit` rows immediately
+   * older than it.
+   *
+   * Keyset, not offset: ordered `created_at DESC, id DESC`, the same order
+   * every other paged read in this file uses. The cursor's timestamp bound is
+   * INCLUSIVE and the ids already held at that exact instant are excluded by
+   * id, because a server sweep can write several rows for one user inside a
+   * single statement and they then share a `created_at` to the millisecond.
+   * An exclusive `<` would drop the siblings that straddled the boundary; a
+   * bare inclusive `<=` would re-deliver them forever. See
+   * `src/lib/listPaging.ts` `cursorAfter`, which builds the cursor.
+   */
+  async getPage(options?: {
+    limit?: number;
+    before?: KeysetCursor | null;
+  }): Promise<NotificationPage> {
+    const limit = options?.limit ?? NOTIFICATION_PAGE_SIZE;
+    const before = options?.before ?? null;
+    // The count rides along free on the first page and answers "Showing N of
+    // M" honestly. Asking for it on every page would make each "Load more" pay
+    // for a count of the shrinking remainder that nobody reads.
+    const wantCount = !before;
+    let query = wantCount
+      ? supabase.from('notifications').select('*', { count: 'exact' })
+      : supabase.from('notifications').select('*');
+    query = query.eq('user_id', getUserId());
+    if (before) {
+      query = query.lte('created_at', before.createdAt);
+      if (before.excludeIds.length > 0) {
+        const list = before.excludeIds.map((id) => `"${id}"`).join(',');
+        query = query.not('id', 'in', `(${list})`);
+      }
+    }
+    const { data, error, count } = await query
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return {
+      rows: (data ?? []).map(mapNotification),
+      total: wantCount && typeof count === 'number' ? count : null,
+    };
+  },
+
+  /**
+   * EVERY unread row, not just the ones on the first page.
+   *
+   * This is what makes paging the list safe. The unread-count predicate
+   * (`countAttentionNotifications` in `src/lib/notificationCounts.ts`) counts
+   * over the rows the store holds, and three other surfaces filter the same
+   * array for unread rows — the bell badge (`InboxAction`), the Inbox "Info"
+   * tab (`isInboxInfoNotification`, which is unread-only) and the per-group
+   * unread dots on SplitsPage. If the store held only the newest 15, an unread
+   * row sitting at position 16 would silently stop counting.
+   *
+   * So: the newest page is a WINDOW, but the unread set is COMPLETE. The
+   * predicate is untouched, and it now sees strictly more than the old
+   * `limit(100)` did.
+   *
+   * TODO(badge-owner): the one residual gap is an account carrying more than
+   * NOTIFICATION_UNREAD_CAP unread rows. Past that ceiling this read is
+   * truncated, the store skips its read-reconcile (it can no longer tell
+   * "read" from "past the cap"), and `countAttentionNotifications` undercounts.
+   * The fix, if the bell ever needs to be exact up there, is a separate
+   * `notificationsDb.unreadCount()` — a `head: true, count: 'exact'` request
+   * on `read_at is null` that transfers no rows — feeding the badge directly.
+   * Not built here: it cannot apply the self-caused/muted parts of the
+   * predicate in SQL, so it would be a SECOND definition of "unread" competing
+   * with the one in notificationCounts.ts, and every badge in this app already
+   * caps its display at "9+".
+   */
+  async getUnread(): Promise<AppNotification[]> {
     const { data, error } = await supabase
       .from('notifications').select('*')
       .eq('user_id', getUserId())
+      .is('read_at', null)
       .order('created_at', { ascending: false })
-      .limit(100);
+      .order('id', { ascending: false })
+      .limit(NOTIFICATION_UNREAD_CAP);
     if (error) throw error;
     return (data ?? []).map(mapNotification);
   },
@@ -1868,6 +1967,24 @@ export const notificationsDb = {
       .update({ read_at: new Date().toISOString() })
       .eq('id', id)
       .eq('user_id', getUserId());
+    if (error) throw error;
+  },
+  /** Mark a known set of rows read in ONE statement.
+   *
+   *  Used by the stale-mirror reconciliation
+   *  (`notificationStore.reconcileRequestMirrors`): a `linked_request` /
+   *  `linked_settlement` ping whose request is no longer pending can never be
+   *  cleared by the user — the Inbox card it points at is gone — so 73 of them
+   *  sat unread forever in production. `is('read_at', null)` keeps it
+   *  idempotent: re-running it writes nothing. */
+  async markManyRead(ids: readonly string[]) {
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .in('id', ids as string[])
+      .eq('user_id', getUserId())
+      .is('read_at', null);
     if (error) throw error;
   },
   async markAllRead() {

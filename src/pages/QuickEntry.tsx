@@ -18,7 +18,8 @@ import { useSplitStore } from '../stores/splitStore';
 import { Modal } from '../components/Modal';
 import { Tile3D } from '../components/Tile3D';
 import { Card3D } from '../components/Card3D';
-import type { ClayTint } from '../lib/clay';
+import { normalizeClayIconRegistry, resolveClayIcon, type ClayTint } from '../lib/clay';
+import { CLAY_ICONS } from '../lib/clayIcons.generated';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSubmitGuard, useSubmitIntentId } from '../lib/useSubmitGuard';
 import { ContactPicker, type ContactValue } from '../components/ContactPicker';
@@ -60,7 +61,19 @@ import { AddAccountStepper } from './AddAccountStepper';
 // authored via AddGroupExpenseModal, so the type guard is "if the user
 // picked this tile, route to the group-picker step and hand off to App."
 type EntryKind = TransactionType | 'group_expense';
-type EntryIntent = 'expense' | 'income' | 'transfer' | 'person_money' | 'group_expense' | 'cash_advance';
+
+// The split tile's 3D art. `calculator` is the asset this tile wants. The
+// manifest is GENERATED from public/3d, so the name is resolved against it
+// rather than assumed: Icon3D renders NOTHING for a name the manifest doesn't
+// know, and an art-less tile in a grid of clay tiles reads as broken. `chat`
+// (the splits family's icon) is the fallback if the asset is ever dropped.
+const SPLIT_CLAY_ICON: string =
+  resolveClayIcon('calculator', normalizeClayIconRegistry(CLAY_ICONS)) ?? 'chat';
+// 'split' is an intent, never an EntryKind: an ad-hoc split still SAVES as an
+// ordinary expense (type stays 'expense') and fans out through
+// executeSplitEvent. It exists as its own tile only because "split the coffee"
+// has to be findable — buried as a chip halfway down the Spend form, it wasn't.
+type EntryIntent = 'expense' | 'income' | 'transfer' | 'person_money' | 'group_expense' | 'cash_advance' | 'split';
 type RepaymentDirection = 'received' | 'paid' | null;
 // What a repayment applies to: the person(+currency) GROUP — one lump spread
 // across their loans oldest-first — or one specific loan line (today's
@@ -163,6 +176,11 @@ export function QuickEntry({
   // one entry out into the payer's share plus a receivable per person.
   const [splitPlan, setSplitPlan] = useState<SplitPlan | null>(null);
   const [showSplitSheet, setShowSplitSheet] = useState(false);
+  // The Split tile is an explicit "I want to split this", so the sheet opens
+  // itself once on arrival at the details step. A ref, not state, because
+  // dismissing the sheet must NOT re-arm it — otherwise a user who closes it
+  // is trapped in a sheet that reopens on every render.
+  const splitSheetAutoOpened = useRef(false);
   const amountRef = useRef<HTMLInputElement>(null);
 
   // One request id per submit intent: the same id survives a double tap and a
@@ -330,15 +348,27 @@ export function QuickEntry({
   const ALL_INTENTS: {
     value: EntryIntent; label: string; sub: string; tint: ClayTint; clayIcon: string;
   }[] = [
-    { value: 'expense', label: t('intent_spend'), sub: t('intent_spend_sub'), tint: 'coral', clayIcon: 'receipt' },
-    { value: 'income', label: t('intent_receive'), sub: t('intent_receive_sub'), tint: 'mint', clayIcon: 'wallet' },
-    { value: 'transfer', label: t('intent_move'), sub: t('intent_move_sub'), tint: 'neutral', clayIcon: 'card' },
-    { value: 'person_money', label: t('intent_person'), sub: t('intent_person_sub'), tint: 'blush', clayIcon: 'handshake' },
+    // Art picked by what the asset SHOWS, not by what the tile is filed
+    // under: a shopping bag for spending, a banknote stack for money coming
+    // in, a wallet for moving your own money between your own accounts, a
+    // person for money with one person, a payment card for a cash advance.
+    // `group_expense` keeps `chat` — the pack has no multi-person art
+    // (`person`/`person2`/`people` are all SINGLE figures), and the two
+    // overlapping speech bubbles are the only asset that reads as "several
+    // people", so a lone figure would be a downgrade here.
+    { value: 'expense', label: t('intent_spend'), sub: t('intent_spend_sub'), tint: 'coral', clayIcon: 'bag' },
+    { value: 'income', label: t('intent_receive'), sub: t('intent_receive_sub'), tint: 'mint', clayIcon: 'money' },
+    { value: 'transfer', label: t('intent_move'), sub: t('intent_move_sub'), tint: 'neutral', clayIcon: 'wallet' },
+    { value: 'person_money', label: t('intent_person'), sub: t('intent_person_sub'), tint: 'blush', clayIcon: 'person' },
     { value: 'group_expense', label: t('intent_group'), sub: t('intent_group_sub'), tint: 'sky', clayIcon: 'chat' },
-    { value: 'cash_advance', label: t('intent_cash_advance'), sub: t('intent_cash_advance_sub'), tint: 'gold', clayIcon: 'coins' },
+    { value: 'split', label: t('intent_split'), sub: t('intent_split_sub'), tint: 'sky', clayIcon: SPLIT_CLAY_ICON },
+    { value: 'cash_advance', label: t('intent_cash_advance'), sub: t('intent_cash_advance_sub'), tint: 'gold', clayIcon: 'card' },
   ];
+  // The ad-hoc split needs no accounts (executeSplitEvent writes loans only in
+  // splits_only), so unlike Spend/Receive/Move it survives the ledger-only
+  // filter — it is the single most-asked-for thing a ledger-only user does.
   const INTENTS = appMode === 'splits_only'
-    ? ALL_INTENTS.filter((i) => i.value === 'person_money' || i.value === 'group_expense')
+    ? ALL_INTENTS.filter((i) => i.value === 'person_money' || i.value === 'group_expense' || i.value === 'split')
     : ALL_INTENTS.filter((i) => i.value !== 'cash_advance' || hasCreditCard);
 
   const reset = () => {
@@ -349,6 +379,7 @@ export function QuickEntry({
     setGoalId(''); setConversionRate('');
     setHasEmi(false); setEmiInstallments(''); setEmiStartDate('');
     setSplitPlan(null); setShowSplitSheet(false);
+    splitSheetAutoOpened.current = false;
   };
   const handleClose = () => { reset(); onClose(); };
 
@@ -391,6 +422,7 @@ export function QuickEntry({
     setNotes('');
     setConversionRate('');
     setSplitPlan(null);
+    splitSheetAutoOpened.current = false;
   }, [open, preset]);
 
   useEffect(() => {
@@ -416,12 +448,20 @@ export function QuickEntry({
   };
 
   const isLedgerOnlyPersonFlow = appMode === 'splits_only' && ['loan_given', 'loan_taken', 'repayment'].includes(type);
-  const needsSource = !isLedgerOnlyPersonFlow && ['expense', 'transfer', 'loan_given', 'goal_contribution'].includes(type);
+  // Ledger-only ad-hoc split. splits_only has NO accounts, so the split runs
+  // as a pure ledger flow: no From picker, no account leg, no expense row —
+  // executeSplitEvent(mode: 'splits_only') writes loans only. Without this
+  // escape the shared `needsSource` rule for 'expense' would demand an account
+  // that can never exist, exactly the class of bug lessons.md warns about.
+  const isLedgerOnlySplitFlow = appMode === 'splits_only' && type === 'expense';
+  const needsSource = !isLedgerOnlyPersonFlow && !isLedgerOnlySplitFlow && ['expense', 'transfer', 'loan_given', 'goal_contribution'].includes(type);
   const needsDest = !isLedgerOnlyPersonFlow && ['income', 'transfer', 'loan_taken'].includes(type);
   const needsPerson = ['loan_given', 'loan_taken'].includes(type);
   const needsLoan = type === 'repayment';
   const needsGoal = type === 'goal_contribution';
-  const showCategory = ['income', 'expense'].includes(type);
+  // No category in the ledger-only split: nothing there writes an expense row,
+  // so a category picker would collect a value the save quietly discards.
+  const showCategory = ['income', 'expense'].includes(type) && !isLedgerOnlySplitFlow;
   const isGroupExpense = type === 'group_expense';
   // Splitting is offered on a plain expense only. A group expense already has
   // its own split UI, and every other type is either not shared (income,
@@ -434,6 +474,17 @@ export function QuickEntry({
   useEffect(() => {
     if (!canSplit && splitPlan) setSplitPlan(null);
   }, [canSplit, splitPlan]);
+
+  // Split intent → open the sheet the moment the details step is reached, so
+  // the tile actually leads somewhere instead of dumping the user on a Spend
+  // form and hoping they spot the chip. Fires at most once per open (the ref),
+  // and never when a plan already exists — reopening to edit is the chip's job.
+  useEffect(() => {
+    if (!open || step !== 2 || intent !== 'split') return;
+    if (splitPlan || splitSheetAutoOpened.current) return;
+    splitSheetAutoOpened.current = true;
+    setShowSplitSheet(true);
+  }, [open, step, intent, splitPlan]);
   // A loan is "linked" when an accepted linked_transaction_request mirrors it
   // to another Hisaab user. Such a loan must settle through the dedicated
   // settlement-request flow (so the counterparty confirms) — repaying it
@@ -673,7 +724,9 @@ export function QuickEntry({
     }
     switch (type) {
       case 'income': return !!destId;
-      case 'expense': return !!sourceId;
+      // Ledger-only: there is no account to require, so the split plan IS the
+      // requirement — without one there is nothing this mode could record.
+      case 'expense': return isLedgerOnlySplitFlow ? !!splitPlan : !!sourceId;
       case 'transfer': return !!sourceId && !!destId && sourceId !== destId;
       case 'loan_given': return (isLedgerOnlyPersonFlow || !!sourceId) && !!contact.name.trim();
       case 'loan_taken':
@@ -1037,8 +1090,11 @@ export function QuickEntry({
       // created — these settle against each contact's running balance, which
       // ContactDetailSheet and the consolidated repayment flow already handle.
       if (canSplit && splitPlan) {
-        const account = accounts.find((a) => a.id === sourceId)!;
-        const splitCurrency = account.currency;
+        // splits_only has no accounts at all, so `account` is legitimately
+        // undefined there and the currency comes from the ledger picker. Every
+        // account-derived value below stays optional for that reason.
+        const account = accounts.find((a) => a.id === sourceId);
+        const splitCurrency = account?.currency ?? ledgerCurrency;
         // The sheet works with placeholder keys for names typed fresh; resolve
         // every participant to a real Person row before writing anything.
         const resolveParticipant = async (personId: string, personName: string) => {
@@ -1069,7 +1125,7 @@ export function QuickEntry({
             myShare: splitPlan.myShare,
             others,
             payer,
-            accountId: sourceId,
+            accountId: account ? sourceId : undefined,
           },
           {
             processTransaction: (splitInput) => processTransaction(splitInput as TransactionInput),
@@ -1104,14 +1160,17 @@ export function QuickEntry({
         setConfirmData({
           title: t('split_saved_title'),
           description: splitPlan.direction === 'i_paid'
-            ? t('split_saved_i_paid')
+            // accountMove is 0 in splits_only — no account moved, so the
+            // "{total} paid" sentence has nothing true to say. Report the
+            // receivables, which ARE what this mode recorded.
+            ? t(accountMove > 0 ? 'split_saved_i_paid' : 'split_saved_i_paid_ledger')
                 .replace('{total}', formatMoney(accountMove || owed, splitCurrency))
                 .replace('{n}', String(others.length))
                 .replace('{owed}', formatMoney(owed, splitCurrency))
             : t('split_saved_they_paid')
                 .replace('{name}', payer?.personName ?? t('loan_they'))
                 .replace('{mine}', formatMoney(splitPlan.myShare, splitCurrency)),
-          changes: accountMove > 0
+          changes: accountMove > 0 && account
             ? [{ accountName: account.name, currency: splitCurrency, before: account.balance, after: account.balance - accountMove }]
             : [],
         });
@@ -1387,6 +1446,9 @@ export function QuickEntry({
   // title asks the specific question instead of a context-free "How much?".
   const amountTitle = (() => {
     if (cashAdvance) return t('qe_amt_cash_advance');
+    // A split asks for the WHOLE bill, not "how much did you spend" — the
+    // user's own share is what the sheet works out from it.
+    if (intent === 'split') return t('qe_amt_split');
     switch (type) {
       case 'expense': return t('qe_amt_expense');
       case 'income': return t('qe_amt_income');
@@ -1555,6 +1617,18 @@ export function QuickEntry({
                     if (tx.value === 'person_money') {
                       setCashAdvance(false);
                       setStep(3);
+                    } else if (tx.value === 'split') {
+                      // Still an ordinary expense underneath — the fan-out
+                      // happens at submit. Only the intent differs, and it is
+                      // what opens the split sheet on the details step.
+                      setType('expense');
+                      setRepaymentDirection(null);
+                      setCashAdvance(false);
+                      // Re-arm the one-shot auto-open: coming BACK to this tile
+                      // is a fresh "I want to split", even if a previous pass
+                      // dismissed the sheet.
+                      splitSheetAutoOpened.current = false;
+                      setStep(0);
                     } else if (tx.value === 'cash_advance') {
                       // Cash advance is a loan_taken funded by the user's own
                       // credit card — no contact will be asked for.
@@ -1580,15 +1654,17 @@ export function QuickEntry({
             <p className="text-[12px] text-ink-500 leading-relaxed">{t('intent_person_prompt')}</p>
             {/* 3D clay. Tint carries the direction the app uses everywhere
                 else: mint = it lands in your favour, coral = you end up
-                owing. Icon separates a NEW loan (handshake) from a
-                repayment on an existing one (coins). pt-5/gap-y-6 for the
-                floating icons' overhang. */}
+                owing. Icon separates a NEW loan (`money` — a banknote stack
+                changing hands) from a repayment that CLOSES something
+                (`tick`). Both used to be the thumbs-up/coin-stack pair,
+                which drew the same picture for two opposite acts.
+                pt-5/gap-y-6 for the floating icons' overhang. */}
             <div className="grid grid-cols-1 gap-y-6 pt-5">
             {[
-              { value: 'loan_given' as const, label: t('person_gave'), sub: t('person_gave_sub'), tint: 'mint' as ClayTint, clayIcon: 'handshake' },
-              { value: 'loan_taken' as const, label: t('person_borrowed'), sub: t('person_borrowed_sub'), tint: 'coral' as ClayTint, clayIcon: 'handshake' },
-              { value: 'repayment_received' as const, label: t('person_paid_me_back'), sub: t('person_paid_me_back_sub'), tint: 'mint' as ClayTint, clayIcon: 'coins' },
-              { value: 'repayment_paid' as const, label: t('person_i_paid_back'), sub: t('person_i_paid_back_sub'), tint: 'coral' as ClayTint, clayIcon: 'coins' },
+              { value: 'loan_given' as const, label: t('person_gave'), sub: t('person_gave_sub'), tint: 'mint' as ClayTint, clayIcon: 'money' },
+              { value: 'loan_taken' as const, label: t('person_borrowed'), sub: t('person_borrowed_sub'), tint: 'coral' as ClayTint, clayIcon: 'money' },
+              { value: 'repayment_received' as const, label: t('person_paid_me_back'), sub: t('person_paid_me_back_sub'), tint: 'mint' as ClayTint, clayIcon: 'tick' },
+              { value: 'repayment_paid' as const, label: t('person_i_paid_back'), sub: t('person_i_paid_back_sub'), tint: 'coral' as ClayTint, clayIcon: 'tick' },
             ].map((choice) => (
               <Tile3D
                 key={choice.value}
@@ -1634,7 +1710,10 @@ export function QuickEntry({
             <Card3D tint={cashAdvance ? 'gold' : 'neutral'} padding="sm" className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 {(() => {
-                  const Icon = cashAdvance ? CreditCard : TX_TYPES.find(tx => tx.value === type)?.icon;
+                  // Keyed off the PLAN, not the intent: a user who opened the
+                  // split sheet and cancelled is saving a plain expense, and
+                  // the summary must say so rather than keep promising a split.
+                  const Icon = cashAdvance ? CreditCard : splitPlan ? Users : TX_TYPES.find(tx => tx.value === type)?.icon;
                   if (!Icon) return null;
                   return (
                     <div className={`w-8 h-8 rounded-xl flex items-center justify-center border ${cashAdvance ? 'bg-warn-100/60 border-warn-100 text-warn-600' : 'bg-cream-soft border-cream-hairline text-ink-600'}`}>
@@ -1643,7 +1722,7 @@ export function QuickEntry({
                   );
                 })()}
                 <span className={`text-[13px] font-semibold tracking-tight ${cashAdvance ? 'text-warn-700' : 'text-ink-900'}`}>
-                  {cashAdvance ? t('intent_cash_advance') : TX_TYPES.find(tx => tx.value === type)?.label}
+                  {cashAdvance ? t('intent_cash_advance') : splitPlan ? t('intent_split') : TX_TYPES.find(tx => tx.value === type)?.label}
                 </span>
               </div>
               <span className={`font-semibold text-[15px] tabular-nums ${cashAdvance ? 'text-warn-700' : 'text-ink-900'}`}>{parseFloat(amount).toLocaleString()}</span>
@@ -1809,7 +1888,7 @@ export function QuickEntry({
             {/* Split-this chip. Deliberately a modifier on the Spend flow
                 rather than its own entry tile — making "split" a separate type
                 is exactly what forces people into groups they don't want. */}
-            {canSplit && sourceId && (
+            {canSplit && (sourceId || isLedgerOnlySplitFlow) && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">
                   {t('split_chip_label')}
@@ -1832,7 +1911,7 @@ export function QuickEntry({
                       {splitPlan && (
                         <span className="block text-[10.5px] text-ink-500 truncate mt-0.5">
                           {splitPlan.direction === 'i_paid'
-                            ? t('split_summary_i_paid')
+                            ? t(isLedgerOnlySplitFlow ? 'split_summary_i_paid_ledger' : 'split_summary_i_paid')
                                 .replace('{total}', formatMoney(parseFloat(amount) || 0, srcAccount?.currency ?? ledgerCurrency))
                                 .replace('{mine}', formatMoney(splitPlan.myShare, srcAccount?.currency ?? ledgerCurrency))
                                 .replace('{owed}', formatMoney(
@@ -1917,7 +1996,10 @@ export function QuickEntry({
               </div>
             )}
 
-            {isLedgerOnlyPersonFlow && type !== 'repayment' && (
+            {/* The ledger-only split needs the same currency pick as the
+                ledger-only person flows: with no account there is nothing else
+                to stamp the loans it writes with. */}
+            {((isLedgerOnlyPersonFlow && type !== 'repayment') || isLedgerOnlySplitFlow) && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('onboard_currency_label')}</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -2286,6 +2368,7 @@ export function QuickEntry({
         onClose={() => setShowSplitSheet(false)}
         total={parseFloat(amount) || 0}
         currency={srcAccount?.currency ?? ledgerCurrency}
+        ledgerOnly={isLedgerOnlySplitFlow}
         initial={splitPlan}
         onApply={setSplitPlan}
       />

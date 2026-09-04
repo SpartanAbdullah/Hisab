@@ -45,6 +45,13 @@ interface Props {
   currency: Currency;
   /** Reopening with an existing plan restores it for editing. */
   initial?: SplitPlan | null;
+  /**
+   * splits_only mode: no accounts exist, so the split records loans ONLY.
+   * Purely a copy switch — the "the full bill leaves your account" summary is
+   * simply untrue there, and telling a ledger-only user their account moved is
+   * exactly the kind of phantom record-keeping this repo has been bitten by.
+   */
+  ledgerOnly?: boolean;
   onApply: (plan: SplitPlan | null) => void;
 }
 
@@ -69,7 +76,7 @@ function seedRows(initial: SplitPlan | null | undefined): Row[] {
   return fromOthers;
 }
 
-function SplitWithSheetForm({ open, onClose, total, currency, initial, onApply }: Props) {
+function SplitWithSheetForm({ open, onClose, total, currency, initial, ledgerOnly = false, onApply }: Props) {
   const t = useT();
   const guardClose = useDiscardGuard();
 
@@ -338,7 +345,7 @@ function SplitWithSheetForm({ open, onClose, total, currency, initial, onApply }
               {direction === 'i_paid' ? <Wallet size={13} className="text-accent-600 shrink-0 mt-0.5" /> : <Users size={13} className="text-accent-600 shrink-0 mt-0.5" />}
               <p className="text-[11px] font-semibold text-accent-600 leading-snug">
                 {direction === 'i_paid'
-                  ? t('split_summary_i_paid')
+                  ? t(ledgerOnly ? 'split_summary_i_paid_ledger' : 'split_summary_i_paid')
                       .replace('{total}', formatMoney(total, currency))
                       .replace('{mine}', formatMoney(myShare, currency))
                       .replace('{owed}', formatMoney(owedToMe, currency))

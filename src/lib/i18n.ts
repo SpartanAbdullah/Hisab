@@ -58,6 +58,10 @@ const S = {
   intent_person_sub: { ur: "Diya, liya ya wapsi", en: "Give, borrow, or pay back" },
   intent_group: { ur: "Group Kharcha", en: "Group Expense" },
   intent_group_sub: { ur: "Group mein split karein", en: "Split with a group" },
+  // Ad-hoc split gets its own first-class tile: "split the coffee" must be
+  // findable without first knowing it hides as a chip inside Spend.
+  intent_split: { ur: "Kharcha Baant Lo", en: "Split an Expense" },
+  intent_split_sub: { ur: "Bina group banaye, kisi ke bhi sath", en: "With anyone — no group needed" },
   intent_person_prompt: { ur: "Kya hua?", en: "What happened?" },
   person_gave: { ur: "Maine Paisay Diye", en: "I gave money" },
   person_gave_sub: { ur: "Ab woh mujhe wapas denge", en: "They will owe you" },
@@ -124,6 +128,7 @@ const S = {
   qe_amt_goal: { ur: "Kitna bachana hai?", en: "How much are you setting aside?" },
   qe_amt_group: { ur: "Kitna kharcha hua?", en: "How much was spent?" },
   qe_amt_cash_advance: { ur: "Kitna cash nikala?", en: "How much cash did you take out?" },
+  qe_amt_split: { ur: "Poora bill kitna tha?", en: "What was the total bill?" },
   // Cash advance — first-class flow
   intent_cash_advance: { ur: "Cash Advance", en: "Cash Advance" },
   intent_cash_advance_sub: { ur: "Credit card se cash", en: "Cash from your credit card" },
@@ -457,6 +462,9 @@ const S = {
   // user's language (audit N-1: cross-user notification text used to be
   // English-only, frozen on the actor's device).
   ntf_someone: { ur: "Koi member", en: "A member" },
+  // Last-resort card title in the Inbox Info tab for a row whose server text
+  // is empty and whose template this build doesn't know.
+  ntf_update: { ur: "Nayi update", en: "New update" },
   ntf_the_group: { ur: "group", en: "the group" },
   ntf_an_expense: { ur: "Aik kharcha", en: "An expense" },
   ntf_group_added_title: { ur: "{group} mein add kiye gaye", en: "Added to {group}" },
@@ -3247,6 +3255,14 @@ const S = {
   // window now, so "older entries" may be on the server rather than hidden.
   tx_window_server: { ur: "Is se purani entries server par hain", en: "Older entries are on the server" },
   tx_history_loading: { ur: "History aa rahi hai…", en: "Loading history…" },
+  // ── Paged lists (founder request 2026-09-03) ─────────────────────────────
+  // Shared by the transactions list (renders 15 entries a page out of the rows
+  // already loaded) and the notifications list (fetches 15 rows a page from the
+  // server). One vocabulary on purpose: the two screens behave the same to the
+  // user even though only one of them is making a request.
+  list_load_more: { ur: "Aur dikhao", en: "Load more" },
+  list_loading_more: { ur: "Aa raha hai…", en: "Loading…" },
+  list_showing_n_of_m: { ur: "{m} mein se {n} dikh rahe hain", en: "Showing {n} of {m}" },
   // Group expense split
   split_allocated: { ur: "Allocated {a} / {b}", en: "Allocated {a} / {b}" },
   split_total_pct: { ur: "Total {n}%", en: "Total {n}%" },
@@ -3271,10 +3287,14 @@ const S = {
   split_need_payer: { ur: "Chuno kis ne pay kia", en: "Pick who paid" },
   split_summary_i_paid: { ur: "Account se poore {total} jayenge. Aapka hissa {mine}, baqi {owed} log aap ko dene hain.", en: "The full {total} leaves your account. {mine} is your share; {owed} comes back to you." },
   split_summary_they_paid: { ur: "{name} ko aap ke {mine} dene hain. Aap ke account se abhi kuch nahi jayega.", en: "You'll owe {name} {mine}. Nothing leaves your account now." },
+  // Ledger-only (splits_only) has no accounts, so the account sentence above
+  // would be a lie there — this mode records who owes whom, nothing else.
+  split_summary_i_paid_ledger: { ur: "Aap ka hissa {mine}, aur {owed} log aap ko dene hain. Yahan koi account nahi chalta.", en: "{mine} is your share; {owed} is owed back to you. No account is touched." },
   split_no_group_hint: { ur: "Group banane ki zaroorat nahi — yeh seedha har bande ke hisaab mein chala jayega.", en: "No group needed — this settles straight against each person's balance." },
   split_ways: { ur: "{n} logon mein banta", en: "split {n} ways" },
   split_saved_title: { ur: "Split mehfooz ho gaya", en: "Split saved" },
   split_saved_i_paid: { ur: "{total} nikla. {n} logon ne aap ko {owed} dena hai.", en: "{total} paid. {n} people owe you {owed}." },
+  split_saved_i_paid_ledger: { ur: "{n} logon ne aap ko {owed} dena hai.", en: "{n} people owe you {owed}." },
   split_saved_they_paid: { ur: "Aap ne {name} ko {mine} dene hain.", en: "You owe {name} {mine}." },
   split_partial_title: { ur: "{total} mein se {done} mehfooz hue", en: "Saved {done} of {total}" },
   split_locked_edit: { ur: "Yeh ek split ka hissa hai — poora split hi edit ya delete karo.", en: "This is part of a split — edit or delete the whole split instead." },
@@ -3468,6 +3488,12 @@ const S = {
   inbox_incoming_explainer: { ur: "Aapke linked contacts ki requests yahan aayengi — accept ya decline karne ke liye.", en: "Requests from your linked contacts will land here for you to accept or decline." },
   inbox_send_request: { ur: "Linked request bhejo", en: "Send a linked request" },
   inbox_resolved_divider: { ur: "Pehle ke", en: "Earlier" },
+  // Outgoing pending asks: the bell shows a quiet dot for these (never a red
+  // number — audit N-7), and this section is where they are actually readable.
+  inbox_waiting_on_others: { ur: "Doosron ka intezar ({n})", en: "Waiting on others ({n})" },
+  inbox_waiting_today: { ur: "Aaj bheja", en: "Sent today" },
+  inbox_waiting_1d: { ur: "1 din se intezar", en: "Waiting 1 day" },
+  inbox_waiting_nd: { ur: "{n} din se intezar", en: "Waiting {n} days" },
   // "Remind them" on outgoing pending requests — one-tap WhatsApp nudge when
   // the other party hasn't confirmed. {name}/{amount} are substituted.
   req_remind_cta: { ur: "Yaad dilao", en: "Remind" },
@@ -4503,6 +4529,12 @@ const S = {
   a11y_dismiss: { ur: "Hata dein", en: "Dismiss" },
   a11y_add: { ur: "Add karein", en: "Add" },
   a11y_add_account: { ur: "Account add karein", en: "Add account" },
+  a11y_inbox: { ur: "Inbox", en: "Inbox" },
+  a11y_inbox_pending: { ur: "Inbox, {n} cheezein baqi hain", en: "Inbox, {n} pending" },
+  a11y_inbox_waiting: {
+    ur: "Inbox, {n} requests doosron ke jawab ka intezar kar rahi hain",
+    en: "Inbox, waiting on others for {n} requests",
+  },
   a11y_mark_all_read: { ur: "Sab parha hua mark karein", en: "Mark all read" },
   a11y_unread: { ur: "Naya", en: "Unread" },
   a11y_prev_round: { ur: "Pichla round", en: "Previous round" },

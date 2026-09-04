@@ -60,6 +60,13 @@ type Tab = 'shared' | 'personal';
 export function ActivityPage() {
   const { activities, loadActivities } = useActivityStore();
   const { notifications, loadNotifications, markAllRead, unreadCount } = useNotificationStore();
+  // Paging state for the Shared tab (founder request 2026-09-03). The store
+  // fetches the newest 15 rows plus every unread row; older pages arrive only
+  // when the user asks. See `notificationsDb.getPage` / `getUnread`.
+  const notificationsTotal = useNotificationStore((s) => s.notificationsTotal);
+  const hasMoreNotifications = useNotificationStore((s) => s.hasMoreNotifications);
+  const loadingMoreNotifications = useNotificationStore((s) => s.loadingMoreNotifications);
+  const loadMoreNotifications = useNotificationStore((s) => s.loadMoreNotifications);
   const t = useT();
   // Default to Shared so any unread notifications surface immediately. The
   // tab choice is intentionally session-local — we don't persist it, since
@@ -194,6 +201,29 @@ export function ActivityPage() {
                   </div>
                 );
               })}
+
+              {/* Honest footer. "N of M" is the rows this device holds against
+                  the exact server-side count that rode along free with the
+                  first page — not an estimate, and not a claim that the rest
+                  do not exist. The button fetches the next 15 by keyset cursor
+                  and merges them in; nothing already on screen moves. */}
+              {notificationsTotal !== null && notificationsTotal > notifications.length && (
+                <p className="text-[10.5px] text-ink-500 px-1 pt-1 tabular-nums">
+                  {t('list_showing_n_of_m')
+                    .replace('{n}', String(notifications.length))
+                    .replace('{m}', String(notificationsTotal))}
+                </p>
+              )}
+              {hasMoreNotifications && (
+                <button
+                  type="button"
+                  onClick={() => void loadMoreNotifications()}
+                  disabled={loadingMoreNotifications}
+                  className="w-full min-h-[44px] rounded-2xl bg-cream-card border border-cream-border text-[12px] font-semibold text-ink-700 disabled:opacity-60"
+                >
+                  {loadingMoreNotifications ? t('list_loading_more') : t('list_load_more')}
+                </button>
+              )}
             </div>
           )
         ) : activities.length === 0 ? (
