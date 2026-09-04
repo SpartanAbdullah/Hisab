@@ -144,7 +144,7 @@ function queueWhilePending(event: PendingEvent): boolean {
 // De-duplication.
 //
 // Audit 2026-09 H1: the store layer now reports from ~70 catch sites, several
-// of which sit inside retry loops (the outbox sweep, the realtime reload
+// of which sit inside retry loops (the realtime reload
 // debounce, the mirror background refresh). A single offline device could
 // otherwise burn the whole Sentry quota in a minute.
 //

@@ -17,51 +17,20 @@ import type {
 } from './types';
 
 // ──────────────────────────────────────────────────────────────
-// Phase 3 — Offline-first mirror + outbox
+// Read mirror of authoritative server state
 //
-// The Dexie database now plays a different role than its Hisaab 1.x
-// ancestor: it is a READ MIRROR of authoritative server state plus an
-// outbox of mutations that haven't reached Supabase yet.
+// The Dexie database is a READ MIRROR of Supabase, nothing more. Supabase
+// remains authoritative for every entity row; Dexie is hydrated from
+// Supabase pulls (`mirror.<table>.bulkPut`, see src/lib/mirrorCache.ts) so
+// cache-first loaders can paint before the network answers.
 //
-// Direction of trust:
-//   - Supabase remains authoritative for all entity rows.
-//   - Dexie is hydrated from Supabase pulls (`mirror.<table>.bulkPut`).
-//   - User mutations write to BOTH Dexie (immediate visibility) and an
-//     `outbox` table. The outboxRunner drains the outbox to Supabase as
-//     connectivity allows. Successful drains delete the outbox row.
-//
-// Current commit ships ONLY the schema + outbox primitives. The stores
-// are not yet rewired to read from Dexie or write to the outbox — that
-// migration happens incrementally store-by-store. See
-// `src/lib/outboxRunner.ts` and `src/hooks/useOnlineStatus.ts` for the
-// glue that's already wired up.
+// There is NO offline write queue. Writes go to Supabase directly and fail
+// loudly when the device is offline (`err_offline` copy, OfflineBanner) —
+// the app is online-required for writes. The queued-write "outbox" scaffold
+// that used to live here never drained a single row and was deleted on
+// 2026-09-04 (decision D5, Option A — docs/offline-story.md); schema
+// version 8 below drops its object store from existing users' IndexedDB.
 // ──────────────────────────────────────────────────────────────
-
-export type OutboxOpKind =
-  | 'transaction.create'
-  | 'transaction.update'
-  | 'transaction.delete'
-  | 'account.update_balance'
-  | 'loan.create'
-  | 'loan.update'
-  | 'budget.create'
-  | 'budget.update'
-  | 'budget.delete'
-  | 'recurring.create'
-  | 'recurring.update'
-  | 'remittance.create';
-
-export interface OutboxEntry {
-  id: string;                  // uuid
-  kind: OutboxOpKind;
-  payload: unknown;            // op-specific. JSON-serialisable.
-  createdAt: string;           // ISO
-  attempts: number;            // bumped on each failed flush
-  lastError: string | null;
-  // After how many seconds since the last attempt we retry. Exponential
-  // backoff lives in the runner; this is the persisted "next try" time.
-  nextAttemptAt: string;       // ISO
-}
 
 export interface MirrorSyncState {
   key: string;
@@ -108,17 +77,16 @@ export class HisaabDatabase extends Dexie {
   recurringTransactions!: Table<RecurringTransaction, string>;
   remittances!: Table<Remittance, string>;
 
-  // Mutations queued while offline (or before they reach Supabase).
-  outbox!: Table<OutboxEntry, string>;
+  // Per-table mirror sync cursors (src/lib/mirrorCache.ts).
   mirrorSync!: Table<MirrorSyncState, string>;
 
   constructor(databaseName = 'HisaabDB') {
     super(databaseName);
 
-    // Versions 1–5 carried the legacy Hisaab 1.x schema. We keep them
-    // declared so Dexie's upgrade path stays valid for anyone who has the
-    // old DB in their browser, then version 6 reshapes everything as the
-    // offline mirror + outbox.
+    // Versions 1–5 carried the legacy Hisaab 1.x schema. Every historical
+    // version stays declared so Dexie's upgrade path remains valid for
+    // anyone who has an older DB in their browser; version 6 reshaped it as
+    // the read mirror (plus an `outbox` store that version 8 drops again).
     this.version(1).stores({
       accounts: 'id, type, currency',
       transactions: 'id, type, sourceAccountId, destinationAccountId, relatedLoanId, relatedGoalId, createdAt',
@@ -175,9 +143,8 @@ export class HisaabDatabase extends Dexie {
       persons: 'id, name, linkedProfileId, createdAt',
     });
     // Version 6: add Phase 3 entities (budgets, recurring, remittances)
-    // and the outbox. Indices chosen for the lookups the runner needs:
-    // outbox by `nextAttemptAt` (oldest-due-first sweep) and by `kind`
-    // (operational visibility / debug filtering).
+    // and the `outbox` store of the queued-write scaffold. Kept verbatim
+    // (Dexie needs the history); the store itself is dropped in version 8.
     this.version(6).stores({
       accounts: 'id, type, currency',
       transactions: 'id, type, sourceAccountId, destinationAccountId, relatedLoanId, relatedGoalId, personId, createdAt',
@@ -215,6 +182,12 @@ export class HisaabDatabase extends Dexie {
       outbox: 'id, kind, nextAttemptAt, createdAt',
       mirrorSync: 'key, lastSyncedAt, lastFullRefreshAt',
     });
+    // Version 8: drop the `outbox` object store (2026-09-04, decision D5 —
+    // docs/offline-story.md, Option A). Nothing ever drained a row from it,
+    // so there is no data to migrate; `null` makes Dexie delete the store on
+    // next open for anyone who already has v6/v7 on their device. Tables not
+    // listed here are inherited from version 7 unchanged.
+    this.version(8).stores({ outbox: null });
   }
 }
 
@@ -261,7 +234,7 @@ export async function clearLegacyDatabase(): Promise<void> {
 
 // Existing stores access `db.accounts`, `db.transactions`, etc. Resolve each
 // property against the active user's database so accounts cannot share a
-// mirror, sync cursor, or outbox.
+// mirror or a sync cursor.
 export const db = new Proxy({} as HisaabDatabase, {
   get(_target, property) {
     const activeDb = getDb();

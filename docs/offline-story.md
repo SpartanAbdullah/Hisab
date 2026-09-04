@@ -2,6 +2,8 @@
 
 **Written:** 2026-09-02 · **For:** the founder · **Decision needed:** D5 in `docs/audit-2026-09/P0-REMEDIATION.md` §6.1 ("M1 — the offline story")
 
+**Status (2026-09-04):** D5 decided — Option A approved and implemented in the same change; see §5. The file and line references in §1–§2 describe the tree as it stood on 2026-09-02, before the deletion.
+
 This resolves one open founder decision, not a new finding. Every claim below cites the file that proves it.
 
 ---
@@ -93,7 +95,9 @@ Option A ships the honest offline story; it does not fix corruption-while-online
 
 ## 5. The decision line, and what it changes in the listing
 
-> **Founder: approve Option A (delete the outbox scaffold now) — yes / no. If yes, Option B stays a backlog item gated on the telemetry signals in §3, not a commitment.**
+> **Decided: YES — Option A, 2026-09-04.** The scaffold is deleted in this change: `src/lib/outboxRunner.ts` is gone; `OutboxOpKind`, `OutboxEntry` and the `outbox` Dexie store are removed from `src/db/database.ts` (schema version 8 drops the object store from existing devices — the v6/v7 declarations stay because Dexie needs the history); the `startOutboxRunner`/`stopOutboxRunner` lifecycle is removed from `src/App.tsx`; the Settings "Sync Status" card, its `OUTBOX_UI_ENABLED` gate, the mirror-snapshot helper that fed it and its `sync_*` i18n keys are removed; `VITE_ENABLE_OUTBOX` is removed from `.env.example`. Hisaab is explicitly online-required for writes — `err_offline`, `offline_banner`, `OfflineBanner.tsx`, `useOnlineStatus.ts` and the DB-first write ordering stay as the honest UX. **Option B stays a backlog item, not a commitment** — gated on the two §3 telemetry signals (`error_surfaced` filtered to `money_mutation`, `quick_entry_abandoned`) from a real launch cohort.
+>
+> **The founder's stated view when approving:** offline "can work with the Android app but not the web app." **The answer, for the record: platform is not the constraint.** Both surfaces are the same bundle — the Android app is the web build running inside a Capacitor WebView, with the same IndexedDB and the same stores — so anything that queued and replayed on Android would behave identically in the PWA, and vice versa. The real constraint is *which writes are safe to replay*: personal single-row entries (an expense, an income, a ledger-mode loan — one row, one owner, idempotent by client-generated id) **yes**; cross-user or multi-leg flows (transfers, repayments, linked loans, group expenses and settlements, kameti) **no**, for the reasons §2 Option B lists. If Option B is ever built, that line — not the platform — is its scope, on both surfaces at once.
 
 What each choice does to `docs/play-store-listing.md`:
 - **A (recommended):** No listing change needed — the offline-first claim is already removed (line 146) and stays removed. Nothing to write until B or C ships. Optionally add one line to the "no lending, no custody" honesty block: *"An internet connection is needed to save entries"* — already implied by line 43's parenthetical (`"...an internet connection is needed to log entries"`) but could be stated more directly if the founder wants zero ambiguity for reviewers.

@@ -62,6 +62,7 @@ signal** — his entire all-day-on-site use case is impossible.
 **Fix:** ship the per-store outbox rewire (write to Dexie + enqueue, flush on reconnect) before making
 any offline claim; *or* detect `navigator.onLine` at save time and disable Save with honest copy
 ("No internet — Hisaab abhi save nahi kar sakta"). Never let the user type a full entry and then fail.
+*Resolved 2026-09-04: the second fix is the one that shipped — the inert outbox scaffold was deleted (decision D5, Option A, `docs/offline-story.md`), the listing makes no offline claim, and Hisaab is explicitly online-required for writes.*
 
 ### B3 · PIN lock does nothing
 Setting a PIN shows "PIN set successfully!" but the lock screen is never rendered: `PinLockScreen` has

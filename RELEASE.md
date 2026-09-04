@@ -189,8 +189,8 @@ Google's reviewers need working credentials to test the app. Before submitting:
    ```
    <!-- Corrected 2026-09-02 (audit finding 12-qa-review.md F-1): the previous draft claimed
         "USD, EUR, GBP" (unsupported — see src/db/types.ts:1 for the real 8-currency list) and
-        "Works offline" (all mutations currently hard-fail offline; the outbox is a disabled
-        scaffold). Do not restore either claim until the underlying feature actually ships. -->
+        "Works offline" (all mutations hard-fail offline by design — there is no offline write
+        queue; decision D5, 2026-09-04, docs/offline-story.md). Do not restore either claim until the underlying feature actually ships. -->
 5. **Save → Review release → Send for review**. (For first uploads, see Section 10 about closed testing — Play requires it for new developer accounts.)
 
 ---

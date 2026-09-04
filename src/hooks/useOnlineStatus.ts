@@ -7,11 +7,10 @@ import { useEffect, useState } from 'react';
 // Caveats baked in for years of dealing with this API:
 //   - navigator.onLine reports network *layer* state, not real reachability.
 //     A device on captive-portal Wi-Fi reports onLine=true while every
-//     Supabase request fails. Pair this hook with the outboxRunner's actual
-//     fetch failures to decide what to show the user.
-//   - Some Android WebViews fire `online` before DNS is fully ready; the
-//     runner handles that by retrying with backoff rather than firing on
-//     the raw event.
+//     Supabase request fails. Pair this hook with actual request failures
+//     (the `err_offline` copy on a failed save) to decide what to show.
+//   - Some Android WebViews fire `online` before DNS is fully ready, so
+//     treat the raw event as a hint, not as proof of reachability.
 
 export interface OnlineStatus {
   online: boolean;

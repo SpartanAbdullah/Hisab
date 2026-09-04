@@ -209,7 +209,7 @@ No explanation of why loans need consent but group settlements don't (UX-19); no
 | # | Blocker (July 2026) | Status 2026-09-02 | Evidence |
 |---|---|---|---|
 | B1 | Multi-currency claim false (USD/EUR/GBP unsupported) | **Still open** (re-verified in Phase 1) | src/db/types.ts:1 vs docs/play-store-listing.md:35 |
-| B2 | Offline-first has no offline write path | **Still open** | Outbox dispatch throws behind VITE_ENABLE_OUTBOX; Settings still advertises the queue (SettingsPage.tsx:999-1043) — UX-28 |
+| B2 | Offline-first has no offline write path | **Still open** (2026-09-02) — resolved 2026-09-04: scaffold deleted, app explicitly online-required (D5, Option A) | Outbox dispatch throws behind VITE_ENABLE_OUTBOX; Settings still advertises the queue (SettingsPage.tsx:999-1043) — UX-28 |
 | B3 | PIN lock does nothing | **Still open — re-verified this pass** | PinLockScreen.tsx zero importers; Settings UI intact (SettingsPage.tsx:753-835) — UX-26 |
 | B4 | Import = wipe-then-replace, no safety net | **Partially mitigated** | A confirmDestructive warning was added ("Existing data may be overwritten", SettingsPage.tsx:243-249 — note: hardcoded English), but importData still deletes every user row first (src/lib/dataExport.ts:79-81); no backup/undo |
 | B5 | Goals — money silently vanishes from net worth | **Not re-verified this pass** | Phase-1 memory notes goal fixes in the July recovery commits; needs a dedicated money-flow check |

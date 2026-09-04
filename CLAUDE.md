@@ -35,7 +35,7 @@ Schema changes ship as a new `supabase-migration-<name>.sql` file at the repo ro
 
 Pages/components → Zustand stores (`src/stores/`, one per domain) → `src/lib/supabaseDb.ts` (the single data-access layer for all entity reads/writes) → Supabase Postgres with RLS. Sensitive multi-row operations go through `SECURITY DEFINER` RPCs defined in the migration SQL (e.g. `apply_account_balance_delta` for optimistic-locked balance writes, `join_group_by_code` with rate limiting).
 
-`src/db/` (Dexie/IndexedDB, per-user DB `HisaabDB:user:<uid>`) is a **read mirror + offline outbox**, not the source of truth — Supabase is authoritative. The outbox runner (`src/lib/outboxRunner.ts`) is gated behind `VITE_ENABLE_OUTBOX` and stores are only partially rewired to it; don't assume offline writes work.
+`src/db/` (Dexie/IndexedDB, per-user DB `HisaabDB:user:<uid>`) is a **read mirror only**, not the source of truth — Supabase is authoritative, and the app is **online-required for writes**. There is no offline write queue: the inert outbox scaffold was deleted on 2026-09-04 (decision D5, Option A — `docs/offline-story.md`), and a save while offline fails loudly with the `err_offline` copy so the user retries once connected. Never promise a later save, and never re-introduce a queue without the telemetry case that memo's §3 asks for.
 
 ### Money-mutation safety
 
@@ -55,4 +55,4 @@ Supabase has no client-side transactions, so multi-step money mutations (debit o
 
 ### Env vars
 
-`VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (required), `VITE_PUBLIC_APP_URL` (canonical/invite URLs), `VITE_SENTRY_DSN` (optional), `VITE_ENABLE_OUTBOX` (optional flag). `.env` is gitignored; `.env.example` lists them.
+`VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (required), `VITE_PUBLIC_APP_URL` (canonical/invite URLs), `VITE_SENTRY_DSN` (optional). `.env` is gitignored; `.env.example` lists them, plus the optional rollout flags.

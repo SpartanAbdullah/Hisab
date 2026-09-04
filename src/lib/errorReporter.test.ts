@@ -103,7 +103,7 @@ describe('deferred reporter', () => {
   it('de-dupes BEFORE queueing, so a retry loop cannot fill the buffer', () => {
     beginDeferredReporter();
     for (let i = 0; i < 20; i += 1) {
-      reportError(new Error('offline'), { feature: 'outbox.sweep' });
+      reportError(new Error('offline'), { feature: 'mirror.refresh' });
     }
     resolveDeferredReporter(spyReporter);
     expect(captured).toHaveLength(1);

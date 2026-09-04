@@ -16,16 +16,6 @@ import {
 import { reportError } from './errorReporter';
 
 export { DEFAULT_FRESH_MS, DEFAULT_FULL_REFRESH_MS };
-export const CORE_MIRROR_KEYS = ['accounts', 'transactions', 'loans', 'budgets'] as const;
-export type CoreMirrorKey = typeof CORE_MIRROR_KEYS[number];
-
-export interface MirrorSyncSnapshot {
-  key: CoreMirrorKey;
-  lastSyncedAt: string | null;
-  lastFullRefreshAt: string | null;
-  dirtyAt: string | null;
-}
-
 /**
  * A collection fetcher may report that the server did not return everything
  * (PostgREST max-rows). Returning the bare array keeps every existing caller
@@ -645,13 +635,4 @@ export function markMirrorStale(key: string) {
       reportMirrorError('sync-state dirty', error);
     }
   })();
-}
-
-export async function getCoreMirrorSyncSnapshots(): Promise<MirrorSyncSnapshot[]> {
-  return Promise.all(
-    CORE_MIRROR_KEYS.map(async (key) => ({
-      key,
-      ...(await readSyncState(key)),
-    })),
-  );
 }

@@ -108,7 +108,6 @@ const DailyQuote = lazy(() => import('./components/DailyQuote').then(m => ({ def
 import { OfflineBanner } from './components/OfflineBanner';
 import { AppLoadingScreen } from './components/AppLoadingScreen';
 import { GlobalChunkRecoveryOverlay } from './components/GlobalChunkRecoveryOverlay';
-import { startOutboxRunner, stopOutboxRunner } from './lib/outboxRunner';
 import { getPendingInviteResumePath, savePendingInvite } from './lib/pendingInvite';
 import { shouldShowDailyQuote } from './lib/dailyQuotePrefs';
 import type { WrapStats } from './lib/monthlyWrap';
@@ -487,19 +486,6 @@ function AppContent() {
     }
     void startPushRegistration((to) => navigate(to));
   }, [user?.id, navigate]);
-
-  // Phase 3 offline scaffold: start the outbox runner once the user is
-  // signed in. The runner is currently inert (dispatch handlers throw —
-  // see src/lib/outboxRunner.ts) but the loop, backoff, and lifecycle
-  // are all live so per-store rewires only need to fill in handlers.
-  useEffect(() => {
-    if (!user?.id) {
-      stopOutboxRunner();
-      return;
-    }
-    startOutboxRunner();
-    return () => stopOutboxRunner();
-  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;

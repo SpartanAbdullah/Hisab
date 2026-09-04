@@ -196,7 +196,7 @@ export async function resetAllUserStores(userId = getCurrentDatabaseUserId()): P
   }
 
   // Wipe IndexedDB tables. Even though most stores write directly to Supabase
-  // (not Dexie), the outbox table and the mirror schema can hold payloads
+  // (not Dexie), the read-mirror tables can hold payloads
   // that include user PII (account ids, person names, amounts). Leaving them
   // on a shared device would expose the previous user's state to the next.
   // Await partition deletion before another account can hydrate.

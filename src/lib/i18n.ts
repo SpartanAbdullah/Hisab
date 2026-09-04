@@ -1477,24 +1477,6 @@ const S = {
     ur: "Restore fail hua aur purana data poori tarah wapas nahi aa saka. App band karke dobara kholein — agar data ab bhi adhoora lage to support se rabta karein.",
     en: "The restore failed and your previous data could not be fully put back. Close and reopen the app — if anything still looks missing, contact support.",
   },
-  // Audit UX-09: the Sync Status card is hidden behind VITE_ENABLE_OUTBOX, but
-  // its copy was hardcoded English while it was reachable. Localised so the
-  // card is shippable the day the outbox actually ships.
-  sync_title: { ur: "Sync ki halat", en: "Sync Status" },
-  sync_checking: { ur: "Local mirror check ho raha hai…", en: "Checking local mirror…" },
-  sync_ready: { ur: "Local mirror tayar hai", en: "Local mirror is ready" },
-  sync_queued_n: { ur: "{n} tabdeeliyan sync hone ka intezar kar rahi hain", en: "{n} queued changes waiting to sync" },
-  sync_queued_one: { ur: "1 tabdeeli sync hone ka intezar kar rahi hai", en: "1 queued change waiting to sync" },
-  sync_queued_label: { ur: "Queue mein offline tabdeeliyan", en: "Queued offline changes" },
-  sync_refresh_aria: { ur: "Sync ki halat refresh karo", en: "Refresh sync status" },
-  sync_empty: { ur: "Is device par pehli kamyab refresh ke baad sync ki tafseel yahan aayegi.", en: "Sync details will appear after the first successful data refresh on this device." },
-  sync_full_refresh: { ur: "Poora refresh", en: "Full refresh" },
-  sync_never: { ur: "Abhi tak sync nahi hua", en: "Not synced yet" },
-  sync_unknown: { ur: "Maloom nahi", en: "Unknown" },
-  sync_tbl_accounts: { ur: "Accounts", en: "Accounts" },
-  sync_tbl_transactions: { ur: "Lenden", en: "Transactions" },
-  sync_tbl_loans: { ur: "Qarz", en: "Loans" },
-  sync_tbl_budgets: { ur: "Budgets", en: "Budgets" },
   settings_security: { ur: "Security", en: "Security" },
   settings_set_pin: { ur: "PIN Set Karo", en: "Set PIN" },
   settings_change_pin: { ur: "PIN Badlo", en: "Change PIN" },
@@ -2851,8 +2833,9 @@ const S = {
   del_tx_body: { ur: "Iska balance par asar ulat jayega.", en: "The balance change will be reversed." },
   del_contact_body: { ur: "Yeh contact aur uska local record hat jayega.", en: "This removes the contact and its local record." },
   // Error recovery (replace raw err.message)
-  // NOTE: Hisaab has no working offline write queue (the outbox runner is
-  // inert behind VITE_ENABLE_OUTBOX), so this must NOT promise a later save.
+  // NOTE: Hisaab has no offline write queue — the app is online-required for
+  // writes (decision D5, 2026-09-04, docs/offline-story.md) — so this must
+  // NOT promise a later save.
   err_offline: { ur: "Aap offline hain — yeh entry save NAHI hui. Internet aane par dobara karein.", en: "You're offline — this entry was not saved. Try again once you're connected." },
   err_could_not_save: { ur: "Save nahi hua — aapka paisa waise ka waisa hai. Dobara koshish karein.", en: "Couldn't save that — your money wasn't touched. Try again." },
   // Shared error/hint defaults

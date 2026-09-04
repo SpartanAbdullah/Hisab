@@ -517,6 +517,22 @@ pre-fix draw to purge, and any future draw can only come from
 `perform_committee_draw()` (server entropy, append-only triggers).
 **Decision recorded: nothing to purge; "provably fair" is marketable as-is.**
 
-**D1 — pre-apply census for the balance gate** is the V3 query at the bottom of
-`supabase-migration-p3-account-deletion-balance-gate.sql`; run it in Studio
-right after the apply and record the count here.
+**D1 — balance gate, applied by the founder in Studio on 2026-09-04** and
+verified read-only through the Supabase MCP the same day: `delete_current_user()`
+carries `UNSETTLED_GROUP_BALANCES` + `OWNED_GROUPS_WITH_MEMBERS` + the receipt
+purge (V1 = t, t, t), grants are `authenticated` only (V2 = t, f), and the
+`search_path` pin survived. V3 census at apply time:
+
+| members currently gated | profiles | groups involved |
+|---|---|---|
+| 3 | 3 | 1 |
+
+Three real people in one group carry an open balance with a counterparty
+present — exactly the situation the gate exists for. Nothing to act on.
+
+**D8 — pre-flight for flag 1 (`VITE_ATOMIC_TRANSFER`), run read-only on
+2026-09-04** (`supabase-migration-p3-atomic-transfer.sql` §2 V1–V3 + V5):
+function present, SECURITY DEFINER, `search_path=public`, EXECUTE for
+`authenticated` only, all nine V3 body invariants `t`, V5 drift = **0 rows**
+over 16 live transfers. The flag is safe to enable on web; the founder sets it
+in Vercel (Production environment) and redeploys.

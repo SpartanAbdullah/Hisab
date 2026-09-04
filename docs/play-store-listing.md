@@ -195,7 +195,7 @@ Supersedes the old "claims removed" note below. Columns: **where it's implemente
 | Roman Urdu as default language | `src/lib/i18n.ts:19` (`DEFAULT_LANGUAGE = "ur"`) | none — client-only | `src/lib/i18n.test.ts` |
 | No ads, ever | absence of any ad/entitlement code in `src/` | none | confirmed absence by repo-wide search (`docs/go-to-market.md` §1.4 row 7) |
 | PIN lock | **NOT claimed** — code exists (`src/pages/PinLockScreen.tsx`, PBKDF2 150k-salted, gates cold start + 60s background + re-auth) but no device farm has run a verification pass | n/a | keep out of the listing until a device-verification pass is done (`00-executive-summary.md` §7.C) |
-| Offline / "syncs when you're back online" | **NOT claimed** — `src/lib/outboxRunner.ts` is a disabled scaffold; every handler throws | n/a | keep out until the outbox decision (D5, `P0-REMEDIATION.md` §6.1) is resolved and the feature is actually built |
+| Offline / "syncs when you're back online" | **NOT claimed** — Hisaab is online-required for writes; there is no offline write queue (D5 decided 2026-09-04, Option A: the inert outbox scaffold was deleted — `docs/offline-story.md`) | n/a | keep out unless Option B (a narrow single-row replay queue, held as a telemetry-gated backlog item) actually ships and is device-verified — and even then never say "offline-first" |
 | Analytics / telemetry | not a listing claim — opt-in, covered in Play's Data safety form, not here | n/a | `src/lib/telemetry.ts` (consent-gated, default off) |
 
 **Claims removed or qualified on 2026-09-02, and why:**

@@ -368,7 +368,7 @@ function isKnownNonMember(group: SplitGroup, userId: string): boolean {
 //   • 08-notifications.md N-2 — an actor who went offline / had the app killed
 //     / closed the tab between the money write and the fan-out meant the other
 //     members were never notified and no activity row existed at all. No retry
-//     path (the outbox scaffold is inert).
+//     path (Hisaab has no offline write queue).
 //   • 05-security.md H5 / 08-notifications.md N-3 — writing those rows required
 //     an RLS policy letting any co-member insert arbitrary title/body for any
 //     other member, which the push trigger then forwarded verbatim as

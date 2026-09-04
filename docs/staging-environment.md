@@ -100,9 +100,7 @@ Variables → Production/Preview/Development checkboxes per key):
 2. `VITE_PUBLIC_APP_URL` — scope Preview to the preview URL, or leave it at
    `usehisaab.com` if invite/witness deep links need to resolve against prod
    during manual testing; decide and record the choice here.
-3. `VITE_ENABLE_OUTBOX` — leave unset in both scopes (scaffold, handlers
-   throw — `outboxRunner.ts:26-29`).
-4. `VITE_ATOMIC_TRANSFER` — only `true` in Preview once
+3. `VITE_ATOMIC_TRANSFER` — only `true` in Preview once
    `supabase-migration-p3-atomic-transfer.sql` is applied to staging; its own
    `.env.example` warning says it fails loud otherwise — better to discover
    that on staging than prod.

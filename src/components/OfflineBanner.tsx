@@ -3,10 +3,12 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useT } from '../lib/i18n';
 
 // Small pill that floats below the top safe-area when the device is
-// offline. Phase 3 scaffold — the banner does not yet differentiate
-// "captive portal" vs "true offline" vs "Supabase reachability." It
-// reads `navigator.onLine` only. The outboxRunner will later signal
-// real reachability via a separate hook.
+// offline. It reads `navigator.onLine` only and does not differentiate
+// "captive portal" vs "true offline" vs "Supabase reachability." Hisaab is
+// online-required for writes — there is no offline write queue (decision D5,
+// 2026-09-04, docs/offline-story.md) — so this pill plus the `err_offline`
+// copy on a failed save are the whole offline story: say so, block the save,
+// let the user retry once reconnected.
 export function OfflineBanner() {
   const t = useT();
   const { online } = useOnlineStatus();
