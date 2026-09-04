@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, UserPlus, Check, UserRoundPlus } from 'lucide-react';
 import { Modal } from '../components/Modal';
@@ -13,9 +13,10 @@ import {
 } from '../lib/groupGuests';
 import { useToast } from '../components/Toast';
 import { useT } from '../lib/i18n';
-import { SUPPORTED_CURRENCIES, type Currency, type SplitGroup } from '../db';
+import { type Currency, type SplitGroup } from '../db';
+import { useAccountStore } from '../stores/accountStore';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 import { getPrimaryCurrency } from '../lib/primaryCurrency';
-import { currencyMeta } from '../lib/design-tokens';
 import { profilesDb } from '../lib/supabaseDb';
 import { normalizePublicCode } from '../lib/collaboration';
 import { track } from '../lib/telemetry';
@@ -44,6 +45,11 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('✈️');
   const [currency, setCurrency] = useState<Currency>(() => getPrimaryCurrency());
+  // Ranks the CurrencyPicker's five inline chips from the currencies this
+  // user already holds money in. accountStore is a global store that is
+  // already loaded app-wide, so this subscribes to data in memory — no fetch.
+  const accounts = useAccountStore((s) => s.accounts);
+  const usedCurrencies = useMemo(() => [...new Set(accounts.map((a) => a.currency))], [accounts]);
   const [codeInput, setCodeInput] = useState('');
   const [resolving, setResolving] = useState(false);
   const [members, setMembers] = useState<ResolvedMemberInput[]>([]);
@@ -207,17 +213,13 @@ export function CreateGroupModal({ open, onClose, onCreated }: Props) {
         {/* Currency */}
         <div>
           <label className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">{t('common_currency')}</label>
-          <div className="grid grid-cols-2 gap-2 mt-1.5">
-            {SUPPORTED_CURRENCIES.map(c => {
-              const meta = currencyMeta[c];
-              return (
-                <button key={c} onClick={() => setCurrency(c)}
-                  className={`p-3 rounded-2xl border text-left transition-all ${currency === c ? 'border-accent-500 bg-accent-50' : 'border-cream-border bg-cream-card'}`}>
-                  <p className="text-lg font-bold">{meta?.flag} {c}</p>
-                  <p className="text-[10px] text-ink-500">{meta?.name}</p>
-                </button>
-              );
-            })}
+          <div className="mt-1.5">
+            <CurrencyPicker
+              value={currency}
+              onChange={setCurrency}
+              primary={getPrimaryCurrency()}
+              used={usedCurrencies}
+            />
           </div>
         </div>
 

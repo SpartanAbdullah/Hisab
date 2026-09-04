@@ -30,7 +30,8 @@
 
 // Imported from db/types, not the db barrel: the barrel re-exports the Dexie
 // instance, and this module must stay loadable in the Node test environment.
-import { SUPPORTED_CURRENCIES, type Currency } from '../db/types';
+import { CURRENCY_CODES } from './currencies';
+import type { Currency } from '../db/types';
 
 /** The localStorage key that mirrors profiles.primary_currency. */
 export const PRIMARY_CURRENCY_KEY = 'hisaab_primary_currency';
@@ -41,8 +42,14 @@ export const PRIMARY_CURRENCY_KEY = 'hisaab_primary_currency';
  */
 export const DEFAULT_PRIMARY_CURRENCY: Currency = 'AED';
 
+// Validated against the FULL ISO 4217 list, not the eight legacy codes
+// (founder decision 2026-09-04). Checking the legacy list here would silently
+// reset a user who picked USD/GBP/EUR back to AED on every read — the exact
+// class of bug this module exists to kill. Deliberately case-SENSITIVE: an
+// exact ISO code is what onboarding and profiles.primary_currency write, so
+// anything else is a tampered or corrupted mirror, not a currency choice.
 function isSupported(value: string | null | undefined): value is Currency {
-  return !!value && (SUPPORTED_CURRENCIES as readonly string[]).includes(value);
+  return !!value && CURRENCY_CODES.includes(value);
 }
 
 /**

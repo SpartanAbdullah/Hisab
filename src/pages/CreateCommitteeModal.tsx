@@ -1,17 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, X, Trash2, Shield } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useToast } from '../components/Toast';
 import { useCommitteeStore, type NewCommitteeMember } from '../stores/committeeStore';
-import { currencyMeta } from '../lib/design-tokens';
 import { poolAmount } from '../lib/committeeMath';
 import { formatMoney } from '../lib/constants';
 import { useT } from '../lib/i18n';
 import { track } from '../lib/telemetry';
 import { bucketCount } from '../lib/telemetryEvents';
-import { SUPPORTED_CURRENCIES, type Currency, type CommitteeCadence, type CommitteePayoutMethod } from '../db';
+import { type Currency, type CommitteeCadence, type CommitteePayoutMethod } from '../db';
+import { useAccountStore } from '../stores/accountStore';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { localIso } from '../lib/localDate';
 
@@ -33,6 +34,11 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
   const myName = localStorage.getItem('hisaab_user_name') || '';
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState<Currency>(() => getPrimaryCurrency());
+  // Ranks the CurrencyPicker's five inline chips from the currencies this
+  // user already holds money in. accountStore is a global store that is
+  // already loaded app-wide, so this subscribes to data in memory — no fetch.
+  const accounts = useAccountStore((s) => s.accounts);
+  const usedCurrencies = useMemo(() => [...new Set(accounts.map((a) => a.currency))], [accounts]);
   const [amount, setAmount] = useState('');
   const [cadence, setCadence] = useState<CommitteeCadence>('monthly');
   const [startDate, setStartDate] = useState(() => localIso(new Date()));
@@ -143,14 +149,12 @@ export function CreateCommitteeModal({ open, onClose, onCreated }: Props) {
 
         <div>
           <label className="form-label">{t('common_currency')}</label>
-          <div className="grid grid-cols-4 gap-2">
-            {SUPPORTED_CURRENCIES.map((c) => (
-              <button key={c} type="button" onClick={() => setCurrency(c)}
-                className={`justify-center text-[12px] font-semibold ${currency === c ? 'selector-base selector-selected' : 'selector-base'}`}>
-                <span className="text-ink-800">{currencyMeta[c]?.flag} {c}</span>
-              </button>
-            ))}
-          </div>
+          <CurrencyPicker
+            value={currency}
+            onChange={setCurrency}
+            primary={getPrimaryCurrency()}
+            used={usedCurrencies}
+          />
         </div>
 
         <div>

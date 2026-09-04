@@ -1,5 +1,34 @@
-export const SUPPORTED_CURRENCIES = ['AED', 'PKR', 'PHP', 'SAR', 'QAR', 'OMR', 'KWD', 'BHD'] as const;
-export type Currency = typeof SUPPORTED_CURRENCIES[number];
+import { LEGACY_CURRENCIES } from '../lib/currencies';
+
+/**
+ * The currencies the DATABASE accepts today.
+ *
+ * Founder decision 2026-09-04 widened the app to every active ISO 4217
+ * currency (`CURRENCY_CODES` in src/lib/currencies.ts), but the Postgres
+ * CHECK constraint still only allows these eight until the ISO widening
+ * migration is applied. This constant therefore means "what a write will be
+ * accepted for", NOT "what the app knows about" — the two are different sets
+ * during the rollout, and the legacy chip rows in the Add/Create forms keep
+ * rendering from here until the CurrencyPicker replaces them.
+ *
+ * Single source of truth is `LEGACY_CURRENCIES`; this is an alias so the ~20
+ * existing import sites keep compiling.
+ */
+export const SUPPORTED_CURRENCIES = LEGACY_CURRENCIES;
+
+/** The full ISO 4217 list, re-exported for `../db` consumers. */
+export { CURRENCY_CODES } from '../lib/currencies';
+
+/**
+ * An ISO 4217 currency code.
+ *
+ * Widened from the eight-member literal union to `string` on 2026-09-04: the
+ * app now accepts any active ISO code, and a compile-time union of ~160
+ * members bought nothing but friction. Validation moved to runtime —
+ * `isSupportedCurrency(code)` from src/lib/currencies.ts is the gate, and the
+ * DB CHECK is the backstop.
+ */
+export type Currency = string;
 
 export type AccountType = 'cash' | 'bank' | 'digital_wallet' | 'savings' | 'credit_card';
 

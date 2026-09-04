@@ -47,12 +47,12 @@ import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { localIso } from '../lib/thisWeek';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { ShareKhataLinkSheet } from '../components/ShareKhataLinkSheet';
-import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { track } from '../lib/telemetry';
 import { bucketAmount } from '../lib/telemetryEvents';
 import { shouldOfferKhataShareNudge, snoozeKhataShareNudge } from '../lib/khataLinkStatus';
-import { SUPPORTED_CURRENCIES, type Currency, type TransactionType, type SplitGroup, type Loan } from '../db';
+import { type Currency, type TransactionType, type SplitGroup, type Loan } from '../db';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 import { AddAccountStepper } from './AddAccountStepper';
 
 // Internal type slot widened to include the "group_expense" sentinel.
@@ -660,6 +660,13 @@ export function QuickEntry({
   const presetAccountId = preset?.accountId ?? preset?.cashAdvanceCardId;
   const presetAccount = presetAccountId ? accounts.find(a => a.id === presetAccountId) : undefined;
   const activeCurrency: Currency = presetAccount?.currency ?? primaryCurrency;
+  // Currencies this user already holds money in — ranks the CurrencyPicker's
+  // five inline chips. Both stores are already subscribed above, so this is a
+  // map over data in memory, never a fetch.
+  const usedCurrencies = useMemo(
+    () => [...new Set([...accounts.map(a => a.currency), ...loans.map(l => l.currency)])],
+    [accounts, loans],
+  );
   // Quick-amount chips scale with the primary currency: PKR users deal in
   // far larger nominal amounts than AED users, so offer a bigger preset set.
   const quickAmounts = primaryCurrency === 'PKR'
@@ -2002,18 +2009,12 @@ export function QuickEntry({
             {((isLedgerOnlyPersonFlow && type !== 'repayment') || isLedgerOnlySplitFlow) && (
               <div>
                 <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">{t('onboard_currency_label')}</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {SUPPORTED_CURRENCIES.map((currency) => (
-                    <button
-                      key={currency}
-                      type="button"
-                      onClick={() => setLedgerCurrency(currency)}
-                      className={ledgerCurrency === currency ? 'selector-base selector-selected' : 'selector-base'}
-                    >
-                      <span className="text-[13px] font-semibold text-ink-800">{currencyMeta[currency]?.flag} {currency}</span>
-                    </button>
-                  ))}
-                </div>
+                <CurrencyPicker
+                  value={ledgerCurrency}
+                  onChange={setLedgerCurrency}
+                  primary={primaryCurrency}
+                  used={usedCurrencies}
+                />
               </div>
             )}
 

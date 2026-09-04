@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useGoalStore } from '../stores/goalStore';
-import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
-import { SUPPORTED_CURRENCIES, type Currency } from '../db';
+import { type Currency } from '../db';
+import { useAccountStore } from '../stores/accountStore';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { localIso } from '../lib/localDate';
 
@@ -24,6 +25,11 @@ export function AddGoalModal({ open, onClose }: Props) {
   const [title, setTitle] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>(() => getPrimaryCurrency());
+  // Ranks the CurrencyPicker's five inline chips from the currencies this
+  // user already holds money in. accountStore is a global store that is
+  // already loaded app-wide, so this subscribes to data in memory — no fetch.
+  const accounts = useAccountStore((s) => s.accounts);
+  const usedCurrencies = useMemo(() => [...new Set(accounts.map((a) => a.currency))], [accounts]);
   const [targetDate, setTargetDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -91,18 +97,12 @@ export function AddGoalModal({ open, onClose }: Props) {
 
         <div>
           <label className="form-label">{t('common_currency')}</label>
-          <div className="grid grid-cols-2 gap-2">
-            {SUPPORTED_CURRENCIES.map(c => {
-              const meta = currencyMeta[c];
-              return (
-                <button key={c} type="button" onClick={() => setCurrency(c)}
-                  className={`justify-center text-[13px] font-semibold ${currency === c ? 'selector-base selector-selected' : 'selector-base'}`}
-                >
-                  <span className="text-ink-800">{meta?.flag} {c}</span>
-                </button>
-              );
-            })}
-          </div>
+          <CurrencyPicker
+            value={currency}
+            onChange={setCurrency}
+            primary={getPrimaryCurrency()}
+            used={usedCurrencies}
+          />
         </div>
 
         <div>

@@ -15,7 +15,8 @@ import { useRecurringStore } from '../stores/recurringStore';
 import { computeFlexBudget, FLEX_INCOME_KEY } from '../lib/flexBudget';
 import { EXPENSE_CATEGORIES, formatMoney } from '../lib/constants';
 import { useCategoryOptions } from '../lib/mergedCategories';
-import { SUPPORTED_CURRENCIES, type Currency, type Budget } from '../db';
+import { type Currency, type Budget } from '../db';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { useToast } from '../components/Toast';
 import { confirmDestructive } from '../components/ConfirmDestructiveSheet';
@@ -468,6 +469,9 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
   const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>(() => getPrimaryCurrency());
+  // Ranks the CurrencyPicker chips from the budgets this user already keeps —
+  // `existing` is already a prop on this modal, so nothing new is loaded.
+  const usedCurrencies = useMemo(() => [...new Set(existing.map((b) => b.currency))], [existing]);
   const [warnAt, setWarnAt] = useState(80);
   const [saving, setSaving] = useState(false);
   // Merged built-in + custom expense categories, so a user can budget against
@@ -532,30 +536,29 @@ function AddBudgetModal({ open, onClose, existing }: AddBudgetModalProps) {
           </select>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
-            <label className="form-label">{t('bud_field_cap')}</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0"
-              className="input-field tabular-nums"
-            />
-          </div>
-          <div>
-            <label className="form-label">{t('bud_field_currency')}</label>
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value as Currency)}
-              className="input-field"
-            >
-              {SUPPORTED_CURRENCIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
+        {/* Cap and currency used to share a 2:1 row, which suited the old
+            one-line <select>. The CurrencyPicker is a six-cell chip grid, so
+            a third of the width would crush it to ~35px per chip — each field
+            gets a full-width row instead. */}
+        <div>
+          <label className="form-label">{t('bud_field_cap')}</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0"
+            className="input-field tabular-nums"
+          />
+        </div>
+        <div>
+          <label className="form-label">{t('bud_field_currency')}</label>
+          <CurrencyPicker
+            value={currency}
+            onChange={setCurrency}
+            primary={getPrimaryCurrency()}
+            used={usedCurrencies}
+          />
         </div>
 
         <div>

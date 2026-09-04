@@ -1,3 +1,5 @@
+import { currencyMinorUnits, roundMoney } from '../lib/currencies';
+
 interface MoneyDisplayProps {
   amount: number;
   currency?: string;
@@ -29,9 +31,13 @@ export function MoneyDisplay({
   mutedColor,
   color,
 }: MoneyDisplayProps) {
-  const abs = Math.abs(amount);
+  // Decimal places follow ISO 4217 minor units — a JPY hero shows no cents at
+  // all, a KWD hero shows three fils. Rounding happens BEFORE the split so a
+  // value like 999.999 renders "1,000" + ".00", never "999" + ".00".
+  const digits = currencyMinorUnits(currency);
+  const abs = roundMoney(Math.abs(amount), currency);
   const intPart = Math.floor(abs).toLocaleString('en-US');
-  const cents = (abs - Math.floor(abs)).toFixed(2).slice(2);
+  const cents = digits > 0 ? (abs - Math.floor(abs)).toFixed(digits).slice(2) : '';
   const isNegative = amount < 0;
   const sign = isNegative ? '−' : signed && amount > 0 ? '+' : '';
 
@@ -59,7 +65,9 @@ export function MoneyDisplay({
       <span style={{ fontSize: effectiveSize, fontWeight: 600, color: primary }}>
         {sign}{intPart}
       </span>
-      <span style={{ fontSize: effectiveSize * 0.42, fontWeight: 500, color: muted }}>.{cents}</span>
+      {cents !== '' && (
+        <span style={{ fontSize: effectiveSize * 0.42, fontWeight: 500, color: muted }}>.{cents}</span>
+      )}
     </span>
   );
 }

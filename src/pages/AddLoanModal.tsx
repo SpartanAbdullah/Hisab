@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Users, Lock } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
@@ -14,7 +14,6 @@ import { ContactPicker, type ContactValue } from '../components/ContactPicker';
 import { useToast } from '../components/Toast';
 import { AccountSelect } from '../components/AccountSelect';
 import { ShareKhataLinkSheet } from '../components/ShareKhataLinkSheet';
-import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { decideLinkedBranch } from '../lib/linkedRequestBranch';
 import { confirmCrossUserRequest } from '../lib/confirmCrossUserRequest';
@@ -22,7 +21,8 @@ import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { planEmiRows } from '../lib/emiPlan';
 import { track } from '../lib/telemetry';
 import { shouldOfferKhataShareNudge, snoozeKhataShareNudge } from '../lib/khataLinkStatus';
-import { SUPPORTED_CURRENCIES, type Currency, type LoanType, type Person } from '../db';
+import { type Currency, type LoanType, type Person } from '../db';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 
 interface Props { open: boolean; onClose: () => void; }
 
@@ -44,6 +44,12 @@ export function AddLoanModal({ open, onClose }: Props) {
   const [accountId, setAccountId] = useState('');
   // UX-34: one helper, one fallback. See src/lib/primaryCurrency.ts.
   const [ledgerCurrency, setLedgerCurrency] = useState<Currency>(getPrimaryCurrency);
+  // Ranks the CurrencyPicker's five inline chips. accounts/loans are already
+  // subscribed above — this is a map over data in memory, never a fetch.
+  const usedCurrencies = useMemo(
+    () => [...new Set([...accounts.map(a => a.currency), ...loans.map(l => l.currency)])],
+    [accounts, loans],
+  );
   const [cashAdvanceSourceId, setCashAdvanceSourceId] = useState('');
   const [notes, setNotes] = useState('');
   const [hasEmi, setHasEmi] = useState(false);
@@ -311,24 +317,12 @@ export function AddLoanModal({ open, onClose }: Props) {
         {isLedgerOnlyMode ? (
           <div>
             <label className="form-label">{t('onboard_currency_label')}</label>
-            <div className="grid grid-cols-2 gap-2">
-              {SUPPORTED_CURRENCIES.map((currency) => {
-                const meta = currencyMeta[currency];
-                return (
-                  <button
-                    key={currency}
-                    type="button"
-                    onClick={() => setLedgerCurrency(currency)}
-                    className={ledgerCurrency === currency ? 'selector-base selector-selected' : 'selector-base'}
-                  >
-                    <span className="text-[13px] font-semibold text-ink-800 flex items-center gap-1.5">
-                      <span>{meta?.flag}</span> {currency}
-                    </span>
-                    <span className="text-[11px] text-ink-500">{meta?.name}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <CurrencyPicker
+              value={ledgerCurrency}
+              onChange={setLedgerCurrency}
+              primary={getPrimaryCurrency()}
+              used={usedCurrencies}
+            />
           </div>
         ) : (
           <div>

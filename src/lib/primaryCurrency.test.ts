@@ -24,8 +24,17 @@ describe('resolvePrimaryCurrency', () => {
     expect(resolvePrimaryCurrency('')).toBe(DEFAULT_PRIMARY_CURRENCY);
   });
 
+  it('passes through a newly supported ISO currency', () => {
+    // Founder decision 2026-09-04: the app accepts every active ISO code, so
+    // a user who picked USD must NOT be silently reset to AED on every read.
+    expect(resolvePrimaryCurrency('USD')).toBe('USD');
+    expect(resolvePrimaryCurrency('GBP')).toBe('GBP');
+    expect(resolvePrimaryCurrency('JPY')).toBe('JPY');
+  });
+
   it('falls back for an unsupported or tampered value', () => {
-    expect(resolvePrimaryCurrency('USD')).toBe(DEFAULT_PRIMARY_CURRENCY);
+    expect(resolvePrimaryCurrency('ZWL')).toBe(DEFAULT_PRIMARY_CURRENCY); // withdrawn 2024
+    expect(resolvePrimaryCurrency('XYZ')).toBe(DEFAULT_PRIMARY_CURRENCY);
     expect(resolvePrimaryCurrency('aed')).toBe(DEFAULT_PRIMARY_CURRENCY); // case-sensitive on purpose
     expect(resolvePrimaryCurrency('{"a":1}')).toBe(DEFAULT_PRIMARY_CURRENCY);
   });

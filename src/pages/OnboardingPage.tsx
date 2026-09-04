@@ -14,8 +14,8 @@ import { useAppModeStore } from '../stores/appModeStore';
 import { useAccountStore } from '../stores/accountStore';
 import { useI18nStore, useT } from '../lib/i18n';
 import { Button } from '../components/Button';
-import { SUPPORTED_CURRENCIES, type Currency, type AppMode, type AccountType } from '../db';
-import { currencyMeta } from '../lib/design-tokens';
+import { type Currency, type AppMode, type AccountType } from '../db';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 
 // Hoisted out of OnboardingPage — components defined inside a parent render
 // body lose state on every re-render (react-hooks/static-components).
@@ -262,19 +262,16 @@ export function OnboardingPage() {
               <div>
                 <label className="block text-[11px] text-white/50 font-medium uppercase tracking-widest mb-2">{t('onboard_currency_label')}</label>
                 <p className="text-[11px] text-white/45 leading-relaxed mb-3">{t('onboard_currency_help')}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {SUPPORTED_CURRENCIES.map(c => {
-                    const meta = currencyMeta[c];
-                    return (
-                    <button key={c} type="button" onClick={() => setCurrency(c)}
-                      className={`p-3 rounded-2xl border-2 text-left transition-all duration-200 backdrop-blur-sm ${currency === c ? 'border-white/40 bg-white/15 scale-[1.02] shadow-lg shadow-white/5' : 'border-white/10 bg-white/5 active:scale-[0.98]'}`}>
-                      <span className="text-xl">{meta.flag}</span>
-                      <p className="font-bold text-[13px] mt-1.5 tracking-tight text-white">{c}</p>
-                      <p className="text-[11px] text-white/50">{meta.name}</p>
-                    </button>
-                    );
-                  })}
-                </div>
+                {/* tone="on-dark" — the onboarding hero is the one screen
+                    that paints its own navy ground, so the chips are frosted
+                    white instead of the cream `.selector-base`. No `used`:
+                    this is the very first screen, the user has no accounts. */}
+                <CurrencyPicker
+                  value={currency}
+                  onChange={setCurrency}
+                  primary={currency}
+                  tone="on-dark"
+                />
               </div>
             </div>
             <div className="mt-auto pb-8">

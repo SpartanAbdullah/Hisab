@@ -8,10 +8,12 @@ import { useCommitteeStore } from '../stores/committeeStore';
 import { type CommitteePatch } from '../lib/supabaseDb';
 import { committeeErrorKey } from '../lib/committeeErrorText';
 import { committeeEditState, isMoneyShapeEditable, poolAmount } from '../lib/committeeMath';
-import { currencyMeta } from '../lib/design-tokens';
+import { getPrimaryCurrency } from '../lib/primaryCurrency';
 import { formatMoney } from '../lib/constants';
 import { useT, type I18nKey } from '../lib/i18n';
-import { SUPPORTED_CURRENCIES, type Currency, type Committee, type CommitteeMember, type CommitteePayment, type CommitteeCadence, type CommitteePayoutMethod } from '../db';
+import { type Currency, type Committee, type CommitteeMember, type CommitteePayment, type CommitteeCadence, type CommitteePayoutMethod } from '../db';
+import { useAccountStore } from '../stores/accountStore';
+import { CurrencyPicker } from './CurrencyPicker';
 
 const EMOJI_PRESETS = ['🏘', '🏦', '👨‍👩‍👧', '🤝', '💼', '🎯', '🕌', '🎲'];
 
@@ -51,6 +53,11 @@ export function EditCommitteeSheet({ open, onClose, committee, members, payments
   const [notes, setNotes] = useState(committee.notes ?? '');
   const [amount, setAmount] = useState(String(committee.contributionAmount));
   const [currency, setCurrency] = useState<Currency>(committee.currency);
+  // Ranks the CurrencyPicker's five inline chips from the currencies this
+  // user already holds money in. accountStore is a global store that is
+  // already loaded app-wide, so this subscribes to data in memory — no fetch.
+  const accounts = useAccountStore((s) => s.accounts);
+  const usedCurrencies = useMemo(() => [...new Set(accounts.map((a) => a.currency))], [accounts]);
   const [cadence, setCadence] = useState<CommitteeCadence>(committee.cadence);
   const [startDate, setStartDate] = useState(committee.startDate);
   const [method, setMethod] = useState<CommitteePayoutMethod>(committee.payoutMethod);
@@ -195,13 +202,14 @@ export function EditCommitteeSheet({ open, onClose, committee, members, payments
 
         <div>
           <label className="form-label flex items-center gap-2">{t('common_currency')} {lockBadge}</label>
-          <div className={`grid grid-cols-4 gap-2 ${lockedInput}`}>
-            {SUPPORTED_CURRENCIES.map((c) => (
-              <button key={c} type="button" disabled={!moneyEditable} onClick={() => setCurrency(c)}
-                className={`justify-center text-[12px] font-semibold ${currency === c ? 'selector-base selector-selected' : 'selector-base'}`}>
-                <span className="text-ink-800">{currencyMeta[c]?.flag} {c}</span>
-              </button>
-            ))}
+          <div className={lockedInput}>
+            <CurrencyPicker
+              value={currency}
+              onChange={setCurrency}
+              primary={getPrimaryCurrency()}
+              used={usedCurrencies}
+              disabled={!moneyEditable}
+            />
           </div>
         </div>
 

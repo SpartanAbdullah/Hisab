@@ -307,25 +307,41 @@ SELECT test.assert(
 -- branch-new tables are still uncovered on purpose (§4's comment says so).
 -- If this number moves, someone changed the schema and should re-read that
 -- comment rather than edit this number.
+--
+-- The 16 `*_fk_currency` foreign keys added by
+-- `supabase-migration-p3-currencies-iso4217.sql` are excluded from this census
+-- rather than counted, because they are uncovered BY DESIGN and would
+-- otherwise drown the audit-column signal this assertion exists to protect.
+-- The reason an FK wants an index on the referencing column is the parent-side
+-- check: every DELETE or key-UPDATE on the parent must scan each child. On
+-- `public.currencies` neither happens — currencies are retired with
+-- `is_active = false`, never deleted (the FKs are ON DELETE RESTRICT precisely
+-- to enforce that), and the seed's `ON CONFLICT DO UPDATE` touches only
+-- `name_en` / `minor_units` / `sort_order`, never `code`, so no FK check
+-- fires. A btree on a column holding ~8 distinct values would also be near
+-- useless to the planner. Their presence is asserted separately, and in full,
+-- in `93-currencies-iso4217.sql`.
 SELECT test.assert(
   (WITH fk AS (
      SELECT c.conrelid::regclass::text AS tbl, c.conname, c.conkey
        FROM pg_constraint c
        JOIN pg_class t ON t.oid = c.conrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
-      WHERE c.contype = 'f' AND n.nspname = 'public')
+      WHERE c.contype = 'f' AND n.nspname = 'public'
+        AND c.confrelid <> COALESCE(to_regclass('public.currencies'), 0::oid))
    SELECT count(*) FROM fk
     WHERE NOT EXISTS (
       SELECT 1 FROM pg_index i
        WHERE i.indrelid = fk.tbl::regclass
          AND (i.indkey::smallint[])[0:array_length(fk.conkey, 1) - 1] = fk.conkey)) = 22,
-  'exactly 22 foreign keys remain uncovered — the documented audit-column deferral',
+  'exactly 22 foreign keys remain uncovered — the documented audit-column deferral (currency FKs excluded, see comment)',
   'uncovered: ' || (WITH fk AS (
      SELECT c.conrelid::regclass::text AS tbl, c.conname, c.conkey
        FROM pg_constraint c
        JOIN pg_class t ON t.oid = c.conrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
-      WHERE c.contype = 'f' AND n.nspname = 'public')
+      WHERE c.contype = 'f' AND n.nspname = 'public'
+        AND c.confrelid <> COALESCE(to_regclass('public.currencies'), 0::oid))
    SELECT coalesce(string_agg(conname, ', ' ORDER BY conname), '-') FROM fk
     WHERE NOT EXISTS (
       SELECT 1 FROM pg_index i

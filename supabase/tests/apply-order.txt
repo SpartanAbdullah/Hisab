@@ -142,6 +142,19 @@ supabase-migration-p2-edit-history.sql
 #   indexes and the attempt-ledger primary keys. Re-run after adding any
 #   migration that touches a policy.
 supabase-migration-p3-rls-initplan-and-indexes.sql
+# ↓ founder decision 2026-09-04: every active ISO 4217 currency. Creates the
+#   public.currencies reference table (157 rows, RLS on, anon+authenticated
+#   SELECT only) and replaces all 16 currency whitelist CHECKs — the 14
+#   <table>_<column>_supported from p1-money-bounds §2a plus
+#   ltr/lsr_currency_supported from audit-p0-currencies — with FOREIGN KEYs to
+#   currencies(code). Needs p1-money-bounds + audit-p0-currencies (it drops
+#   their constraints by name). Sits AFTER p3-rls-initplan-and-indexes so that
+#   file stays the last thing to touch a policy, and BEFORE
+#   p3-invariant-monitoring, which must stay last among the data readers. It
+#   creates NO function, and p3-rpc-execute-grants sweeps functions only
+#   (its §4 ALTER DEFAULT PRIVILEGES is `ON FUNCTIONS`), so nothing below it
+#   can alter this table's grants.
+supabase-migration-p3-currencies-iso4217.sql
 # ↓ reconciliation reads every table above
 supabase-migration-p3-invariant-monitoring.sql
 # ↓ TRULY LAST — the least-privilege sweep over public.* functions. It is a

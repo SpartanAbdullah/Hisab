@@ -5051,6 +5051,33 @@ const S = {
     en: "Keep adding transactions as they happen, or use Search to quickly find an older account, person, or expense.",
   },
   // ── 3D clay: home page ──
+
+  // ── currency picker ──
+  // Founder decision (2026-09-04): Hisaab accepts every ISO currency, but a
+  // flat A–Z list of ~170 codes is a scroll, not a choice. The picker shows
+  // the five most likely codes inline and hides the rest behind a searchable
+  // sheet — these are that sheet's strings.
+  cur_other: { ur: "Aur…", en: "Other…" },
+  cur_pick_title: { ur: "Currency chunein", en: "Choose currency" },
+  cur_search_placeholder: { ur: "Naam ya code se dhoondein", en: "Search by name or code" },
+  cur_search_label: { ur: "Currency dhoondein", en: "Search currencies" },
+  cur_all_label: { ur: "Sab currencies", en: "All currencies" },
+  cur_no_match: { ur: "Koi currency nahi mili", en: "No currency matches" },
+  // Rendered under the empty state with the typed query quoted beside it, so
+  // the user can see exactly what was searched for.
+  cur_no_match_hint: {
+    ur: "Doosra naam ya 3-harfi code aazmayein.",
+    en: "Try another name or the 3-letter code.",
+  },
+  // Shown on a code the catalogue carries but the database cannot store yet
+  // (the caller passed a narrower `allowed` list). Deliberately not an error:
+  // the currency exists, it is just not switched on for this field today.
+  cur_coming_soon: { ur: "Jald", en: "Coming soon" },
+  cur_coming_soon_note: {
+    ur: "Yeh currency abhi is jagah save nahi hoti — jald aa rahi hai.",
+    en: "This currency can't be saved here yet — coming soon.",
+  },
+  cur_selected: { ur: "Muntakhab", en: "Selected" },
 } as const;
 
 type Key = keyof typeof S;

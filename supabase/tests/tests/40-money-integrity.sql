@@ -80,26 +80,41 @@ SELECT test.assert_raises($$
 $$, 'GROUP_SPLITS_DO_NOT_SUM',
   'changing only the amount desyncs the splits and is refused');
 
--- ── CURRENCY WHITELIST (C9) ───────────────────────────────────────────────
--- src/db/types.ts SUPPORTED_CURRENCIES = AED PKR PHP SAR QAR OMR KWD BHD.
--- BHD is the sentinel: it is one of the eight and was NOT in the pre-fix list.
+-- ── CURRENCY: THE ACCEPTED SET (C9, then the 2026-09-04 widening) ─────────
+-- History, because the contract changed under this block:
+--   C9 (`supabase-migration-audit-p0-currencies.sql`) widened an AED/PKR-only
+--   CHECK to the eight the client ships (src/db/types.ts SUPPORTED_CURRENCIES
+--   = AED PKR PHP SAR QAR OMR KWD BHD), and `p1-money-bounds.sql` §2a
+--   generated the same eight-code CHECK across 14 more columns.
+--   `supabase-migration-p3-currencies-iso4217.sql` then replaced ALL of those
+--   whitelists with foreign keys into `public.currencies`, seeded with every
+--   active ISO 4217 code (founder decision 2026-09-04).
+-- So the assertions below hold the LINE that is still meaningful: the eight
+-- keep working, and a code that is not a currency is still refused. The
+-- mechanism moved from CHECK to FK; the full contract lives in
+-- `93-currencies-iso4217.sql`.
 SELECT test.assert_ok($$
   INSERT INTO split_groups (id, user_id, name, currency)
   VALUES ('G-bhd', auth.uid(), 'Bahrain', 'BHD')
-$$, 'BHD is accepted — the constraint was widened past AED/PKR (C9)');
+$$, 'BHD is accepted — one of the eight the client ships (C9)');
 
+-- XXX is ISO 4217's "no currency" code and is deliberately NOT seeded, so it
+-- is the sentinel for "a three-letter string is not automatically money".
+-- Matching the FK's name proves it is the foreign key doing the refusing.
 SELECT test.assert_raises($$
   INSERT INTO split_groups (id, user_id, name, currency)
   VALUES ('G-xxx', auth.uid(), 'Nowhere', 'XXX')
-$$, 'currency',
-  'an unlisted currency (XXX) is still refused');
+$$, 'split_groups_currency_fk_currency',
+  'a non-currency code (XXX) is still refused, now by the foreign key');
 
-SELECT test.assert_raises($$
+-- USD used to be refused here ("not one of the eight"). It is a real, active
+-- ISO 4217 currency, so as of 2026-09-04 it is accepted — that is the change,
+-- asserted rather than deleted so the flip is visible in the diff.
+SELECT test.assert_ok($$
   INSERT INTO loans (id, user_id, person_name, type, total_amount,
                      remaining_amount, currency)
-  VALUES ('L-xxx', auth.uid(), 'Nobody', 'lent', 10, 10, 'USD')
-$$, 'currency',
-  'USD is refused — it is not one of the eight shipped currencies');
+  VALUES ('L-usd-40', auth.uid(), 'Nobody', 'lent', 10, 10, 'USD')
+$$, 'USD is accepted — every active ISO 4217 currency is now valid');
 
 RESET ROLE;
 SELECT test.assert(

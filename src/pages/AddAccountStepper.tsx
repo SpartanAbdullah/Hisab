@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Wallet, Building2, Smartphone, PiggyBank, CreditCard, Check } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useDiscardGuard } from '../lib/useDiscardGuard';
@@ -6,7 +6,8 @@ import { useSubmitGuard } from '../lib/useSubmitGuard';
 import { useAccountStore } from '../stores/accountStore';
 import { useToast } from '../components/Toast';
 import { StepIndicator } from '../components/StepIndicator';
-import { SUPPORTED_CURRENCIES, type AccountType, type Currency } from '../db';
+import { type AccountType, type Currency } from '../db';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 import { currencyMeta } from '../lib/design-tokens';
 import { StatementCycleField } from '../components/StatementCycleField';
 import { useT } from '../lib/i18n';
@@ -61,6 +62,9 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
   const [accountType, setAccountType] = useState<AccountType>('cash');
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState<Currency>(primaryCurrency);
+  // Ranks the CurrencyPicker chips from the currencies this user's existing
+  // accounts are already in — accountStore is subscribed above, so no fetch.
+  const usedCurrencies = useMemo(() => [...new Set(accounts.map(a => a.currency))], [accounts]);
   const [balance, setBalance] = useState('');
   const [bankName, setBankName] = useState('');
   const [walletType, setWalletType] = useState('');
@@ -295,18 +299,12 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
 
                 <div>
                   <label className="form-label">{t('common_currency')}</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {SUPPORTED_CURRENCIES.map(c => {
-                      const meta = currencyMeta[c];
-                      return (
-                        <button key={c} type="button" onClick={() => setCurrency(c)}
-                          className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-accent-500/5' : 'border-cream-border bg-cream-card text-ink-500'
-                          }`}
-                        >{meta?.flag} {c}</button>
-                      );
-                    })}
-                  </div>
+                  <CurrencyPicker
+                    value={currency}
+                    onChange={setCurrency}
+                    primary={primaryCurrency}
+                    used={usedCurrencies}
+                  />
                 </div>
               </>
             ) : (
@@ -345,18 +343,12 @@ export function AddAccountStepper({ open, onClose, onComplete, inline }: Props) 
 
                 <div>
                   <label className="form-label">{t('common_currency')}</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {SUPPORTED_CURRENCIES.map(c => {
-                      const meta = currencyMeta[c];
-                      return (
-                        <button key={c} type="button" onClick={() => setCurrency(c)}
-                          className={`py-3 rounded-2xl border-2 text-[13px] font-semibold text-center transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
-                            currency === c ? 'border-accent-500 bg-accent-50 text-accent-600 shadow-sm shadow-accent-500/5' : 'border-cream-border bg-cream-card text-ink-500'
-                          }`}
-                        >{meta?.flag} {c}</button>
-                      );
-                    })}
-                  </div>
+                  <CurrencyPicker
+                    value={currency}
+                    onChange={setCurrency}
+                    primary={primaryCurrency}
+                    used={usedCurrencies}
+                  />
                 </div>
               </>
             )}

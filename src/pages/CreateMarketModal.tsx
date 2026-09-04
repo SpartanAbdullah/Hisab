@@ -1,14 +1,15 @@
 // Create an investment market (name + fixed currency). Seed chips prefill
 // the common Gulf/Pakistan exchanges; anything can be typed free-form.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useInvestmentStore } from '../stores/investmentStore';
 import { useToast } from '../components/Toast';
 import { currencyMeta } from '../lib/design-tokens';
 import { useT } from '../lib/i18n';
 import { useSubmitGuard } from '../lib/useSubmitGuard';
-import { SUPPORTED_CURRENCIES, type Currency, type InvestmentMarket } from '../db';
+import { type Currency, type InvestmentMarket } from '../db';
+import { CurrencyPicker } from '../components/CurrencyPicker';
 import { getPrimaryCurrency } from '../lib/primaryCurrency';
 
 const SUGGESTIONS: { name: string; currency: Currency }[] = [
@@ -40,6 +41,8 @@ export function CreateMarketModal({ open, onClose, onCreated }: Props) {
   };
 
   const markets = useInvestmentStore((s) => s.markets);
+  // Ranks the CurrencyPicker chips from the markets this user already tracks.
+  const usedCurrencies = useMemo(() => [...new Set(markets.map((m) => m.currency))], [markets]);
 
   // Ref-backed entry re-check (audit F-8/D-1): the `saving` STATE flag is
   // updated asynchronously, so two taps in one frame both read it as false.
@@ -121,18 +124,12 @@ export function CreateMarketModal({ open, onClose, onCreated }: Props) {
           <label className="block text-[10.5px] font-semibold text-ink-500 uppercase tracking-[0.12em] mb-2">
             {t('inv_market_currency')}
           </label>
-          <div className="grid grid-cols-4 gap-2">
-            {SUPPORTED_CURRENCIES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setCurrency(c)}
-                className={c === currency ? 'selector-base selector-selected' : 'selector-base'}
-              >
-                <span className="text-[12px] font-semibold text-ink-800">{currencyMeta[c]?.flag} {c}</span>
-              </button>
-            ))}
-          </div>
+          <CurrencyPicker
+            value={currency}
+            onChange={setCurrency}
+            primary={getPrimaryCurrency()}
+            used={usedCurrencies}
+          />
           <p className="text-[10.5px] text-ink-500 mt-1.5">{t('inv_market_currency_locked')}</p>
         </div>
       </div>

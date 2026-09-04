@@ -22,10 +22,16 @@ wiring) is mid-edit as of 2026-09-03 (see APPLY-ORDER.md §2b row 14).
 Migration apply order and integration-run results: **[APPLY-ORDER.md](APPLY-ORDER.md)**
 (companion doc — read it before applying anything; not duplicated here).
 **`supabase/tests/apply-order.txt` is the canonical apply order** for the
-whole corpus now (APPLY-ORDER.md §2b) — **73 production files** (1 schema +
-72 migrations, after `p3-rls-initplan-and-indexes.sql` and
-`p3-rpc-execute-grants.sql` were added on 2026-09-03), machine-checked via
+whole corpus now (APPLY-ORDER.md §2b) — **74 production files** (1 schema +
+73 migrations, after `p3-rls-initplan-and-indexes.sql` and
+`p3-rpc-execute-grants.sql` were added on 2026-09-03 and
+`p3-currencies-iso4217.sql` on 2026-09-04), machine-checked via
 `supabase/tests/run.sh`, run in CI on every push/PR to `main`.
+Production had all 73 of those applied as of 2026-09-03, so
+**exactly one file is pending**: `supabase-migration-p3-currencies-iso4217.sql`
+(founder decision, every active ISO 4217 currency — see
+[currencies.md](../currencies.md)). Its position is third from last, after
+`p3-rls-initplan-and-indexes.sql` and before `p3-invariant-monitoring.sql`.
 `supabase-migration-p3-rpc-execute-grants.sql` is now the **last** line and
 must stay last: it is a sweep over `pg_proc`, so anything applied after it
 escapes both the EXECUTE revoke and the `search_path` pin. The assertion count has grown in steps as each new
@@ -290,7 +296,7 @@ by someone with access this agent doesn't have).
 |---|---|---|---|
 | A1 | Run `supabase-audit-p0-verification.sql` in Supabase Studio against **production** and share the output | The prerequisite for treating any "fixed" claim in this tracker as confirmed in prod, not just in Docker (C1) | §1 step 1–2 above |
 | A2 | Connect the Supabase CLI to the project | Long-term fix for C1 — moves migrations to a numbered, tracked, CI-applied model instead of hand-pasting into Studio | `00-executive-summary.md` C1; `docs/release-and-rollback.md` §4 |
-| A3 | Apply every file in `supabase/tests/apply-order.txt` order, in one window, with the matching client build | Covers all **32** pending migrations (11 audit-p0 + 21 P1/P2/P3, per APPLY-ORDER.md §2b rows 1–18 plus `p2-analytics-aggregates.sql`/`p2-realtime-broadcast.sql` already covered inline, plus `p3-rls-initplan-and-indexes.sql` and `p3-rpc-execute-grants.sql` added late on 2026-09-03), not just the original 11 or the 23 this action used to cite — the P2/P3 tail grew again on 2026-09-03. **`p3-rpc-execute-grants.sql` goes last**, then re-run the Security advisor (step 3a) | §1 step 3/3a above; APPLY-ORDER.md §2b |
+| A3 | Apply every file in `supabase/tests/apply-order.txt` order, in one window, with the matching client build | Covers all **32** pending migrations (11 audit-p0 + 21 P1/P2/P3, per APPLY-ORDER.md §2b rows 1–18 plus `p2-analytics-aggregates.sql`/`p2-realtime-broadcast.sql` already covered inline, plus `p3-rls-initplan-and-indexes.sql` and `p3-rpc-execute-grants.sql` added late on 2026-09-03), not just the original 11 or the 23 this action used to cite — the P2/P3 tail grew again on 2026-09-03. **`p3-rpc-execute-grants.sql` goes last**, then re-run the Security advisor (step 3a). **DONE 2026-09-03** — all 32 were applied to production in one window. **The pending list is now exactly one file:** `supabase-migration-p3-currencies-iso4217.sql` (2026-09-04), applied on its own, third from last in `apply-order.txt`; it needs no client change and no re-run of the advisor sweeps (it creates no function and no `auth.uid()` policy) | §1 step 3/3a above; APPLY-ORDER.md §2b |
 | A4 | After merge + push (web) and `npm run build && npx cap sync android`, run the Gradle AAB build locally | `gradlew` needs a loopback socket the agent sandbox blocks — see `docs/updating-the-android-app.md` | CLAUDE.md "Shipping rule" |
 | A5 | Rotate the Supabase anon key | `git log` on `main` still contains commits (`88ed40c`, `dfea60e`) with the production anon key baked into build artifacts; RLS limits the blast radius but rotation is still recommended defense-in-depth and has not been done | `docs/testing-the-trust-boundary.md` §7 (secret-scanning section) |
 | A6 | Set the PostHog project key + the feedback WhatsApp number as env vars | H2's analytics/feedback work is built and consent-gated but inert without these. The event-wiring half of A6 has since progressed — commit `586aa9e` records "remaining deferred events wired" (`src/lib/telemetryEvents.ts` now defines 32 typed events, up from 28) — but that only matters once these two env vars actually exist; nothing fires without them | §3 H2 above |

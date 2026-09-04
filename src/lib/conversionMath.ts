@@ -4,6 +4,8 @@
 // is derived, with direct-rate entry (either direction) as the advanced
 // path. Pure + tested; all display/i18n stays in the component.
 
+import { roundMoney } from './currencies';
+
 // Sanity bounds shared with the old inline validation (Phase H2): a typo'd
 // rate silently corrupts balances, so reject anything outside this window.
 export const RATE_MIN = 0.0001;
@@ -25,9 +27,17 @@ export function deriveRate(sentAmount: number, receivedAmount: number): number |
   return rateIsSane(rate) ? rate : null;
 }
 
-/** Amount converted by a to-per-from rate, rounded to 2dp (money). */
-export function convertAmount(amount: number, rate: number): number {
-  return Math.round(amount * rate * 100) / 100;
+/**
+ * Amount converted by a to-per-from rate, rounded to the DESTINATION
+ * currency's smallest unit.
+ *
+ * `toCurrency` is optional and defaults to 2 decimals, which is the behaviour
+ * every existing caller had. Pass it wherever the destination currency is
+ * known: converting into JPY must not invent cents, and converting into KWD
+ * must not throw away fils.
+ */
+export function convertAmount(amount: number, rate: number, toCurrency?: string): number {
+  return roundMoney(amount * rate, toCurrency);
 }
 
 /**

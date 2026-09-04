@@ -1,3 +1,4 @@
+import { currencyMinorUnits } from './currencies';
 import type { LeaveGroupResult } from './supabaseDb';
 
 export interface GroupLeavePolicyInput {
@@ -15,6 +16,8 @@ export interface GroupLeavePolicyInput {
 // authority; this exists so the leave rules stay explicit and unit-testable.
 export function evaluateGroupLeavePolicy(input: GroupLeavePolicyInput): LeaveGroupResult {
   const currency = input.currency ?? 'AED';
+  // ISO minor units, not a hardcoded 2 — a KWD balance owes three fils.
+  const dp = (n: number) => n.toFixed(currencyMinorUnits(currency));
   if (!input.activeMember) {
     return blocked('NOT_ACTIVE_MEMBER', 'You are not an active member of this group.');
   }
@@ -25,7 +28,7 @@ export function evaluateGroupLeavePolicy(input: GroupLeavePolicyInput): LeaveGro
     return {
       ...blocked(
         input.payableAmount > 0.01 ? 'OUTSTANDING_PAYABLE' : 'OUTSTANDING_RECEIVABLE',
-        `You owe ${currency} ${input.payableAmount.toFixed(2)} and are owed ${currency} ${input.receivableAmount.toFixed(2)}. Please settle all balances before leaving.`,
+        `You owe ${currency} ${dp(input.payableAmount)} and are owed ${currency} ${dp(input.receivableAmount)}. Please settle all balances before leaving.`,
       ),
       payableAmount: input.payableAmount,
       receivableAmount: input.receivableAmount,
