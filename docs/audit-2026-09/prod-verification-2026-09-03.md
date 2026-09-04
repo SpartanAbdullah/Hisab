@@ -488,3 +488,35 @@ already-applied historical files and the harness-only prelude. Read-only re-chec
   (all client RPCs or policy/trigger helpers), 4 INFO rls-no-policy (app_push_config,
   khata_link_lookups, reconciliation_runs, reconciliation_findings — all server-only tables),
   leaked-password protection still off.
+
+## Decision census 2026-09-04 (read-only, Supabase MCP, project `nnhwxjrgxsefywalwvaq`)
+
+Run to close the two founder decisions delegated to the agent on 2026-09-04
+(P0-REMEDIATION.md §6.1 D2 and D4). Both queries read; neither wrote.
+
+**D2 — conscripted `'connected'` group members** (consent-guards.sql query 4.6,
+extended with per-row ledger involvement):
+
+| total | owners | invited_by NULL | has joined_at | with ledger activity | groups | profiles |
+|---|---|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+Verdict: the set is empty. There is nobody to grandfather, backfill or notify.
+Future owner-adds already land as `'invited'` (consent-guards §2.3), so the
+finding stays closed by construction. **Decision recorded: grandfather (no-op).**
+
+**D4 — kameti legacy / test draws** (`public.committees` with member, slot and
+payment counts):
+
+| kametis | payout_method | status | has_seed | has_commitment | drawn_at | members | slotted | payments |
+|---|---|---|---|---|---|---|---|---|
+| 1 | ballot | active | false | false | NULL | 4 | 0 | 0 |
+
+Verdict: the only kameti in production has never been drawn — there is no
+pre-fix draw to purge, and any future draw can only come from
+`perform_committee_draw()` (server entropy, append-only triggers).
+**Decision recorded: nothing to purge; "provably fair" is marketable as-is.**
+
+**D1 — pre-apply census for the balance gate** is the V3 query at the bottom of
+`supabase-migration-p3-account-deletion-balance-gate.sql`; run it in Studio
+right after the apply and record the count here.

@@ -334,12 +334,55 @@ SELECT 'E2', auth.uid(), 'G2', 'Rent', 40.00, 'M-E',
                             'amount', 20.00)),
        auth.uid();
 
+-- F owes E 20.00 and E is still connected → deletion is refused, and the
+-- DETAIL names the group and the amount (founder decision D1, 2026-09-04;
+-- supabase-migration-p3-account-deletion-balance-gate.sql). Same rule as
+-- leave_group's OUTSTANDING_PAYABLE.
+SELECT test.as_user('66666666-6666-6666-6666-666666666666');
+SELECT test.assert_raises($$ SELECT delete_current_user() $$,
+  'UNSETTLED_GROUP_BALANCES',
+  'a member who still OWES in a shared group cannot delete their account (D1)');
+RESET ROLE;
+SELECT test.assert(
+  (SELECT count(*) FROM auth.users
+    WHERE id = '66666666-6666-6666-6666-666666666666') = 1
+  AND (SELECT status FROM group_members
+        WHERE id = (SELECT v FROM test.fixture WHERE k = 'M-F')) = 'connected',
+  'the balance-gated refusal left the account and the membership intact');
+SET ROLE authenticated;
+SELECT test.as_user('66666666-6666-6666-6666-666666666666');
+DO $$
+DECLARE v_detail TEXT;
+BEGIN
+  PERFORM delete_current_user();
+  PERFORM test.assert(false, 'D1 refusal carries a DETAIL naming group and amount');
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_detail = PG_EXCEPTION_DETAIL;
+  PERFORM test.assert(v_detail = 'Flatmates: owes AED 20.00',
+    'D1 refusal carries a DETAIL naming group and amount', 'detail: ' || COALESCE(v_detail, '<null>'));
+END $$;
+
+-- E is OWED 20.00 — the creditor side is gated too, and the owner guard wins
+-- the ordering (E also owns G2), so E sees OWNED_GROUPS_WITH_MEMBERS, not the
+-- balance marker. Asserted explicitly so the guard order is pinned.
+SELECT test.as_user('55555555-5555-5555-5555-555555555555');
+SELECT test.assert_raises($$ SELECT delete_current_user() $$,
+  'OWNED_GROUPS_WITH_MEMBERS',
+  'owner guard is evaluated before the balance guard (D1 ordering)');
+
 SELECT test.as_user('66666666-6666-6666-6666-666666666666');
 SELECT test.assert(
   (record_group_settlement('S2', 'G2',
      (SELECT v FROM test.fixture WHERE k = 'M-F'), 'M-E', 20.00)
    ->> 'success')::boolean,
   'F settles their 20.00 share in G2');
+-- group_member_net_balance is a definer helper, not a client RPC: the grants
+-- sweep (92-function-grants) revokes it from authenticated, so read it as owner.
+RESET ROLE;
+SELECT test.assert(
+  abs(group_member_net_balance('G2', (SELECT v FROM test.fixture WHERE k = 'M-F'))) <= 0.01,
+  'after settling, F is square in G2 — the gate must now let F go');
+SET ROLE authenticated;
 
 -- E owns a group that still has another connected member → refused.
 SELECT test.as_user('55555555-5555-5555-5555-555555555555');

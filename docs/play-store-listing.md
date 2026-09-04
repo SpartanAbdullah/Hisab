@@ -64,7 +64,7 @@ Yeh ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena karta —
 ✅ English + Roman-Urdu — baari, qist, udhaar, khata, the words you actually use
 ✅ No ads, ever — your data stays private
 ✅ Works on Android and the web — one account, everywhere
-✅ Delete your account anytime — hand over any group you run first, then it's gone
+✅ Delete your account anytime — hand over any group you run and settle what you owe first, then it's gone
 ✅ Free to start
 
 == KAMETI DONE RIGHT ==
@@ -141,7 +141,7 @@ Andaze lagana band karein. Dekhna shuru karein. Hisaab download karein — aap k
 ```
 Hisaab v1.1.0 — kameti, khata & trust upgrades.
 
-Kameti draw is now server-side and provably fair — the organiser can't re-roll. Witness links now expire and can be revoked. Split with people who don't have the app yet. Share a live khata link over WhatsApp so anyone can check a balance without installing. Block or report someone, right from the app. See who changed what on a loan. Roman Urdu is now the default language. Deleting your account now asks you to hand over any group you run first.
+Kameti draw is now server-side and provably fair — the organiser can't re-roll. Witness links now expire and can be revoked. Split with people who don't have the app yet. Share a live khata link over WhatsApp so anyone can check a balance without installing. Block or report someone, right from the app. See who changed what on a loan. Roman Urdu is now the default language. Deleting your account now asks you to hand over any group you run, and settle any open group balance, first.
 ```
 
 ## Release notes — v1.0.0 (≤ 500 chars, superseded — kept for reference)
@@ -167,7 +167,7 @@ khata · udhaar · hisab kitab · hisaab · kameti · committee tracker · BC co
 - **Kameti/committee** is framed only as a savings-committee tracker with a provably-fair draw + expiring/revocable witness link — no gambling/lottery/wagering/prize language. → keeps an **Everyone** IARC rating.
 - **No-custody disclaimers** stated explicitly in both languages ("Hisaab is NOT a lender", "never hold, move, lend or transfer").
 - **"Sood-free by design"** reinforces the no-interest framing for the target audience.
-- **Account deletion is qualified, not absolute.** `delete_current_user()` (`supabase-migration-audit-p0-account-deletion.sql`) REFUSES with `OWNED_GROUPS_WITH_MEMBERS` while the caller still owns a shared group with other participants — the UI's resolution path is "Assign another admin" (`transfer_group_ownership`). The listing copy says "hand over any group you run first" for exactly this reason; do not restore an unqualified "delete anytime" claim.
+- **Account deletion is qualified, not absolute.** `delete_current_user()` (`supabase-migration-audit-p0-account-deletion.sql`) REFUSES with `OWNED_GROUPS_WITH_MEMBERS` while the caller still owns a shared group with other participants — the UI's resolution path is "Assign another admin" (`transfer_group_ownership`) — and, since founder decision D1 (2026-09-04, `supabase-migration-p3-account-deletion-balance-gate.sql`), with `UNSETTLED_GROUP_BALANCES` while the caller owes or is owed in a shared group that still has a counterparty (the same rule as leaving a group). The listing copy says "hand over any group you run and settle what you owe first" for exactly this reason; do not restore an unqualified "delete anytime" claim.
 - **Receipt photos attach after saving, not during entry.** `ReceiptField` (`src/components/ReceiptField.tsx`) takes a `transactionId` and is only mounted in `EditTransactionModal.tsx` — there is no receipt control on the create/QuickEntry flow. The listing copy says "attach... right after saving" for this reason.
 - **Edit history currently covers loans only.** `EditHistorySheet` is mounted on `LoanDetailPage` only; `docs/edit-history.md` §6 lists `GroupDetailPage`/`EditGroupExpenseModal`/settlement/transaction surfaces as named, unmounted insertion points. Keep the listing's edit-history claim scoped to "on a loan record" until those land.
 - Every feature named above is shipped in the client on branch `audit-p0-remediation`. Several depend on a migration that is **PENDING production apply** — see the claims ledger below before publishing.
@@ -191,7 +191,7 @@ Supersedes the old "claims removed" note below. Columns: **where it's implemente
 | Khata link — live, read-only balance page shared over WhatsApp | `src/components/ShareKhataLinkSheet.tsx`, `src/pages/KhataLinkPage.tsx`, `src/stores/khataLinkStore.ts` | **`supabase-migration-p3-khata-link.sql` — PENDING production apply** | migration's own in-file V-checks (per its header); client route wired at `src/App.tsx` |
 | Edit history — "see who changed what" (loans today) | `src/components/EditHistorySheet.tsx`, mounted on `src/pages/LoanDetailPage.tsx` only | **`supabase-migration-p2-edit-history.sql` — PENDING production apply** | `supabase/tests/tests/8z-edit-history.sql` (26 assertions; corpus 357 assertions, 0 failed), `src/lib/editHistory.test.ts` (21 cases) |
 | Block or report | `src/components/BlockReportSheet.tsx`, `src/stores/blockStore.ts`; mounted in `GroupDetailPage.tsx`, `ContactDetailSheet.tsx`, `InboxPage.tsx` | **`supabase-migration-p2-trust-safety.sql` — PENDING production apply** | `docs/trust-and-safety.md` §7, 62 functional-smoke assertions, Docker-validated |
-| Account deletion — qualified ("hand over any group you run first") | `delete_current_user()` in `supabase-migration-audit-p0-account-deletion.sql`; `transfer_group_ownership`, `src/lib/groupGuardErrors.ts`, wired in `src/pages/GroupDetailPage.tsx`/`SettingsPage.tsx` | **`supabase-migration-audit-p0-account-deletion.sql` — PENDING production apply** | Docker throwaway Postgres 15 per migration header |
+| Account deletion — qualified ("hand over any group you run and settle what you owe first") | `delete_current_user()` in `supabase-migration-audit-p0-account-deletion.sql` (owner gate, applied to production 2026-09-03) and `supabase-migration-p3-account-deletion-balance-gate.sql` (balance gate, D1); `transfer_group_ownership`, `src/lib/groupGuardErrors.ts`, wired in `src/pages/GroupDetailPage.tsx`/`SettingsPage.tsx` | **balance-gate file — PENDING production apply** | Docker throwaway Postgres 15 per migration header |
 | Roman Urdu as default language | `src/lib/i18n.ts:19` (`DEFAULT_LANGUAGE = "ur"`) | none — client-only | `src/lib/i18n.test.ts` |
 | No ads, ever | absence of any ad/entitlement code in `src/` | none | confirmed absence by repo-wide search (`docs/go-to-market.md` §1.4 row 7) |
 | PIN lock | **NOT claimed** — code exists (`src/pages/PinLockScreen.tsx`, PBKDF2 150k-salted, gates cold start + 60s background + re-auth) but no device farm has run a verification pass | n/a | keep out of the listing until a device-verification pass is done (`00-executive-summary.md` §7.C) |

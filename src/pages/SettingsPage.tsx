@@ -126,6 +126,33 @@ function copyShareText(text: string): Promise<void> {
 // RAISE across message/details/hint depending on how it was thrown.
 const OWNED_GROUPS_MARKER = "OWNED_GROUPS_WITH_MEMBERS";
 
+// Founder decision D1 (2026-09-04, supabase-migration-p3-account-deletion-
+// balance-gate.sql): the same RPC also refuses while the caller has a non-zero
+// net position in a shared group that still has a counterparty — the rule
+// leave_group already applies. DETAIL is a server-composed English list
+// ("Flatmates: owes AED 20.00; Trip: is owed PKR 1,500.00"), shown as
+// supporting detail under localized copy, the GROUP_HAS_OUTSTANDING_BALANCES
+// convention.
+const UNSETTLED_BALANCES_MARKER = "UNSETTLED_GROUP_BALANCES";
+
+function readUnsettledBalancesBlocker(error: unknown): { blocked: boolean; detail: string } {
+  const parts: string[] = [];
+  if (typeof error === "string") {
+    parts.push(error);
+  } else if (error && typeof error === "object") {
+    for (const key of ["message", "details", "hint", "code"] as const) {
+      const value = (error as Record<string, unknown>)[key];
+      if (typeof value === "string") parts.push(value);
+    }
+  }
+  if (!parts.join(" | ").includes(UNSETTLED_BALANCES_MARKER)) return { blocked: false, detail: "" };
+  const details =
+    error && typeof error === "object" && typeof (error as Record<string, unknown>).details === "string"
+      ? ((error as Record<string, unknown>).details as string).trim()
+      : "";
+  return { blocked: true, detail: details.includes(UNSETTLED_BALANCES_MARKER) ? "" : details };
+}
+
 function readOwnedGroupsBlocker(error: unknown): { blocked: boolean; names: string } {
   const parts: string[] = [];
   if (typeof error === "string") {
@@ -564,6 +591,7 @@ export function SettingsPage() {
       // deleting them would strand everyone else's shared ledger. Tell them
       // exactly which groups, and what to do about it.
       const owned = readOwnedGroupsBlocker(error);
+      const unsettled = readUnsettledBalancesBlocker(error);
       if (owned.blocked) {
         toast.show({
           type: "error",
@@ -571,6 +599,16 @@ export function SettingsPage() {
           subtitle: owned.names
             ? t("del_account_owned_groups_body").replace("{names}", owned.names)
             : t("del_account_owned_groups_generic"),
+        });
+      } else if (unsettled.blocked) {
+        // D1: the same rule as leaving a group — settle first. The server's
+        // DETAIL already names each group with the direction and amount.
+        toast.show({
+          type: "error",
+          title: t("del_account_unsettled_title"),
+          subtitle: unsettled.detail
+            ? t("del_account_unsettled_body").replace("{details}", unsettled.detail)
+            : t("del_account_unsettled_generic"),
         });
       } else {
         toast.show({

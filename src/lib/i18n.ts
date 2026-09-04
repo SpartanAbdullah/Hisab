@@ -1599,6 +1599,20 @@ const S = {
     ur: "Aap ke kuch groups mein abhi doosre log hain. Ownership kisi aur ko dein ya woh groups archive karein, phir account delete karein.",
     en: "Some of your groups still have other members. Transfer ownership or archive those groups, then delete your account.",
   },
+  // D1 (2026-09-04): deletion is refused while a shared-group balance is open —
+  // the same rule as leaving a group. {details} is the server's English list.
+  del_account_unsettled_title: {
+    ur: "Pehle hisaab barabar karein",
+    en: "Settle your balances first",
+  },
+  del_account_unsettled_body: {
+    ur: "Group mein abhi hisaab baaki hai: {details}. Settle karein (ya doosre member se karwayein), phir account delete karein. Group chhorne ka bhi yehi rule hai.",
+    en: "You still have an open balance: {details}. Settle it (or ask the other member to), then delete your account. Leaving a group works the same way.",
+  },
+  del_account_unsettled_generic: {
+    ur: "Aap ke kisi group mein abhi hisaab baaki hai. Pehle settle karein, phir account delete karein.",
+    en: "You still have an open balance in a group. Settle it first, then delete your account.",
+  },
 
   // ── Auth / Profile ──
   auth_skip: { ur: "Baad Mein dekhtay hain", en: "Skip for now" },

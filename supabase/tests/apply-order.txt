@@ -155,6 +155,15 @@ supabase-migration-p3-rls-initplan-and-indexes.sql
 #   (its §4 ALTER DEFAULT PRIVILEGES is `ON FUNCTIONS`), so nothing below it
 #   can alter this table's grants.
 supabase-migration-p3-currencies-iso4217.sql
+# ↓ founder decision D1 2026-09-04: delete_current_user refuses with
+#   UNSETTLED_GROUP_BALANCES while the caller has a non-zero net in a shared
+#   group that still has a counterparty (same rule as leave_group). Replaces the
+#   p2-trust-safety §8.3 body verbatim plus one guard; needs
+#   audit-p0-group-concurrency (group_member_net_balance) and
+#   audit-p0-account-deletion (group_has_other_connected_members). Touches no
+#   table, policy or data — only the function — so it sits with the other
+#   late function replacements, before the grants sweep.
+supabase-migration-p3-account-deletion-balance-gate.sql
 # ↓ reconciliation reads every table above
 supabase-migration-p3-invariant-monitoring.sql
 # ↓ TRULY LAST — the least-privilege sweep over public.* functions. It is a
