@@ -62,7 +62,42 @@ jobs:
         run: npm ci
 
       - name: Audit production dependencies (BLOCKING — high/critical fails the job)
-        run: npm audit --omit=dev --audit-level=high
+        # `npm audit` exits 1 both for "vulnerability found" and for "the
+        # registry's audit endpoint errored" (2026-09-04: a 5-minute registry
+        # failure showed up here as a red gate while the lockfile audited clean
+        # locally). Parse the JSON instead: retry registry errors up to 3×,
+        # fail only on real high/critical findings, and fail loudly — with a
+        # different message — if the registry never answers.
+        run: |
+          node - <<'EOF'
+          const { spawnSync } = require('node:child_process');
+          const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const r = spawnSync('npm', ['audit', '--omit=dev', '--audit-level=high', '--json'], { encoding: 'utf8', shell: true });
+            let report = null;
+            try { report = JSON.parse(r.stdout || '{}'); } catch {}
+            const counts = report && report.metadata && report.metadata.vulnerabilities;
+            if (counts) {
+              const bad = (counts.high || 0) + (counts.critical || 0);
+              console.log(`npm audit (production deps) attempt ${attempt}: ${JSON.stringify(counts)}`);
+              if (bad > 0) {
+                for (const [name, v] of Object.entries(report.vulnerabilities || {})) {
+                  if (v.severity === 'high' || v.severity === 'critical') {
+                    console.log(`  ${v.severity.toUpperCase()} ${name} ${v.range} — ${(v.via || []).map(x => typeof x === 'string' ? x : x.title).join('; ')}`);
+                  }
+                }
+                console.error(`::error::${bad} high/critical vulnerability(ies) in PRODUCTION dependencies — blocking.`);
+                process.exit(1);
+              }
+              process.exit(0);
+            }
+            const msg = (report && report.error && (report.error.summary || report.error.code)) || (r.stderr || '').trim().slice(0, 300) || 'no JSON report';
+            console.log(`npm audit attempt ${attempt}: registry did not return a report (${msg})`);
+            if (attempt < 3) sleep(30000 * attempt);
+          }
+          console.error('::error::npm audit could not reach the registry after 3 attempts — this is an infrastructure failure, not a vulnerability. Re-run the job.');
+          process.exit(1);
+          EOF
 
       - name: Audit devDependencies (report-only — never fails the job)
         if: always()
