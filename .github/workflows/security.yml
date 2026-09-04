@@ -43,7 +43,12 @@ jobs:
   npm-audit:
     name: npm audit
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 25, not 10: on 2026-09-04 three consecutive runs were reported
+    # "cancelled" with every step green — the job had simply exceeded the old
+    # 10-minute cap (npm ci 3 min + the registry's audit endpoint answering in
+    # 4 and 7 minutes). GitHub shows a job-timeout as "cancelled", which reads
+    # like a real finding on the Actions page and is not one.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +66,9 @@ jobs:
 
       - name: Audit devDependencies (report-only — never fails the job)
         if: always()
+        # Its own cap: this step is informational, so a slow registry must not
+        # be able to push the whole job past its timeout and fake a failure.
+        timeout-minutes: 8
         run: npm audit --include=dev --audit-level=high || true
 
   # ---------------------------------------------------------------------
