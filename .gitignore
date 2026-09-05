@@ -64,3 +64,8 @@ assets-src/
 /blob-report/
 /playwright/.cache/
 e2e/.auth/
+
+# Firebase client config for the Android build — environment-specific, and this
+# repo is public; each machine that builds a release downloads its own copy
+# (docs/push-notifications-setup.md step 2-3).
+android/app/google-services.json
