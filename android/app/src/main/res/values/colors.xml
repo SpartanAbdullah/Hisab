@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tint for the status-bar notification glyph on FCM pushes
+         (AndroidManifest default_notification_color). Same navy the local
+         notifications use via LocalNotifications.iconColor in
+         capacitor.config.ts and the edge function's android.notification.color,
+         so both delivery paths look like one app in the tray. -->
+    <color name="hisaab_notification">#0B0E2A</color>
+</resources>

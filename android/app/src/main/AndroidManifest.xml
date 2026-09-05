@@ -77,6 +77,20 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!--
+          FCM builds the tray notification itself while the app is killed, and
+          it reads the small icon and its tint from here, not from the app's
+          JavaScript. Without these it falls back to a generic bell (seen on
+          device 2026-09-05). The edge function also names the same drawable
+          in its payload; this is the belt to that brace.
+        -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_hisaab" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/hisaab_notification" />
     </application>
 
     <!-- Permissions -->
