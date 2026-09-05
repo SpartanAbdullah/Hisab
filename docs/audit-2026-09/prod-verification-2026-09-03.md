@@ -536,3 +536,13 @@ function present, SECURITY DEFINER, `search_path=public`, EXECUTE for
 `authenticated` only, all nine V3 body invariants `t`, V5 drift = **0 rows**
 over 16 live transfers. The flag is safe to enable on web; the founder sets it
 in Vercel (Production environment) and redeploys.
+
+**Flag 1 confirmed live on 2026-09-05.** The founder set `VITE_ATOMIC_TRANSFER=true`
+(Production) and redeployed. Proof from the served bundle, not the dashboard:
+the live `transactionStore-*.js` chunk contains the `transactionStore.atomicTransfer.rpcFailed`
+branch (1 occurrence), while a local build with the flag unset contains it
+0 times — Vite folds `import.meta.env.VITE_ATOMIC_TRANSFER === 'true'` to a
+constant and the minifier tree-shakes the dead branch, so its presence is the
+flag. Watch window: one release cycle (`docs/server-side-money-engine.md` §5
+step 4) — Sentry `transactionStore.atomicTransfer.rpcFailed` plus the V5
+drift query, both expected at zero.

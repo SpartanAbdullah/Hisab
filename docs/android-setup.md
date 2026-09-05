@@ -35,10 +35,12 @@ killed app or not — opens straight into Hisaab.
 
 What's still missing is the file Android checks to verify the app is allowed
 to claim those URLs: **`public/.well-known/assetlinks.json`**. It's checked
-into the repo with placeholder fingerprints (`REPLACE_WITH_UPLOAD_KEY_SHA256`,
-`REPLACE_WITH_PLAY_SIGNING_KEY_SHA256`) — until both are filled in with real
+into the repo with placeholder fingerprints — until both are filled in with real
 values, every one of these links keeps falling back to opening in the browser
-(graceful, but not the real experience).
+(graceful, but not the real experience). **Status 2026-09-05: slot 0 (the
+upload key, `0B:B6:…:6D:A5`, read from `hisaab-upload.jks` with `keytool`) is
+filled in; slot 1 still carries `REPLACE_WITH_PLAY_SIGNING_KEY_SHA256` and can
+only be filled after the first Play upload (step 2 below).**
 
 ### 1. Get the upload-key fingerprint
 
