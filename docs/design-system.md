@@ -581,6 +581,79 @@ Same reasoning as the `.press` ladder in §7: a tap that produces no
 feedback at all is worse than a subtle one; reduced motion means reduce
 *animation*, not remove state changes.
 
+#### 10.5.1 Cute motion (2026-09-05)
+
+Five micro-animations, founder-approved on 2026-09-05 from a playable
+preview. They live in the MOTION SYSTEM block of `index.css` under the
+"Cute motion" heading and are bound by the same contract as everything
+else there: `transform` / `opacity` only, no `will-change`, and every one
+is silenced in the block's **single** `prefers-reduced-motion` gate —
+never per-component. Each lands in its final state under reduced motion;
+nothing is left stuck at `opacity: 0` unless invisible *is* its final
+state (the coin and the confetti bits, which are transient by design).
+
+The class names are a contract. Components consume them by exact name
+and never invent siblings:
+
+| # | Motion | Class | Where it applies | Duration | Reduced motion |
+|---|--------|-------|------------------|----------|----------------|
+| 1 | Tap squish | `.clay-icon-squish` | the `Icon3D` `<img>` inside a pressed `Tile3D` | 420ms, once per tap, spring curve, anchored at the icon's base | `animation: none` — icon rests at `scale(1)` |
+| 2 | Coin drop | `.animate-coin-drop` on the coin, `.animate-wallet-catch` on the wallet | the `ConfirmationSheet` header — the sheet every saved money entry ends in (Quick Entry, record payment, record trade; both app modes): a coin falls into the wallet icon, the wallet catches it | 1.15s each, starting 260ms after the sheet mounts, once per save | coin pinned at `opacity: 0`, wallet at rest; the sheet itself still shows |
+| 3 | Confetti burst | `.animate-confetti-bit` | inside `CelebrationMark`, over the existing ring / pop / check — rendered by `ConfirmationSheet` when the save closed a debt (`settled`); the daily Hisaab check draws the mark with `burst={false}` | 1.05s per bit, staggered via `--d`, once per settle-up | bits pinned at `opacity: 0`; ring / pop / check gate exactly as before |
+| 4 | Greeting wave | `.animate-wave-once` | the waving-hand emoji in the Home greeting | 1.15s, once per app open, 200ms in, pivots at the wrist | `animation: none` — hand at `rotate(0)` |
+| 5 | Idle float | `.animate-float-idle` | the `Icon3D` on a full-page `EmptyState` — never the `compact` inline variant, which sits beside live content | 3.6s loop, 5px of travel, only while the screen is empty | `animation: none` — icon still |
+
+Notes that are easy to get wrong:
+
+- **Squish** shares the spring curve (`cubic-bezier(.34,1.56,.64,1)`)
+  with `celebrate-pop`. Those are the only two uses of it in the app; both
+  are tactile moments. Do not reach for it on entrances, reveals or
+  anything the user did not physically touch.
+- **Coin** is a small absolutely-positioned `<img>` over the wallet
+  `<img>`. Both animations start at the same 260ms offset so the wallet's
+  squash lands with the coin. `both` fill keeps the coin at `opacity: 0`
+  through the delay and after it sinks — a sheet opened twice never shows a
+  coin lying in the wallet. The sheet clips at its rounded top edge, so the
+  coin's rest position sits 46px+ below it and the whole fall is seen; move
+  the stage and re-check that headroom. If either clay asset is missing the
+  sheet falls back to its old tick — never a coin dropping into nothing.
+- **Confetti** bits are absolutely-positioned `<i>` elements centred on
+  the mark (8px round, or 7×10px with a 2px radius), each given
+  `--dx`, `--dy`, `--rot`, `--d` and an inline `background: rgb(R G B)`
+  by the component. One keyframe serves every bit; the custom properties
+  do the spreading, the same trick as `--sweep-delay` on the skeleton.
+  The burst is opt-out (`burst={false}`) and the mark has two hosts: the
+  `ConfirmationSheet` when a repayment closed a loan (`settled`, wired
+  from Quick Entry's four repayment paths in both app modes), and the daily
+  Hisaab check, which deliberately draws the tick *without* the burst — a
+  burst that fires every day is a tic, and it would cheapen the one that
+  means a debt closed. `RepaymentModal` (record payment from the loan
+  page) opens the same sheet and should pass `settled` too; the kameti
+  payout slip stays burst-free by an earlier decision (its own amount
+  swell is "far short of anything that would look like celebration
+  confetti over someone else's money").
+- **Wave** must sit on an `inline-block` span — transforms do nothing on
+  inline text. The emoji is decorative and carries `aria-hidden`. Its host
+  `<p>` is `truncate` and shrink-to-content, so it carries `pr-1`: the 16°
+  swing pushes the fingertips ~3px past the name, and without that padding
+  the clip edge cuts them at both peaks of the wave.
+- **Float** is the one deliberate loop in the block. It exists for the
+  *absence* of content; never put it on a screen that has any — which is
+  why `EmptyState`'s `compact` variant (inline beside a balance or a list
+  header) renders its icon still.
+- None of the five draws an edge, lip, border or shadow. Every moving
+  element is an existing `<img>` or a colour-filled dot — §10.0 holds.
+
+**Not shipped — screen slide (candidate 6).** The preview also showed a
+list → detail push / pop slide on navigation. Deliberately dropped. It
+would run on every route change on every tap, compositing two full-screen
+layers at once — on the low-end Android WebViews this app targets, that
+is the most expensive thing a page can animate, and unlike the five above
+it is not a moment, it is a tax on all of them. If it ever ships it needs
+a Settings toggle (off by default on low-RAM devices) and a
+reduced-motion path that only crossfades. Nothing in the codebase should
+reference it today.
+
 ### 10.6 Component APIs
 
 ```tsx

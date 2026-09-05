@@ -282,10 +282,13 @@ function CheckModalWalk({ open, onClose, currency, receivable, payable, thisWeek
       {/* Done — the ritual's payoff phrase. The mark DRAWS itself here
           rather than appearing: this is the one screen in the app that
           exists purely to say "you're clear", and a tick that completes in
-          front of the user is what makes a daily habit feel earned. */}
+          front of the user is what makes a daily habit feel earned. No
+          confetti, though: the burst is reserved for a debt actually closing
+          (ConfirmationSheet `settled`), and one that fired every day would
+          turn into a tic. */}
       {step === 4 && (
         <div className="animate-fade-in flex flex-col items-center text-center py-6">
-          <CelebrationMark size={56} className="mb-3" />
+          <CelebrationMark size={56} className="mb-3" burst={false} />
           <p className="text-[17px] font-bold text-ink-900 tracking-tight">{t('check_done_title')}</p>
           <p className="text-[12px] text-ink-500 mt-1.5 leading-relaxed max-w-[240px]">{t('check_done_body')}</p>
         </div>

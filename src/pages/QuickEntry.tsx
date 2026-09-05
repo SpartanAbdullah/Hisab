@@ -168,7 +168,11 @@ export function QuickEntry({
   const [emiStartDate, setEmiStartDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [confirmData, setConfirmData] = useState<{ title: string; description: string; changes: Array<{ accountName: string; currency: string; before: number; after: number }>; route?: string }>({ title: '', description: '', changes: [] });
+  // `settled`: this save closed a debt (a repayment that cleared its loan, or a
+  // lump that cleared at least one) — the ConfirmationSheet swaps its wallet
+  // for the CelebrationMark's confetti burst. Same predicate as the
+  // `settles` analytics flag on the matching trackSaved call; keep them equal.
+  const [confirmData, setConfirmData] = useState<{ title: string; description: string; changes: Array<{ accountName: string; currency: string; before: number; after: number }>; route?: string; settled?: boolean }>({ title: '', description: '', changes: [] });
   const [showInlineAccount, setShowInlineAccount] = useState(false);
   const [showSpendingWarning, setShowSpendingWarning] = useState(false);
   // Ad-hoc split: a MODIFIER on an ordinary expense, not an entry type of its
@@ -888,6 +892,7 @@ export function QuickEntry({
                   .replace('{n}', String(result.total)) +
                 (clearedCount > 0 ? ` · ${t('qe_group_cleared_count').replace('{n}', String(clearedCount))}` : ''),
               changes: [],
+              settled: clearedCount > 0,
             });
             setShowConfirmation(true);
             reset();
@@ -905,6 +910,7 @@ export function QuickEntry({
               .replace('{amount}', formatMoney(amt, effectiveSingleLoan.currency)),
             changes: [],
             route: `/loan/${effectiveSingleLoan.id}`,
+            settled: amt >= repayCap - 0.00001,
           });
         } else {
           // Split-only can still mirror a loan to a linked contact. The
@@ -1085,6 +1091,7 @@ export function QuickEntry({
           // `account` was captured before the batch ran, so before/after
           // reflect the pre-batch balance plus the aggregate move.
           changes: [{ accountName: account.name, currency: account.currency, before: account.balance, after: account.balance + accountMove }],
+          settled: clearedCount > 0,
         });
         setShowConfirmation(true);
         reset();
@@ -1416,6 +1423,7 @@ export function QuickEntry({
         description: resultDescription,
         changes,
         route: confirmRoute,
+        settled: type === 'repayment' && amt >= repayCap - 0.00001,
       });
       setShowConfirmation(true);
       reset();
@@ -2373,7 +2381,7 @@ export function QuickEntry({
         initial={splitPlan}
         onApply={setSplitPlan}
       />
-      <ConfirmationSheet open={showConfirmation} onClose={() => { setShowConfirmation(false); onClose(); }} title={confirmData.title} description={confirmData.description} balanceChanges={confirmData.changes} viewRoute={confirmData.route} />
+      <ConfirmationSheet open={showConfirmation} onClose={() => { setShowConfirmation(false); onClose(); }} title={confirmData.title} description={confirmData.description} balanceChanges={confirmData.changes} viewRoute={confirmData.route} settled={confirmData.settled} />
       <SpendingWarningModal
         open={showSpendingWarning}
         expense={nearestUpcoming}

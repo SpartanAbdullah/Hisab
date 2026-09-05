@@ -93,6 +93,13 @@ function waitForNextPaint(): Promise<void> {
   });
 }
 
+// Greeting wave: the hand waves ONCE per app open and then simply stays. A
+// module-level flag is the right scope — it survives route changes (Home →
+// Loans → Home must not wave again) and resets on a full reload, which is
+// what "app open" means for both the PWA and the Capacitor shell.
+let wavedThisOpen = false;
+const HAND = "\u{1F44B}";
+
 export function HomePage() {
   const { accounts, loadAccounts } = useAccountStore();
   const { transactions, loadTransactions } = useTransactionStore();
@@ -143,6 +150,18 @@ export function HomePage() {
   });
 
   const userName = localStorage.getItem("hisaab_user_name") ?? "User";
+  // Lazy initialiser: decided once at mount and stable across re-renders, so
+  // a data refresh mid-wave can't restart it and a later mount is static.
+  const [waveNow] = useState(() => {
+    if (wavedThisOpen) return false;
+    wavedThisOpen = true;
+    return true;
+  });
+  // The name <p> that hosts the hand is `truncate` (overflow hidden) and
+  // shrink-to-content, so its clip edge is flush with the hand; the wave's
+  // 16° swing pushes the fingertips ~3px past it. That <p> carries `pr-1`
+  // to give the swing room — keep the two in step.
+  const handClass = `inline-block ml-1${waveNow ? " animate-wave-once" : ""}`;
   const primaryCurrency = getPrimaryCurrency();
   const userId = useSupabaseAuthStore((s) => s.user?.id ?? "");
 
@@ -544,8 +563,11 @@ export function HomePage() {
                 <p className="text-[11px] text-white/55 truncate">
                   {t('home_greeting_pre')}
                 </p>
-                <p className="text-[15px] font-semibold text-white tracking-tight truncate">
+                <p className="text-[15px] font-semibold text-white tracking-tight truncate pr-1">
                   {userName}
+                  <span aria-hidden="true" className={handClass}>
+                    {HAND}
+                  </span>
                 </p>
               </div>
             </button>
@@ -944,8 +966,11 @@ export function HomePage() {
               <p className="text-[11px] text-white/55 truncate">
                 {greeting} {greetingEmoji}
               </p>
-              <p className="text-[15px] font-semibold text-white tracking-tight truncate">
+              <p className="text-[15px] font-semibold text-white tracking-tight truncate pr-1">
                 {userName}
+                <span aria-hidden="true" className={handClass}>
+                  {HAND}
+                </span>
               </p>
             </div>
           </button>

@@ -104,7 +104,22 @@ export function EmptyState({
         className={`relative ${iconBoxSize} rounded-[28px] bg-gradient-to-br ${t.halo} ${t.icon} flex items-center justify-center mb-5 shadow-sm ring-1 ${t.ring} before:absolute before:inset-0 before:-z-10 before:rounded-[40px] before:blur-2xl before:opacity-70 ${t.bloom}`}
       >
         {has3d ? (
-          <Icon3D name={clayIcon!} size={isCompact ? 'sm' : 'md'} />
+          isCompact ? (
+            // Compact = inline inside a screen that HAS content (Home's splits
+            // section, an account's empty ledger next to its balance). Nothing
+            // may loop beside content the user is reading, so no float here —
+            // and no standing compositor cost on a low-end WebView.
+            <Icon3D name={clayIcon!} size="sm" />
+          ) : (
+            // Idle float: the icon drifts inside its halo box, the one loop the
+            // motion system allows, because a FULL-PAGE empty state has nothing
+            // else moving and a perfectly still render reads as frozen. The
+            // loop exists for the absence of content, which is why only this
+            // variant gets it.
+            <span aria-hidden="true" className="inline-flex animate-float-idle">
+              <Icon3D name={clayIcon!} size="md" />
+            </span>
+          )
         ) : (
           <Icon size={iconSize} strokeWidth={1.5} />
         )}

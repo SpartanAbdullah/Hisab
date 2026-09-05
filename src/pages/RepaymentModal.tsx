@@ -69,6 +69,10 @@ export function RepaymentModal({
     title: string;
     description: string;
     changes: Array<{ accountName: string; currency: string; before: number; after: number }>;
+    // This payment closed the loan — the ConfirmationSheet swaps its wallet for
+    // the CelebrationMark's confetti burst. Same predicate as the `settles_loan`
+    // analytics flag on the matching track() call; keep them equal.
+    settled?: boolean;
   }>({ title: '', description: '', changes: [] });
 
   const isGiven = loan.type === 'given';
@@ -266,6 +270,7 @@ export function RepaymentModal({
           .replace('{amount}', formatMoney(parsedAmount, loan.currency))
           .replace('{person}', resolvePersonName({ personId: loan.personId, fallback: loan.personName })),
         changes,
+        settled: parsedAmount >= loan.remainingAmount - 0.00001,
       });
       setShowConfirmation(true);
       setAmount('');
@@ -529,6 +534,7 @@ export function RepaymentModal({
         title={confirmData.title}
         description={confirmData.description}
         balanceChanges={confirmData.changes}
+        settled={confirmData.settled}
       />
 
       {/* Overflow hand-off: the lump the user typed, pre-filled, spread

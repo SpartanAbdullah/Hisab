@@ -1,8 +1,21 @@
+import type { CSSProperties } from 'react';
+import { confettiBits } from '../lib/motion';
+
 interface Props {
   size?: number;
   /** 'receive' = settled / cleared (green). 'accent' = a neutral milestone. */
   tone?: 'receive' | 'accent';
   className?: string;
+  /**
+   * Twenty clay-coloured bits burst outward and fade — the founder-approved
+   * "settle-up burst" (2026-09-05), reserved for a debt actually closing.
+   * On by default: ConfirmationSheet renders the mark only when a repayment
+   * settled a loan, so it takes the default. The daily Hisaab check passes
+   * false — a burst that fires every day becomes a tic and devalues the one
+   * it is meant for. Pass false too where the mark sits inside a dense
+   * layout that can't afford the ~95px overflow.
+   */
+  burst?: boolean;
 }
 
 // The "you're clear" mark.
@@ -13,19 +26,35 @@ interface Props {
 // so they get the app's only bouncy curve; everything else settles on the
 // calm expo ease.
 //
-// Three layers on one timeline (see .animate-celebrate-* in index.css):
+// Call sites: ConfirmationSheet with `settled` (a repayment that closed a
+// loan — ring, pop, tick AND the confetti) and HisaabCheckModal step 4 (the
+// daily ritual — ring, pop and tick only, burst={false}).
+//
+// Four layers on one timeline (see .animate-celebrate-* and
+// .animate-confetti-bit in index.css):
 //   0.00s  disc scales up past 1 and settles back
 //   0.05s  ring expands outward and dissolves
+//   0.16s  confetti bits leave the centre in five 40ms waves, fade by ~1.2s
 //   0.28s  checkmark strokes itself on, left segment then right
 //
-// Total ~0.75s: long enough to register as a moment, short enough that it's
-// finished before the user's thumb reaches the Done button.
-export function CelebrationMark({ size = 56, tone = 'receive', className = '' }: Props) {
+// Ring, disc and tick are done by ~0.75s: long enough to register as a
+// moment, short enough that it's finished before the user's thumb reaches
+// the Done button. The last confetti fades a beat later, once the tick is
+// already read, so it decorates the moment without delaying it.
+//
+// Geometry for the burst is computed ONCE at module load: it is pure and
+// deterministic (src/lib/motion.ts), so every mount and re-render hands the
+// CSS the same custom properties and an in-flight burst is never re-aimed.
+const BITS = confettiBits();
+
+export function CelebrationMark({ size = 56, tone = 'receive', className = '', burst = true }: Props) {
   const ringColor = tone === 'receive' ? 'var(--color-receive-600)' : 'var(--color-accent-500)';
   const discClass = tone === 'receive' ? 'bg-receive-50' : 'bg-accent-100';
   const strokeColor = tone === 'receive' ? 'var(--color-receive-600)' : 'var(--color-accent-600)';
 
   return (
+    // No overflow-hidden here, deliberately: the ring and the confetti both
+    // travel well outside this box, and a clip would decapitate the burst.
     <div
       className={`relative inline-flex items-center justify-center shrink-0 ${className}`}
       style={{ width: size, height: size }}
@@ -62,6 +91,31 @@ export function CelebrationMark({ size = 56, tone = 'receive', className = '' }:
           className="animate-celebrate-check"
         />
       </svg>
+      {/* Confetti. Each bit starts at the mark's centre (left/top 50%, pulled
+          back 4px so the 8px body is centred) and the CSS flies it to
+          --dx/--dy while spinning to --rot after --d. Rendered AFTER the disc
+          so the bits pass over it, as in the approved preview. The class owns
+          the rest state (opacity 0) and the reduced-motion gate, so nothing
+          here needs to know whether motion is on. */}
+      {burst &&
+        BITS.map((bit, i) => (
+          <i
+            key={i}
+            aria-hidden
+            className={`absolute left-1/2 top-1/2 -m-1 pointer-events-none animate-confetti-bit ${
+              bit.shape === 'dot' ? 'w-2 h-2 rounded-full' : 'w-[7px] h-[10px] rounded-[2px]'
+            }`}
+            style={
+              {
+                '--dx': `${bit.dx}px`,
+                '--dy': `${bit.dy}px`,
+                '--rot': `${bit.rot}deg`,
+                '--d': `${bit.delayMs}ms`,
+                background: `rgb(${bit.color})`,
+              } as CSSProperties
+            }
+          />
+        ))}
     </div>
   );
 }
