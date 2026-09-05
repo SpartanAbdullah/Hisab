@@ -7,6 +7,15 @@ not while Android has the app killed (see "What works before you do this").
 
 Roughly 20–30 minutes, once.
 
+> **Status 2026-09-05 — steps 1 to 5 are DONE in production.** Migration
+> applied (2026-09-03 batch), `pg_net` enabled, Firebase project `hisaab-2`
+> with `google-services.json` in `android/app/` (git-ignored — this repo is
+> public), `push-notify` v1 deployed with `--no-verify-jwt` semantics,
+> both secrets set, both `app_push_config` rows present. A dry-run
+> notification made the trigger call the function and it replied
+> `{"sent":0,"reason":"no_devices"}` — i.e. everything server-side works and
+> only device registration (step 6) is left.
+
 ---
 
 ## What works before you do this
