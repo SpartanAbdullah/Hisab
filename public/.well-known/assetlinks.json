@@ -5,8 +5,7 @@
       "namespace": "android_app",
       "package_name": "com.usehisaab.app",
       "sha256_cert_fingerprints": [
-        "0B:B6:45:86:3D:98:A4:E4:91:10:D5:FD:F0:66:34:F4:EA:FE:2D:71:08:77:02:F1:C5:93:5B:82:9D:47:6D:A5",
-        "REPLACE_WITH_PLAY_SIGNING_KEY_SHA256"
+        "0B:B6:45:86:3D:98:A4:E4:91:10:D5:FD:F0:66:34:F4:EA:FE:2D:71:08:77:02:F1:C5:93:5B:82:9D:47:6D:A5"
       ]
     }
   }

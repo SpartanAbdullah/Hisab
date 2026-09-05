@@ -5,17 +5,16 @@ Synthesized from three competing drafts (khata-cultural / feature-clarity / trus
 All copy is **policy-safe**: framed strictly as an expense/khata **tracker**, never a lender;
 kameti is a savings-committee tracker, never gambling. Character counts verified against Play limits.
 
-> **This copy describes the build once the P0–P2 remediation batch is merged AND its SQL
-> migrations are applied to production** (`docs/audit-2026-09/P0-REMEDIATION.md`,
-> `docs/audit-2026-09/APPLY-ORDER.md`). As of 2026-09-02 that batch is uncommitted
-> working-tree changes on branch `audit-p0-remediation` — **do not publish this copy
-> against `main`/production as they stand today.** See §"Claims ledger" below — every row
-> whose Dependency column names a migration is not yet true in production until that file
-> is applied. Cross-check against `docs/audit-2026-09/P0-REMEDIATION.md` before every
-> publish, not just once at launch.
+> **This copy describes the production build — v1.0.0 / versionCode 1, the first Play upload
+> (2026-09-05).** Every migration the copy depends on was applied to production on
+> 2026-09-03/04 (`docs/audit-2026-09/P0-REMEDIATION.md` A3: pending migrations — none). The
+> §"Claims ledger" below records, per claim, where it lives and the date its migration went
+> live. Re-read that ledger before every future publish, not just this one: a new claim gets a
+> new row with an apply date, never a footnote.
 
-> Tip: keep an English (en-US) listing as default and add a localized listing for Urdu later
-> if you want — the Roman-Urdu copy below works as a second locale or can be folded into the English one.
+> Tip: in Play Console, en-US is the store-listing *default locale* (that is about the listing, not the
+> app — the app itself opens in Roman Urdu). Add the Roman-Urdu copy below as a second listing locale,
+> or fold it into the English one.
 
 ---
 
@@ -34,11 +33,11 @@ Hisaab: Khata/Expense Tracker
 Khata, udhaar, kameti & expense tracker for desi life — AED + PKR, no ads
 ```
 
-## Full description — English (≤ 4000 chars · this is 3503)
+## Full description — English (≤ 4000 chars · this is 3553)
 ```
 Your money, always in sight.
 
-Hisaab is a calm, private place to track everything you earn, spend, save and are owed — udhaar, kameti, splits, AED and PKR — all in one clean screen. Built for Pakistani & desi families in the Gulf and back home. English by default, Roman-Urdu jahan dil chahe.
+Hisaab is a calm, private place to track everything you earn, spend, save and are owed — udhaar, kameti, splits, AED and PKR — all in one clean screen. Built for Pakistani & desi families in the Gulf and back home. Roman-Urdu by default, English one tap away.
 
 Yeh ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena karta — bas aap ka hisaab saaf rakhta hai.
 
@@ -46,7 +45,7 @@ Yeh ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena karta —
 
 💸 Expenses & income — log spending in plain words ("karak 3 aed"), sorted into clear categories, with a receipt photo you can attach right after saving
 🏦 Accounts — cash, bank, wallet & credit cards, all balances in one view
-🌍 Multi-currency — PKR, AED, PHP, SAR, QAR, OMR, KWD & BHD, for expats living across the Gulf and Pakistan
+🌍 Multi-currency — PKR, AED, SAR and every other world currency, with a searchable picker, for expats living across the Gulf and Pakistan
 📒 Khata / udhaar — a clean ledger of money you've lent or are owed with family, friends & flatmates, plus a live read-only khata link you can share over WhatsApp so even someone without the app can check the balance
 📅 Instalments (qist) — set EMI-style schedules and send a one-tap WhatsApp reminder, even if they don't have the app
 👥 Splits — share rent, groceries & bills with your group — even people who don't have the app yet — then settle up cleanly. Paison par behes khatam
@@ -61,10 +60,10 @@ Yeh ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena karta —
 == WHY DESI USERS LOVE IT ==
 
 ✅ AED + PKR together — for expats sending home and spending here
-✅ English + Roman-Urdu — baari, qist, udhaar, khata, the words you actually use
+✅ Roman-Urdu + English — baari, qist, udhaar, khata, the words you actually use
 ✅ No ads, ever — your data stays private
 ✅ Works on Android and the web — one account, everywhere
-✅ Delete your account anytime — hand over any group you run and settle what you owe first, then it's gone
+✅ Delete your account anytime — hand over any group you run and settle up in any shared group first, then it's gone
 ✅ Free to start
 
 == KAMETI DONE RIGHT ==
@@ -89,11 +88,11 @@ Search: hisaab, hisab kitab, khata, udhaar, expense tracker, budget app, kameti,
 Khata, udhaar, kameti aur kharchay — AED + PKR, no ads
 ```
 
-## Full description — Roman Urdu (≤ 4000 chars · this is 3539)
+## Full description — Roman Urdu (≤ 4000 chars · this is 3602)
 ```
 Aap ka paisa, hamesha nazar mein.
 
-Hisaab ek saaf, private jagah hai jahan aap ki har cheez — kamai, kharcha, bachat aur jo udhaar aap ne diya ya lena hai — sab ek screen par. Udhaar, kameti, split, AED aur PKR, sab yahan. Gulf mein basay Pakistani aur desi gharanon ke liye banaya gaya, aur watan mein bhi. English default, Roman-Urdu jahan dil chahe.
+Hisaab ek saaf, private jagah hai jahan aap ki har cheez — kamai, kharcha, bachat aur jo udhaar aap ne diya ya lena hai — sab ek screen par. Udhaar, kameti, split, AED aur PKR, sab yahan. Gulf mein basay Pakistani aur desi gharanon ke liye banaya gaya, aur watan mein bhi. Roman-Urdu default, English sirf ek tap door.
 
 Yeh sirf ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena karta — bas aap ka hisaab saaf rakhta hai.
 
@@ -101,7 +100,7 @@ Yeh sirf ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena kart
 
 💸 Kharchay aur kamai — seedhe lafzon mein likhein ("karak 3 aed"), saaf categories ke saath, aur receipt ki photo save karne ke baad kabhi bhi lagayein
 🏦 Accounts — cash, bank, wallet aur credit card, saray balance ek nazar mein
-🌍 Multi-currency — PKR, AED, PHP, SAR, QAR, OMR, KWD aur BHD, Gulf aur Pakistan ke darmiyan rehne walon ke liye
+🌍 Multi-currency — PKR, AED, SAR aur duniya ki har currency, search wale picker ke saath, Gulf aur Pakistan ke darmiyan rehne walon ke liye
 📒 Khata / udhaar — jo paisa aap ne diya ya lena hai, ghar walon aur doston ke saath saaf ledger, aur ek live read-only khata link jo WhatsApp par bhej sakte hain — jinke paas app nahi unhein bhi balance dikh jaye
 📅 Qist — EMI jaisa schedule banayein aur ek tap par WhatsApp reminder bhejein, chahe unke paas app na ho
 👥 Split — rent, grocery aur bills group ke saath baant lein — chahe kisi ke paas app na ho — phir saaf settle. Paison par behes khatam
@@ -116,10 +115,10 @@ Yeh sirf ek tracker hai. Hisaab kabhi aapka paisa nahi rakhta, na lena-dena kart
 == DESI USERS ISE KYUN PASAND KARTAY HAIN ==
 
 ✅ AED + PKR saath — ghar paisa bhejne aur yahan kharch karne walon ke liye
-✅ English + Roman-Urdu — baari, qist, udhaar, khata, wohi lafz jo aap bolte hain
+✅ Roman-Urdu + English — baari, qist, udhaar, khata, wohi lafz jo aap bolte hain
 ✅ Koi ads nahi — aap ka data private rehta hai
 ✅ Android aur web dono par chalta hai — ek hi account, har jagah
-✅ Account jab chahein delete karein — jo group aap chalate hain pehle kisi aur ko de dein, phir mit jata hai
+✅ Account jab chahein delete karein — jo group aap chalate hain pehle kisi aur ko de dein aur har shared group ka hisaab barabar karein, phir mit jata hai
 ✅ Shuru karna free
 
 == KAMETI THEEK TAREEQE SE ==
@@ -137,22 +136,31 @@ Andaze lagana band karein. Dekhna shuru karein. Hisaab download karein — aap k
 
 ---
 
-## Release notes — v1.1.0 (≤ 500 chars · this is 497)
+## Release notes — v1.0.0 · versionCode 1 · THIS upload (≤ 500 chars each)
+
+This is the first build that ever reaches Play, so the notes describe the whole product, not a
+delta. The earlier "v1.1.0" draft (server-side kameti draw, expiring witness links, guest
+splits, live khata link, block/report, edit history, Roman-Urdu default, qualified deletion) was
+written when those were slated as an update; they all ship in v1.0.0, so that draft is folded
+into the full description above and retired. Counts are code points, verified by script on
+2026-09-05; paste each block verbatim into its Play locale.
+
+**English (en-US) · 492 chars**
 ```
-Hisaab v1.1.0 — kameti, khata & trust upgrades.
+Hisaab v1.0.0 — first release. Your money, always in sight.
 
-Kameti draw is now server-side and provably fair — the organiser can't re-roll. Witness links now expire and can be revoked. Split with people who don't have the app yet. Share a live khata link over WhatsApp so anyone can check a balance without installing. Block or report someone, right from the app. See who changed what on a loan. Roman Urdu is now the default language. Deleting your account now asks you to hand over any group you run, and settle any open group balance, first.
+Track expenses, income, khata/udhaar, splits, savings goals and budgets in any currency — PKR, AED, SAR and every other world currency. Run your kameti/committee with a provably-fair draw and a witness link. WhatsApp reminders, receipt photos, push alerts, coach cards. Secure cloud sync, no ads. English + Roman Urdu.
+
+Hisaab only tracks money you already have — it never holds, lends or moves it. Internet needed to save entries.
 ```
 
-## Release notes — v1.0.0 (≤ 500 chars, superseded — kept for reference)
+**Roman Urdu (ur) · 491 chars**
 ```
-Welcome to Hisaab v1.0.0 — your money, always in sight.
+Hisaab v1.0.0 — pehla release. Aap ka paisa, hamesha nazar mein.
 
-Track expenses, income, khata/udhaar, splits, savings goals and envelope budgets across PKR, AED, PHP, SAR, QAR, OMR, KWD & BHD. Run your kameti/committee with a provably-fair parchi draw and a read-only witness link. One-tap WhatsApp payment reminders, receipt photos, coach cards and daily wisdom.
+Kharchay, kamai, khata/udhaar, split, bachat aur budget — PKR, AED, SAR aur duniya ki har currency mein. Kameti/committee provably-fair draw aur witness link ke saath. WhatsApp reminder, receipt photo, push alert, coach cards. Mehfooz cloud sync, koi ads nahi. Roman Urdu + English.
 
-Secure cloud storage, no ads. English + Roman-Urdu.
-
-Hisaab only tracks money you already have — it never holds, lends or moves it.
+Hisaab sirf woh paisa track karta hai jo aap ke paas hai — kabhi rakhta, qarz deta ya bhejta nahi. Entry save karne ke liye internet chahiye.
 ```
 
 ---
@@ -170,38 +178,43 @@ khata · udhaar · hisab kitab · hisaab · kameti · committee tracker · BC co
 - **Account deletion is qualified, not absolute.** `delete_current_user()` (`supabase-migration-audit-p0-account-deletion.sql`) REFUSES with `OWNED_GROUPS_WITH_MEMBERS` while the caller still owns a shared group with other participants — the UI's resolution path is "Assign another admin" (`transfer_group_ownership`) — and, since founder decision D1 (2026-09-04, `supabase-migration-p3-account-deletion-balance-gate.sql`), with `UNSETTLED_GROUP_BALANCES` while the caller owes or is owed in a shared group that still has a counterparty (the same rule as leaving a group). The listing copy says "hand over any group you run and settle what you owe first" for exactly this reason; do not restore an unqualified "delete anytime" claim.
 - **Receipt photos attach after saving, not during entry.** `ReceiptField` (`src/components/ReceiptField.tsx`) takes a `transactionId` and is only mounted in `EditTransactionModal.tsx` — there is no receipt control on the create/QuickEntry flow. The listing copy says "attach... right after saving" for this reason.
 - **Edit history currently covers loans only.** `EditHistorySheet` is mounted on `LoanDetailPage` only; `docs/edit-history.md` §6 lists `GroupDetailPage`/`EditGroupExpenseModal`/settlement/transaction surfaces as named, unmounted insertion points. Keep the listing's edit-history claim scoped to "on a loan record" until those land.
-- Every feature named above is shipped in the client on branch `audit-p0-remediation`. Several depend on a migration that is **PENDING production apply** — see the claims ledger below before publishing.
+- **Push notifications are live** (Firebase project `hisaab-2`, FCM HTTP v1 via the `push-notify` edge function). The release notes say "push alerts", so the Data Safety form must declare **Device or other IDs — collected, shared with Google (Firebase Cloud Messaging), app functionality, optional (only after the user turns notifications on), deleted on sign-out / opt-out / account deletion**. The single source for the form is `docs/play-store-data-safety.md`; the four facts that changed for this build are summarised in `RELEASE.md` §9.
+- **"An internet connection is needed to log entries"** is stated in both descriptions and in the release notes on purpose: writes need a connection (decision D5, 2026-09-04 — no offline queue, `docs/offline-story.md`). Never soften it into "works offline" or "syncs later".
+- Every feature named above is shipped in the client and every migration it depends on was **applied to production on 2026-09-03/04** — the claims ledger below records the date per row.
 
 ---
 
-## Claims ledger — 2026-09-02
+## Claims ledger — 2026-09-05 (production build v1.0.0 / versionCode 1)
 
-Supersedes the old "claims removed" note below. Columns: **where it's implemented** (client file, and/or the migration that defines the server contract), **dependency** (which migration must be applied to production before the claim is true there — "none" if client-only), **verified how** (automated test/DB assertion, or "device pending" for anything that needs an on-device pass no device farm has run).
+Supersedes the 2026-09-02 ledger and the old "claims removed" note below. Columns: **where it's implemented** (client file, and/or the migration that defines the server contract), **dependency** (which migration the claim rests on in production, with the date it was applied — "none" if client-only), **verified how** (automated test/DB assertion, production read-back, or the on-device step in `RELEASE.md` §13). Every migration in `supabase/tests/apply-order.txt` is applied in production: the 32-file batch on 2026-09-03, `p3-currencies-iso4217` and `p3-account-deletion-balance-gate` on 2026-09-04 (`docs/audit-2026-09/P0-REMEDIATION.md` A3). Nothing is pending.
 
-| Claim in this listing | Implemented in | Dependency (must be applied first) | Verified how |
+| Claim in this listing | Implemented in | Dependency (applied to production) | Verified how |
 |---|---|---|---|
-| 8 currencies (PKR, AED, PHP, SAR, QAR, OMR, KWD, BHD), no USD/EUR/GBP | `src/db/types.ts:1` (`SUPPORTED_CURRENCIES`) | none | direct source read; enforced further by `supabase-migration-audit-p0-currencies.sql`'s widened CHECK |
-| Kameti provably-fair draw (organiser cannot re-roll) | `perform_committee_draw` RPC in `supabase-migration-audit-p0-kameti-draw.sql` (server-side seed + `drawn_at IS NULL` guard + immutability triggers); client verify-only in `src/lib/committeeDraw.ts` | **`supabase-migration-audit-p0-kameti-draw.sql` — PENDING production apply** | `supabase/tests/` DB corpus (183+ assertions incl. this file's own); Docker `postgres:15` per migration header. Not yet confirmed against production — run the smoke test in `docs/audit-2026-09/P0-REMEDIATION.md` §1 step 10 ("Draw a kameti — confirm the draw button is inert after the first draw") post-apply |
-| Witness link — expiring, revocable, hashed at rest | `src/components/CommitteeWitnessLink.tsx`, `supabase-migration-p2-trust-safety.sql` | **`supabase-migration-p2-trust-safety.sql` — PENDING production apply** | `docs/trust-and-safety.md` §7, 62 functional-smoke assertions, Docker-validated |
+| Every world currency (all active ISO 4217 — PKR, AED, SAR named first as the audience) | `src/lib/currencies.ts` (`CURRENCY_CODES`, the single catalogue), `src/components/CurrencyPicker.tsx` (personal top-5 row + searchable A–Z) | `supabase-migration-p3-currencies-iso4217.sql` — **applied to production 2026-09-04** (`currencies` table with FKs replaces the old 8-code CHECKs) | `src/lib/currencies.test.ts`; production read-back the same day through the Supabase MCP — 157 rows / 156 active, 16 validated FKs, 0 leftover whitelist CHECKs, RLS on |
+| Kameti provably-fair draw (organiser cannot re-roll) | `perform_committee_draw` RPC in `supabase-migration-audit-p0-kameti-draw.sql` (server-side seed + `drawn_at IS NULL` guard + immutability triggers); client verify-only in `src/lib/committeeDraw.ts` | `supabase-migration-audit-p0-kameti-draw.sql` — **applied to production 2026-09-03** | `supabase/tests/` DB corpus (the file's own assertions; 546-assertion suite green in CI); on-device: draw once, confirm the button is inert afterwards (`docs/audit-2026-09/P0-REMEDIATION.md` §1 step 10) |
+| Witness link — expiring, revocable, hashed at rest | `src/components/CommitteeWitnessLink.tsx`, `supabase-migration-p2-trust-safety.sql` | `supabase-migration-p2-trust-safety.sql` — **applied to production 2026-09-03** | `docs/trust-and-safety.md` §7, 62 functional-smoke assertions, DB suite in CI |
 | WhatsApp reminders to non-app contacts | `src/lib/whatsappReminder.ts` (`wa.me` deep link, no account required) | none — client-only | `src/lib/whatsappReminder.test.ts` |
-| Receipt photos (5 MiB / MIME-capped) | `src/lib/receiptStorage.ts`, `src/components/ReceiptField.tsx` (mounted only in `EditTransactionModal.tsx`) | bucket cap enforced by `supabase-migration-p2-trust-safety.sql` §8.1 — **PENDING production apply** (uploads work without it but are unbounded until then) | `src/lib/receiptStorage.test.ts`; scope (edit-only) verified by `grep` for `ReceiptField` usage sites — two files, one is the field's own definition |
+| Receipt photos (5 MiB / MIME-capped, private bucket) | `src/lib/receiptStorage.ts`, `src/components/ReceiptField.tsx` (mounted only in `EditTransactionModal.tsx`) | bucket cap + policies in `supabase-migration-p2-trust-safety.sql` §8.1 — **applied to production 2026-09-03** | `src/lib/receiptStorage.test.ts`; scope (edit-only) verified by `grep` for `ReceiptField` usage sites — two files, one is the field's own definition |
 | Coach cards + daily wisdom | `src/components/DailyQuote.tsx`, `src/lib/dailyQuotePrefs.ts` | none — client-only, already on `main` (commit "Daily Wisdom into center screen") | `src/lib/dailyQuotePrefs.test.ts` |
-| Splits — including guest members ("without the app") | `src/lib/groupGuests.ts`, `src/pages/CreateGroupModal.tsx`, `src/components/GroupInviteModal.tsx` | **`supabase-migration-p2-guest-members.sql` — PENDING production apply** (client degrades safely — the two RPCs just fail — on an un-migrated DB) | `supabase/tests/tests/8y-guest-members.sql` (31 assertions; full corpus 331 assertions, 0 failed), `src/lib/groupGuests.test.ts` (16 tests) |
-| Khata/udhaar — two-sided, consent-based (Inbox accept/reject) | `src/pages/InboxPage.tsx`, `linked_transaction_requests` | `supabase-migration-cross-user-account-effects.sql` — **flagged "possibly unapplied" in production**, confirm via `supabase-audit-p0-verification.sql` §13 | existing on `main`; production state unconfirmed (`docs/go-to-market.md` §1.4 row 5) |
-| Khata link — live, read-only balance page shared over WhatsApp | `src/components/ShareKhataLinkSheet.tsx`, `src/pages/KhataLinkPage.tsx`, `src/stores/khataLinkStore.ts` | **`supabase-migration-p3-khata-link.sql` — PENDING production apply** | migration's own in-file V-checks (per its header); client route wired at `src/App.tsx` |
-| Edit history — "see who changed what" (loans today) | `src/components/EditHistorySheet.tsx`, mounted on `src/pages/LoanDetailPage.tsx` only | **`supabase-migration-p2-edit-history.sql` — PENDING production apply** | `supabase/tests/tests/8z-edit-history.sql` (26 assertions; corpus 357 assertions, 0 failed), `src/lib/editHistory.test.ts` (21 cases) |
-| Block or report | `src/components/BlockReportSheet.tsx`, `src/stores/blockStore.ts`; mounted in `GroupDetailPage.tsx`, `ContactDetailSheet.tsx`, `InboxPage.tsx` | **`supabase-migration-p2-trust-safety.sql` — PENDING production apply** | `docs/trust-and-safety.md` §7, 62 functional-smoke assertions, Docker-validated |
-| Account deletion — qualified ("hand over any group you run and settle what you owe first") | `delete_current_user()` in `supabase-migration-audit-p0-account-deletion.sql` (owner gate, applied to production 2026-09-03) and `supabase-migration-p3-account-deletion-balance-gate.sql` (balance gate, D1); `transfer_group_ownership`, `src/lib/groupGuardErrors.ts`, wired in `src/pages/GroupDetailPage.tsx`/`SettingsPage.tsx` | **balance-gate file — PENDING production apply** | Docker throwaway Postgres 15 per migration header |
-| Roman Urdu as default language | `src/lib/i18n.ts:19` (`DEFAULT_LANGUAGE = "ur"`) | none — client-only | `src/lib/i18n.test.ts` |
+| Splits — including guest members ("without the app") | `src/lib/groupGuests.ts`, `src/pages/CreateGroupModal.tsx`, `src/components/GroupInviteModal.tsx` | `supabase-migration-p2-guest-members.sql` — **applied to production 2026-09-03** | `supabase/tests/tests/8y-guest-members.sql` (38 assertions), `src/lib/groupGuests.test.ts` (16 tests) |
+| Khata/udhaar — two-sided, consent-based (Inbox accept/reject) | `src/pages/InboxPage.tsx`, `linked_transaction_requests` | `supabase-migration-cross-user-account-effects.sql` — **confirmed applied in production 2026-09-03** (the verification pass, `supabase-audit-p0-verification.sql` §13, closed the earlier "possibly unapplied" flag) | existing on `main`; production state confirmed (`docs/go-to-market.md` §1.4 row 5 is superseded by this row) |
+| Khata link — live, read-only balance page shared over WhatsApp | `src/components/ShareKhataLinkSheet.tsx`, `src/pages/KhataLinkPage.tsx`, `src/stores/khataLinkStore.ts` | `supabase-migration-p3-khata-link.sql` — **applied to production 2026-09-03** | migration's own in-file V-checks (per its header); client route wired at `src/App.tsx` |
+| Edit history — "see who changed what" (loans today) | `src/components/EditHistorySheet.tsx`, mounted on `src/pages/LoanDetailPage.tsx` only | `supabase-migration-p2-edit-history.sql` — **applied to production 2026-09-03** | `supabase/tests/tests/8z-edit-history.sql` (26 assertions), `src/lib/editHistory.test.ts` (21 cases) |
+| Block or report | `src/components/BlockReportSheet.tsx`, `src/stores/blockStore.ts`; mounted in `GroupDetailPage.tsx`, `ContactDetailSheet.tsx`, `InboxPage.tsx` | `supabase-migration-p2-trust-safety.sql` — **applied to production 2026-09-03** | `docs/trust-and-safety.md` §7, 62 functional-smoke assertions, DB suite in CI |
+| Account deletion — qualified ("hand over any group you run and settle up in any shared group first") | `delete_current_user()`: owner gate `OWNED_GROUPS_WITH_MEMBERS` in `supabase-migration-audit-p0-account-deletion.sql`, balance gate `UNSETTLED_GROUP_BALANCES` (D1) in `supabase-migration-p3-account-deletion-balance-gate.sql`; `transfer_group_ownership`, `src/lib/groupGuardErrors.ts`; client flow in `src/pages/SettingsPage.tsx` re-asks the current password (`verifyCurrentPassword`) and requires typing `DELETE` | owner gate — **applied to production 2026-09-03**; balance gate — **applied to production 2026-09-04** | DB suite (`supabase/tests/tests/50-lifecycle-and-config.sql`) in CI; on-device: `RELEASE.md` §13 delete-account step walks both refusals then the successful delete |
+| Roman Urdu as default language, English one tap away | `src/lib/i18n.ts` (`DEFAULT_LANGUAGE = "ur"`); onboarding step 0 / Settings row / `LanguageToggle` write `hisaab_lang` | none — client-only | `src/lib/i18n.test.ts` |
 | No ads, ever | absence of any ad/entitlement code in `src/` | none | confirmed absence by repo-wide search (`docs/go-to-market.md` §1.4 row 7) |
+| Push alerts (release notes) — FCM delivery to a backgrounded/killed app | `src/lib/pushRegistration.ts` (FCM token → `public.device_push_tokens`, row deleted on sign-out / opt-out / account deletion), edge function `supabase/functions/push-notify`, `tg_notifications_push` → `pg_net`; Android: Firebase project `hisaab-2` (`android/app/google-services.json`), status-bar glyph `android/app/src/main/res/drawable/ic_stat_hisaab.xml` | `supabase-migration-connections-push-discovery.sql` (table + `tg_notifications_push`) and `supabase-migration-p2-notification-maturity.sql` (trigger body) — **applied to production 2026-09-03**; `pg_net` enabled, `push-notify` deployed, both `app_push_config` rows present, dry-run trigger call verified (`docs/push-notifications-setup.md`, status 2026-09-05) | `docs/push-notifications-setup.md`; on-device: `RELEASE.md` §13 push step (force-stop → tray shows the "h" glyph). Declared in Data Safety as Device or other IDs — collected, shared with Google |
+| "An internet connection is needed to log entries" (saving needs a connection) | by design — no outbox, no offline write queue (D5, 2026-09-04, Option A: the inert scaffold was deleted — `docs/offline-story.md`); writes go straight to Supabase via `src/lib/supabaseDb.ts` | none — client-only | absence of any outbox/queue module in `src/` (repo search); on-device: airplane mode → saving shows the connection-required error and nothing is silently queued |
 | PIN lock | **NOT claimed** — code exists (`src/pages/PinLockScreen.tsx`, PBKDF2 150k-salted, gates cold start + 60s background + re-auth) but no device farm has run a verification pass | n/a | keep out of the listing until a device-verification pass is done (`00-executive-summary.md` §7.C) |
-| Offline / "syncs when you're back online" | **NOT claimed** — Hisaab is online-required for writes; there is no offline write queue (D5 decided 2026-09-04, Option A: the inert outbox scaffold was deleted — `docs/offline-story.md`) | n/a | keep out unless Option B (a narrow single-row replay queue, held as a telemetry-gated backlog item) actually ships and is device-verified — and even then never say "offline-first" |
-| Analytics / telemetry | not a listing claim — opt-in, covered in Play's Data safety form, not here | n/a | `src/lib/telemetry.ts` (consent-gated, default off) |
+| Offline / "syncs when you're back online" | **NOT claimed** — the opposite is stated, see the "internet connection is needed" row | n/a | keep out unless Option B (a narrow single-row replay queue, held as a telemetry-gated backlog item) actually ships and is device-verified — and even then never say "offline-first" |
+| Analytics / crash reporting | not a listing claim — belongs in the Data Safety form. This build: PostHog **not enabled** (no `VITE_POSTHOG_KEY`, so do not declare analytics as collected); Sentry crash reports **are** in the build (`VITE_SENTRY_DSN` baked in, `sendDefaultPii: false`) | n/a | `src/lib/telemetry.ts` (total no-op without the key), `src/main.tsx` (Sentry init); `docs/play-store-data-safety.md` is the form's single source |
 
-**Claims removed or qualified on 2026-09-02, and why:**
-- **(carried forward from the prior audit pass)** "optional PIN lock" and "offline-first... syncs when you're back online" — removed; see the two `NOT claimed` rows above.
-- **(carried forward)** "PKR, AED, USD, EUR & GBP" — corrected to the real 8-currency list; see row 1.
-- **(new this pass)** "Delete your account and data anytime" — qualified to "hand over any group you run first, then it's gone" because `delete_current_user()` refuses outright (`OWNED_GROUPS_WITH_MEMBERS`) rather than silently succeeding while the caller owns a shared group with other participants still in it. An unqualified "anytime" claim would be false the first time a support ticket hits this refusal.
-- **(new this pass)** Receipt-photo bullet reworded from implying "with receipt photos" at the point of logging to "attach right after saving" — `ReceiptField` requires an existing `transactionId` and is only mounted in the edit flow, not QuickEntry.
-- **(new this pass)** Edit-history bullet scoped to "on a loan record" rather than a general claim — the sheet is mounted on `LoanDetailPage` only; group/settlement/transaction surfaces are named-but-unbuilt insertion points in `docs/edit-history.md` §6.
-- **Nothing above is safe to publish until its migration (where one is listed) is actually applied to production and the release checklist in `docs/audit-2026-09/P0-REMEDIATION.md` §1 / `docs/release-and-rollback.md` §2 has run.** Publishing this copy against today's `main` would reintroduce the exact "shipped provably false claims" failure mode the 2026-09 audit found (`docs/go-to-market.md` §5).
+**Claims removed or qualified, and why (2026-09-02 pass, updated 2026-09-05):**
+- **(carried forward from the prior audit pass)** "optional PIN lock" and "offline-first... syncs when you're back online" — removed; see the two `NOT claimed` rows above. The listing now says the opposite of the offline claim on purpose.
+- **(carried forward, then widened)** "PKR, AED, USD, EUR & GBP" was first corrected to the real 8-currency list (2026-09-02); on 2026-09-04 the founder widened the product to every active ISO 4217 currency and the 8-code list was retired, so the copy now says "every other world currency"; see row 1.
+- **(2026-09-02, extended 2026-09-04)** "Delete your account and data anytime" — qualified to "hand over any group you run and settle up in any shared group first" because `delete_current_user()` refuses outright rather than silently succeeding: `OWNED_GROUPS_WITH_MEMBERS` while the caller owns a shared group with other participants still in it, and — since D1 — `UNSETTLED_GROUP_BALANCES` while the caller owes or is owed in a shared group that still has a counterparty. An unqualified "anytime" claim would be false the first time a support ticket hits either refusal.
+- **(2026-09-02)** Receipt-photo bullet reworded from implying "with receipt photos" at the point of logging to "attach right after saving" — `ReceiptField` requires an existing `transactionId` and is only mounted in the edit flow, not QuickEntry.
+- **(2026-09-02)** Edit-history bullet scoped to "on a loan record" rather than a general claim — the sheet is mounted on `LoanDetailPage` only; group/settlement/transaction surfaces are named-but-unbuilt insertion points in `docs/edit-history.md` §6.
+- **(2026-09-05)** "English by default" — corrected in both locales to Roman-Urdu by default with English one tap away; `DEFAULT_LANGUAGE = "ur"` has been the shipped fallback since the H5 i18n pass, so the old sentence contradicted the app.
+- **This ledger is the publish gate.** Every dependency above is applied in production as of 2026-09-04, so this copy is publishable against the v1.0.0 build. For any future claim, add a row with its migration and apply date before the copy goes live — publishing ahead of the migration is exactly the "shipped provably false claims" failure mode the 2026-09 audit found (`docs/go-to-market.md` §5).

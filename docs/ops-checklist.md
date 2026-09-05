@@ -66,38 +66,49 @@ backup is intact):
 - It will prompt for the keystore password — use the one from the backup,
   not the one you remember, to confirm the backup note is correct too.
 - **Pass:** prints certificate details (`Owner:`, `SHA256:` fingerprint,
-  validity dates) matching the fingerprint already on file in
-  `docs/updating-the-android-app.md` §5/§6 (the same value published in
-  `assetlinks.json`).
+  validity dates) matching the upload-key fingerprint already on file as
+  the **first** entry of `public/.well-known/assetlinks.json` and in
+  `docs/play-store-launch-tracker.md` row **Y7**
+  (`0B:B6:45:86:3D:98:A4:E4:91:10:D5:FD:F0:66:34:F4:EA:FE:2D:71:08:77:02:F1:C5:93:5B:82:9D:47:6D:A5`).
 - **Fail:** a wrong-password error or a corrupted-keystore error. If this
   happens, fix the backup immediately — regenerate it from the working
   copy while you still have that working copy.
 - [ ] Re-run this check whenever the backup location changes (new password
       manager, new drive, etc.), and at least once every 6 months regardless.
 
-### 1.3 Play App Signing enrollment
+### 1.3 Play App Signing — mandatory for AAB, and the second `assetlinks` slot
 
-Play App Signing is Google's own layer of key-loss protection: Google holds
-a copy of your app signing key and lets you upload with a separate "upload
-key" — if you ever lose the upload key (but not if you lose *both*), Google
-can help you reset it. Confirm enrollment status:
+Play App Signing is **not optional** for an Android App Bundle: the first
+AAB upload enrolls the app, Google generates and holds the *app signing
+key*, and your `.jks` from §1 is the *upload key* only. That is also
+Google's layer of key-loss protection — lose the upload key (but not both)
+and Google can reset it. The consequence for this repo is that there are
+**two** fingerprints, and only the upload one is known before the first
+upload.
 
-- [ ] Play Console → your app → **Setup → App Integrity → App Signing** —
-      confirm "Google Play App Signing" shows as **enrolled**, not
-      "Not enrolled."
-- [ ] If enrolled, confirm you have **both** fingerprints recorded (per
-      `RELEASE.md` §6): the upload-key fingerprint (from your own `.jks`,
-      §1.2 above) **and** the Play-signed fingerprint (Play Console → App
-      Signing → "App signing key certificate (SHA-256)"). Both must be in
-      `https://usehisaab.com/.well-known/assetlinks.json` for deep links to
-      verify — a stale `assetlinks.json` after an unenrolled→enrolled
-      transition is a silent deep-link breakage, not a build failure.
-- [ ] If **not** enrolled: enrolling is one-way (cannot be undone) and
-      requires uploading through Play Console once — do this deliberately,
-      not accidentally on a routine release, and re-read Google's current
-      documentation on the switch before doing it (behavior/requirements
-      around this feature change over time; verify current guidance rather
-      than relying on this checklist's phrasing of it).
+- [ ] First upload (`versionCode 1 / versionName 1.0.0`) goes to a
+      **closed** testing track — a new developer account needs 12 testers
+      for 14 consecutive days before production (`RELEASE.md` §10,
+      `docs/play-store-launch-tracker.md` Y11). Enrollment in Play App
+      Signing happens as part of that upload; there is no separate switch
+      to flip, and it cannot be undone.
+- [ ] Immediately after the first upload: Play Console → your app →
+      **Setup → App Integrity → App Signing** → copy the **"App signing key
+      certificate (SHA-256)"** and paste it into **slot 1** (the second
+      entry, currently `REPLACE_WITH_PLAY_SIGNING_KEY_SHA256`) of
+      `public/.well-known/assetlinks.json`. Slot 0 stays the upload-key
+      fingerprint from §1.2. Record the value in
+      `docs/play-store-launch-tracker.md` Y7, then deploy (`RELEASE.md` §6).
+- [ ] Verify the served file, not the repo copy:
+      `https://usehisaab.com/.well-known/assetlinks.json` must answer
+      **200 on the apex** with both fingerprints. Until the founder flips
+      Vercel so the apex is primary (today the apex 307-redirects to
+      `www`), the App Links verifier — which does **not** follow redirects
+      — will keep failing even with a correct file. Do the flip; do **not**
+      add `www` to the manifest host as a workaround.
+- [ ] Remember the failure mode: a stale `assetlinks.json` is a silent
+      deep-link breakage (links fall back to the browser), not a build
+      failure — re-check it after any key reset or host change.
 
 ---
 
@@ -156,11 +167,15 @@ finds out about a cost spike from an invoice, not a dashboard.
       - Confirm the event quota for the current plan.
       - Set a **spend notification** (Sentry supports alerting before an
         overage charge, or hard-capping at quota depending on plan) — this
-        matters here specifically because `.env.example` ships a live DSN
-        (`13-engineering-standards.md` §2.2 "Low" finding), meaning anyone
-        who finds that DSN can inject events into this Sentry project and
-        consume quota. Rotating that DSN is a separate, smaller fix worth
-        doing alongside this.
+        matters here specifically because the release build **ships the
+        DSN**: `VITE_SENTRY_DSN` is baked into the web bundle and the AAB
+        from the build machine's `.env` (`.env.example` is blank since the
+        2026-09 audit — the `13-engineering-standards.md` §2.2 "Low"
+        finding is closed), and a browser-side DSN is public by nature, so
+        anyone who reads the bundle can inject events into this Sentry
+        project and consume quota. Sentry's inbound filters / rate limits
+        per project are the mitigation; rotating the DSN is a rebuild +
+        `cap sync` + new AAB, not a config change.
 
 ---
 
@@ -179,6 +194,11 @@ endpoint.
       UptimeRobot, Better Stack (formerly Better Uptime), Freshping,
       Pulsetic, or similar; pick one, don't over-index on the specific
       vendor. 5-minute check interval is standard on free tiers.
+      **Host note (2026-09-05):** the apex is canonical, but until the
+      Vercel flip lands it answers a 307 to `https://www.usehisaab.com`,
+      which is what returns 200 today. Configure the monitor to follow
+      redirects (or check both hosts) so the pre-flip state doesn't read as
+      an outage, and re-check the monitor after the flip (www → apex 308).
 - [ ] Point the alert at a channel you actually check promptly (email is
       fine to start; a phone push via the monitor's own app is better for a
       solo operator who won't be staring at an inbox at 3am).
@@ -244,10 +264,12 @@ repo's GitHub plan currently offers):
             lint + unit tests + production build).
       - [ ] `npm-audit` and `gitleaks` — the two job names in
             `.github/workflows/security.yml`.
-      - [ ] `db-tests` — once the companion database-test workflow (owned by
-            a separate work item in this audit round) exists and has run at
-            least once on a PR (a required check that has never reported
-            must be seen once before GitHub will let you select it).
+      - [ ] `sql` — the job id in `.github/workflows/db-tests.yml`
+            ("Apply corpus + trust-boundary assertions": applies
+            `supabase/tests/apply-order.txt` to a fresh Postgres and runs
+            the 546-assertion suite). It has reported on the audit branch,
+            so GitHub will let you select it (a required check that has
+            never reported must be seen once first).
       - [ ] **Require branches to be up to date before merging** — prevents
             merging a PR whose CI run predates a since-merged breaking
             change on `main`.

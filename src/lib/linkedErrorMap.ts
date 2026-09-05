@@ -24,15 +24,17 @@ export function friendlyLinkedError(raw: string): string {
 // Unsupported-currency fallback (audit 2026-09, F-MIG2 / H6).
 //
 // linked_transaction_requests / linked_settlement_requests carried a hard
-// `check (currency in ('AED','PKR'))` while the client ships eight currencies,
+// `check (currency in ('AED','PKR'))` while the client accepted more (eight then,
+// every active ISO 4217 currency since 2026-09-04),
 // so a Gulf/Filipino user's linked udhaar died with a raw Postgres 23514 and a
 // lost entry. supabase-migration-audit-p0-currencies.sql widens both CHECKs to
 // the full SUPPORTED_CURRENCIES list — but migrations here are applied by hand
 // (no runner), so a client build can reach a database that hasn't caught up.
 // This maps that specific violation to honest, actionable copy instead of a
 // Postgres string. It is a graceful fallback, NOT a client-side block: the UI
-// still offers all eight currencies, because all eight are valid once the
-// migration lands.
+// still offers every currency in src/lib/currencies.ts, because all of them
+// are valid once the widening migrations (audit-p0-currencies, then
+// p3-currencies-iso4217) have landed — both are applied in production.
 // ───────────────────────────────────────────────────────────────────────────
 
 /** Which write failed — picks the recovery advice that actually applies. */

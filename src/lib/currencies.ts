@@ -2,16 +2,19 @@
 // metadata in Hisaab.
 //
 // FOUNDER DECISION (2026-09-04): Hisaab supports EVERY active ISO 4217
-// currency, not the original eight. The old list lives on as
-// `LEGACY_CURRENCIES` (and as `SUPPORTED_CURRENCIES` in src/db/types.ts)
-// because the Postgres CHECK constraint still only accepts those eight until
-// the ISO widening migration is applied. Until then:
+// currency, not the original eight. The database agrees:
+// `supabase-migration-p3-currencies-iso4217.sql` (applied to production
+// 2026-09-04) replaced the per-column whitelist CHECKs with a
+// `public.currencies` reference table (157 rows, 156 active) and a FOREIGN
+// KEY from every currency column, so a write is accepted for exactly the
+// codes this module knows about.
 //
-//   LEGACY_CURRENCIES  = what the DATABASE accepts today
-//   CURRENCY_CODES     = what the APP knows about (full ISO list)
+//   CURRENCY_CODES     = what the APP and the DATABASE accept (full ISO list)
+//   LEGACY_CURRENCIES  = the eight founding codes, kept for symbol pinning
+//                        and the legacy chip-row order (NOT a write gate)
 //
-// Do not conflate them. Writing a non-legacy code before the migration lands
-// will be rejected by Postgres, not by this module.
+// Adding or retiring a currency is one row in that table plus one row in
+// `RAW` below — never a DDL migration.
 //
 // WHAT IS IN HERE
 //   - every active ISO 4217 currency (fund codes, precious metals, testing
@@ -42,9 +45,12 @@ export interface CurrencyMeta {
 }
 
 /**
- * The eight codes the Postgres CHECK constraint accepts until the ISO
- * widening migration is applied. Mirrors `SUPPORTED_CURRENCIES` in
- * src/db/types.ts — currencies.test.ts asserts the two never drift.
+ * The eight founding codes — the only currencies the app offered before the
+ * 2026-09-04 ISO widening. Not a write gate (the `public.currencies` FK
+ * accepts every active ISO code since p3-currencies-iso4217 was applied);
+ * they persist because their symbols are pinned and a few legacy chip rows
+ * still render in this order. `SUPPORTED_CURRENCIES` in src/db/types.ts is an
+ * alias of this — currencies.test.ts asserts the two never drift.
  */
 export const LEGACY_CURRENCIES = ['AED', 'PKR', 'PHP', 'SAR', 'QAR', 'OMR', 'KWD', 'BHD'] as const;
 

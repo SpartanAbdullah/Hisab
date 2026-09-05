@@ -2,7 +2,7 @@ import { ArrowLeft, ExternalLink, Mail } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-const LAST_UPDATED = 'May 31, 2026';
+const LAST_UPDATED = 'September 5, 2026';
 const SUPPORT_EMAIL = 'support@usehisaab.com';
 const SITE_URL = 'https://usehisaab.com';
 
@@ -43,8 +43,10 @@ function PublicInfoLayout({
 }) {
   const navigate = useNavigate();
 
+  // These pages are English-only until a roman-Urdu variant ships; index.html
+  // declares ur-Latn, so the <main> overrides it for screen readers and search.
   return (
-    <main className="min-h-dvh bg-cream-soft">
+    <main lang="en" className="min-h-dvh bg-cream-soft">
       <header className="bg-navy-900 text-white">
         <div className="max-w-3xl mx-auto px-5 pt-5 pb-8">
           <div className="flex items-center justify-between gap-4">
@@ -106,9 +108,13 @@ function PrivacyPolicy() {
         <PolicyList>
           <li>Account and authentication data, such as your email address, authentication identifiers, and session information.</li>
           <li>Profile and settings data, such as your name, selected currency, language, app mode, and optional phone number you enter in Settings.</li>
-          <li>User-created finance records, including accounts, income, expenses, transfers, loans, repayments, balances, goals, budgets, recurring entries, remittance records, notes, categories, and currencies.</li>
+          <li>User-created finance records, including accounts, income, expenses, transfers, loans, repayments, balances, goals, budgets, recurring entries, investment records, kameti (committee) rounds, notes, categories, and currencies.</li>
           <li>Collaboration data, including manually entered contacts, groups, split expenses, settlements, invite links, linked-record requests, and in-app notifications.</li>
-          <li>Basic technical information needed to operate, secure, and debug the service. If crash reporting is enabled, error details and limited technical context may be sent to Sentry. Hisaab configures Sentry not to automatically send personal information.</li>
+          <li>Basic technical information needed to operate, secure, and debug the service. Error details and limited technical context are sent to Sentry for crash reporting (the Android app always reports; some web builds may not). Hisaab configures Sentry not to send personal information.</li>
+          <li>Push notification tokens. If you turn on notifications, a device token issued by Google Firebase Cloud Messaging is stored with your account so Hisaab can deliver notifications to that device. The token identifies the app install, not you personally, and is removed when you sign out, turn notifications off, or delete your account.</li>
+          <li>Receipt photos you choose to attach to a transaction. They are uploaded from your camera or gallery only when you tap to add one, stored in a private Supabase Storage bucket that only your account can read, and deleted with the transaction or with your account.</li>
+          <li>Phone-number discovery (optional). If you turn on &quot;Let contacts find me&quot;, your phone number is stored in international format and other Hisaab users who already know your number can find and link with you. It is off by default and can be turned off any time in Settings. Hisaab never reads your device&apos;s contact list.</li>
+          <li>Product analytics (optional). If analytics are enabled in a release and you agree when asked, anonymous usage events (for example which screens are opened) are sent to PostHog on EU servers. No amounts, names, or contact details are included, and you can withdraw consent in Settings at any time.</li>
         </PolicyList>
         <p>
           Hisaab stores some settings, session information, and local data mirrors on your device so the app can stay signed in and work reliably. JSON backup files are created or imported only when you choose those actions.
@@ -127,7 +133,7 @@ function PrivacyPolicy() {
 
       <Section title="Storage and service providers">
         <p>
-          Hisaab uses Supabase infrastructure for authentication and cloud data storage. It also uses service providers needed to operate the app, such as Vercel for website hosting. Those providers may process limited information on Hisaab&apos;s behalf when delivering their services.
+          Hisaab uses Supabase for authentication, cloud data storage, and receipt-photo storage, and Vercel for website hosting. Push notifications are delivered through Google Firebase Cloud Messaging. Crash reports go to Sentry; if analytics are enabled in a release and you agree, anonymous usage events go to PostHog (EU). These providers process limited information on Hisaab&apos;s behalf only to deliver their service.
         </p>
       </Section>
 
@@ -144,7 +150,7 @@ function PrivacyPolicy() {
           <a className="font-semibold text-accent-600" href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
           </a>
-          . The in-app flow permanently deletes your Hisaab login identity and personal finance records. Shared records that you created may be removed or anonymized where necessary. Limited provider backups and security logs may remain for a reasonable period when needed for security, legal, or operational purposes.
+          . The in-app flow permanently deletes your Hisaab login identity, personal finance records, receipt photos, and push notification tokens. Shared records that you created may be removed or anonymized where necessary. Limited provider backups and security logs may remain for a reasonable period when needed for security, legal, or operational purposes.
         </p>
         <p>
           Read the <Link className="font-semibold text-accent-600" to="/delete-account">delete-account instructions</Link> for the current process.
@@ -178,10 +184,10 @@ function TermsOfUse() {
     >
       <Section title="About Hisaab">
         <p>
-          Hisaab is a personal finance record-keeping tool. It helps you enter and review information such as accounts, income, expenses, loans, repayments, balances, currencies, investment records, and group splits.
+          Hisaab is a personal finance record-keeping tool. It helps you enter and review information such as accounts, income, expenses, loans, repayments, balances, currencies, investment records, kameti (committee) rounds, and group splits.
         </p>
         <p>
-          Hisaab is not a bank, licensed wallet, custody provider, lender, money transfer provider, investment platform, investment adviser, tax adviser, or financial adviser. Hisaab does not hold, move, lend, or invest money for you. Investment records — including trades, prices, and profit/loss figures — are manual entries you keep yourself; Hisaab does not fetch market data, execute trades, or provide any recommendations.
+          Hisaab is not a bank, licensed wallet, custody provider, lender, money transfer provider, investment platform, investment adviser, tax adviser, or financial adviser. Hisaab does not hold, move, lend, or invest money for you. Investment records — including trades, prices, and profit/loss figures — are manual entries you keep yourself; Hisaab does not fetch market data, execute trades, or provide any recommendations. Kameti (committee) features only keep a record of a savings rotation that you and your members run yourselves; Hisaab does not collect, hold, or pay out any money.
         </p>
       </Section>
 
@@ -193,7 +199,7 @@ function TermsOfUse() {
 
       <Section title="Your account">
         <p>
-          Keep your login details secure and use the app only through your own account. Notify{' '}
+          You must be at least 18 years old to create a Hisaab account. Keep your login details secure and use the app only through your own account. Notify{' '}
           <a className="font-semibold text-accent-600" href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
           </a>{' '}
@@ -212,7 +218,7 @@ function TermsOfUse() {
 
       <Section title="Early-release service">
         <p>
-          Hisaab is an early-release service. Features may change, be unavailable, or contain bugs. Access may be interrupted for maintenance, security work, provider outages, or product updates. Keep your own backup of records that are important to you.
+          Hisaab is an early-release service. Features may change, be unavailable, or contain bugs. Access may be interrupted for maintenance, security work, provider outages, or product updates. Hisaab needs an internet connection to save changes; entries made while offline are not queued. Keep your own backup of records that are important to you.
         </p>
       </Section>
 
@@ -290,7 +296,14 @@ function DeleteAccountInstructions() {
           <li>Sign in to Hisaab.</li>
           <li>Open Settings.</li>
           <li>Open Delete account in the danger zone.</li>
-          <li>Type DELETE and confirm the action.</li>
+          <li>Type DELETE, enter your current password, and confirm the action.</li>
+        </PolicyList>
+      </Section>
+
+      <Section title="Two things Hisaab checks first">
+        <PolicyList>
+          <li>Groups you run — if you own a shared group that still has other members, deletion is refused. Transfer ownership to another member (open the group and choose Assign another admin) or archive the group, then try again.</li>
+          <li>Open balances — if you owe or are owed money in any shared group, deletion is refused until it is settled, the same rule as leaving a group. Record the settlement (or ask the other member to), then try again.</li>
         </PolicyList>
       </Section>
 
@@ -306,7 +319,7 @@ function DeleteAccountInstructions() {
 
       <Section title="What deletion does">
         <p>
-          The in-app deletion flow permanently deletes your Hisaab login identity and personal finance records. Collaboration links are removed or anonymized. Shared records that you created may be removed or adjusted where necessary.
+          The in-app deletion flow permanently deletes your Hisaab login identity, personal finance records, receipt photos, and push notification tokens. In shared groups, expenses and settlements you recorded stay so the other members&apos; balances remain correct, but they no longer carry your identity; solo groups are deleted entirely.
         </p>
         <p>
           Limited provider backups, security logs, or records required for legal or operational reasons may remain for a reasonable period before deletion or anonymization.

@@ -33,14 +33,16 @@ these three match the app's actual public-link routes in `src/App.tsx`).
 react-router, so once verification passes, tapping any of those links —
 killed app or not — opens straight into Hisaab.
 
-What's still missing is the file Android checks to verify the app is allowed
-to claim those URLs: **`public/.well-known/assetlinks.json`**. It's checked
-into the repo with placeholder fingerprints — until both are filled in with real
-values, every one of these links keeps falling back to opening in the browser
-(graceful, but not the real experience). **Status 2026-09-05: slot 0 (the
-upload key, `0B:B6:…:6D:A5`, read from `hisaab-upload.jks` with `keytool`) is
-filled in; slot 1 still carries `REPLACE_WITH_PLAY_SIGNING_KEY_SHA256` and can
-only be filled after the first Play upload (step 2 below).**
+The file Android checks to verify the app is allowed to claim those URLs is
+**`public/.well-known/assetlinks.json`**. Until it lists every key the
+installed APK can be signed with, these links fall back to opening in the
+browser (graceful, but not the real experience). **Status 2026-09-05: the
+array holds exactly one real fingerprint — slot 0, the upload key
+(`0B:B6:…:6D:A5`, read from `hisaab-upload.jks` with `keytool`). There is no
+placeholder for the Play key any more; it gets appended as a second entry
+after the first Play upload (step 2 below). The other open item is hosting:
+the verifier needs the apex to serve the file directly (see "Apex vs www" in
+step 3).**
 
 ### 1. Get the upload-key fingerprint
 
@@ -51,9 +53,9 @@ gitignored — see `RELEASE.md` §§1-2 if it doesn't exist yet):
 keytool -list -v -keystore android/app/hisaab-upload.jks -alias hisaab-upload
 ```
 
-Copy the `SHA256:` line (the colon-separated hex string) into
-`sha256_cert_fingerprints[0]` in `public/.well-known/assetlinks.json`, in
-place of `REPLACE_WITH_UPLOAD_KEY_SHA256`.
+The `SHA256:` line (the colon-separated hex string) is
+`sha256_cert_fingerprints[0]` in `public/.well-known/assetlinks.json` — already
+filled in. Only redo this if the upload keystore is ever regenerated.
 
 ### 2. Get the Play App Signing fingerprint
 
@@ -64,15 +66,13 @@ opposed to a sideloaded AAB) fails verification.
 
 1. Play Console → your app → **Setup → App integrity → App signing**.
 2. Copy the **"App signing key certificate" → SHA-256 certificate fingerprint**.
-3. Paste it into `sha256_cert_fingerprints[1]`, in place of
-   `REPLACE_WITH_PLAY_SIGNING_KEY_SHA256`.
+3. Append it as a second entry in `sha256_cert_fingerprints` (after the
+   upload key), then deploy (step 3).
 
 This value doesn't exist until the app has been uploaded to Play at least
-once and Play App Signing is enrolled — until then, the upload-key
-fingerprint alone verifies sideloaded/local-signed AABs, and the Play-key
-slot stays a placeholder (invalid values in the array are simply ignored by
-the verifier, so a leftover placeholder doesn't break verification of the
-other entry).
+once — Play App Signing is mandatory for AAB uploads, so enrolment happens on
+that first upload. Until then the array deliberately holds only the upload
+key, which verifies sideloaded/local-signed AABs on its own.
 
 ### 3. Deploy and confirm it's served correctly
 
@@ -94,6 +94,26 @@ HTML, the rewrite is winning and needs an explicit exception added to
 `vercel.json`'s `rewrites` (e.g. exclude `/.well-known/*`) or a `routes`
 override.
 
+**Apex vs www.** The manifest host is the apex, `usehisaab.com`, and only the
+apex — Android's verifier fetches
+`https://usehisaab.com/.well-known/assetlinks.json` and **does not follow
+redirects**: a `307`/`308` to `www` counts as a failed fetch, and every link
+keeps opening the browser. As of 2026-09-05 the apex still 307-redirects to
+`https://www.usehisaab.com` (the Vercel project's primary domain), so today
+the `curl` above answers `307`, and only the `www` URL answers `200`. The fix
+is the pending Vercel flip: make the **apex the primary domain** and have
+`www` `308`-redirect to the apex — after which the command above returns
+`200` directly. Do **not** "fix" this by adding a second `android:host` for
+`www` to the manifest: the canonical URLs the app shares (`VITE_PUBLIC_APP_URL`,
+invites, witness links) are apex URLs, and a www host would only paper over the
+redirect for the verifier while every shared link still hit it. To check both
+sides after the flip:
+
+```bash
+curl -sI https://usehisaab.com/.well-known/assetlinks.json | head -3      # expect 200
+curl -sI https://www.usehisaab.com/.well-known/assetlinks.json | head -3  # expect 308 → apex
+```
+
 ### 4. Verify with Google's tool ("Statement List" tester)
 
 ```
@@ -101,10 +121,13 @@ https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=http
 ```
 
 This is the same endpoint Android itself calls to verify the link on
-install. It should return a JSON `statements` array listing
+install. `source.web.site` must be the apex exactly as the manifest names it
+(not `www`), and it fails until the apex serves the file without a redirect
+(step 3, "Apex vs www"). It should return a JSON `statements` array listing
 `com.usehisaab.app` with the fingerprints from the file. If it's empty or
-errors, fix the file before testing on-device — verification will silently
-keep failing and links will keep opening the browser.
+errors, fix the file (or the hosting) before testing on-device —
+verification will silently keep failing and links will keep opening the
+browser.
 
 ### 5. Verify on a real device
 

@@ -1,17 +1,19 @@
 import { LEGACY_CURRENCIES } from '../lib/currencies';
 
 /**
- * The currencies the DATABASE accepts today.
+ * The eight founding currencies (AED PKR PHP SAR QAR OMR KWD BHD).
  *
- * Founder decision 2026-09-04 widened the app to every active ISO 4217
- * currency (`CURRENCY_CODES` in src/lib/currencies.ts), but the Postgres
- * CHECK constraint still only allows these eight until the ISO widening
- * migration is applied. This constant therefore means "what a write will be
- * accepted for", NOT "what the app knows about" — the two are different sets
- * during the rollout, and the legacy chip rows in the Add/Create forms keep
- * rendering from here until the CurrencyPicker replaces them.
+ * This is NOT a write gate any more. Founder decision 2026-09-04 widened the
+ * app to every active ISO 4217 currency (`CURRENCY_CODES` in
+ * src/lib/currencies.ts), and `supabase-migration-p3-currencies-iso4217.sql`
+ * (applied to production 2026-09-04) replaced every per-column whitelist
+ * CHECK with a `public.currencies` reference table plus a FOREIGN KEY from
+ * each currency column — so the database accepts exactly what
+ * `isSupportedCurrency` accepts. This constant survives only as the legacy
+ * chip-row order and the `LINKED_REQUEST_CURRENCIES` alias; see
+ * `LEGACY_CURRENCIES` for what still depends on it.
  *
- * Single source of truth is `LEGACY_CURRENCIES`; this is an alias so the ~20
+ * Single source of truth is `LEGACY_CURRENCIES`; this is an alias so the
  * existing import sites keep compiling.
  */
 export const SUPPORTED_CURRENCIES = LEGACY_CURRENCIES;
@@ -26,7 +28,8 @@ export { CURRENCY_CODES } from '../lib/currencies';
  * app now accepts any active ISO code, and a compile-time union of ~160
  * members bought nothing but friction. Validation moved to runtime —
  * `isSupportedCurrency(code)` from src/lib/currencies.ts is the gate, and the
- * DB CHECK is the backstop.
+ * `public.currencies` foreign key (p3-currencies-iso4217, applied) is the
+ * backstop.
  */
 export type Currency = string;
 

@@ -548,7 +548,7 @@ const S = {
   },
   // Stale-schema fallback: the server hasn't accepted the widened currency
   // list yet (supabase-migration-audit-p0-currencies.sql). Never a client-side
-  // block — all 8 currencies stay selectable in the UI.
+  // block — every currency in src/lib/currencies.ts stays selectable in the UI.
   ltr_err_currency_unsupported: {
     ur: "Yeh currency abhi server par cross-user udhaar ke liye enable nahi hui, is liye request nahi bheji ja saki. Filhaal isay apne apne hisaab mein local record karein, ya AED/PKR mein bhejein.",
     en: "This currency isn't enabled for cross-user udhaar on the server yet, so the request wasn't sent. Record it in your own ledger for now, or send it in AED/PKR.",
